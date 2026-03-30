@@ -30,10 +30,10 @@ spec:
         - name: control-plane
           resources:
             requests:
-              cpu: 20m
-              memory: 128Mi
+              cpu: 5m
+              memory: 96Mi
             limits:
-              memory: 256Mi
+              memory: 192Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -47,10 +47,10 @@ spec:
         - name: feature-gateway
           resources:
             requests:
-              cpu: 10m
-              memory: 96Mi
+              cpu: 2m
+              memory: 64Mi
             limits:
-              memory: 192Mi
+              memory: 128Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -64,10 +64,10 @@ spec:
         - name: anomaly-service
           resources:
             requests:
-              cpu: 10m
-              memory: 96Mi
+              cpu: 2m
+              memory: 64Mi
             limits:
-              memory: 192Mi
+              memory: 128Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -95,10 +95,10 @@ spec:
               value: /app/ai/rag/runbooks
           resources:
             requests:
-              cpu: 10m
-              memory: 128Mi
+              cpu: 2m
+              memory: 96Mi
             limits:
-              memory: 256Mi
+              memory: 192Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -112,10 +112,10 @@ spec:
         - name: demo-ui
           resources:
             requests:
-              cpu: 5m
-              memory: 32Mi
+              cpu: 1m
+              memory: 24Mi
             limits:
-              memory: 96Mi
+              memory: 64Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -129,7 +129,14 @@ spec:
         - name: minio
           resources:
             requests:
-              cpu: 10m
-              memory: 96Mi
+              cpu: 2m
+              memory: 64Mi
             limits:
-              memory: 192Mi
+              memory: 128Mi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: model-storage-minio-bootstrap
+  namespace: ims-demo-lab
+$patch: delete

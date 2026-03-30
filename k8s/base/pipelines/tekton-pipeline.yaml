@@ -15,14 +15,7 @@ spec:
   tasks:
     - name: clone
       taskRef:
-        resolver: cluster
-        params:
-          - name: kind
-            value: task
-          - name: namespace
-            value: openshift-pipelines
-          - name: name
-            value: git-clone
+        name: git-clone-lite
       params:
         - name: URL
           value: $(params.git-url)
@@ -37,14 +30,7 @@ spec:
       runAfter:
         - clone
       taskRef:
-        resolver: cluster
-        params:
-          - name: kind
-            value: task
-          - name: namespace
-            value: openshift-pipelines
-          - name: name
-            value: buildah
+        name: buildah-lite
       params:
         - name: IMAGE
           value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/feature-gateway:latest
@@ -59,14 +45,7 @@ spec:
       runAfter:
         - build-feature-gateway
       taskRef:
-        resolver: cluster
-        params:
-          - name: kind
-            value: task
-          - name: namespace
-            value: openshift-pipelines
-          - name: name
-            value: buildah
+        name: buildah-lite
       params:
         - name: IMAGE
           value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/anomaly-service:latest
@@ -81,14 +60,7 @@ spec:
       runAfter:
         - build-anomaly-service
       taskRef:
-        resolver: cluster
-        params:
-          - name: kind
-            value: task
-          - name: namespace
-            value: openshift-pipelines
-          - name: name
-            value: buildah
+        name: buildah-lite
       params:
         - name: IMAGE
           value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/rca-service:latest
@@ -103,14 +75,7 @@ spec:
       runAfter:
         - build-rca-service
       taskRef:
-        resolver: cluster
-        params:
-          - name: kind
-            value: task
-          - name: namespace
-            value: openshift-pipelines
-          - name: name
-            value: buildah
+        name: buildah-lite
       params:
         - name: IMAGE
           value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/demo-ui:latest
@@ -125,14 +90,7 @@ spec:
       runAfter:
         - build-demo-ui
       taskRef:
-        resolver: cluster
-        params:
-          - name: kind
-            value: task
-          - name: namespace
-            value: openshift-pipelines
-          - name: name
-            value: buildah
+        name: buildah-lite
       params:
         - name: IMAGE
           value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/control-plane:latest
@@ -140,28 +98,6 @@ spec:
           value: .
         - name: DOCKERFILE
           value: services/control-plane/Containerfile
-      workspaces:
-        - name: source
-          workspace: source
-    - name: build-ims-ai-trainer
-      runAfter:
-        - build-control-plane
-      taskRef:
-        resolver: cluster
-        params:
-          - name: kind
-            value: task
-          - name: namespace
-            value: openshift-pipelines
-          - name: name
-            value: buildah
-      params:
-        - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest
-        - name: CONTEXT
-          value: .
-        - name: DOCKERFILE
-          value: ai/training/Containerfile
       workspaces:
         - name: source
           workspace: source

@@ -119,12 +119,15 @@ spec:
             value: $(tt.params.git-revision)
         taskRunTemplate:
           serviceAccountName: pipeline
-          podTemplate:
-            securityContext:
-              fsGroup: 65532
         workspaces:
           - name: source
-            emptyDir: {}
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
 ---
 apiVersion: triggers.tekton.dev/v1beta1
 kind: EventListener
