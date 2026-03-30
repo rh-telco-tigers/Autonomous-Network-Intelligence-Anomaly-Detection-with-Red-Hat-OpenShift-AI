@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: argocd-bootstrap-application
+  namespace: openshift-gitops
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: argocd-bootstrap
+      containers:
+        - name: bootstrap
+          image: quay.io/openshift/origin-cli:4.21
+          command:
+            - /bin/bash
+            - -lc
+            - |
+              set -euo pipefail
+              until oc get deployment/openshift-gitops-server -n openshift-gitops >/dev/null 2>&1; do
+                sleep 10
+              done
+              oc rollout status deployment/openshift-gitops-server -n openshift-gitops --timeout=10m
+              oc apply -f /manifests/operators-application.yaml
+          volumeMounts:
+            - name: manifests
+              mountPath: /manifests
+      volumes:
+        - name: manifests
+          configMap:
+            name: argocd-bootstrap-manifests

@@ -4,7 +4,7 @@ This repository packages an OpenShift-native demo stack for IMS anomaly detectio
 
 - IMS lab services on OpenShift
 - SIPp-driven traffic generation and fault injection
-- Red Hat OpenShift AI installed by Operator Lifecycle Manager
+- operator installation managed by OpenShift GitOps and Argo CD
 - predictive and generative model serving on KServe
 - Milvus-backed RCA context retrieval
 - customer-demo documentation and lab guides
@@ -23,6 +23,7 @@ This repository packages an OpenShift-native demo stack for IMS anomaly detectio
 ```text
 ai/                 Kubeflow pipeline source and AI workflow stubs
 automation/         Ansible playbooks for operator-approved actions
+deploy/             Argo CD bootstrap and GitOps-managed operator manifests
 docs/               customer-demo docs, labs, and architecture references
 k8s/                OpenShift manifests and Kustomize overlays
 lab-assets/         SIPp scenarios and reusable demo data
@@ -33,13 +34,19 @@ services/           demo services and UI source images
 
 1. Review [docs/README.md](./docs/README.md).
 2. Inspect the end-to-end architecture in [docs/architecture/engineering-spec.md](./docs/architecture/engineering-spec.md).
-3. Render the demo overlay:
+3. Bootstrap Argo CD and the operator subscriptions:
+
+```sh
+oc apply -k deploy/argocd
+```
+
+4. Render the demo overlay:
 
 ```sh
 make kustomize-demo
 ```
 
-4. Follow the lab sequence in `docs/labs`.
+5. Follow the lab sequence in `docs/labs`.
 
 ## Upstream reference inputs
 
@@ -51,9 +58,11 @@ This repo uses upstream projects as implementation inputs, but keeps the deploym
 
 ## Current implementation boundary
 
-The repository now contains a deployable scaffold for the full demo stack. Cluster-specific values still need to be supplied before a live deployment:
+The repository now contains a deployable scaffold for the full demo stack. Operators are intended to be installed through Argo CD from `deploy/gitops/operators`, while the application stack remains under `k8s/overlays/demo`.
+
+Cluster-specific values still need to be supplied before a live deployment:
 
 - image registry destinations for locally built services
-- object storage credentials and model locations for KServe
 - OpenIMSs environment values appropriate for the target lab network
 - route hostnames and TLS policy for the target cluster
+- the repository must be reachable by the in-cluster Argo CD instance at `https://github.com/pandeybk/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git`
