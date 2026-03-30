@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>IMS AI Demo Console</title>
+    <style>
+      :root {
+        --bg: #f3efe6;
+        --ink: #15263a;
+        --muted: #59697b;
+        --panel: rgba(255, 255, 255, 0.86);
+        --accent: #bc512f;
+        --accent-soft: #ffd9c5;
+        --line: rgba(21, 38, 58, 0.12);
+        --ok: #1f6d43;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top right, rgba(188, 81, 47, 0.2), transparent 28%),
+          radial-gradient(circle at bottom left, rgba(43, 98, 138, 0.18), transparent 32%),
+          var(--bg);
+      }
+      main {
+        width: min(1220px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 28px 0 44px;
+      }
+      .hero, .grid {
+        display: grid;
+        gap: 20px;
+      }
+      .hero {
+        grid-template-columns: 1.3fr 1fr;
+        margin-bottom: 20px;
+      }
+      .grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        padding: 22px;
+        backdrop-filter: blur(14px);
+        box-shadow: 0 18px 45px rgba(21, 38, 58, 0.08);
+      }
+      h1, h2, h3, p { margin-top: 0; }
+      h1 {
+        font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+        font-size: clamp(2.5rem, 4vw, 4.4rem);
+        line-height: 0.92;
+        margin-bottom: 14px;
+      }
+      h2 {
+        font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+        font-size: 1.2rem;
+      }
+      .eyebrow {
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+      .metric-strip {
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+        margin-top: 24px;
+      }
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 14px 16px;
+        min-width: 160px;
+        background: rgba(255, 255, 255, 0.68);
+      }
+      .metric strong {
+        display: block;
+        font-size: 1.8rem;
+        font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+      }
+      .token-row, .scenario-buttons, .action-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .token-row {
+        margin-top: 16px;
+      }
+      input {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 12px 14px;
+        font: inherit;
+        min-width: 220px;
+        background: rgba(255, 255, 255, 0.78);
+      }
+      button {
+        border: 0;
+        background: var(--ink);
+        color: white;
+        border-radius: 999px;
+        padding: 12px 18px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button.alt {
+        background: var(--accent);
+      }
+      button.soft {
+        background: white;
+        color: var(--ink);
+        border: 1px solid var(--line);
+      }
+      pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: rgba(21, 38, 58, 0.04);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 16px;
+        min-height: 180px;
+        font-size: 0.92rem;
+      }
+      .list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 10px;
+      }
+      .list li {
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.62);
+        border: 1px solid var(--line);
+      }
+      .pill {
+        display: inline-block;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--ink);
+        font-size: 0.82rem;
+        margin-right: 8px;
+      }
+      .ok { color: var(--ok); }
+      @media (max-width: 960px) {
+        .hero, .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <article class="panel">
+          <p class="eyebrow">Customer Demo Console</p>
+          <h1>Traceable IMS anomaly detection with approval-aware RCA</h1>
+          <p>
+            This console now follows the actual platform flow: feature windows, predictive scoring,
+            incident persistence, retrieval-backed RCA, and operator actions for Slack, Jira, and
+            automation approval.
+          </p>
+          <div class="token-row">
+            <input id="api-token" value="demo-token" placeholder="API token" />
+            <button class="soft" onclick="refreshControlPlane()">Refresh incidents</button>
+          </div>
+          <div class="metric-strip">
+            <div class="metric">
+              <span class="eyebrow">Current Score</span>
+              <strong id="score">0.00</strong>
+            </div>
+            <div class="metric">
+              <span class="eyebrow">Status</span>
+              <strong id="status">Idle</strong>
+            </div>
+            <div class="metric">
+              <span class="eyebrow">Deployed Model</span>
+              <strong id="model-version">unknown</strong>
+            </div>
+          </div>
+        </article>
+        <article class="panel">
+          <h2>What the customer should see</h2>
+          <ul class="list">
+            <li>Predictive detection and generative RCA are separate control paths.</li>
+            <li>Every incident can be traced to a model version and feature window.</li>
+            <li>Operator actions are explicit approval steps, not silent automation.</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <h2>Scenarios</h2>
+          <div class="scenario-buttons">
+            <button onclick="runScenario('normal')">Normal</button>
+            <button class="alt" onclick="runScenario('registration_storm')">Registration Storm</button>
+            <button class="alt" onclick="runScenario('malformed_invite')">Malformed INVITE</button>
+          </div>
+          <p class="ok" id="incident-pointer">Run a scenario to create or update an incident.</p>
+          <div class="action-row">
+            <button class="soft" onclick="approveIncident('scale_scscf')">Approve S-CSCF Scale</button>
+            <button class="soft" onclick="approveIncident('rate_limit_pcscf')">Approve P-CSCF Rate Limit</button>
+            <button class="soft" onclick="approveIncident('quarantine_imsi')">Approve IMSI Quarantine</button>
+          </div>
+          <div class="action-row" style="margin-top: 10px;">
+            <button class="soft" onclick="notifySlack()">Send to Slack</button>
+            <button class="soft" onclick="notifyJira()">Open Jira</button>
+          </div>
+        </article>
+
+        <article class="panel">
+          <h2>Feature Window</h2>
+          <pre id="feature-window">{}</pre>
+        </article>
+
+        <article class="panel">
+          <h2>RCA Output</h2>
+          <pre id="rca-output">{}</pre>
+        </article>
+
+        <article class="panel">
+          <h2>Incidents</h2>
+          <pre id="incidents">[]</pre>
+        </article>
+
+        <article class="panel">
+          <h2>Audit Log</h2>
+          <pre id="audit-log">[]</pre>
+        </article>
+
+        <article class="panel">
+          <h2>Models</h2>
+          <pre id="models">{"deployed_model_version": null}</pre>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const featureService = window.location.origin.replace("demo-ui", "feature-gateway");
+      const anomalyService = window.location.origin.replace("demo-ui", "anomaly-service");
+      const rcaService = window.location.origin.replace("demo-ui", "rca-service");
+      const controlPlaneService = window.location.origin.replace("demo-ui", "control-plane");
+      let activeIncidentId = null;
+
+      function authHeaders() {
+        const token = document.getElementById("api-token").value.trim();
+        return token ? { "x-api-key": token, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+      }
+
+      async function fetchJson(url, options = {}) {
+        const response = await fetch(url, options);
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(JSON.stringify(payload));
+        }
+        return payload;
+      }
+
+      async function runScenario(scenario) {
+        const featureWindow = await fetchJson(`${featureService}/sample-window/${scenario}`);
+        document.getElementById("feature-window").textContent = JSON.stringify(featureWindow, null, 2);
+
+        const anomaly = await fetchJson(`${anomalyService}/score`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            features: featureWindow.features,
+            feature_window_id: featureWindow.window_id,
+            project: "ims-demo"
+          })
+        });
+
+        document.getElementById("score").textContent = Number(anomaly.anomaly_score).toFixed(2);
+        document.getElementById("status").textContent = anomaly.is_anomaly ? "Anomaly" : "Nominal";
+        document.getElementById("model-version").textContent = anomaly.model_version;
+
+        if (!anomaly.is_anomaly) {
+          document.getElementById("incident-pointer").textContent = "No incident created for nominal traffic.";
+          document.getElementById("rca-output").textContent = JSON.stringify({ message: "RCA not triggered." }, null, 2);
+          await refreshControlPlane();
+          return;
+        }
+
+        activeIncidentId = anomaly.incident_id;
+        document.getElementById("incident-pointer").textContent = `Active incident: ${activeIncidentId}`;
+
+        const rca = await fetchJson(`${rcaService}/rca`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            incident_id: anomaly.incident_id,
+            context: {
+              anomaly_type: anomaly.anomaly_type,
+              feature_window_id: featureWindow.window_id,
+              model_version: anomaly.model_version
+            }
+          })
+        });
+        document.getElementById("rca-output").textContent = JSON.stringify(rca, null, 2);
+        await refreshControlPlane();
+      }
+
+      async function refreshControlPlane() {
+        try {
+          const [incidents, audit, models] = await Promise.all([
+            fetchJson(`${controlPlaneService}/incidents`),
+            fetchJson(`${controlPlaneService}/audit`),
+            fetchJson(`${controlPlaneService}/models`)
+          ]);
+          document.getElementById("incidents").textContent = JSON.stringify(incidents, null, 2);
+          document.getElementById("audit-log").textContent = JSON.stringify(audit, null, 2);
+          document.getElementById("models").textContent = JSON.stringify(models, null, 2);
+        } catch (error) {
+          document.getElementById("incidents").textContent = JSON.stringify({ error: String(error) }, null, 2);
+        }
+      }
+
+      async function approveIncident(action) {
+        if (!activeIncidentId) return;
+        await fetchJson(`${controlPlaneService}/incidents/${activeIncidentId}/approve`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            action,
+            approved_by: "demo-operator",
+            notes: "Approved during customer demo",
+            execute: false
+          })
+        });
+        await refreshControlPlane();
+      }
+
+      async function notifySlack() {
+        if (!activeIncidentId) return;
+        await fetchJson(`${controlPlaneService}/incidents/${activeIncidentId}/notify/slack`, {
+          method: "POST",
+          headers: authHeaders()
+        });
+        await refreshControlPlane();
+      }
+
+      async function notifyJira() {
+        if (!activeIncidentId) return;
+        await fetchJson(`${controlPlaneService}/incidents/${activeIncidentId}/notify/jira`, {
+          method: "POST",
+          headers: authHeaders()
+        });
+        await refreshControlPlane();
+      }
+
+      refreshControlPlane();
+    </script>
+  </body>
+</html>

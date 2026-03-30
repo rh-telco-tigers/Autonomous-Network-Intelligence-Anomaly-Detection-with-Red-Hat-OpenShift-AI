@@ -1,0 +1,10 @@
+FROM python:3.11-slim
+
+WORKDIR /workspace
+
+COPY ai/training/requirements.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY ai ai
+
+CMD ["python", "ai/training/train_and_register.py"]

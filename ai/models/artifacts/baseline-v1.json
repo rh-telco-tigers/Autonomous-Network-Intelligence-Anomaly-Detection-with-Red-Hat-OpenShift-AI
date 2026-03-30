@@ -1,0 +1,54 @@
+{
+  "model_type": "baseline_threshold",
+  "threshold": 0.58,
+  "feature_schema_version": "feature_schema_v1",
+  "feature_stats": {
+    "register_rate": {
+      "mean": 0.359927,
+      "std": 0.143524
+    },
+    "invite_rate": {
+      "mean": 0.234467,
+      "std": 0.085039
+    },
+    "bye_rate": {
+      "mean": 0.127338,
+      "std": 0.045172
+    },
+    "error_4xx_ratio": {
+      "mean": 0.024923,
+      "std": 0.01438
+    },
+    "error_5xx_ratio": {
+      "mean": 0.010064,
+      "std": 0.01
+    },
+    "latency_p95": {
+      "mean": 32.130593,
+      "std": 7.550164
+    },
+    "retransmission_count": {
+      "mean": 0.981644,
+      "std": 0.601299
+    },
+    "inter_arrival_mean": {
+      "mean": 5.894181,
+      "std": 1.237866
+    },
+    "payload_variance": {
+      "mean": 16.008014,
+      "std": 5.380334
+    }
+  },
+  "feature_weights": {
+    "register_rate": 0.007898,
+    "invite_rate": 0.002272,
+    "bye_rate": 3.8e-05,
+    "error_4xx_ratio": 0.000637,
+    "error_5xx_ratio": 0.000304,
+    "latency_p95": 0.892269,
+    "retransmission_count": 0.035994,
+    "inter_arrival_mean": 3.8e-05,
+    "payload_variance": 0.06055
+  }
+}

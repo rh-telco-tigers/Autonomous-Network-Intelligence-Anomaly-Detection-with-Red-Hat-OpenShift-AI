@@ -1,0 +1,13 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY services/anomaly-service/requirements.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+COPY services/shared shared
+COPY ai/registry ai/registry
+COPY ai/models ai/models
+COPY services/anomaly-service/app.py app.py
+
+EXPOSE 8080
+
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]

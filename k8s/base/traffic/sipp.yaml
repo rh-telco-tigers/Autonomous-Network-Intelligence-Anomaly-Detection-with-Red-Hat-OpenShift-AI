@@ -1,0 +1,101 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sipp-normal-traffic
+  namespace: ims-demo-lab
+spec:
+  schedule: "*/10 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sipp
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp:latest
+              command:
+                - /bin/sh
+                - -c
+              args:
+                - >
+                  sipp openimss-pcscf.ims-demo-lab.svc.cluster.local:5060
+                  -sf /scenarios/register-normal.xml
+                  -m 50
+                  -r 2
+                  -trace_err
+              volumeMounts:
+                - name: scenarios
+                  mountPath: /scenarios
+          volumes:
+            - name: scenarios
+              configMap:
+                name: sipp-scenarios
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sipp-registration-storm
+  namespace: ims-demo-lab
+spec:
+  schedule: "*/30 * * * *"
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sipp
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp:latest
+              command:
+                - /bin/sh
+                - -c
+              args:
+                - >
+                  sipp openimss-pcscf.ims-demo-lab.svc.cluster.local:5060
+                  -sf /scenarios/register-storm.xml
+                  -m 400
+                  -r 20
+                  -trace_err
+              volumeMounts:
+                - name: scenarios
+                  mountPath: /scenarios
+          volumes:
+            - name: scenarios
+              configMap:
+                name: sipp-scenarios
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sipp-malformed-invite
+  namespace: ims-demo-lab
+spec:
+  schedule: "*/30 * * * *"
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sipp
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp:latest
+              command:
+                - /bin/sh
+                - -c
+              args:
+                - >
+                  sipp openimss-pcscf.ims-demo-lab.svc.cluster.local:5060
+                  -sf /scenarios/invite-malformed.xml
+                  -m 80
+                  -r 8
+                  -trace_err
+              volumeMounts:
+                - name: scenarios
+                  mountPath: /scenarios
+          volumes:
+            - name: scenarios
+              configMap:
+                name: sipp-scenarios
+

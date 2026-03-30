@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: model-storage-sa
+  namespace: ims-demo-lab
+secrets:
+  - name: model-storage-credentials
+---
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: predictive-sklearn-runtime
+  namespace: ims-demo-lab
+spec:
+  annotations:
+    openshift.io/display-name: Predictive Sklearn Runtime
+  supportedModelFormats:
+    - name: sklearn
+      version: "1"
+      autoSelect: true
+  protocolVersions:
+    - v2
+  containers:
+    - name: kserve-container
+      image: docker.io/kserve/sklearnserver:v0.14.1
+      args:
+        - --model_name={{.Name}}
+        - --model_dir=/mnt/models
+        - --http_port=8080
+      ports:
+        - containerPort: 8080
+      env:
+        - name: STORAGE_URI
+          value: "{{.StorageURI}}"
+---
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: generative-vllm-runtime
+  namespace: ims-demo-lab
+spec:
+  annotations:
+    openshift.io/display-name: Generative vLLM Runtime
+  supportedModelFormats:
+    - name: vllm
+      version: "1"
+      autoSelect: true
+  protocolVersions:
+    - v2
+  containers:
+    - name: kserve-container
+      image: docker.io/vllm/vllm-openai:v0.8.4
+      command:
+        - python
+        - -m
+        - vllm.entrypoints.openai.api_server
+      args:
+        - --host
+        - 0.0.0.0
+        - --port
+        - "8080"
+        - --model
+        - /mnt/models
+        - --served-model-name
+        - "{{.Name}}"
+      ports:
+        - containerPort: 8080
+      env:
+        - name: STORAGE_URI
+          value: "{{.StorageURI}}"
+---
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: ims-predictive
+  namespace: ims-demo-lab
+spec:
+  predictor:
+    serviceAccountName: model-storage-sa
+    runtime: predictive-sklearn-runtime
+    model:
+      modelFormat:
+        name: sklearn
+      storageUri: s3://ims-models/predictive/
+      resources:
+        requests:
+          cpu: "1"
+          memory: 2Gi
+        limits:
+          memory: 4Gi
+---
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: ims-generative
+  namespace: ims-demo-lab
+spec:
+  predictor:
+    serviceAccountName: model-storage-sa
+    runtime: generative-vllm-runtime
+    model:
+      modelFormat:
+        name: vllm
+      storageUri: s3://ims-models/generative/
+      resources:
+        requests:
+          cpu: "2"
+          memory: 8Gi
+        limits:
+          memory: 16Gi

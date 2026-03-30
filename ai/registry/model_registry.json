@@ -1,0 +1,37 @@
+{
+  "feature_schema_version": "feature_schema_v1",
+  "dataset_version": "synthetic-v1",
+  "deployed_model_version": "baseline-v1",
+  "models": [
+    {
+      "version": "baseline-v1",
+      "kind": "baseline_threshold",
+      "artifact": "models/artifacts/baseline-v1.json",
+      "dataset_version": "synthetic-v1",
+      "feature_schema_version": "feature_schema_v1",
+      "metrics": {
+        "precision": 0.9813,
+        "recall": 1.0,
+        "f1": 0.9906,
+        "false_positive_rate": 0.0513,
+        "latency_p95_ms": 15,
+        "stability_score": 0.92
+      }
+    },
+    {
+      "version": "candidate-v1",
+      "kind": "weighted_rule_model",
+      "artifact": "models/artifacts/candidate-v1.json",
+      "dataset_version": "synthetic-v1",
+      "feature_schema_version": "feature_schema_v1",
+      "metrics": {
+        "precision": 1.0,
+        "recall": 0.1714,
+        "f1": 0.2927,
+        "false_positive_rate": 0.0,
+        "latency_p95_ms": 15,
+        "stability_score": 0.92
+      }
+    }
+  ]
+}

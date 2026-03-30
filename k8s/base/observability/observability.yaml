@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ims-demo-services
+  namespace: ims-demo-lab
+spec:
+  namespaceSelector:
+    matchNames:
+      - ims-demo-lab
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - feature-gateway
+          - anomaly-service
+          - rca-service
+          - control-plane
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+

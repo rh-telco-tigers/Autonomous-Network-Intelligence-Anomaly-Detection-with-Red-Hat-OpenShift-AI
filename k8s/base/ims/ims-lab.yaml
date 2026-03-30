@@ -1,0 +1,314 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ims-lab-config
+  namespace: ims-demo-lab
+data:
+  MONGO_IP: mongo
+  HSS_IP: openimss-hss
+  MME_IP: mme-placeholder
+  MCC: "001"
+  MNC: "01"
+  MYSQL_DATABASE: openimss
+  MYSQL_ROOT_PASSWORD: openimss-demo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: ims-demo-lab
+spec:
+  selector:
+    app: mongo
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: 27017
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+        - name: mongo
+          image: docker.io/library/mongo:7.0
+          ports:
+            - containerPort: 27017
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: ims-demo-lab
+spec:
+  selector:
+    app: mysql
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: docker.io/library/mysql:8.4
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: ims-lab-config
+                  key: MYSQL_DATABASE
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                configMapKeyRef:
+                  name: ims-lab-config
+                  key: MYSQL_ROOT_PASSWORD
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 768Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openimss-hss
+  namespace: ims-demo-lab
+spec:
+  selector:
+    app: openimss-hss
+  ports:
+    - name: diameter
+      port: 3868
+      targetPort: 3868
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openimss-hss
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openimss-hss
+  template:
+    metadata:
+      labels:
+        app: openimss-hss
+    spec:
+      volumes:
+        - name: openimss-hss-config
+          emptyDir: {}
+      initContainers:
+        - name: fetch-openimss-hss-config
+          image: docker.io/alpine/git:2.45.2
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              git clone --depth 1 https://github.com/VoicenterTeam/openimss.git /work/openimss
+              cp -R /work/openimss/hss/. /config/
+          volumeMounts:
+            - name: openimss-hss-config
+              mountPath: /config
+      containers:
+        - name: hss
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-open5gs:latest
+          ports:
+            - containerPort: 3868
+          env:
+            - name: COMPONENT_NAME
+              value: hss-1
+            - name: MONGO_IP
+              valueFrom:
+                configMapKeyRef:
+                  name: ims-lab-config
+                  key: MONGO_IP
+            - name: HSS_IP
+              valueFrom:
+                configMapKeyRef:
+                  name: ims-lab-config
+                  key: HSS_IP
+            - name: MME_IP
+              valueFrom:
+                configMapKeyRef:
+                  name: ims-lab-config
+                  key: MME_IP
+            - name: MCC
+              valueFrom:
+                configMapKeyRef:
+                  name: ims-lab-config
+                  key: MCC
+            - name: MNC
+              valueFrom:
+                configMapKeyRef:
+                  name: ims-lab-config
+                  key: MNC
+          volumeMounts:
+            - name: openimss-hss-config
+              mountPath: /mnt/hss
+          readinessProbe:
+            tcpSocket:
+              port: 3868
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              memory: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openimss-scscf
+  namespace: ims-demo-lab
+spec:
+  selector:
+    app: openimss-scscf
+  ports:
+    - name: sip-tcp
+      port: 6060
+      targetPort: 6060
+      protocol: TCP
+    - name: sip-udp
+      port: 6060
+      targetPort: 6060
+      protocol: UDP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openimss-scscf
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openimss-scscf
+  template:
+    metadata:
+      labels:
+        app: openimss-scscf
+    spec:
+      containers:
+        - name: scscf
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
+          env:
+            - name: COMPONENT_NAME
+              value: scscf-1
+            - name: OPENSIPS_TEMPLATE
+              value: scscf
+          ports:
+            - containerPort: 6060
+              protocol: TCP
+            - containerPort: 6060
+              protocol: UDP
+          readinessProbe:
+            tcpSocket:
+              port: 6060
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openimss-pcscf
+  namespace: ims-demo-lab
+spec:
+  selector:
+    app: openimss-pcscf
+  ports:
+    - name: sip-tcp
+      port: 5060
+      targetPort: 5060
+      protocol: TCP
+    - name: sip-udp
+      port: 5060
+      targetPort: 5060
+      protocol: UDP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openimss-pcscf
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openimss-pcscf
+  template:
+    metadata:
+      labels:
+        app: openimss-pcscf
+    spec:
+      containers:
+        - name: pcscf
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
+          env:
+            - name: COMPONENT_NAME
+              value: pcscf-1
+            - name: OPENSIPS_TEMPLATE
+              value: pcscf
+          ports:
+            - containerPort: 5060
+              protocol: TCP
+            - containerPort: 5060
+              protocol: UDP
+          readinessProbe:
+            tcpSocket:
+              port: 5060
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+

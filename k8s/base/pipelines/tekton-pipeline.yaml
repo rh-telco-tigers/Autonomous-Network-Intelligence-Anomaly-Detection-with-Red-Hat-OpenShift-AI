@@ -1,0 +1,52 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: ims-demo-container-build
+  namespace: ims-demo-lab
+spec:
+  params:
+    - name: git-url
+      type: string
+    - name: git-revision
+      type: string
+      default: main
+    - name: image
+      type: string
+    - name: context-dir
+      type: string
+    - name: dockerfile
+      type: string
+  workspaces:
+    - name: source
+  tasks:
+    - name: clone
+      taskRef:
+        kind: ClusterTask
+        name: git-clone
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+        - name: deleteExisting
+          value: "true"
+      workspaces:
+        - name: output
+          workspace: source
+    - name: build
+      runAfter:
+        - clone
+      taskRef:
+        kind: ClusterTask
+        name: buildah
+      params:
+        - name: IMAGE
+          value: $(params.image)
+        - name: CONTEXT
+          value: $(params.context-dir)
+        - name: DOCKERFILE
+          value: $(params.dockerfile)
+      workspaces:
+        - name: source
+          workspace: source
+

@@ -1,0 +1,17 @@
+---
+- name: Apply a constrained demo response to the P-CSCF path
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Annotate the P-CSCF deployment for manual traffic-governance review
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: openimss-pcscf
+            namespace: ims-demo-lab
+            annotations:
+              ims.demo/rate-limit-review: "approved"
+

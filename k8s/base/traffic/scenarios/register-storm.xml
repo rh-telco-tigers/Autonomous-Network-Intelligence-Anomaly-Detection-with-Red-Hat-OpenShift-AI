@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<scenario name="register-storm">
+  <send retrans="250">
+    <![CDATA[
+
+      REGISTER sip:[service] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: <sip:storm-[call_number]@[local_ip]>;tag=[pid]-[call_number]
+      To: <sip:storm-[call_number]@[local_ip]>
+      Call-ID: reg-storm-[pid]-[call_number]
+      CSeq: 1 REGISTER
+      Contact: <sip:storm-[call_number]@[local_ip]:[local_port]>
+      Max-Forwards: 70
+      Expires: 30
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <pause milliseconds="100" />
+  <recv response="200" optional="true" />
+</scenario>
+

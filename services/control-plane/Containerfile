@@ -1,0 +1,16 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY services/control-plane/requirements.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY services/shared shared
+COPY services/control-plane/app.py app.py
+COPY automation automation
+COPY ai/registry ai/registry
+
+EXPOSE 8080
+
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+

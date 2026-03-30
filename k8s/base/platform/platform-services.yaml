@@ -1,0 +1,364 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-api-auth
+  namespace: ims-demo-lab
+type: Opaque
+stringData:
+  API_KEY: demo-token
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: control-plane-data
+  namespace: ims-demo-lab
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-plane
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: control-plane
+  template:
+    metadata:
+      labels:
+        app: control-plane
+    spec:
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: control-plane-data
+      containers:
+        - name: control-plane
+          image: control-plane:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: demo-api-auth
+                  key: API_KEY
+            - name: CONTROL_PLANE_DB_PATH
+              value: /data/control-plane.db
+            - name: ENABLE_AUTOMATION
+              value: "false"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane
+  namespace: ims-demo-lab
+  labels:
+    app: control-plane
+spec:
+  selector:
+    app: control-plane
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: control-plane
+  namespace: ims-demo-lab
+spec:
+  to:
+    kind: Service
+    name: control-plane
+  port:
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: feature-gateway
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: feature-gateway
+  template:
+    metadata:
+      labels:
+        app: feature-gateway
+    spec:
+      containers:
+        - name: feature-gateway
+          image: feature-gateway:latest
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: feature-gateway
+  namespace: ims-demo-lab
+  labels:
+    app: feature-gateway
+spec:
+  selector:
+    app: feature-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: feature-gateway
+  namespace: ims-demo-lab
+spec:
+  to:
+    kind: Service
+    name: feature-gateway
+  port:
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: anomaly-service
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: anomaly-service
+  template:
+    metadata:
+      labels:
+        app: anomaly-service
+    spec:
+      containers:
+        - name: anomaly-service
+          image: anomaly-service:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: demo-api-auth
+                  key: API_KEY
+            - name: CONTROL_PLANE_URL
+              value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+            - name: MODEL_REGISTRY_PATH
+              value: /app/ai/registry/model_registry.json
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: anomaly-service
+  namespace: ims-demo-lab
+  labels:
+    app: anomaly-service
+spec:
+  selector:
+    app: anomaly-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: anomaly-service
+  namespace: ims-demo-lab
+spec:
+  to:
+    kind: Service
+    name: anomaly-service
+  port:
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rca-service
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rca-service
+  template:
+    metadata:
+      labels:
+        app: rca-service
+    spec:
+      containers:
+        - name: rca-service
+          image: rca-service:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: demo-api-auth
+                  key: API_KEY
+            - name: CONTROL_PLANE_URL
+              value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+            - name: MILVUS_URI
+              value: http://milvus.ims-demo-lab.svc.cluster.local:19530
+            - name: LLM_ENDPOINT
+              value: http://ims-generative-predictor.ims-demo-lab.svc.cluster.local:8080
+            - name: RUNBOOK_DIR
+              value: /app/ai/rag/runbooks
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rca-service
+  namespace: ims-demo-lab
+  labels:
+    app: rca-service
+spec:
+  selector:
+    app: rca-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: rca-service
+  namespace: ims-demo-lab
+spec:
+  to:
+    kind: Service
+    name: rca-service
+  port:
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-ui
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-ui
+  template:
+    metadata:
+      labels:
+        app: demo-ui
+    spec:
+      containers:
+        - name: demo-ui
+          image: demo-ui:latest
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-ui
+  namespace: ims-demo-lab
+  labels:
+    app: demo-ui
+spec:
+  selector:
+    app: demo-ui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: demo-ui
+  namespace: ims-demo-lab
+spec:
+  to:
+    kind: Service
+    name: demo-ui
+  port:
+    targetPort: http
+

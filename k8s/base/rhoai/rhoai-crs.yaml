@@ -1,0 +1,51 @@
+apiVersion: dscinitialization.opendatahub.io/v1
+kind: DSCInitialization
+metadata:
+  name: default-dsci
+  namespace: redhat-ods-operator
+spec:
+  applicationsNamespace: redhat-ods-applications
+  monitoring:
+    managementState: Managed
+    namespace: redhat-ods-monitoring
+  serviceMesh:
+    managementState: Removed
+  trustedCABundle:
+    managementState: Managed
+    customCABundle: ""
+---
+apiVersion: datasciencecluster.opendatahub.io/v1
+kind: DataScienceCluster
+metadata:
+  name: default-dsc
+  namespace: redhat-ods-operator
+spec:
+  components:
+    codeflare:
+      managementState: Removed
+    dashboard:
+      managementState: Managed
+    datasciencepipelines:
+      managementState: Managed
+      argoWorkflowsControllers:
+        managementState: Managed
+    feastoperator:
+      managementState: Removed
+    kserve:
+      managementState: Managed
+      defaultDeploymentMode: RawDeployment
+    kueue:
+      managementState: Removed
+    modelmeshserving:
+      managementState: Removed
+    modelregistry:
+      managementState: Managed
+    ray:
+      managementState: Removed
+    trainingoperator:
+      managementState: Removed
+    trustyai:
+      managementState: Removed
+    workbenches:
+      managementState: Managed
+

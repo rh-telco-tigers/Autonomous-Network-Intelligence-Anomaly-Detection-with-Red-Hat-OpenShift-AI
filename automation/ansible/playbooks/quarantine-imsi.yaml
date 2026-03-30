@@ -1,0 +1,11 @@
+---
+- name: Record a quarantine request for a subscriber identity
+  hosts: localhost
+  gather_facts: false
+  vars:
+    imsi: "001010000000001"
+  tasks:
+    - name: Emit a quarantine marker for the IMSI
+      ansible.builtin.debug:
+        msg: "Quarantine requested for IMSI {{ imsi }}"
+

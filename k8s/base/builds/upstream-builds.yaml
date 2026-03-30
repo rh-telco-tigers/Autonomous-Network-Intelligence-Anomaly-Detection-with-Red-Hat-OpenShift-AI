@@ -1,0 +1,84 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: openimss-open5gs
+  namespace: ims-demo-lab
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: openimss-opensips
+  namespace: ims-demo-lab
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: sipp
+  namespace: ims-demo-lab
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: openimss-open5gs
+  namespace: ims-demo-lab
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: openimss-open5gs:latest
+  source:
+    git:
+      uri: https://github.com/VoicenterTeam/openimss.git
+    contextDir: base
+    type: Git
+  strategy:
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+    type: Docker
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: openimss-opensips
+  namespace: ims-demo-lab
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: openimss-opensips:latest
+  source:
+    git:
+      uri: https://github.com/VoicenterTeam/openimss.git
+    contextDir: ims_base
+    type: Git
+  strategy:
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+    type: Docker
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: sipp
+  namespace: ims-demo-lab
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: sipp:latest
+  source:
+    git:
+      uri: https://github.com/SIPp/sipp.git
+    contextDir: docker
+    type: Git
+  strategy:
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+    type: Docker
+  triggers:
+    - type: ConfigChange
+
