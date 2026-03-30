@@ -1,6 +1,9 @@
-FROM nginx:1.27-alpine
+FROM python:3.11-slim
 
-COPY services/demo-ui/nginx.conf /etc/nginx/conf.d/default.conf
-COPY services/demo-ui/index.html /usr/share/nginx/html/index.html
+WORKDIR /app
+
+COPY services/demo-ui/index.html /app/index.html
 
 EXPOSE 8080
+
+CMD ["python", "-m", "http.server", "8080", "--directory", "/app"]
