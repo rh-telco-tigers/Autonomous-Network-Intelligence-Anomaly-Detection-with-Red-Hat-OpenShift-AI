@@ -1,0 +1,135 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: control-plane-data
+  namespace: ims-demo-lab
+spec:
+  resources:
+    requests:
+      storage: 256Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-storage-minio-data
+  namespace: ims-demo-lab
+spec:
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-plane
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: control-plane
+          resources:
+            requests:
+              cpu: 20m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: feature-gateway
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: feature-gateway
+          resources:
+            requests:
+              cpu: 10m
+              memory: 96Mi
+            limits:
+              memory: 192Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: anomaly-service
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: anomaly-service
+          resources:
+            requests:
+              cpu: 10m
+              memory: 96Mi
+            limits:
+              memory: 192Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rca-service
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: rca-service
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: demo-api-auth
+                  key: API_KEY
+            - name: CONTROL_PLANE_URL
+              value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+            - name: MILVUS_URI
+              value: ""
+            - name: LLM_ENDPOINT
+              value: ""
+            - name: RUNBOOK_DIR
+              value: /app/ai/rag/runbooks
+          resources:
+            requests:
+              cpu: 10m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-ui
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: demo-ui
+          resources:
+            requests:
+              cpu: 5m
+              memory: 32Mi
+            limits:
+              memory: 96Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-storage-minio
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: minio
+          resources:
+            requests:
+              cpu: 10m
+              memory: 96Mi
+            limits:
+              memory: 192Mi

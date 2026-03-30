@@ -10,12 +10,6 @@ spec:
     - name: git-revision
       type: string
       default: main
-    - name: image
-      type: string
-    - name: context-dir
-      type: string
-    - name: dockerfile
-      type: string
   workspaces:
     - name: source
   tasks:
@@ -39,7 +33,7 @@ spec:
       workspaces:
         - name: output
           workspace: source
-    - name: build
+    - name: build-feature-gateway
       runAfter:
         - clone
       taskRef:
@@ -53,11 +47,121 @@ spec:
             value: buildah
       params:
         - name: IMAGE
-          value: $(params.image)
+          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/feature-gateway:latest
         - name: CONTEXT
-          value: $(params.context-dir)
+          value: .
         - name: DOCKERFILE
-          value: $(params.dockerfile)
+          value: services/feature-gateway/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-anomaly-service
+      runAfter:
+        - build-feature-gateway
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: namespace
+            value: openshift-pipelines
+          - name: name
+            value: buildah
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/anomaly-service:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: services/anomaly-service/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-rca-service
+      runAfter:
+        - build-anomaly-service
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: namespace
+            value: openshift-pipelines
+          - name: name
+            value: buildah
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/rca-service:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: services/rca-service/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-demo-ui
+      runAfter:
+        - build-rca-service
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: namespace
+            value: openshift-pipelines
+          - name: name
+            value: buildah
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/demo-ui:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: services/demo-ui/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-control-plane
+      runAfter:
+        - build-demo-ui
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: namespace
+            value: openshift-pipelines
+          - name: name
+            value: buildah
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/control-plane:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: services/control-plane/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-ims-ai-trainer
+      runAfter:
+        - build-control-plane
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: namespace
+            value: openshift-pipelines
+          - name: name
+            value: buildah
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: ai/training/Containerfile
       workspaces:
         - name: source
           workspace: source

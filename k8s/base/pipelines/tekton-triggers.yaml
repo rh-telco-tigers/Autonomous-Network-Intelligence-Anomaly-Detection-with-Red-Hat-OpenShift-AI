@@ -107,10 +107,8 @@ spec:
     - apiVersion: tekton.dev/v1
       kind: PipelineRun
       metadata:
-        generateName: ims-feature-gateway-build-
+        generateName: ims-demo-build-
         namespace: ims-demo-lab
-        annotations:
-          chains.tekton.dev/signed: "true"
       spec:
         pipelineRef:
           name: ims-demo-container-build
@@ -119,183 +117,14 @@ spec:
             value: $(tt.params.git-url)
           - name: git-revision
             value: $(tt.params.git-revision)
-          - name: image
-            value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/feature-gateway:latest
-          - name: context-dir
-            value: .
-          - name: dockerfile
-            value: services/feature-gateway/Containerfile
         taskRunTemplate:
           serviceAccountName: pipeline
+          podTemplate:
+            securityContext:
+              fsGroup: 65532
         workspaces:
           - name: source
-            volumeClaimTemplate:
-              spec:
-                accessModes:
-                  - ReadWriteOnce
-                resources:
-                  requests:
-                    storage: 2Gi
-    - apiVersion: tekton.dev/v1
-      kind: PipelineRun
-      metadata:
-        generateName: ims-anomaly-service-build-
-        namespace: ims-demo-lab
-        annotations:
-          chains.tekton.dev/signed: "true"
-      spec:
-        pipelineRef:
-          name: ims-demo-container-build
-        params:
-          - name: git-url
-            value: $(tt.params.git-url)
-          - name: git-revision
-            value: $(tt.params.git-revision)
-          - name: image
-            value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/anomaly-service:latest
-          - name: context-dir
-            value: .
-          - name: dockerfile
-            value: services/anomaly-service/Containerfile
-        taskRunTemplate:
-          serviceAccountName: pipeline
-        workspaces:
-          - name: source
-            volumeClaimTemplate:
-              spec:
-                accessModes:
-                  - ReadWriteOnce
-                resources:
-                  requests:
-                    storage: 2Gi
-    - apiVersion: tekton.dev/v1
-      kind: PipelineRun
-      metadata:
-        generateName: ims-rca-service-build-
-        namespace: ims-demo-lab
-        annotations:
-          chains.tekton.dev/signed: "true"
-      spec:
-        pipelineRef:
-          name: ims-demo-container-build
-        params:
-          - name: git-url
-            value: $(tt.params.git-url)
-          - name: git-revision
-            value: $(tt.params.git-revision)
-          - name: image
-            value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/rca-service:latest
-          - name: context-dir
-            value: .
-          - name: dockerfile
-            value: services/rca-service/Containerfile
-        taskRunTemplate:
-          serviceAccountName: pipeline
-        workspaces:
-          - name: source
-            volumeClaimTemplate:
-              spec:
-                accessModes:
-                  - ReadWriteOnce
-                resources:
-                  requests:
-                    storage: 2Gi
-    - apiVersion: tekton.dev/v1
-      kind: PipelineRun
-      metadata:
-        generateName: ims-demo-ui-build-
-        namespace: ims-demo-lab
-        annotations:
-          chains.tekton.dev/signed: "true"
-      spec:
-        pipelineRef:
-          name: ims-demo-container-build
-        params:
-          - name: git-url
-            value: $(tt.params.git-url)
-          - name: git-revision
-            value: $(tt.params.git-revision)
-          - name: image
-            value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/demo-ui:latest
-          - name: context-dir
-            value: .
-          - name: dockerfile
-            value: services/demo-ui/Containerfile
-        taskRunTemplate:
-          serviceAccountName: pipeline
-        workspaces:
-          - name: source
-            volumeClaimTemplate:
-              spec:
-                accessModes:
-                  - ReadWriteOnce
-                resources:
-                  requests:
-                    storage: 2Gi
-    - apiVersion: tekton.dev/v1
-      kind: PipelineRun
-      metadata:
-        generateName: ims-control-plane-build-
-        namespace: ims-demo-lab
-        annotations:
-          chains.tekton.dev/signed: "true"
-      spec:
-        pipelineRef:
-          name: ims-demo-container-build
-        params:
-          - name: git-url
-            value: $(tt.params.git-url)
-          - name: git-revision
-            value: $(tt.params.git-revision)
-          - name: image
-            value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/control-plane:latest
-          - name: context-dir
-            value: .
-          - name: dockerfile
-            value: services/control-plane/Containerfile
-        taskRunTemplate:
-          serviceAccountName: pipeline
-        workspaces:
-          - name: source
-            volumeClaimTemplate:
-              spec:
-                accessModes:
-                  - ReadWriteOnce
-                resources:
-                  requests:
-                    storage: 2Gi
-    - apiVersion: tekton.dev/v1
-      kind: PipelineRun
-      metadata:
-        generateName: ims-ai-trainer-build-
-        namespace: ims-demo-lab
-        annotations:
-          chains.tekton.dev/signed: "true"
-      spec:
-        pipelineRef:
-          name: ims-demo-container-build
-        params:
-          - name: git-url
-            value: $(tt.params.git-url)
-          - name: git-revision
-            value: $(tt.params.git-revision)
-          - name: image
-            value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest
-          - name: context-dir
-            value: .
-          - name: dockerfile
-            value: ai/training/Containerfile
-        taskRunTemplate:
-          serviceAccountName: pipeline
-        workspaces:
-          - name: source
-            volumeClaimTemplate:
-              spec:
-                accessModes:
-                  - ReadWriteOnce
-                resources:
-                  requests:
-                    storage: 2Gi
+            emptyDir: {}
 ---
 apiVersion: triggers.tekton.dev/v1beta1
 kind: EventListener
