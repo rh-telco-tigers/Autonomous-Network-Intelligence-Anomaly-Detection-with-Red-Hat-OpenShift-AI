@@ -33,6 +33,7 @@ spec:
               done
               oc apply -f /manifests/ims-demo-project.yaml
               oc apply -f /manifests/operators-application.yaml
+              oc apply -f /manifests/platform-application.yaml
           volumeMounts:
             - name: manifests
               mountPath: /manifests

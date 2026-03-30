@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ims-demo-platform
+  namespace: openshift-gitops
+spec:
+  destination:
+    namespace: ims-demo-lab
+    server: https://kubernetes.default.svc
+  project: ims-demo
+  source:
+    path: k8s/overlays/demo
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true

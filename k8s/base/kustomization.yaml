@@ -9,5 +9,6 @@ resources:
   - minio
   - platform
   - observability
+  - rhoai
   - serving
   - pipelines

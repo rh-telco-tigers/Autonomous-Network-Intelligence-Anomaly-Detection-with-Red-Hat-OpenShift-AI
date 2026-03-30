@@ -239,6 +239,10 @@ spec:
                   key: password
             - name: GITEA_REPO_NAME
               value: IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI
+            - name: GITEA_WEBHOOK_URL
+              value: http://el-ims-demo-gitea.ims-demo-lab.svc.cluster.local:8080
+            - name: GITEA_WEBHOOK_SECRET
+              value: ims-demo-webhook-token
           command:
             - /bin/sh
             - -c
@@ -255,6 +259,14 @@ spec:
                   -H 'Content-Type: application/json' \
                   -d "{\"name\":\"$GITEA_REPO_NAME\",\"private\":false,\"auto_init\":false,\"default_branch\":\"main\"}" \
                   "$API/api/v1/user/repos"
+              fi
+              if ! curl -fsS -u "$GITEA_ADMIN_USERNAME:$GITEA_ADMIN_PASSWORD" \
+                "$API/api/v1/repos/$GITEA_ADMIN_USERNAME/$GITEA_REPO_NAME/hooks" | grep -q "\"url\":\"$GITEA_WEBHOOK_URL\""; then
+                curl -fsS \
+                  -u "$GITEA_ADMIN_USERNAME:$GITEA_ADMIN_PASSWORD" \
+                  -H 'Content-Type: application/json' \
+                  -d "{\"type\":\"gitea\",\"active\":true,\"events\":[\"push\"],\"branch_filter\":\"main\",\"config\":{\"content_type\":\"json\",\"url\":\"$GITEA_WEBHOOK_URL\",\"secret\":\"$GITEA_WEBHOOK_SECRET\"}}" \
+                  "$API/api/v1/repos/$GITEA_ADMIN_USERNAME/$GITEA_REPO_NAME/hooks"
               fi
       volumes:
         - name: shared-storage

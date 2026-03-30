@@ -21,8 +21,14 @@ spec:
   tasks:
     - name: clone
       taskRef:
-        kind: ClusterTask
-        name: git-clone
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: namespace
+            value: openshift-pipelines
+          - name: name
+            value: git-clone
       params:
         - name: url
           value: $(params.git-url)
@@ -37,8 +43,14 @@ spec:
       runAfter:
         - clone
       taskRef:
-        kind: ClusterTask
-        name: buildah
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: namespace
+            value: openshift-pipelines
+          - name: name
+            value: buildah
       params:
         - name: IMAGE
           value: $(params.image)
@@ -49,4 +61,3 @@ spec:
       workspaces:
         - name: source
           workspace: source
-
