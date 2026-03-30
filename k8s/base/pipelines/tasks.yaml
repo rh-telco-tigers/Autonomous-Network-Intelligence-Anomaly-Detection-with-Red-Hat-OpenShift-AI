@@ -28,10 +28,10 @@ spec:
       workingDir: $(workspaces.output.path)
       computeResources:
         requests:
-          cpu: 5m
-          memory: 64Mi
+          cpu: 1m
+          memory: 32Mi
         limits:
-          memory: 128Mi
+          memory: 64Mi
       script: |
         #!/usr/bin/env sh
         set -eu
@@ -85,7 +85,7 @@ spec:
             - SETFCAP
       computeResources:
         requests:
-          cpu: 5m
+          cpu: 1m
           memory: 256Mi
         limits:
           memory: 512Mi
