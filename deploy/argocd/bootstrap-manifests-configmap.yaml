@@ -21,7 +21,7 @@ data:
         - group: '*'
           kind: '*'
       sourceRepos:
-        - https://github.com/pandeybk/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+        - http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
   openshift-gitops-tuning.yaml: |
     apiVersion: argoproj.io/v1beta1
     kind: ArgoCD
@@ -41,10 +41,18 @@ data:
         resources:
           limits:
             cpu: 100m
-            memory: 512Mi
+            memory: 1Gi
           requests:
             cpu: 5m
-            memory: 128Mi
+            memory: 256Mi
+      rbac:
+        defaultPolicy: role:readonly
+        policy: |
+          g, admin, role:admin
+          g, system:cluster-admins, role:admin
+          g, cluster-admins, role:admin
+          g, system:authenticated, role:readonly
+        scopes: '[groups]'
       redis:
         resources:
           limits:
@@ -91,7 +99,7 @@ data:
       project: ims-demo
       source:
         path: deploy/gitops/operators
-        repoURL: https://github.com/pandeybk/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+        repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
         targetRevision: main
       syncPolicy:
         automated:

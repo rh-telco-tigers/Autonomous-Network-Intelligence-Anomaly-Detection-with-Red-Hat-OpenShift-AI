@@ -10,7 +10,7 @@ spec:
   project: ims-demo
   source:
     path: deploy/gitops/operators
-    repoURL: https://github.com/pandeybk/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
     targetRevision: main
   syncPolicy:
     automated:
