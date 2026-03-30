@@ -21,4 +21,5 @@ Run the full customer demo sequence from traffic generation through RCA.
 
 - The anomaly model and RCA path are explicitly separated
 - every incident can be traced back to a feature window and model version
+- the GitOps source and operator catalog flow are hosted inside the cluster for demo portability
 - the deployment model is cluster-native rather than notebook-centric

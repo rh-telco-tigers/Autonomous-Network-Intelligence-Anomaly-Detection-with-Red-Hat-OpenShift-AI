@@ -4,6 +4,7 @@ This repository packages an OpenShift-native demo stack for IMS anomaly detectio
 
 - IMS lab services on OpenShift
 - SIPp-driven traffic generation and fault injection
+- in-cluster Gitea as the GitOps source of truth
 - operator installation managed by OpenShift GitOps and Argo CD
 - predictive and generative model serving on KServe
 - Milvus-backed RCA context retrieval
@@ -34,19 +35,42 @@ services/           demo services and UI source images
 
 1. Review [docs/README.md](./docs/README.md).
 2. Inspect the end-to-end architecture in [docs/architecture/engineering-spec.md](./docs/architecture/engineering-spec.md).
-3. Bootstrap Argo CD and the operator subscriptions:
+3. Deploy the in-cluster Gitea instance:
+
+```sh
+oc apply -k deploy/gitea
+```
+
+4. Push this repository into the cluster Gitea instance:
+
+```sh
+GITEA_HOST="$(oc get route gitea -n gitea -o jsonpath='{.spec.host}')"
+if git remote get-url cluster-gitea >/dev/null 2>&1; then
+  git remote set-url cluster-gitea "https://${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git"
+else
+  git remote add cluster-gitea "https://${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git"
+fi
+GIT_SSL_NO_VERIFY=true git push "https://gitadmin:GiteaAdmin123!@${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git" main:main
+```
+
+Demo credentials for Gitea:
+
+- user: `gitadmin`
+- password: `GiteaAdmin123!`
+
+5. Bootstrap Argo CD and the operator subscriptions:
 
 ```sh
 oc apply -k deploy/argocd
 ```
 
-4. Render the demo overlay:
+6. Render the demo overlay:
 
 ```sh
 make kustomize-demo
 ```
 
-5. Follow the lab sequence in `docs/labs`.
+7. Follow the lab sequence in `docs/labs`.
 
 ## Upstream reference inputs
 
@@ -65,4 +89,4 @@ Cluster-specific values still need to be supplied before a live deployment:
 - image registry destinations for locally built services
 - OpenIMSs environment values appropriate for the target lab network
 - route hostnames and TLS policy for the target cluster
-- the repository must be reachable by the in-cluster Argo CD instance at `https://github.com/pandeybk/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git`
+- the repository must be pushed into the in-cluster Gitea instance before Argo CD bootstrap

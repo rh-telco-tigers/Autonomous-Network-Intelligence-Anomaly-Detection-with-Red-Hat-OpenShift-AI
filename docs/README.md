@@ -6,9 +6,10 @@ This documentation set is organized for a customer-facing demo flow rather than 
 
 1. [Platform overview](./labs/01-platform-overview.md)
 2. [Cluster bootstrap](./labs/02-cluster-bootstrap.md)
-3. [IMS and SIPp lab](./labs/03-ims-and-sipp-lab.md)
-4. [OpenShift AI and model serving lab](./labs/04-rhoai-and-model-serving.md)
-5. [Demo runbook](./labs/05-demo-runbook.md)
+3. [Gitea GitOps source](./labs/02a-gitea-gitops-source.md)
+4. [IMS and SIPp lab](./labs/03-ims-and-sipp-lab.md)
+5. [OpenShift AI and model serving lab](./labs/04-rhoai-and-model-serving.md)
+6. [Demo runbook](./labs/05-demo-runbook.md)
 
 ## Reference material
 
@@ -19,6 +20,7 @@ This documentation set is organized for a customer-facing demo flow rather than 
 This repo is meant to support a guided platform demo:
 
 - infrastructure is expressed as OpenShift manifests
+- GitOps source control is hosted inside the cluster for demo portability
 - AI workflows are modeled explicitly, not hidden in notebooks
 - incidents, approvals, and notifications flow through a dedicated control-plane service
 - operator-facing flows are documented as labs and runbooks
