@@ -7,7 +7,7 @@ spec:
   destination:
     namespace: openshift-gitops
     server: https://kubernetes.default.svc
-  project: default
+  project: ims-demo
   source:
     path: deploy/gitops/operators
     repoURL: https://github.com/pandeybk/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git

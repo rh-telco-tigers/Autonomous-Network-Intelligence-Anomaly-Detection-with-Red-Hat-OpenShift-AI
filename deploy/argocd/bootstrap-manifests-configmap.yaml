@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-bootstrap-manifests
+  namespace: openshift-gitops
+data:
+  ims-demo-project.yaml: |
+    apiVersion: argoproj.io/v1alpha1
+    kind: AppProject
+    metadata:
+      name: ims-demo
+      namespace: openshift-gitops
+    spec:
+      clusterResourceWhitelist:
+        - group: '*'
+          kind: '*'
+      destinations:
+        - namespace: '*'
+          server: https://kubernetes.default.svc
+      namespaceResourceWhitelist:
+        - group: '*'
+          kind: '*'
+      sourceRepos:
+        - https://github.com/pandeybk/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+  openshift-gitops-tuning.yaml: |
+    apiVersion: argoproj.io/v1beta1
+    kind: ArgoCD
+    metadata:
+      name: openshift-gitops
+      namespace: openshift-gitops
+    spec:
+      applicationSet:
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 5m
+            memory: 32Mi
+      controller:
+        resources:
+          limits:
+            cpu: 100m
+            memory: 512Mi
+          requests:
+            cpu: 5m
+            memory: 128Mi
+      redis:
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 5m
+            memory: 32Mi
+      repo:
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 5m
+            memory: 32Mi
+      server:
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 5m
+            memory: 32Mi
+      sso:
+        dex:
+          resources:
+            limits:
+              cpu: 100m
+              memory: 64Mi
+            requests:
+              cpu: 5m
+              memory: 32Mi
+  operators-application.yaml: |
+    apiVersion: argoproj.io/v1alpha1
+    kind: Application
+    metadata:
+      name: ims-demo-operators
+      namespace: openshift-gitops
+    spec:
+      destination:
+        namespace: openshift-gitops
+        server: https://kubernetes.default.svc
+      project: ims-demo
+      source:
+        path: deploy/gitops/operators
+        repoURL: https://github.com/pandeybk/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+        targetRevision: main
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

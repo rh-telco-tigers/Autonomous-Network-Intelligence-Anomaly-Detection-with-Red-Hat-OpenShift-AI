@@ -17,10 +17,14 @@ rules:
     verbs:
       - get
       - list
+      - patch
+      - update
       - watch
   - apiGroups:
       - argoproj.io
     resources:
+      - argocds
+      - appprojects
       - applications
     verbs:
       - get

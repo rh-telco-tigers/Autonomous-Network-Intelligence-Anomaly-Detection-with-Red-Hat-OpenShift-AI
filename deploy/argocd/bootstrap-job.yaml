@@ -17,10 +17,21 @@ spec:
             - -lc
             - |
               set -euo pipefail
-              until oc get deployment/openshift-gitops-server -n openshift-gitops >/dev/null 2>&1; do
+              until oc get argocd openshift-gitops -n openshift-gitops >/dev/null 2>&1; do
                 sleep 10
               done
-              oc rollout status deployment/openshift-gitops-server -n openshift-gitops --timeout=10m
+              oc apply -f /manifests/openshift-gitops-tuning.yaml
+              for _ in $(seq 1 30); do
+                if oc get deployment cluster -n openshift-gitops >/dev/null 2>&1; then
+                  oc patch deployment cluster -n openshift-gitops --type=json -p='[{"op":"replace","path":"/spec/template/spec/containers/0/resources/requests/cpu","value":"5m"},{"op":"replace","path":"/spec/template/spec/containers/0/resources/requests/memory","value":"32Mi"},{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/cpu","value":"100m"},{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"64Mi"}]'
+                fi
+                if oc get deployment gitops-plugin -n openshift-gitops >/dev/null 2>&1; then
+                  oc patch deployment gitops-plugin -n openshift-gitops --type=json -p='[{"op":"replace","path":"/spec/template/spec/containers/0/resources/requests/cpu","value":"5m"},{"op":"replace","path":"/spec/template/spec/containers/0/resources/requests/memory","value":"32Mi"},{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/cpu","value":"100m"},{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"64Mi"}]'
+                  break
+                fi
+                sleep 5
+              done
+              oc apply -f /manifests/ims-demo-project.yaml
               oc apply -f /manifests/operators-application.yaml
           volumeMounts:
             - name: manifests
