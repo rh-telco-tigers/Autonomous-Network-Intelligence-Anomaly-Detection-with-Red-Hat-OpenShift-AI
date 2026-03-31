@@ -323,6 +323,7 @@
         services: [],
         integrations: {},
         automation_actions: [],
+        latest_scenario: null,
         traffic_preview: { rows: [], stats: { requests_per_second: 0, retry_ratio: 0, active_node: "pcscf-1" }, packet_sample: "" }
       };
     }
@@ -348,7 +349,16 @@
       return ensureSelectedIncident();
     }
 
+    function latestScenarioActivity() {
+      const latest = consoleState().latest_scenario;
+      return latest && typeof latest === "object" ? latest : null;
+    }
+
     function latestScenarioLabel() {
+      const latest = latestScenarioActivity();
+      if (latest && latest.scenario) {
+        return titleize(latest.scenario);
+      }
       if (state.lastRun && state.lastRun.scenario) {
         return titleize(state.lastRun.scenario);
       }
@@ -359,13 +369,20 @@
       if (state.loading) {
         return "Executing scenario through feature generation, scoring, and RCA.";
       }
+      const latest = latestScenarioActivity();
+      if (latest && latest.scenario) {
+        if (latest.is_anomaly) {
+          return `${titleize(latest.scenario)} recorded anomaly score ${formatScore(latest.anomaly_score)} and incident ${escapeHtml(String(latest.incident_id || "").slice(0, 12))}...`;
+        }
+        return `${titleize(latest.scenario)} completed without recording an incident.`;
+      }
       if (state.lastRun && state.lastRun.score) {
         if (state.lastRun.score.is_anomaly) {
           return `${titleize(state.lastRun.scenario)} recorded anomaly score ${formatScore(state.lastRun.score.anomaly_score)} and incident ${escapeHtml(String(state.lastRun.score.incident_id || "").slice(0, 12))}...`;
         }
         return `${titleize(state.lastRun.scenario)} completed without recording an incident.`;
       }
-      return "No scenario executed in this browser session.";
+      return "No scenario has been executed yet.";
     }
 
     function metricSeries(incidents, key) {
@@ -470,7 +487,8 @@
       }
 
       const features = featureWindow.features || featureWindow;
-      const scenarioName = featureWindow.scenario_name || featureWindow.anomaly_type || "normal";
+      const labels = featureWindow.labels && typeof featureWindow.labels === "object" ? featureWindow.labels : {};
+      const scenarioName = featureWindow.scenario_name || featureWindow.scenario || featureWindow.anomaly_type || labels.anomaly_type || "normal";
       const latency = toNumber(features.latency_p95 ?? features.latency_p95_ms, 80);
       const registerRate = toNumber(features.register_rate);
       const inviteRate = toNumber(features.invite_rate);
@@ -557,9 +575,6 @@
     }
 
     function currentTrafficPreview() {
-      if (state.lastRun && state.lastRun.feature_window) {
-        return buildDerivedTrafficPreview(state.lastRun.feature_window);
-      }
       const preview = consoleState().traffic_preview;
       if (preview && Array.isArray(preview.rows) && preview.rows.length) {
         return preview;
@@ -571,6 +586,9 @@
           feature_source: "incident-feature-snapshot",
           features: incident.feature_snapshot || {}
         });
+      }
+      if (state.lastRun && state.lastRun.feature_window) {
+        return buildDerivedTrafficPreview(state.lastRun.feature_window);
       }
       return buildDerivedTrafficPreview(null);
     }

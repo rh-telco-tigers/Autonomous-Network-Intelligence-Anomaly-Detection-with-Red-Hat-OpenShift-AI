@@ -523,7 +523,16 @@ def _traffic_preview(feature_window: Dict[str, object] | None) -> Dict[str, obje
     features = feature_window.get("features", feature_window)
     if not isinstance(features, dict):
         features = {}
-    scenario_name = str(feature_window.get("scenario_name") or feature_window.get("anomaly_type") or "normal")
+    labels = feature_window.get("labels")
+    if not isinstance(labels, dict):
+        labels = {}
+    scenario_name = str(
+        feature_window.get("scenario_name")
+        or feature_window.get("scenario")
+        or feature_window.get("anomaly_type")
+        or labels.get("anomaly_type")
+        or "normal"
+    )
     latency = _coerce_float(features.get("latency_p95") or features.get("latency_p95_ms"), 80.0)
     register_rate = _coerce_float(features.get("register_rate"))
     invite_rate = _coerce_float(features.get("invite_rate"))
@@ -612,6 +621,46 @@ def _traffic_preview(feature_window: Dict[str, object] | None) -> Dict[str, obje
     }
 
 
+def _scenario_execution_from_audit(event: Dict[str, object], project: str) -> Dict[str, object] | None:
+    if str(event.get("event_type", "")) != "scenario_executed":
+        return None
+
+    payload = event.get("payload") or {}
+    if not isinstance(payload, dict):
+        return None
+
+    event_project = str(payload.get("project") or project)
+    if event_project != project:
+        return None
+
+    features = payload.get("features")
+    preview = _traffic_preview(
+        {
+            "scenario_name": payload.get("scenario") or payload.get("anomaly_type") or "normal",
+            "feature_source": payload.get("feature_source") or "derived",
+            "features": features if isinstance(features, dict) else {},
+        }
+    )
+    if not isinstance(features, dict):
+        recorded_preview = payload.get("traffic_preview")
+        if isinstance(recorded_preview, dict) and isinstance(recorded_preview.get("rows"), list):
+            preview = recorded_preview
+
+    incident_id = str(event.get("incident_id") or payload.get("incident_id") or "").strip() or None
+    anomaly_type = str(payload.get("anomaly_type") or payload.get("scenario") or "normal")
+    return {
+        "project": event_project,
+        "scenario": str(payload.get("scenario") or anomaly_type),
+        "feature_source": str(payload.get("feature_source") or "unknown"),
+        "is_anomaly": bool(payload.get("is_anomaly")),
+        "anomaly_type": anomaly_type,
+        "anomaly_score": _coerce_float(payload.get("anomaly_score")),
+        "incident_id": incident_id,
+        "executed_at": str(event.get("created_at") or payload.get("executed_at") or ""),
+        "traffic_preview": preview,
+    }
+
+
 def _build_console_state(project: str) -> Dict[str, object]:
     incidents = list_incidents(project=project)
     audit_events = list_audit_events(limit=100)
@@ -620,20 +669,30 @@ def _build_console_state(project: str) -> Dict[str, object]:
     registry = load_registry()
     enriched_incidents = [_enrich_incident(incident, audit_events, incidents) for incident in incidents]
     latest_incident = enriched_incidents[0] if enriched_incidents else None
+    latest_scenario = None
+    for event in audit_events:
+        latest_scenario = _scenario_execution_from_audit(event, project)
+        if latest_scenario:
+            break
     open_incidents = [incident for incident in enriched_incidents if str(incident.get("status", "open")) == "open"]
     healthy_services = sum(1 for service in services if bool(service.get("ok")))
     active_scenario = (
-        str(latest_incident.get("anomaly_type")) if latest_incident else (registry.get("dataset_version") or "normal")
+        str(latest_scenario.get("scenario"))
+        if latest_scenario
+        else (str(latest_incident.get("anomaly_type")) if latest_incident else (registry.get("dataset_version") or "normal"))
     )
-    traffic_preview = _traffic_preview(
-        {
-            "scenario_name": latest_incident.get("anomaly_type") if latest_incident else "normal",
-            "feature_source": "incident-feature-snapshot",
-            "features": latest_incident.get("feature_snapshot", {}) if latest_incident else {},
-        }
-        if latest_incident
-        else None
-    )
+    if latest_scenario and isinstance(latest_scenario.get("traffic_preview"), dict):
+        traffic_preview = latest_scenario["traffic_preview"]
+    else:
+        traffic_preview = _traffic_preview(
+            {
+                "scenario_name": latest_incident.get("anomaly_type") if latest_incident else "normal",
+                "feature_source": "incident-feature-snapshot",
+                "features": latest_incident.get("feature_snapshot", {}) if latest_incident else {},
+            }
+            if latest_incident
+            else None
+        )
     return {
         "generated_at": _now_iso(),
         "cluster": {
@@ -659,6 +718,7 @@ def _build_console_state(project: str) -> Dict[str, object]:
         "services": services,
         "integrations": integration_status(),
         "automation_actions": _list_automation_actions(),
+        "latest_scenario": latest_scenario,
         "traffic_preview": traffic_preview,
     }
 
@@ -886,17 +946,25 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
     )
 
     incident_id = str(score.get("incident_id") or "") or None
+    traffic_preview = _traffic_preview(feature_window)
     record_audit(
         "scenario_executed",
         auth.subject if auth else "console-ui",
         {
+            "project": payload.project,
             "scenario": payload.scenario,
             "feature_source": feature_window.get("feature_source"),
             "feature_window_id": feature_window.get("window_id"),
-            "window_start": feature_window.get("window_start"),
-            "window_end": feature_window.get("window_end"),
+            "window_start": feature_window.get("window_start") or feature_window.get("start_time"),
+            "window_end": feature_window.get("window_end") or feature_window.get("end_time"),
             "scoring_mode": score.get("scoring_mode"),
             "is_anomaly": score.get("is_anomaly"),
+            "anomaly_type": score.get("anomaly_type"),
+            "anomaly_score": score.get("anomaly_score"),
+            "incident_id": incident_id,
+            "features": features,
+            "traffic_preview": traffic_preview,
+            "executed_at": _now_iso(),
         },
         incident_id=incident_id,
     )
