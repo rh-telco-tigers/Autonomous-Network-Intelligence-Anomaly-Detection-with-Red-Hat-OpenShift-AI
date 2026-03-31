@@ -54,13 +54,15 @@ metadata:
   name: control-plane
   namespace: ims-demo-lab
 spec:
+  strategy:
+    type: Recreate
   template:
     spec:
       containers:
         - name: control-plane
           resources:
+            $patch: replace
             requests:
-              cpu: 5m
               memory: 96Mi
             limits:
               memory: 192Mi
@@ -71,13 +73,15 @@ metadata:
   name: feature-gateway
   namespace: ims-demo-lab
 spec:
+  strategy:
+    type: Recreate
   template:
     spec:
       containers:
         - name: feature-gateway
           resources:
+            $patch: replace
             requests:
-              cpu: 2m
               memory: 64Mi
             limits:
               memory: 128Mi
@@ -88,13 +92,15 @@ metadata:
   name: anomaly-service
   namespace: ims-demo-lab
 spec:
+  strategy:
+    type: Recreate
   template:
     spec:
       containers:
         - name: anomaly-service
           resources:
+            $patch: replace
             requests:
-              cpu: 2m
               memory: 64Mi
             limits:
               memory: 128Mi
@@ -105,6 +111,8 @@ metadata:
   name: rca-service
   namespace: ims-demo-lab
 spec:
+  strategy:
+    type: Recreate
   template:
     spec:
       containers:
@@ -124,8 +132,8 @@ spec:
             - name: RUNBOOK_DIR
               value: /app/ai/rag/runbooks
           resources:
+            $patch: replace
             requests:
-              cpu: 1m
               memory: 64Mi
             limits:
               memory: 128Mi
@@ -136,13 +144,15 @@ metadata:
   name: demo-ui
   namespace: ims-demo-lab
 spec:
+  strategy:
+    type: Recreate
   template:
     spec:
       containers:
         - name: demo-ui
           resources:
+            $patch: replace
             requests:
-              cpu: 1m
               memory: 24Mi
             limits:
               memory: 64Mi
@@ -153,13 +163,15 @@ metadata:
   name: ims-pcscf
   namespace: ims-demo-lab
 spec:
+  strategy:
+    type: Recreate
   template:
     spec:
       containers:
         - name: ims-node
           resources:
+            $patch: replace
             requests:
-              cpu: 1m
               memory: 64Mi
             limits:
               memory: 128Mi
@@ -170,13 +182,15 @@ metadata:
   name: ims-scscf
   namespace: ims-demo-lab
 spec:
+  strategy:
+    type: Recreate
   template:
     spec:
       containers:
         - name: ims-node
           resources:
+            $patch: replace
             requests:
-              cpu: 1m
               memory: 64Mi
             limits:
               memory: 128Mi
@@ -187,13 +201,15 @@ metadata:
   name: ims-hss
   namespace: ims-demo-lab
 spec:
+  strategy:
+    type: Recreate
   template:
     spec:
       containers:
         - name: ims-node
           resources:
+            $patch: replace
             requests:
-              cpu: 1m
               memory: 64Mi
             limits:
               memory: 128Mi
@@ -204,13 +220,15 @@ metadata:
   name: model-storage-minio
   namespace: ims-demo-lab
 spec:
+  strategy:
+    type: Recreate
   template:
     spec:
       containers:
         - name: minio
           resources:
+            $patch: replace
             requests:
-              cpu: 2m
               memory: 64Mi
             limits:
               memory: 128Mi
@@ -221,13 +239,15 @@ metadata:
   name: milvus-etcd
   namespace: ims-demo-lab
 spec:
+  strategy:
+    type: Recreate
   template:
     spec:
       containers:
         - name: etcd
           resources:
+            $patch: replace
             requests:
-              cpu: 1m
               memory: 64Mi
             limits:
               memory: 128Mi
@@ -238,13 +258,15 @@ metadata:
   name: milvus-minio
   namespace: ims-demo-lab
 spec:
+  strategy:
+    type: Recreate
   template:
     spec:
       containers:
         - name: minio
           resources:
+            $patch: replace
             requests:
-              cpu: 1m
               memory: 48Mi
             limits:
               memory: 96Mi
@@ -255,13 +277,15 @@ metadata:
   name: milvus
   namespace: ims-demo-lab
 spec:
+  strategy:
+    type: Recreate
   template:
     spec:
       containers:
         - name: milvus
           resources:
+            $patch: replace
             requests:
-              cpu: 1m
               memory: 256Mi
             limits:
               memory: 512Mi
@@ -272,13 +296,15 @@ metadata:
   name: milvus-attu
   namespace: ims-demo-lab
 spec:
+  strategy:
+    type: Recreate
   template:
     spec:
       containers:
         - name: attu
           resources:
+            $patch: replace
             requests:
-              cpu: 1m
               memory: 64Mi
             limits:
               memory: 128Mi
@@ -292,8 +318,8 @@ spec:
   predictor:
     model:
       resources:
+        $patch: replace
         requests:
-          cpu: 1m
           memory: 128Mi
         limits:
           memory: 256Mi

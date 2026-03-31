@@ -29,9 +29,6 @@ spec:
         - --http_port=8080
       ports:
         - containerPort: 8080
-      env:
-        - name: STORAGE_URI
-          value: "{{.StorageURI}}"
 ---
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService

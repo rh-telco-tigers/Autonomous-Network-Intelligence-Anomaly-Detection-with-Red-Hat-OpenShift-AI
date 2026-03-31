@@ -96,8 +96,45 @@ SIP_PORT = int(os.getenv("SIP_PORT", "5060"))
 STATE = TelemetryState()
 
 
-def sip_response() -> bytes:
-    return b"SIP/2.0 200 OK\r\nVia: SIP/2.0/UDP ims-node\r\nContent-Length: 0\r\n\r\n"
+def parse_sip_request(message: str) -> tuple[str, Dict[str, str]]:
+    lines = [line.strip() for line in message.splitlines() if line.strip()]
+    request_line = lines[0] if lines else ""
+    headers: Dict[str, str] = {}
+    for line in lines[1:]:
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        headers[key.strip().lower()] = value.strip()
+    return request_line, headers
+
+
+def sip_response(message: str) -> bytes:
+    request_line, headers = parse_sip_request(message)
+    method = request_line.split(" ", 1)[0].upper() if request_line else "REGISTER"
+    status_code = "488 Not Acceptable Here" if "MALFORMED" in message.upper() else "200 OK"
+    via = headers.get("via", f"SIP/2.0/UDP {NODE_ID}:{SIP_PORT}")
+    from_header = headers.get("from", f"<sip:{NODE_ID}@{NODE_ID}>")
+    to_header = headers.get("to", f"<sip:{NODE_ID}@{NODE_ID}>")
+    if "tag=" not in to_header.lower():
+        to_header = f"{to_header};tag=ims-demo"
+    call_id = headers.get("call-id", f"{NODE_ID}-call")
+    cseq = headers.get("cseq", f"1 {method}")
+    contact = headers.get("contact", f"<sip:{NODE_ID}@{NODE_ID}:{SIP_PORT}>")
+
+    response = [
+        f"SIP/2.0 {status_code}",
+        f"Via: {via}",
+        f"From: {from_header}",
+        f"To: {to_header}",
+        f"Call-ID: {call_id}",
+        f"CSeq: {cseq}",
+        f"Contact: {contact}",
+        "Server: ims-demo-node",
+        "Content-Length: 0",
+        "",
+        "",
+    ]
+    return "\r\n".join(response).encode("utf-8")
 
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -113,7 +150,7 @@ class SIPUDPHandler(socketserver.BaseRequestHandler):
         payload, sock = self.request
         message = payload.decode("utf-8", errors="ignore")
         STATE.record(message, "udp")
-        sock.sendto(sip_response(), self.client_address)
+        sock.sendto(sip_response(message), self.client_address)
 
 
 class SIPTCPHandler(socketserver.BaseRequestHandler):
@@ -121,7 +158,7 @@ class SIPTCPHandler(socketserver.BaseRequestHandler):
         payload = self.request.recv(8192)
         message = payload.decode("utf-8", errors="ignore")
         STATE.record(message, "tcp")
-        self.request.sendall(sip_response())
+        self.request.sendall(sip_response(message))
 
 
 def start_socket_server(server: socketserver.BaseServer) -> None:

@@ -15,6 +15,7 @@ spec:
           containers:
             - name: sipp
               image: sipp-runner:latest
+              workingDir: /tmp
               command:
                 - /bin/sh
                 - -c
@@ -24,7 +25,6 @@ spec:
                   -sf /scenarios/register-normal.xml
                   -m 50
                   -r 2
-                  -trace_err
               volumeMounts:
                 - name: scenarios
                   mountPath: /scenarios
@@ -51,6 +51,7 @@ spec:
           containers:
             - name: sipp
               image: sipp-runner:latest
+              workingDir: /tmp
               command:
                 - /bin/sh
                 - -c
@@ -60,7 +61,6 @@ spec:
                   -sf /scenarios/register-storm.xml
                   -m 400
                   -r 20
-                  -trace_err
               volumeMounts:
                 - name: scenarios
                   mountPath: /scenarios
@@ -87,6 +87,7 @@ spec:
           containers:
             - name: sipp
               image: sipp-runner:latest
+              workingDir: /tmp
               command:
                 - /bin/sh
                 - -c
@@ -96,7 +97,6 @@ spec:
                   -sf /scenarios/invite-malformed.xml
                   -m 80
                   -r 8
-                  -trace_err
               volumeMounts:
                 - name: scenarios
                   mountPath: /scenarios
