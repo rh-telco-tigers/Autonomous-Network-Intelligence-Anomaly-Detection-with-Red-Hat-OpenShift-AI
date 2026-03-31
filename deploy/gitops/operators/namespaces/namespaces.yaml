@@ -17,3 +17,10 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: openshift-serverless
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    openshift.io/cluster-monitoring: "true"
+  name: aap

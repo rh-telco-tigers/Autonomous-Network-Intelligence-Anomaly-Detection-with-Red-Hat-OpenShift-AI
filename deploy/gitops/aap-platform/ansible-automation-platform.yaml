@@ -1,0 +1,28 @@
+# Requires: Ansible Automation Platform Operator (OLM Subscription) installed in this namespace.
+# Hub uses S3-compatible storage (MinIO); see hub-s3-minio-secret.yaml.
+apiVersion: aap.ansible.com/v1alpha1
+kind: AnsibleAutomationPlatform
+metadata:
+  name: aap
+  namespace: aap
+spec:
+  no_log: false
+  database:
+    resource_requirements:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+    storage_requirements:
+      requests:
+        storage: 100Gi
+  controller:
+    disabled: false
+  eda:
+    disabled: false
+  hub:
+    disabled: false
+    storage_type: S3
+    object_storage_s3_secret: hub-s3-minio-secret
+  mcp:
+    disabled: false
+    allow_write_operations: false

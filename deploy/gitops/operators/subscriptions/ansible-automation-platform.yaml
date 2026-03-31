@@ -1,0 +1,14 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: ansible-automation-platform
+  namespace: aap
+spec:
+  # Pick a channel that exists on your cluster for this package, e.g.:
+  #   oc get packagemanifest ansible-automation-platform-operator -n openshift-marketplace \
+  #     -o jsonpath='{range .status.channels[*]}{.name}{"\n"}{end}'
+  channel: stable-2.6
+  installPlanApproval: Automatic
+  name: ansible-automation-platform-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace

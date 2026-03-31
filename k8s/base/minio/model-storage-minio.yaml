@@ -133,7 +133,11 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: mc
-          image: quay.io/minio/mc:RELEASE.2024-08-13T21-33-58Z
+          image: quay.io/minio/mc:latest
+          env:
+            # OpenShift runs with an arbitrary UID; default HOME is / and mc cannot write /.mc
+            - name: HOME
+              value: /tmp
           command:
             - /bin/sh
             - -c
@@ -143,3 +147,4 @@ spec:
                 sleep 5
               done
               /usr/bin/mc mb --ignore-existing demo/ims-models
+              /usr/bin/mc mb --ignore-existing demo/aap-hub

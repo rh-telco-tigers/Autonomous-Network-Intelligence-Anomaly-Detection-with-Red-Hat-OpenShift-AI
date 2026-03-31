@@ -6,6 +6,7 @@ resources:
   - operatorgroups/openshift-nfd.yaml
   - operatorgroups/nvidia-gpu-operator.yaml
   - operatorgroups/openshift-serverless.yaml
+  - operatorgroups/ansible-automation-platform.yaml
   - subscriptions/rhoai.yaml
   - subscriptions/nfd.yaml
   - subscriptions/gpu-operator.yaml
@@ -13,3 +14,4 @@ resources:
   - subscriptions/pipelines.yaml
   - subscriptions/serverless.yaml
   - subscriptions/authorino.yaml
+  - subscriptions/ansible-automation-platform.yaml
