@@ -27,8 +27,15 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 export DB_URI="mongodb://${MONGO_IP}/open5gs"
+export NODE_ENV=production
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=768}"
 
-cd webui && npm run dev
+WORKDIR="${WEBUI_WORKDIR:-/tmp/openimss-webui}"
+rm -rf "${WORKDIR}"
+mkdir -p "${WORKDIR}"
+cp -a webui "${WORKDIR}/"
+
+cd "${WORKDIR}/webui" && npm run build && npm run start
 
 # Sync docker time
 #ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone

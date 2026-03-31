@@ -20,9 +20,9 @@
 
 log_level=3
 xlog_level=3
-log_stderror=yes
-log_stdout=yes
-log_facility=LOG_LOCAL0
+stderror_enabled=yes
+syslog_enabled=no
+syslog_facility=LOG_LOCAL0
 
 udp_workers=4
 
@@ -114,15 +114,9 @@ modparam("acc", "report_cancels", 0)
 modparam("acc", "detect_direction", 0)
 
 #### proto_udp module
-loadmodule "dispatcher.so"
-
 loadmodule "proto_udp.so"
 loadmodule "proto_tcp.so"
 loadmodule "dialog.so"
-
-#### dbtext module
-loadmodule "/lib64/opensips/modules/db_text.so"
-modparam("dispatcher", "db_url", "text:///etc/opensips/db")
 
 #### aaa_diameter module
 loadmodule "aaa_diameter.so"

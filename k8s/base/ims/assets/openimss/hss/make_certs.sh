@@ -7,23 +7,25 @@ then
     exit;
 fi
 
-rm -rf demoCA
-mkdir demoCA
-echo 01 > demoCA/serial
-touch demoCA/index.txt.attr
-touch demoCA/index.txt
+TARGET_DIR="$(cd "$1" && pwd)"
+
+WORKDIR="${TMPDIR:-/tmp}/fd-certs"
+rm -rf "${WORKDIR}"
+mkdir -p "${WORKDIR}/demoCA"
+echo 01 > "${WORKDIR}/demoCA/serial"
+touch "${WORKDIR}/demoCA/index.txt.attr"
+touch "${WORKDIR}/demoCA/index.txt"
+cd "${WORKDIR}" || exit 1
 
 # Generate .rnd if it does not exist
 openssl rand -out /root/.rnd -hex 256
 
 # CA self certificate
-openssl req  -new -batch -x509 -days 3650 -nodes -newkey rsa:1024 -out $1/cacert.pem -keyout cakey.pem -subj /CN=ca.EPC_DOMAIN/C=KO/ST=Seoul/L=Nowon/O=Open5GS/OU=Tests
+openssl req -new -batch -x509 -days 3650 -nodes -newkey rsa:1024 -out "${TARGET_DIR}/cacert.pem" -keyout "${WORKDIR}/cakey.pem" -subj /CN=ca.DIAMETER_REALM/C=KO/ST=Seoul/L=Nowon/O=Open5GS/OU=Tests
 
 #hss
-openssl genrsa -out $1/hss.key.pem 1024
-openssl req -new -batch -out hss.csr.pem -key $1/hss.key.pem -subj /CN=hss.EPC_DOMAIN/C=KO/ST=Seoul/L=Nowon/O=Open5GS/OU=Tests
-openssl ca -cert $1/cacert.pem -days 3650 -keyfile cakey.pem -in hss.csr.pem -out $1/hss.cert.pem -outdir . -batch
+openssl genrsa -out "${TARGET_DIR}/hss.key.pem" 1024
+openssl req -new -batch -out "${WORKDIR}/hss.csr.pem" -key "${TARGET_DIR}/hss.key.pem" -subj /CN=HSS_DIAMETER_IDENTITY/C=KO/ST=Seoul/L=Nowon/O=Open5GS/OU=Tests
+openssl ca -cert "${TARGET_DIR}/cacert.pem" -days 3650 -keyfile "${WORKDIR}/cakey.pem" -in "${WORKDIR}/hss.csr.pem" -out "${TARGET_DIR}/hss.cert.pem" -outdir "${WORKDIR}" -batch
 
-rm -f 01.pem 02.pem 03.pem 04.pem
-rm -f cakey.pem
-rm -f hss.csr.pem
+rm -rf "${WORKDIR}"

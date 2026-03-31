@@ -20,9 +20,9 @@
 
 log_level=3
 xlog_level=3
-log_stderror=yes
-log_stdout=yes
-log_facility=LOG_LOCAL0
+stderror_enabled=yes
+syslog_enabled=no
+syslog_facility=LOG_LOCAL0
 
 udp_workers=4
 

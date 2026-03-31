@@ -130,25 +130,34 @@ spec:
               value: webui
             - name: MONGO_IP
               value: mongo.ims-demo-lab.svc.cluster.local
+            - name: WEBUI_WORKDIR
+              value: /tmp/openimss-webui
           ports:
-            - containerPort: 3000
+            - containerPort: 9999
               name: http
           volumeMounts:
             - name: webui-config
               mountPath: /mnt/webui/webui_init.sh
               subPath: webui_init.sh
+          startupProbe:
+            tcpSocket:
+              port: http
+            failureThreshold: 30
+            periodSeconds: 10
           readinessProbe:
             tcpSocket:
               port: http
+            initialDelaySeconds: 5
           livenessProbe:
             tcpSocket:
               port: http
+            initialDelaySeconds: 30
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
-            limits:
               memory: 512Mi
+            limits:
+              memory: 1Gi
       volumes:
         - name: webui-config
           configMap:
@@ -165,7 +174,7 @@ spec:
     app: openimss-webui
   ports:
     - name: http
-      port: 3000
+      port: 9999
       targetPort: http
 ---
 apiVersion: route.openshift.io/v1
@@ -209,11 +218,15 @@ spec:
             - name: HSS_IP
               value: ims-hss.ims-demo-lab.svc.cluster.local
             - name: MME_IP
-              value: mme-placeholder
+              value: 127.0.0.1
             - name: MCC
               value: "001"
             - name: MNC
               value: "01"
+            - name: DIAMETER_REALM
+              value: ims-demo-lab.svc.cluster.local
+            - name: HSS_DIAMETER_IDENTITY
+              value: ims-hss.ims-demo-lab.svc.cluster.local
           ports:
             - containerPort: 3868
               name: diameter
@@ -234,6 +247,12 @@ spec:
             - name: hss-config
               mountPath: /mnt/hss/hss_init.sh
               subPath: hss_init.sh
+            - name: hss-open5gs-config
+              mountPath: /open5gs/install/etc/open5gs
+            - name: hss-freediameter-config
+              mountPath: /open5gs/install/etc/freeDiameter
+            - name: hss-log-dir
+              mountPath: /open5gs/install/var/log/open5gs
           readinessProbe:
             tcpSocket:
               port: diameter
@@ -251,6 +270,12 @@ spec:
           configMap:
             name: openimss-hss-config
             defaultMode: 493
+        - name: hss-open5gs-config
+          emptyDir: {}
+        - name: hss-freediameter-config
+          emptyDir: {}
+        - name: hss-log-dir
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -285,6 +310,18 @@ spec:
       labels:
         app: ims-icscf
     spec:
+      initContainers:
+        - name: init-opensips-config
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
+          command:
+            - /bin/sh
+            - -c
+            - mkdir -p /work/db && cp -Lr /mnt/opensips-config/* /work/
+          volumeMounts:
+            - name: icscf-config-src
+              mountPath: /mnt/opensips-config
+            - name: icscf-config-workdir
+              mountPath: /work
       containers:
         - name: opensips
           image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
@@ -304,8 +341,10 @@ spec:
               name: diameter
               protocol: TCP
           volumeMounts:
-            - name: icscf-config
+            - name: icscf-config-workdir
               mountPath: /etc/opensips
+            - name: icscf-run-dir
+              mountPath: /run/opensips
           readinessProbe:
             tcpSocket:
               port: sip-tcp
@@ -319,10 +358,14 @@ spec:
             limits:
               memory: 512Mi
       volumes:
-        - name: icscf-config
+        - name: icscf-config-src
           configMap:
             name: openimss-icscf-config
             defaultMode: 420
+        - name: icscf-config-workdir
+          emptyDir: {}
+        - name: icscf-run-dir
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -361,6 +404,18 @@ spec:
       labels:
         app: ims-scscf
     spec:
+      initContainers:
+        - name: init-opensips-config
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
+          command:
+            - /bin/sh
+            - -c
+            - mkdir -p /work/db && cp -Lr /mnt/opensips-config/* /work/
+          volumeMounts:
+            - name: scscf-config-src
+              mountPath: /mnt/opensips-config
+            - name: scscf-config-workdir
+              mountPath: /work
       containers:
         - name: opensips
           image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
@@ -380,8 +435,10 @@ spec:
               name: diameter
               protocol: TCP
           volumeMounts:
-            - name: scscf-config
+            - name: scscf-config-workdir
               mountPath: /etc/opensips
+            - name: scscf-run-dir
+              mountPath: /run/opensips
           readinessProbe:
             tcpSocket:
               port: sip-tcp
@@ -395,10 +452,14 @@ spec:
             limits:
               memory: 512Mi
       volumes:
-        - name: scscf-config
+        - name: scscf-config-src
           configMap:
             name: openimss-scscf-config
             defaultMode: 420
+        - name: scscf-config-workdir
+          emptyDir: {}
+        - name: scscf-run-dir
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -437,6 +498,18 @@ spec:
       labels:
         app: ims-pcscf
     spec:
+      initContainers:
+        - name: init-opensips-config
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
+          command:
+            - /bin/sh
+            - -c
+            - mkdir -p /work/db && cp -Lr /mnt/opensips-config/* /work/
+          volumeMounts:
+            - name: pcscf-config-src
+              mountPath: /mnt/opensips-config
+            - name: pcscf-config-workdir
+              mountPath: /work
       containers:
         - name: opensips
           image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
@@ -456,11 +529,10 @@ spec:
               name: diameter
               protocol: TCP
           volumeMounts:
-            - name: pcscf-config
+            - name: pcscf-config-workdir
               mountPath: /etc/opensips
-            - name: pcscf-dispatcher
-              mountPath: /etc/opensips/db/dispatcher
-              subPath: dispatcher
+            - name: pcscf-run-dir
+              mountPath: /run/opensips
           readinessProbe:
             tcpSocket:
               port: sip-tcp
@@ -474,26 +546,14 @@ spec:
             limits:
               memory: 512Mi
       volumes:
-        - name: pcscf-config
+        - name: pcscf-config-src
           configMap:
             name: openimss-pcscf-config
             defaultMode: 420
-            items:
-              - key: opensips.m4.template
-                path: opensips.m4.template
-              - key: opensips_proxy.m4
-                path: opensips_proxy.m4
-              - key: freeDiameter.conf
-                path: freeDiameter.conf
-              - key: pcscf.dictionary
-                path: pcscf.dictionary
-        - name: pcscf-dispatcher
-          configMap:
-            name: openimss-pcscf-config
-            defaultMode: 420
-            items:
-              - key: dispatcher
-                path: dispatcher
+        - name: pcscf-config-workdir
+          emptyDir: {}
+        - name: pcscf-run-dir
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

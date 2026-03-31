@@ -16,15 +16,6 @@ spec:
   lookupPolicy:
     local: false
 ---
-apiVersion: image.openshift.io/v1
-kind: ImageStream
-metadata:
-  name: sipp
-  namespace: ims-demo-lab
-spec:
-  lookupPolicy:
-    local: false
----
 apiVersion: build.openshift.io/v1
 kind: BuildConfig
 metadata:
@@ -61,28 +52,6 @@ spec:
     git:
       uri: https://github.com/VoicenterTeam/openimss.git
     contextDir: ims_base
-    type: Git
-  strategy:
-    dockerStrategy:
-      dockerfilePath: Dockerfile
-    type: Docker
-  triggers:
-    - type: ConfigChange
----
-apiVersion: build.openshift.io/v1
-kind: BuildConfig
-metadata:
-  name: sipp
-  namespace: ims-demo-lab
-spec:
-  output:
-    to:
-      kind: ImageStreamTag
-      name: sipp:latest
-  source:
-    git:
-      uri: https://github.com/SIPp/sipp.git
-    contextDir: docker
     type: Git
   strategy:
     dockerStrategy:

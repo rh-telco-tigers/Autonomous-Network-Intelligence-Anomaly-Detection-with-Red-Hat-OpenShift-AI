@@ -17,6 +17,25 @@
     ]]>
   </send>
 
-  <pause milliseconds="100" />
-  <recv response="200" optional="true" />
+  <recv response="401" auth="true" />
+
+  <send retrans="250">
+    <![CDATA[
+
+      REGISTER sip:[service] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: <sip:storm-[call_number]@[local_ip]>;tag=[pid]-[call_number]
+      To: <sip:storm-[call_number]@[local_ip]>
+      Call-ID: [call_id]
+      CSeq: 2 REGISTER
+      Contact: <sip:storm-[call_number]@[local_ip]:[local_port]>
+      [authentication username=storm-user password=storm-password]
+      Max-Forwards: 70
+      Expires: 30
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <recv response="200" />
 </scenario>
