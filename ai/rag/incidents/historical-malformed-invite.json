@@ -1,0 +1,15 @@
+{
+  "incident_id": "hist-ims-003",
+  "title": "Historical malformed INVITE rejection wave",
+  "symptoms": [
+    "error_4xx_ratio spike",
+    "invite_rate burst",
+    "parser rejection messages"
+  ],
+  "root_cause": "Malformed INVITE payload generator pushed invalid headers into the S-CSCF validation path.",
+  "resolution": "Disabled the malformed traffic profile and tightened parser-side logging for signature correlation.",
+  "components": [
+    "S-CSCF",
+    "SIPp"
+  ]
+}

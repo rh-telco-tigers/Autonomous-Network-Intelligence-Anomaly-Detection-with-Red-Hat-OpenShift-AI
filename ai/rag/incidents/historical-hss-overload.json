@@ -1,0 +1,15 @@
+{
+  "incident_id": "hist-ims-002",
+  "title": "Historical HSS latency and timeout incident",
+  "symptoms": [
+    "latency_p95 spike",
+    "error_5xx_ratio increase",
+    "downstream registration delay"
+  ],
+  "root_cause": "HSS dependency slowdown caused by database connection pool exhaustion.",
+  "resolution": "Expanded the connection pool, restarted the impacted HSS instance, and redistributed registration traffic.",
+  "components": [
+    "HSS",
+    "S-CSCF"
+  ]
+}

@@ -329,10 +329,12 @@ spec:
               value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
             - name: MILVUS_URI
               value: http://milvus.ims-demo-lab.svc.cluster.local:19530
+            - name: MILVUS_COLLECTIONS
+              value: ims_runbooks,ims_incidents,ims_topology,ims_signal_patterns
             - name: LLM_ENDPOINT
               value: http://ims-generative-proxy.ims-demo-lab.svc.cluster.local:8080
-            - name: RUNBOOK_DIR
-              value: /app/ai/rag/runbooks
+            - name: RAG_ROOT_DIR
+              value: /app/ai/rag
           readinessProbe:
             httpGet:
               path: /healthz

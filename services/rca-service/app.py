@@ -64,6 +64,8 @@ def summarize_documents(documents: List[Dict[str, object]]) -> List[Dict[str, ob
             {
                 "title": str(doc.get("title", "")),
                 "reference": str(doc.get("reference", "")),
+                "doc_type": str(doc.get("doc_type", "")),
+                "collection": str(doc.get("collection", "")),
                 "score": float(doc.get("score", 0.0)),
                 "excerpt": str(doc.get("content", ""))[:220],
             }

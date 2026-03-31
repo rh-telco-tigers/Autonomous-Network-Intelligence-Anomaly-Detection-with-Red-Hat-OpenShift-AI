@@ -3,6 +3,7 @@ import json
 import os
 import random
 import shutil
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean, pstdev
@@ -35,6 +36,9 @@ PROMOTION_GATE = {
     "max_latency_p95_ms": 50,
     "min_stability_score": 0.85,
 }
+DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000"
+DEFAULT_DATASET_STORE_BUCKET = "ims-models"
+DEFAULT_DATASET_STORE_PREFIX = "pipelines/ims-demo-lab/datasets"
 
 
 def _now() -> str:
@@ -48,7 +52,169 @@ def _json_dump(path: Path, payload: Dict[str, Any] | List[Dict[str, Any]]) -> Pa
 
 
 def _json_load(path: str | Path) -> Any:
-    return json.loads(Path(path).read_text())
+    if isinstance(path, Path):
+        return json.loads(path.read_text())
+    raw = str(path)
+    stripped = raw.strip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        return json.loads(stripped)
+    if raw.startswith("s3://"):
+        return _read_json_from_s3(raw)
+    return json.loads(Path(raw).read_text())
+
+
+def _data_store_mode() -> str:
+    explicit_mode = os.getenv("DATASET_STORE_MODE", "").strip().lower()
+    if explicit_mode:
+        return explicit_mode
+    return "s3" if os.getenv("KFP_POD_NAME") else "filesystem"
+
+
+def _dataset_store_endpoint() -> str:
+    return os.getenv("DATASET_STORE_ENDPOINT", os.getenv("MINIO_ENDPOINT", DEFAULT_DATASET_STORE_ENDPOINT))
+
+
+def _dataset_store_bucket() -> str:
+    return os.getenv("DATASET_STORE_BUCKET", os.getenv("MINIO_BUCKET", DEFAULT_DATASET_STORE_BUCKET))
+
+
+def _dataset_store_prefix() -> str:
+    return os.getenv("DATASET_STORE_PREFIX", DEFAULT_DATASET_STORE_PREFIX).strip("/")
+
+
+def _dataset_store_access_key() -> str:
+    return os.getenv("DATASET_STORE_ACCESS_KEY", os.getenv("MINIO_ACCESS_KEY", "minioadmin"))
+
+
+def _dataset_store_secret_key() -> str:
+    return os.getenv("DATASET_STORE_SECRET_KEY", os.getenv("MINIO_SECRET_KEY", "minioadmin"))
+
+
+def _dataset_s3_client():
+    return boto3.client(
+        "s3",
+        endpoint_url=_dataset_store_endpoint(),
+        aws_access_key_id=_dataset_store_access_key(),
+        aws_secret_access_key=_dataset_store_secret_key(),
+        region_name="us-east-1",
+        config=Config(s3={"addressing_style": "path"}),
+    )
+
+
+def _ensure_dataset_bucket() -> None:
+    client = _dataset_s3_client()
+    bucket = _dataset_store_bucket()
+    try:
+        client.head_bucket(Bucket=bucket)
+    except Exception:
+        client.create_bucket(Bucket=bucket)
+
+
+def _dataset_object_key(relative_path: str) -> str:
+    normalized_relative = relative_path.lstrip("/")
+    prefix = _dataset_store_prefix()
+    return f"{prefix}/{normalized_relative}" if prefix else normalized_relative
+
+
+def _s3_uri(bucket: str, key: str, is_directory: bool = False) -> str:
+    normalized_key = key.rstrip("/")
+    if is_directory:
+        normalized_key = f"{normalized_key}/"
+    return f"s3://{bucket}/{normalized_key}"
+
+
+def _parse_s3_uri(uri: str) -> Tuple[str, str]:
+    stripped = uri.removeprefix("s3://")
+    bucket, _, key = stripped.partition("/")
+    return bucket, key
+
+
+def _write_json_reference(payload: Dict[str, Any] | List[Dict[str, Any]], relative_path: str, local_fallback: Path) -> str:
+    if _data_store_mode() != "s3":
+        return str(_json_dump(local_fallback, payload))
+
+    _ensure_dataset_bucket()
+    bucket = _dataset_store_bucket()
+    key = _dataset_object_key(relative_path)
+    _dataset_s3_client().put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=json.dumps(payload, indent=2).encode("utf-8"),
+        ContentType="application/json",
+    )
+    return _s3_uri(bucket, key)
+
+
+def _read_json_from_s3(uri: str) -> Any:
+    bucket, key = _parse_s3_uri(uri)
+    response = _dataset_s3_client().get_object(Bucket=bucket, Key=key)
+    return json.loads(response["Body"].read().decode("utf-8"))
+
+
+def _write_directory_reference(source_dir: Path, relative_prefix: str) -> str:
+    if _data_store_mode() != "s3":
+        return str(source_dir)
+
+    _ensure_dataset_bucket()
+    bucket = _dataset_store_bucket()
+    prefix = _dataset_object_key(relative_prefix).rstrip("/")
+    client = _dataset_s3_client()
+    for file_path in source_dir.rglob("*"):
+        if not file_path.is_file():
+            continue
+        relative_path = file_path.relative_to(source_dir).as_posix()
+        client.upload_file(str(file_path), bucket, f"{prefix}/{relative_path}")
+    return _s3_uri(bucket, prefix, is_directory=True)
+
+
+def _download_file_reference(source: str | Path, target_path: Path) -> Path:
+    source_text = str(source)
+    if source_text.startswith("s3://"):
+        bucket, key = _parse_s3_uri(source_text)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        _dataset_s3_client().download_file(bucket, key, str(target_path))
+        return target_path
+
+    source_path = Path(source_text)
+    if source_path.resolve() == target_path.resolve():
+        return source_path
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, target_path)
+    return target_path
+
+
+def _download_directory_reference(source: str | Path, target_dir: Path) -> Path:
+    source_text = str(source)
+    if target_dir.exists():
+        shutil.rmtree(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    if source_text.startswith("s3://"):
+        bucket, key = _parse_s3_uri(source_text)
+        prefix = key.rstrip("/") + "/"
+        paginator = _dataset_s3_client().get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for item in page.get("Contents", []):
+                object_key = item["Key"]
+                if object_key.endswith("/"):
+                    continue
+                relative_path = object_key[len(prefix):]
+                destination = target_dir / relative_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                _dataset_s3_client().download_file(bucket, object_key, str(destination))
+        return target_dir
+
+    shutil.copytree(Path(source_text), target_dir, dirs_exist_ok=True)
+    return target_dir
+
+
+def _prepare_artifact_for_storage(artifact: Dict[str, Any], version: str) -> Dict[str, Any]:
+    predictor_path = artifact.get("predictor_path")
+    if predictor_path and _data_store_mode() == "s3":
+        artifact = dict(artifact)
+        artifact["predictor_uri"] = _write_directory_reference(Path(str(predictor_path)), f"artifacts/autogluon/{version}")
+        artifact.pop("predictor_path", None)
+    return artifact
 
 
 def _workspace_root(path: str) -> Path:
@@ -207,11 +373,14 @@ def split_dataset(records: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], 
 def ingest_dataset(dataset_version: str, workspace_root: str, size_per_class: int = 120) -> Dict[str, Any]:
     records = generate_dataset(size_per_class=size_per_class)
     workspace = _workspace_root(workspace_root)
-    records_path = _raw_dataset_path(workspace, dataset_version)
-    _json_dump(records_path, records)
+    records_path = _write_json_reference(
+        records,
+        f"datasets/{dataset_version}/raw/records.json",
+        _raw_dataset_path(workspace, dataset_version),
+    )
     manifest = {
         "dataset_version": dataset_version,
-        "dataset_path": str(records_path),
+        "dataset_path": records_path,
         "record_count": len(records),
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "created_at": _now(),
@@ -237,12 +406,15 @@ def materialize_feature_windows(dataset_manifest_path: str, workspace_root: str)
             }
         )
 
-    features_path = _feature_dataset_path(workspace, dataset_manifest["dataset_version"])
-    _json_dump(features_path, windows)
+    features_path = _write_json_reference(
+        windows,
+        f"datasets/{dataset_manifest['dataset_version']}/features/{dataset_manifest['dataset_version']}-{FEATURE_SCHEMA_VERSION}.json",
+        _feature_dataset_path(workspace, dataset_manifest["dataset_version"]),
+    )
     return {
         "dataset_version": dataset_manifest["dataset_version"],
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
-        "feature_windows_path": str(features_path),
+        "feature_windows_path": features_path,
         "window_count": len(windows),
         "created_at": _now(),
     }
@@ -261,15 +433,21 @@ def generate_labels(feature_manifest_path: str, workspace_root: str) -> Dict[str
     ]
     train_records, eval_records = split_dataset(records)
     workspace = _workspace_root(workspace_root)
-    train_path = _train_split_path(workspace, feature_manifest["dataset_version"])
-    eval_path = _eval_split_path(workspace, feature_manifest["dataset_version"])
-    _json_dump(train_path, train_records)
-    _json_dump(eval_path, eval_records)
+    train_path = _write_json_reference(
+        train_records,
+        f"datasets/{feature_manifest['dataset_version']}/labeled/train.json",
+        _train_split_path(workspace, feature_manifest["dataset_version"]),
+    )
+    eval_path = _write_json_reference(
+        eval_records,
+        f"datasets/{feature_manifest['dataset_version']}/labeled/eval.json",
+        _eval_split_path(workspace, feature_manifest["dataset_version"]),
+    )
     return {
         "dataset_version": feature_manifest["dataset_version"],
         "feature_schema_version": feature_manifest["feature_schema_version"],
-        "train_path": str(train_path),
-        "eval_path": str(eval_path),
+        "train_path": train_path,
+        "eval_path": eval_path,
         "train_count": len(train_records),
         "eval_count": len(eval_records),
         "created_at": _now(),
@@ -369,7 +547,19 @@ def score_autogluon(sample: Dict[str, float], artifact: Dict[str, Any]) -> float
     import pandas as pd
     from autogluon.tabular import TabularPredictor
 
-    predictor = TabularPredictor.load(artifact["predictor_path"])
+    predictor_uri = str(artifact.get("predictor_uri") or "").strip()
+    predictor_path = str(artifact.get("predictor_path") or "").strip()
+    predictor_source = predictor_uri or predictor_path
+    if not predictor_source:
+        raise ValueError("AutoGluon artifact is missing predictor_path or predictor_uri")
+    if predictor_uri:
+        predictor_dir = _download_directory_reference(
+            predictor_source,
+            Path(tempfile.gettempdir()) / "ims-autogluon-cache" / artifact.get("best_model", "predictor"),
+        )
+    else:
+        predictor_dir = Path(predictor_source)
+    predictor = TabularPredictor.load(str(predictor_dir))
     frame = pd.DataFrame([{feature: float(sample[feature]) for feature in FEATURES}])
     probabilities = predictor.predict_proba(frame, as_multiclass=True)
     if 1 in probabilities.columns:
@@ -524,9 +714,9 @@ def scorer_for_artifact(artifact: Dict[str, Any]) -> Callable[[Dict[str, float],
     raise ValueError(f"Unsupported model type {model_type}")
 
 
-def persist_model_artifact(artifact_dir: str, version: str, artifact: Dict[str, Any]) -> Path:
+def persist_model_artifact(artifact_dir: str, version: str, artifact: Dict[str, Any]) -> str:
     path = Path(artifact_dir) / f"{version}.json"
-    return _json_dump(path, artifact)
+    return _write_json_reference(artifact, f"artifacts/models/{version}.json", path)
 
 
 def select_best_model(evaluation: Dict[str, Any]) -> Dict[str, Any]:
@@ -654,9 +844,9 @@ def build_registry(
 def upload_to_minio(
     registry: Dict[str, Any],
     registry_path: Path,
-    selected_artifact_path: Path,
-    baseline_artifact_path: Path,
-    candidate_artifact_path: Path,
+    selected_artifact_path: str | Path,
+    baseline_artifact_path: str | Path,
+    candidate_artifact_path: str | Path,
     serving_repository_root: Path,
 ) -> Dict[str, Any]:
     endpoint = os.getenv("MINIO_ENDPOINT", "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000")
@@ -681,13 +871,19 @@ def upload_to_minio(
         client.create_bucket(Bucket=bucket)
 
     uploads = [
-        (baseline_artifact_path, f"{predictive_prefix}/{baseline_artifact_path.name}"),
-        (candidate_artifact_path, f"{predictive_prefix}/{candidate_artifact_path.name}"),
+        (baseline_artifact_path, f"{predictive_prefix}/{Path(str(baseline_artifact_path)).name}"),
+        (candidate_artifact_path, f"{predictive_prefix}/{Path(str(candidate_artifact_path)).name}"),
         (selected_artifact_path, f"{predictive_prefix}/model.json"),
         (registry_path, registry_key),
     ]
+    upload_staging_root = Path(tempfile.mkdtemp(prefix="ims-model-upload-"))
     for source_path, object_key in uploads:
-        client.upload_file(str(source_path), bucket, object_key)
+        materialized_source = (
+            _download_file_reference(source_path, upload_staging_root / Path(str(source_path)).name)
+            if str(source_path).startswith("s3://")
+            else Path(str(source_path))
+        )
+        client.upload_file(str(materialized_source), bucket, object_key)
 
     for file_path in serving_repository_root.rglob("*"):
         if not file_path.is_file():
@@ -736,7 +932,10 @@ def full_run(
     eval_records = load_records(label_manifest["eval_path"])
 
     baseline_artifact = train_baseline(train_records)
-    candidate_artifact = train_autogluon_candidate(train_records, workspace_root, candidate_version, automl_engine=automl_engine)
+    candidate_artifact = _prepare_artifact_for_storage(
+        train_autogluon_candidate(train_records, workspace_root, candidate_version, automl_engine=automl_engine),
+        candidate_version,
+    )
     baseline_metrics = evaluate(eval_records, baseline_artifact, score_baseline)
     candidate_metrics = evaluate(eval_records, candidate_artifact, scorer_for_artifact(candidate_artifact))
 
@@ -756,13 +955,13 @@ def full_run(
         "label_manifest": str(label_manifest_path),
         "baseline": {
             "version": baseline_version,
-            "artifact_path": str(baseline_artifact_path),
+            "artifact_path": baseline_artifact_path,
             "artifact": baseline_artifact,
             "metrics": baseline_metrics,
         },
         "candidate": {
             "version": candidate_version,
-            "artifact_path": str(candidate_artifact_path),
+            "artifact_path": candidate_artifact_path,
             "artifact": candidate_artifact,
             "metrics": candidate_metrics,
         },
@@ -786,9 +985,9 @@ def full_run(
     )
     registry["serving_artifact_path"] = str(triton_export["weights_path"])
     registry["serving_repository_path"] = str(serving_dir)
-    registry["selected_artifact_path"] = str(selected_artifact_path)
-    registry["baseline_artifact_path"] = str(baseline_artifact_path)
-    registry["candidate_artifact_path"] = str(candidate_artifact_path)
+    registry["selected_artifact_path"] = selected_artifact_path
+    registry["baseline_artifact_path"] = baseline_artifact_path
+    registry["candidate_artifact_path"] = candidate_artifact_path
     registry_path_obj = Path(registry_path)
     registry_path_obj.parent.mkdir(parents=True, exist_ok=True)
     registry_path_obj.write_text(json.dumps(registry, indent=2))
@@ -878,11 +1077,14 @@ def main() -> None:
         if not args.label_manifest:
             raise ValueError("--label-manifest is required for train-automl")
         label_manifest = _json_load(args.label_manifest)
-        artifact = train_autogluon_candidate(
-            load_records(label_manifest["train_path"]),
-            args.workspace_root,
+        artifact = _prepare_artifact_for_storage(
+            train_autogluon_candidate(
+                load_records(label_manifest["train_path"]),
+                args.workspace_root,
+                args.candidate_version,
+                automl_engine=args.automl_engine,
+            ),
             args.candidate_version,
-            automl_engine=args.automl_engine,
         )
         artifact_path = persist_model_artifact(args.artifact_dir, args.candidate_version, artifact)
         manifest = {
@@ -967,8 +1169,8 @@ def main() -> None:
 
         baseline_artifact = selection["baseline"]["artifact"]
         candidate_artifact = selection["candidate"]["artifact"]
-        baseline_artifact_path = Path(selection["baseline"]["artifact_path"])
-        candidate_artifact_path = Path(selection["candidate"]["artifact_path"])
+        baseline_artifact_path = selection["baseline"]["artifact_path"]
+        candidate_artifact_path = selection["candidate"]["artifact_path"]
         selected_version = selection["selected_model_version"]
 
         registry = build_registry(
@@ -986,8 +1188,13 @@ def main() -> None:
         registry_path = Path(args.registry_path)
         registry_path.parent.mkdir(parents=True, exist_ok=True)
         registry_path.write_text(json.dumps(registry, indent=2))
-        registry["serving_artifact_path"] = str(triton_export["weights_path"])
-        registry["serving_repository_path"] = str(serving_dir)
+        serving_repository_reference = _write_directory_reference(serving_dir, "artifacts/serving/predictive")
+        registry["serving_artifact_path"] = (
+            f"{serving_repository_reference.rstrip('/')}/{TRITON_MODEL_NAME}/{TRITON_MODEL_VERSION}/weights.json"
+            if serving_repository_reference.startswith("s3://")
+            else str(triton_export["weights_path"])
+        )
+        registry["serving_repository_path"] = serving_repository_reference
         registry["selected_artifact_path"] = str(
             baseline_artifact_path if selected_version == selection["baseline"]["version"] else candidate_artifact_path
         )
@@ -1005,11 +1212,24 @@ def main() -> None:
         if not args.registry_path:
             raise ValueError("--registry-path is required for deploy-model")
         registry = _json_load(args.registry_path)
-        selected_artifact_path = Path(registry["selected_artifact_path"])
-        baseline_artifact_path = Path(registry["baseline_artifact_path"])
-        candidate_artifact_path = Path(registry["candidate_artifact_path"])
-        serving_repository_path = Path(registry.get("serving_repository_path", Path(args.artifact_dir).parent / "serving" / "predictive"))
-        registry_path = Path(args.registry_path)
+        staging_root = Path(tempfile.mkdtemp(prefix="ims-deploy-stage-"))
+        selected_artifact_path = _download_file_reference(
+            registry["selected_artifact_path"],
+            staging_root / Path(str(registry["selected_artifact_path"])).name,
+        )
+        baseline_artifact_path = _download_file_reference(
+            registry["baseline_artifact_path"],
+            staging_root / Path(str(registry["baseline_artifact_path"])).name,
+        )
+        candidate_artifact_path = _download_file_reference(
+            registry["candidate_artifact_path"],
+            staging_root / Path(str(registry["candidate_artifact_path"])).name,
+        )
+        serving_repository_path = _download_directory_reference(
+            registry.get("serving_repository_path", str(Path(args.artifact_dir).parent / "serving" / "predictive")),
+            staging_root / "serving-repository",
+        )
+        registry_path = _json_dump(staging_root / "model_registry.json", registry)
 
         if not args.skip_minio_upload:
             upload_to_minio(

@@ -1,0 +1,22 @@
+{
+  "title": "IMS core signaling path",
+  "path": [
+    "P-CSCF",
+    "S-CSCF",
+    "HSS",
+    "Application Server"
+  ],
+  "description": "Primary registration and call-control path for the demo IMS deployment.",
+  "dependencies": {
+    "P-CSCF": [
+      "S-CSCF"
+    ],
+    "S-CSCF": [
+      "HSS",
+      "Application Server"
+    ],
+    "HSS": [
+      "MongoDB"
+    ]
+  }
+}

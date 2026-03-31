@@ -433,21 +433,98 @@ Response:
 
 ## 5. RCA Architecture (vLLM and Milvus)
 
-### 5.1 Data Sources
+### 5.1 Data Sources for Milvus
+
+Milvus is the retrieval layer for RCA. It stores semantic knowledge that helps explain an anomaly. It is not the system of record for raw IMS traffic, feature windows, or metric time series.
+
+Primary source categories:
 
 - runbooks
 - vendor documentation
-- incident logs
+- historical incident records and incident logs
 - topology metadata
-- SIP traces
+- SIP traces and signaling patterns
 
-### 5.2 Processing Flow
+Operational guidance for indexed content:
 
-```text
-Incident -> embedding -> Milvus retrieval -> prompt assembly -> LLM inference -> structured RCA output
+- runbooks are stored as chunked operational procedures and troubleshooting steps
+- vendor documentation is stored as chunked reference material for IMS behavior, error handling, and configuration guidance
+- historical incidents are stored as symptom, root cause, and resolution narratives with incident metadata
+- topology metadata is stored as dependency-aware service relationships and path context
+- logs and SIP traces are stored as selective extracted snippets or summarized patterns, not as full raw streams
+
+Representative incident record:
+
+```json
+{
+  "incident_id": "123",
+  "symptoms": ["high 5xx", "latency spike"],
+  "root_cause": "HSS overload",
+  "resolution": "increase pool size"
+}
 ```
 
-### 5.3 Prompt Inputs
+### 5.1.1 Milvus Scope Boundaries
+
+Milvus must not be used as a general-purpose telemetry store.
+
+Explicit exclusions:
+
+- raw SIP traffic streams
+- full metrics time series
+- feature windows used by the ML pipeline
+- model outputs and scoring history
+
+These data types remain in their respective operational systems, such as Prometheus, the feature store or dataset layer, and the incident or audit store.
+
+### 5.2 Role of Milvus
+
+Milvus functions as the RCA knowledge retrieval layer.
+
+Clean separation of responsibilities:
+
+| Layer | Purpose |
+| --- | --- |
+| predictive model | detect anomaly |
+| Milvus | retrieve relevant RCA context |
+| LLM | reason over retrieved context and generate RCA output |
+
+For the demo profile, the Milvus corpus should remain intentionally small and preloaded. A few hundred documents is sufficient.
+
+Recommended logical collections:
+
+- `runbooks`
+- `incidents`
+- `topology`
+
+Optional collections:
+
+- `log-snippets`
+- `sip-patterns`
+- `vendor-docs`
+
+### 5.3 Processing Flow
+
+```text
+1. anomaly detected
+2. incident created
+3. RCA query built from node_id, error patterns, and feature deviations
+4. query embedded
+5. Milvus searched
+6. supporting context retrieved
+7. prompt assembled
+8. LLM inference executed
+9. structured RCA output returned
+```
+
+Retrieved context should preferentially include:
+
+- operational runbooks
+- similar historical incidents
+- topology relationships
+- selective supporting logs or SIP patterns
+
+### 5.4 Prompt Inputs
 
 Prompt construction includes:
 
@@ -458,7 +535,7 @@ Prompt construction includes:
 
 The output must be grounded in retrieved evidence and returned in a structured schema.
 
-### 5.4 RCA Output Contract
+### 5.5 RCA Output Contract
 
 RCA responses must conform to a strict output schema.
 
@@ -477,7 +554,7 @@ RCA responses must conform to a strict output schema.
 }
 ```
 
-### 5.5 RCA Validation Rules
+### 5.6 RCA Validation Rules
 
 - RCA output must include at least two evidence sources
 - RCA output must reference retrieved documents or runtime artifacts

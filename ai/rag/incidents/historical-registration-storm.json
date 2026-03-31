@@ -1,0 +1,15 @@
+{
+  "incident_id": "hist-ims-001",
+  "title": "Historical registration storm on P-CSCF edge",
+  "symptoms": [
+    "sharp register_rate increase",
+    "retransmission_count spike",
+    "P-CSCF CPU saturation"
+  ],
+  "root_cause": "Retry loop from misconfigured UE profile caused a registration storm against the P-CSCF tier.",
+  "resolution": "Scaled P-CSCF replicas, rate-limited the offending source range, and corrected the scenario profile.",
+  "components": [
+    "P-CSCF",
+    "SIPp"
+  ]
+}

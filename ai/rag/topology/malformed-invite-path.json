@@ -1,0 +1,15 @@
+{
+  "title": "Malformed INVITE validation path",
+  "focus": "INVITE",
+  "dependencies": [
+    {
+      "source": "SIPp",
+      "target": "P-CSCF"
+    },
+    {
+      "source": "P-CSCF",
+      "target": "S-CSCF"
+    }
+  ],
+  "description": "Malformed INVITE traffic is expected to be rejected at the S-CSCF validation boundary before propagating deeper."
+}

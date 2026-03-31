@@ -4,9 +4,9 @@ from kfp import dsl
 
 
 PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest"
-WORKSPACE_ROOT = "ai"
-ARTIFACT_DIR = "ai/models/artifacts"
-REGISTRY_PATH = "ai/registry/model_registry.json"
+WORKSPACE_ROOT = "/tmp/ims-pipeline"
+ARTIFACT_DIR = "/tmp/ims-pipeline/models/artifacts"
+REGISTRY_PATH = "/tmp/ims-pipeline/registry/model_registry.json"
 
 
 @dsl.container_component

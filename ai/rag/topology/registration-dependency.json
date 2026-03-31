@@ -1,0 +1,19 @@
+{
+  "title": "Registration dependency chain",
+  "focus": "REGISTER",
+  "dependencies": [
+    {
+      "source": "SIPp",
+      "target": "P-CSCF"
+    },
+    {
+      "source": "P-CSCF",
+      "target": "S-CSCF"
+    },
+    {
+      "source": "S-CSCF",
+      "target": "HSS"
+    }
+  ],
+  "description": "Registration storms typically originate at the edge and amplify when HSS latency increases."
+}

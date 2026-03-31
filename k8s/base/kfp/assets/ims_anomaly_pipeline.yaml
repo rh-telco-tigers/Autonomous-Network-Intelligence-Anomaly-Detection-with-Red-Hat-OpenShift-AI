@@ -41,7 +41,7 @@ components:
         dataset_version:
           parameterType: STRING
         workspace_root:
-          defaultValue: ai
+          defaultValue: /tmp/ims-pipeline
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -59,7 +59,7 @@ components:
           isOptional: true
           parameterType: NUMBER_INTEGER
         workspace_root:
-          defaultValue: ai
+          defaultValue: /tmp/ims-pipeline
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -75,7 +75,7 @@ components:
         feature_manifest:
           parameterType: STRING
         workspace_root:
-          defaultValue: ai
+          defaultValue: /tmp/ims-pipeline
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -87,13 +87,13 @@ components:
     inputDefinitions:
       parameters:
         artifact_dir:
-          defaultValue: ai/models/artifacts
+          defaultValue: /tmp/ims-pipeline/models/artifacts
           isOptional: true
           parameterType: STRING
         label_manifest:
           parameterType: STRING
         registry_path:
-          defaultValue: ai/registry/model_registry.json
+          defaultValue: /tmp/ims-pipeline/registry/model_registry.json
           isOptional: true
           parameterType: STRING
         selection_manifest:
@@ -119,7 +119,7 @@ components:
     inputDefinitions:
       parameters:
         artifact_dir:
-          defaultValue: ai/models/artifacts
+          defaultValue: /tmp/ims-pipeline/models/artifacts
           isOptional: true
           parameterType: STRING
         automl_engine:
@@ -131,7 +131,7 @@ components:
         label_manifest:
           parameterType: STRING
         workspace_root:
-          defaultValue: ai
+          defaultValue: /tmp/ims-pipeline
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -143,7 +143,7 @@ components:
     inputDefinitions:
       parameters:
         artifact_dir:
-          defaultValue: ai/models/artifacts
+          defaultValue: /tmp/ims-pipeline/models/artifacts
           isOptional: true
           parameterType: STRING
         baseline_version:
