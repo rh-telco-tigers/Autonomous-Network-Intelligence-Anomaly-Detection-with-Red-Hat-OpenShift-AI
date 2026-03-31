@@ -1,938 +1,1434 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>IMS AI Demo Console</title>
-    <style>
-      :root {
-        --bg: #f3efe6;
-        --ink: #15263a;
-        --muted: #66778a;
-        --panel: rgba(255, 255, 255, 0.88);
-        --accent: #bc512f;
-        --accent-soft: #ffe0d2;
-        --line: rgba(21, 38, 58, 0.12);
-        --ok: #1f6d43;
-        --warn: #b55f00;
-        --bad: #b42318;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-        color: var(--ink);
-        background:
-          radial-gradient(circle at top right, rgba(188, 81, 47, 0.18), transparent 28%),
-          radial-gradient(circle at bottom left, rgba(43, 98, 138, 0.14), transparent 32%),
-          var(--bg);
-      }
-      main {
-        width: min(1280px, calc(100vw - 32px));
-        margin: 0 auto;
-        padding: 28px 0 44px;
-      }
-      .hero,
-      .metric-grid,
-      .content-grid {
-        display: grid;
-        gap: 18px;
-      }
-      .hero {
-        grid-template-columns: 1.4fr 1fr;
-        margin-bottom: 18px;
-      }
-      .metric-grid {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        margin-bottom: 18px;
-      }
-      .content-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-      .content-grid > * {
-        min-width: 0;
-      }
-      .panel {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 24px;
-        padding: 22px;
-        backdrop-filter: blur(14px);
-        box-shadow: 0 16px 38px rgba(21, 38, 58, 0.08);
-        min-width: 0;
-        overflow: hidden;
-      }
-      .panel-wide {
-        grid-column: 1 / -1;
-      }
-      h1, h2, h3, p { margin-top: 0; }
-      h1 {
-        font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
-        font-size: clamp(2.4rem, 4vw, 4.1rem);
-        line-height: 0.94;
-        margin-bottom: 10px;
-      }
-      h2 {
-        font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
-        font-size: 1.12rem;
-        margin-bottom: 14px;
-      }
-      .eyebrow {
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        font-size: 0.75rem;
-        color: var(--muted);
-      }
-      .subtle {
-        color: var(--muted);
-      }
-      .hero-actions,
-      .scenario-buttons,
-      .action-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-      }
-      .hero-actions {
-        margin-top: 18px;
-      }
-      input {
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 12px 14px;
-        font: inherit;
-        min-width: 220px;
-        background: rgba(255, 255, 255, 0.8);
-      }
-      button {
-        border: 0;
-        background: var(--ink);
-        color: white;
-        border-radius: 999px;
-        padding: 12px 18px;
-        font: inherit;
-        cursor: pointer;
-      }
-      button.alt { background: var(--accent); }
-      button.soft {
-        background: white;
-        color: var(--ink);
-        border: 1px solid var(--line);
-      }
-      button:disabled {
-        cursor: not-allowed;
-        opacity: 0.5;
-      }
-      .metric {
-        min-height: 132px;
-      }
-      .metric-value {
-        display: block;
-        font-size: 2rem;
-        font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
-        margin: 10px 0 6px;
-      }
-      .status-bar {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        margin-top: 18px;
-      }
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 7px 12px;
-        border-radius: 999px;
-        font-size: 0.84rem;
-        background: rgba(255, 255, 255, 0.7);
-        border: 1px solid var(--line);
-      }
-      .pill.good {
-        background: rgba(31, 109, 67, 0.1);
-        color: var(--ok);
-      }
-      .pill.warn {
-        background: rgba(181, 95, 0, 0.1);
-        color: var(--warn);
-      }
-      .pill.bad {
-        background: rgba(180, 35, 24, 0.1);
-        color: var(--bad);
-      }
-      .stack {
-        display: grid;
-        gap: 12px;
-        min-width: 0;
-      }
-      .card {
-        border: 1px solid var(--line);
-        border-radius: 18px;
-        padding: 14px 16px;
-        background: rgba(255, 255, 255, 0.68);
-        min-width: 0;
-        overflow: hidden;
-      }
-      .label {
-        display: block;
-        font-size: 0.78rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--muted);
-        margin-bottom: 5px;
-      }
-      .kv {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
-      }
-      .kv .card {
-        padding: 12px 14px;
-      }
-      .mono {
-        font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
-        font-size: 0.92rem;
-        overflow-wrap: anywhere;
-        word-break: break-word;
-      }
-      .health-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 12px;
-      }
-      .health-grid > * {
-        min-width: 0;
-      }
-      .health-detail {
-        display: block;
-        margin-top: 10px;
-        padding: 12px;
-        border-radius: 14px;
-        background: rgba(21, 38, 58, 0.04);
-        border: 1px solid var(--line);
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-        word-break: break-word;
-        width: 100%;
-        max-width: 100%;
-        max-height: 180px;
-        overflow-x: auto;
-        overflow-y: auto;
-        line-height: 1.35;
-        font-size: 0.84rem;
-      }
-      .list {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        display: grid;
-        gap: 10px;
-      }
-      .list li {
-        padding: 13px 14px;
-        border-radius: 16px;
-        background: rgba(255, 255, 255, 0.68);
-        border: 1px solid var(--line);
-      }
-      .list strong {
-        display: block;
-        margin-bottom: 4px;
-      }
-      .empty {
-        border: 1px dashed var(--line);
-        border-radius: 18px;
-        padding: 16px;
-        color: var(--muted);
-        background: rgba(255, 255, 255, 0.5);
-      }
-      .code {
-        white-space: pre-wrap;
-        word-break: break-word;
-        overflow-wrap: anywhere;
-        background: rgba(21, 38, 58, 0.04);
-        border: 1px solid var(--line);
-        border-radius: 18px;
-        padding: 16px;
-        min-height: 120px;
-        font-size: 0.9rem;
-        max-height: 360px;
-        overflow: auto;
-      }
-      @media (max-width: 1120px) {
-        .metric-grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IMS Operations Console</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: "#0b1220",
+            panel: "#101827",
+            panel2: "#0f172a",
+            line: "#1f2937",
+            muted: "#94a3b8",
+            success: "#10b981",
+            warn: "#f59e0b",
+            danger: "#ef4444",
+            accent: "#38bdf8"
+          },
+          boxShadow: {
+            soft: "0 10px 30px rgba(2,6,23,.25)"
+          }
         }
       }
-      @media (max-width: 960px) {
-        .hero,
-        .content-grid,
-        .metric-grid {
-          grid-template-columns: 1fr;
-        }
-        .kv {
-          grid-template-columns: 1fr;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <section class="hero">
-        <article class="panel">
-          <p class="eyebrow">Live Demo Console</p>
-          <h1>IMS anomaly operations driven by current cluster state</h1>
-          <p class="subtle">
-            This screen is rendered from the running services, control-plane database, RCA payloads,
-            audit history, and deployed model registry. Scenario buttons drive live SIP traffic into
-            the in-cluster IMS lab and then score the resulting feature windows.
-          </p>
-          <div class="hero-actions">
-            <input id="api-token" value="demo-token" placeholder="API token" />
-            <button class="soft" onclick="refreshDashboard()">Refresh now</button>
-            <button class="soft" onclick="toggleAutoRefresh()" id="auto-refresh-button">Auto refresh: on</button>
+    };
+  </script>
+  <style>
+    html { scroll-behavior: smooth; }
+    body { background: #020617; }
+    .glass { background: linear-gradient(180deg, rgba(15,23,42,.92), rgba(15,23,42,.82)); backdrop-filter: blur(10px); }
+    .grid-lines {
+      background-image: linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+    .mini-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+    .mini-scroll::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 999px; }
+    .traffic-line:nth-child(odd) { background: rgba(15,23,42,.6); }
+  </style>
+</head>
+<body class="text-slate-100 antialiased">
+  <div class="min-h-screen grid lg:grid-cols-[280px_minmax(0,1fr)]">
+    <aside class="border-r border-slate-800 bg-slate-950/95 lg:sticky lg:top-0 lg:h-screen">
+      <div class="p-5 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <div class="h-11 w-11 rounded-2xl bg-sky-500/15 ring-1 ring-sky-400/30 flex items-center justify-center text-sky-300 font-bold">IMS</div>
+          <div>
+            <div class="text-xs uppercase tracking-[0.25em] text-slate-500">Operations Console</div>
+            <div class="text-xl font-semibold">Anomaly Center</div>
           </div>
-          <div class="status-bar">
-            <span class="pill" id="last-refresh-pill">Last refresh: waiting</span>
-            <span class="pill" id="active-incident-pill">Active incident: none</span>
-            <span class="pill" id="latest-event-pill">Latest audit event: none</span>
+        </div>
+      </div>
+
+      <div class="p-4 space-y-2 text-sm">
+        <button id="nav-overview" class="nav-btn w-full flex items-center justify-between rounded-2xl px-4 py-3" onclick="activateSection('overview')">
+          <span>Overview</span><span class="text-xs">01</span>
+        </button>
+        <button id="nav-incidents" class="nav-btn w-full flex items-center justify-between rounded-2xl px-4 py-3" onclick="activateSection('incidents')">
+          <span>Incidents</span><span class="text-xs">02</span>
+        </button>
+        <button id="nav-traffic" class="nav-btn w-full flex items-center justify-between rounded-2xl px-4 py-3" onclick="activateSection('traffic')">
+          <span>Live Traffic</span><span class="text-xs">03</span>
+        </button>
+        <button id="nav-rca" class="nav-btn w-full flex items-center justify-between rounded-2xl px-4 py-3" onclick="activateSection('rca')">
+          <span>RCA Analysis</span><span class="text-xs">04</span>
+        </button>
+        <button id="nav-models" class="nav-btn w-full flex items-center justify-between rounded-2xl px-4 py-3" onclick="activateSection('models')">
+          <span>Models</span><span class="text-xs">05</span>
+        </button>
+        <button id="nav-services" class="nav-btn w-full flex items-center justify-between rounded-2xl px-4 py-3" onclick="activateSection('services')">
+          <span>Services</span><span class="text-xs">06</span>
+        </button>
+        <button id="nav-audit" class="nav-btn w-full flex items-center justify-between rounded-2xl px-4 py-3" onclick="activateSection('audit')">
+          <span>Audit</span><span class="text-xs">07</span>
+        </button>
+      </div>
+
+      <div class="px-4 pb-4">
+        <div class="rounded-3xl border border-slate-800 bg-slate-900 p-4 shadow-soft">
+          <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Current cluster</div>
+          <div class="mt-2 flex items-center justify-between gap-4">
+            <div class="min-w-0">
+              <div id="clusterName" class="font-semibold">ims-demo-lab</div>
+              <div id="clusterSubtitle" class="text-sm text-slate-400">Waiting for service health</div>
+            </div>
+            <span id="clusterStatusBadge" class="rounded-full border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-slate-300">Loading</span>
           </div>
-        </article>
-
-        <article class="panel">
-          <h2>Scenario Controls</h2>
-          <div class="scenario-buttons">
-            <button onclick="runScenario('normal')">Normal</button>
-            <button class="alt" onclick="runScenario('registration_storm')">Registration Storm</button>
-            <button class="alt" onclick="runScenario('malformed_invite')">Malformed INVITE</button>
+          <div class="mt-4 space-y-2 text-xs text-slate-400">
+            <div class="flex justify-between gap-3"><span>Active incident</span><span id="clusterActiveIncident" class="text-slate-200 truncate">none</span></div>
+            <div class="flex justify-between gap-3"><span>Auto refresh</span><span id="clusterAutoRefresh" class="text-slate-200">on</span></div>
+            <div class="flex justify-between gap-3"><span>RCA status</span><span id="clusterRcaStatus" class="text-slate-200">none</span></div>
           </div>
-          <p class="subtle" id="scenario-status" style="margin-top: 14px;">No scenario executed in this browser session.</p>
-          <div class="action-row">
-            <button class="soft action-button" onclick="approveIncident('scale_scscf')">Approve S-CSCF Scale</button>
-            <button class="soft action-button" onclick="approveIncident('rate_limit_pcscf')">Approve P-CSCF Rate Limit</button>
-            <button class="soft action-button" onclick="approveIncident('quarantine_imsi')">Approve IMSI Quarantine</button>
+          <label for="apiToken" class="mt-4 block text-xs uppercase tracking-[0.2em] text-slate-500">API token</label>
+          <input id="apiToken" class="mt-2 w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500" value="demo-token" placeholder="demo-token" />
+        </div>
+      </div>
+    </aside>
+
+    <main class="min-w-0 grid-lines">
+      <div class="sticky top-0 z-20 border-b border-slate-800/80 bg-slate-950/75 backdrop-blur">
+        <div class="px-4 md:px-8 py-4 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <div class="text-xs uppercase tracking-[0.25em] text-slate-500">Admin-grade workflow</div>
+            <h1 id="pageTitle" class="text-2xl md:text-3xl font-semibold tracking-tight">Overview</h1>
           </div>
-          <div class="action-row" style="margin-top: 10px;">
-            <button class="soft action-button" onclick="notifySlack()">Send to Slack</button>
-            <button class="soft action-button" onclick="notifyJira()">Open Jira</button>
+          <div class="flex flex-wrap items-center gap-3">
+            <div id="lastRefreshBadge" class="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-2 text-sm text-slate-300">Last refresh: waiting</div>
+            <div id="currentScenarioBadge" class="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-2 text-sm text-slate-300">Scenario: none</div>
+            <button id="refreshButton" class="rounded-2xl bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950" onclick="refreshDashboard()">Refresh now</button>
+            <button id="autoRefreshButton" class="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-2 text-sm text-slate-200" onclick="toggleAutoRefresh()">Auto refresh: on</button>
           </div>
-        </article>
-      </section>
+        </div>
+      </div>
 
-      <section class="metric-grid">
-        <article class="panel metric">
-          <span class="eyebrow">Services Healthy</span>
-          <strong class="metric-value" id="metric-services">0/0</strong>
-          <span class="subtle" id="metric-services-detail">Awaiting health checks</span>
-        </article>
-        <article class="panel metric">
-          <span class="eyebrow">Incidents Recorded</span>
-          <strong class="metric-value" id="metric-incidents">0</strong>
-          <span class="subtle" id="metric-incidents-detail">No incident history yet</span>
-        </article>
-        <article class="panel metric">
-          <span class="eyebrow">Open Incidents</span>
-          <strong class="metric-value" id="metric-open">0</strong>
-          <span class="subtle" id="metric-open-detail">No active anomalies</span>
-        </article>
-        <article class="panel metric">
-          <span class="eyebrow">Latest Score</span>
-          <strong class="metric-value" id="metric-score">0.00</strong>
-          <span class="subtle" id="metric-score-detail">No anomaly scored yet</span>
-        </article>
-        <article class="panel metric">
-          <span class="eyebrow">Deployed Model</span>
-          <strong class="metric-value" id="metric-model">unknown</strong>
-          <span class="subtle" id="metric-model-detail">Registry not loaded yet</span>
-        </article>
-      </section>
-
-      <section class="content-grid">
-        <article class="panel panel-wide">
-          <h2>Service Health</h2>
-          <div id="service-health" class="health-grid"></div>
-        </article>
-
-        <article class="panel">
-          <h2>Latest Incident</h2>
-          <div id="latest-incident"></div>
-        </article>
-
-        <article class="panel">
-          <h2>Latest Feature Snapshot</h2>
-          <div id="feature-snapshot"></div>
-        </article>
-
-        <article class="panel">
-          <h2>RCA Summary</h2>
-          <div id="rca-panel"></div>
-        </article>
-
-        <article class="panel">
-          <h2>Recent Incidents</h2>
-          <div id="incidents-panel"></div>
-        </article>
-
-        <article class="panel">
-          <h2>Audit Activity</h2>
-          <div id="audit-panel"></div>
-        </article>
-
-        <article class="panel">
-          <h2>Model Registry</h2>
-          <div id="models-panel"></div>
-        </article>
-
-        <article class="panel">
-          <h2>Live Payload</h2>
-          <div class="code mono" id="payload-panel">{}</div>
-        </article>
-
-        <article class="panel">
-          <h2>Actions</h2>
-          <div id="action-summary"></div>
-        </article>
-      </section>
+      <div class="px-4 md:px-8 py-6 space-y-8">
+        <div id="globalNotice"></div>
+        <section id="overview" class="app-section space-y-6"></section>
+        <section id="incidents" class="app-section hidden"></section>
+        <section id="traffic" class="app-section hidden"></section>
+        <section id="rca" class="app-section hidden"></section>
+        <section id="models" class="app-section hidden"></section>
+        <section id="services" class="app-section hidden"></section>
+        <section id="audit" class="app-section hidden"></section>
+      </div>
     </main>
+  </div>
 
-    <script>
-      const featureService = window.location.origin.replace("demo-ui", "feature-gateway");
-      const anomalyService = window.location.origin.replace("demo-ui", "anomaly-service");
-      const rcaService = window.location.origin.replace("demo-ui", "rca-service");
-      const controlPlaneService = window.location.origin.replace("demo-ui", "control-plane");
-      const persistedWindowKey = "ims-demo-last-feature-window";
-      const defaultApiToken = "demo-token";
+  <script>
+    const controlPlaneService = window.location.origin.replace("demo-ui", "control-plane");
+    const defaultToken = "demo-token";
+    const defaultProject = "ims-demo";
+    const sectionTitles = {
+      overview: "Overview",
+      incidents: "Incidents",
+      traffic: "Live Traffic",
+      rca: "RCA Analysis",
+      models: "Models",
+      services: "Services",
+      audit: "Audit"
+    };
+    const storageKeys = {
+      autoRefresh: "ims-console-auto-refresh",
+      lastRun: "ims-console-last-run"
+    };
 
-      const serviceCatalog = [
-        { name: "Feature Gateway", url: `${featureService}/healthz` },
-        { name: "Anomaly Service", url: `${anomalyService}/healthz` },
-        { name: "RCA Service", url: `${rcaService}/healthz` },
-        { name: "Control Plane", url: `${controlPlaneService}/healthz` }
-      ];
+    const state = {
+      section: "overview",
+      selectedIncidentId: null,
+      selectedIncidentTab: "summary",
+      autoRefresh: readBool(storageKeys.autoRefresh, true),
+      console: null,
+      lastRun: readJson(storageKeys.lastRun, null),
+      refreshTimer: null,
+      loading: false,
+      error: ""
+    };
 
-      const state = {
-        activeIncidentId: null,
-        lastFeatureWindow: readStoredWindow(),
-        autoRefresh: true,
-        refreshTimer: null
+    function readJson(key, fallback) {
+      try {
+        const raw = window.localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch (error) {
+        return fallback;
+      }
+    }
+
+    function readBool(key, fallback) {
+      const value = readJson(key, fallback);
+      return typeof value === "boolean" ? value : fallback;
+    }
+
+    function writeJson(key, value) {
+      try {
+        window.localStorage.setItem(key, JSON.stringify(value));
+      } catch (error) {
+        // Best effort only.
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function humanize(value) {
+      return String(value ?? "unknown").replaceAll("_", " ").trim();
+    }
+
+    function titleize(value) {
+      return humanize(value).replace(/\b\w/g, (match) => match.toUpperCase());
+    }
+
+    function round(value, digits = 2) {
+      const numeric = Number(value || 0);
+      if (!Number.isFinite(numeric)) {
+        return 0;
+      }
+      return Number(numeric.toFixed(digits));
+    }
+
+    function toNumber(value, fallback = 0) {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : fallback;
+    }
+
+    function formatTime(value) {
+      if (!value) {
+        return "unknown";
+      }
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return String(value);
+      }
+      return date.toLocaleString();
+    }
+
+    function formatClock(dateLike) {
+      const date = dateLike instanceof Date ? dateLike : new Date(dateLike);
+      if (Number.isNaN(date.getTime())) {
+        return "00:00:00";
+      }
+      return date.toLocaleTimeString([], { hour12: false });
+    }
+
+    function formatScore(value) {
+      return toNumber(value).toFixed(2);
+    }
+
+    function formatCount(value) {
+      return new Intl.NumberFormat().format(Math.round(toNumber(value)));
+    }
+
+    function toneClasses(tone) {
+      if (tone === "rose") {
+        return { badge: "bg-rose-500/15 text-rose-300", border: "border-rose-400/20", soft: "bg-rose-500/10" };
+      }
+      if (tone === "amber") {
+        return { badge: "bg-amber-500/15 text-amber-300", border: "border-amber-400/20", soft: "bg-amber-500/10" };
+      }
+      if (tone === "emerald") {
+        return { badge: "bg-emerald-500/15 text-emerald-300", border: "border-emerald-400/20", soft: "bg-emerald-500/10" };
+      }
+      return { badge: "bg-sky-500/15 text-sky-300", border: "border-sky-400/20", soft: "bg-sky-500/10" };
+    }
+
+    function navButtonClass(active) {
+      return active
+        ? "nav-btn w-full flex items-center justify-between rounded-2xl px-4 py-3 bg-sky-500/10 text-sky-300 ring-1 ring-sky-400/30"
+        : "nav-btn w-full flex items-center justify-between rounded-2xl px-4 py-3 hover:bg-slate-900 text-slate-300 ring-1 ring-transparent hover:ring-slate-800";
+    }
+
+    function authHeaders() {
+      const input = document.getElementById("apiToken");
+      const token = (input.value.trim() || defaultToken);
+      input.value = token;
+      return {
+        "Content-Type": "application/json",
+        "x-api-key": token
       };
+    }
 
-      function readStoredWindow() {
-        try {
-          const raw = window.localStorage.getItem(persistedWindowKey);
-          return raw ? JSON.parse(raw) : null;
-        } catch (error) {
-          return null;
-        }
+    async function fetchJson(url, options = {}, allowRetry = true) {
+      const response = await fetch(url, options);
+      const raw = await response.text();
+      let payload;
+      try {
+        payload = raw ? JSON.parse(raw) : null;
+      } catch (error) {
+        payload = raw;
       }
 
-      function storeWindow(featureWindow) {
-        state.lastFeatureWindow = featureWindow;
-        try {
-          window.localStorage.setItem(persistedWindowKey, JSON.stringify(featureWindow));
-        } catch (error) {
-          // Best effort only.
-        }
-      }
-
-      function authHeaders() {
-        const input = document.getElementById("api-token");
-        const token = (input.value.trim() || defaultApiToken);
-        input.value = token;
-        return token ? { "x-api-key": token, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
-      }
-
-      async function fetchJson(url, options = {}, allowRetry = true) {
-        const response = await fetch(url, options);
-        const raw = await response.text();
-        let payload;
-        try {
-          payload = raw ? JSON.parse(raw) : null;
-        } catch (error) {
-          payload = raw;
-        }
-        if (response.status === 401 && allowRetry) {
-          const tokenInput = document.getElementById("api-token");
-          tokenInput.value = defaultApiToken;
-          const retryOptions = {
+      if (response.status === 401 && allowRetry) {
+        document.getElementById("apiToken").value = defaultToken;
+        return fetchJson(
+          url,
+          {
             ...options,
             headers: {
               ...(options.headers || {}),
-              "x-api-key": defaultApiToken
+              "x-api-key": defaultToken
             }
-          };
-          return fetchJson(url, retryOptions, false);
-        }
-        if (!response.ok) {
-          const detail = typeof payload === "string" ? payload : JSON.stringify(payload);
-          throw new Error(`${response.status} ${response.statusText}: ${detail}`);
-        }
-        return payload;
+          },
+          false
+        );
       }
 
-      function errorMessage(error) {
-        if (error instanceof Error && error.message) {
-          return error.message;
-        }
-        return String(error);
+      if (!response.ok) {
+        const detail = typeof payload === "string" ? payload : JSON.stringify(payload);
+        throw new Error(`${response.status} ${response.statusText}: ${detail}`);
       }
 
-      async function fetchServiceHealth() {
-        const checks = await Promise.allSettled(serviceCatalog.map((service) => fetchJson(service.url)));
-        return checks.map((result, index) => {
-          const service = serviceCatalog[index];
-          if (result.status === "fulfilled") {
-            return { name: service.name, ok: true, payload: result.value };
-          }
-          return { name: service.name, ok: false, error: String(result.reason) };
+      return payload;
+    }
+
+    function consoleState() {
+      return state.console || {
+        cluster: {
+          name: "ims-demo-lab",
+          status: "unknown",
+          active_incident_id: null,
+          rca_status: "none",
+          current_scenario: "none",
+          auto_refresh_seconds: 15
+        },
+        summary: {
+          incident_count: 0,
+          open_incidents: 0,
+          critical_incidents: 0,
+          latest_score: 0,
+          healthy_services: 0,
+          service_count: 0
+        },
+        incidents: [],
+        audit: [],
+        approvals: [],
+        models: { models: [] },
+        services: [],
+        integrations: {},
+        automation_actions: [],
+        traffic_preview: { rows: [], stats: { requests_per_second: 0, retry_ratio: 0, active_node: "pcscf-1" }, packet_sample: "" }
+      };
+    }
+
+    function ensureSelectedIncident() {
+      const incidents = consoleState().incidents || [];
+      if (!incidents.length) {
+        state.selectedIncidentId = null;
+        return null;
+      }
+      if (!state.selectedIncidentId || !incidents.some((incident) => incident.id === state.selectedIncidentId)) {
+        state.selectedIncidentId = incidents[0].id;
+      }
+      return incidents.find((incident) => incident.id === state.selectedIncidentId) || incidents[0];
+    }
+
+    function selectedIncident() {
+      return ensureSelectedIncident();
+    }
+
+    function latestScenarioLabel() {
+      if (state.lastRun && state.lastRun.scenario) {
+        return titleize(state.lastRun.scenario);
+      }
+      return titleize(consoleState().cluster.current_scenario || "none");
+    }
+
+    function latestScenarioStatus() {
+      if (state.loading) {
+        return "Executing scenario through feature generation, scoring, and RCA.";
+      }
+      if (state.lastRun && state.lastRun.score) {
+        if (state.lastRun.score.is_anomaly) {
+          return `${titleize(state.lastRun.scenario)} recorded anomaly score ${formatScore(state.lastRun.score.anomaly_score)} and incident ${escapeHtml(String(state.lastRun.score.incident_id || "").slice(0, 12))}...`;
+        }
+        return `${titleize(state.lastRun.scenario)} completed without recording an incident.`;
+      }
+      return "No scenario executed in this browser session.";
+    }
+
+    function metricSeries(incidents, key) {
+      const values = incidents
+        .slice(0, 6)
+        .reverse()
+        .map((incident) => toNumber((incident.feature_snapshot || {})[key], 0));
+      if (values.length) {
+        return values;
+      }
+      const lastWindow = state.lastRun && state.lastRun.feature_window ? state.lastRun.feature_window : null;
+      if (lastWindow && lastWindow.features) {
+        const value = toNumber(lastWindow.features[key], 0);
+        return [value, value, value, value, value, value];
+      }
+      return [0, 0, 0, 0, 0, 0];
+    }
+
+    function renderBars(values, toneClass) {
+      const maximum = Math.max(...values, 1);
+      return values.map((value) => {
+        const height = Math.max(12, Math.round((value / maximum) * 96));
+        return `<div class="w-full rounded-t ${toneClass}" style="height:${height}px"></div>`;
+      }).join("");
+    }
+
+    function renderLine(values, color) {
+      const width = 320;
+      const height = 120;
+      const maximum = Math.max(...values, 1);
+      const points = values.map((value, index) => {
+        const x = (width / Math.max(values.length - 1, 1)) * index;
+        const y = height - ((value / maximum) * (height - 18)) - 9;
+        return `${Math.round(x)} ${Math.round(y)}`;
+      }).join(" L");
+      return `<svg viewBox="0 0 ${width} ${height}" class="mt-3 w-full h-28"><path d="M${points}" fill="none" stroke="${color}" stroke-width="4" /></svg>`;
+    }
+
+    function summarizePayload(payload) {
+      if (!payload || typeof payload !== "object") {
+        return "No details available.";
+      }
+      const entries = Object.entries(payload).slice(0, 6).map(([key, value]) => {
+        const rendered = typeof value === "object" ? JSON.stringify(value) : String(value);
+        return `${key}: ${rendered}`;
+      });
+      return entries.join("\n");
+    }
+
+    function auditTitle(eventType) {
+      const mapping = {
+        scenario_executed: "Scenario executed",
+        incident_created: "Incident created",
+        rca_attached: "RCA attached",
+        incident_approved: "Action approved",
+        slack_notified: "Slack notified",
+        jira_created: "Jira ticket created",
+        model_promoted: "Model promoted"
+      };
+      return mapping[eventType] || titleize(eventType);
+    }
+
+    function auditDetail(event) {
+      const payload = event && event.payload && typeof event.payload === "object" ? event.payload : {};
+      if (event.event_type === "scenario_executed") {
+        return `${titleize(payload.scenario || "unknown")} window generated from ${payload.feature_source || "unknown"} and sent to scoring.`;
+      }
+      if (event.event_type === "incident_created") {
+        return `${titleize(payload.anomaly_type || "unknown")} raised with score ${formatScore(payload.anomaly_score || 0)}.`;
+      }
+      if (event.event_type === "rca_attached") {
+        return `RCA attached with confidence ${formatScore(payload.confidence || 0)}.`;
+      }
+      if (event.event_type === "incident_approved") {
+        return `${titleize(payload.action || "unknown")} approved ${payload.execute ? "for execution" : "as recorded action"}.`;
+      }
+      if (event.event_type === "slack_notified") {
+        return `Slack relay status: ${payload.status || "unknown"}.`;
+      }
+      if (event.event_type === "jira_created") {
+        return `Jira issue ${payload.issue_key || "pending"} created.`;
+      }
+      if (event.event_type === "model_promoted") {
+        return `Model ${payload.version || "unknown"} promoted to ${payload.stage || "prod"}.`;
+      }
+      const entries = Object.entries(payload).slice(0, 3);
+      if (!entries.length) {
+        return "No additional detail.";
+      }
+      return entries.map(([key, value]) => `${key}=${value}`).join(" · ");
+    }
+
+    function buildDerivedTrafficPreview(featureWindow) {
+      if (!featureWindow) {
+        return {
+          scenario_name: "none",
+          source: "none",
+          rows: [],
+          stats: { requests_per_second: 0, retry_ratio: 0, active_node: "pcscf-1" },
+          packet_sample: ""
+        };
+      }
+
+      const features = featureWindow.features || featureWindow;
+      const scenarioName = featureWindow.scenario_name || featureWindow.anomaly_type || "normal";
+      const latency = toNumber(features.latency_p95 ?? features.latency_p95_ms, 80);
+      const registerRate = toNumber(features.register_rate);
+      const inviteRate = toNumber(features.invite_rate);
+      const byeRate = toNumber(features.bye_rate);
+      const retransmissions = toNumber(features.retransmission_count);
+      const requestsPerSecond = round(registerRate + inviteRate + byeRate);
+      const retryRatio = round(Math.min(retransmissions / Math.max(requestsPerSecond, 1), 1));
+
+      let templates;
+      let packetSample;
+      if (scenarioName === "registration_storm") {
+        templates = [
+          ["REGISTER", "UE → P-CSCF → S-CSCF", "401 retry", latency * 1.1],
+          ["REGISTER", "UE → P-CSCF → S-CSCF", "202 accepted", latency],
+          ["REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", latency * 0.7],
+          ["REGISTER", "UE → P-CSCF → S-CSCF", "401 retry", latency * 1.2],
+          ["REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", latency * 0.6],
+          ["REGISTER", "UE → P-CSCF → S-CSCF", "202 accepted", latency * 0.9]
+        ];
+        packetSample = [
+          "REGISTER sip:ims.demo.lab SIP/2.0",
+          "Via: SIP/2.0/UDP 10.0.8.12:5060",
+          "From: <sip:user@ims.demo.lab>",
+          "To: <sip:user@ims.demo.lab>",
+          "Call-ID: registration-surge",
+          "CSeq: 314159 REGISTER"
+        ].join("\n");
+      } else if (scenarioName === "malformed_invite" || scenarioName === "malformed_sip") {
+        templates = [
+          ["INVITE", "UE → P-CSCF → Validation", "Malformed", 44],
+          ["INVITE", "UE → P-CSCF → Validation", "400 reject", 38],
+          ["REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", 110],
+          ["INVITE", "UE → P-CSCF → Validation", "Malformed", 42],
+          ["INVITE", "UE → P-CSCF → Validation", "400 reject", 39],
+          ["REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", 105]
+        ];
+        packetSample = [
+          "INVITE sip:user@ims.demo.lab SIP/2.0",
+          "Via: SIP/2.0/UDP 10.0.8.44:5060",
+          "From malformed header",
+          "To: <sip:user@ims.demo.lab>",
+          "Call-ID: malformed-invite",
+          "CSeq: 11 INVITE"
+        ].join("\n");
+      } else {
+        templates = [
+          ["REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", 90],
+          ["INVITE", "UE → P-CSCF → S-CSCF", "200 OK", 70],
+          ["BYE", "UE → P-CSCF → S-CSCF", "200 OK", 55],
+          ["REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", 85],
+          ["INVITE", "UE → P-CSCF → S-CSCF", "200 OK", 68],
+          ["BYE", "UE → P-CSCF → S-CSCF", "200 OK", 50]
+        ];
+        packetSample = [
+          "REGISTER sip:ims.demo.lab SIP/2.0",
+          "Via: SIP/2.0/UDP 10.0.8.10:5060",
+          "From: <sip:user@ims.demo.lab>",
+          "To: <sip:user@ims.demo.lab>",
+          "Call-ID: nominal-register",
+          "CSeq: 1 REGISTER"
+        ].join("\n");
+      }
+
+      const now = Date.now();
+      const rows = templates.map((template, index) => ({
+        time: formatClock(new Date(now - ((templates.length - index) * 1000))),
+        method: template[0],
+        path: template[1],
+        status: template[2],
+        latency_ms: round(template[3], 1)
+      }));
+
+      return {
+        scenario_name: scenarioName,
+        source: featureWindow.feature_source || "derived",
+        rows,
+        stats: {
+          requests_per_second: requestsPerSecond,
+          retry_ratio: retryRatio,
+          active_node: "pcscf-1"
+        },
+        packet_sample: packetSample
+      };
+    }
+
+    function currentTrafficPreview() {
+      if (state.lastRun && state.lastRun.feature_window) {
+        return buildDerivedTrafficPreview(state.lastRun.feature_window);
+      }
+      const preview = consoleState().traffic_preview;
+      if (preview && Array.isArray(preview.rows) && preview.rows.length) {
+        return preview;
+      }
+      const incident = selectedIncident();
+      if (incident) {
+        return buildDerivedTrafficPreview({
+          scenario_name: incident.anomaly_type,
+          feature_source: "incident-feature-snapshot",
+          features: incident.feature_snapshot || {}
         });
       }
+      return buildDerivedTrafficPreview(null);
+    }
 
-      function escapeHtml(value) {
-        return String(value)
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll("\"", "&quot;")
-          .replaceAll("'", "&#39;");
-      }
+    function renderChrome() {
+      const current = consoleState();
+      const incidents = current.incidents || [];
+      const selected = selectedIncident();
+      const healthyServices = current.summary.healthy_services || 0;
+      const serviceCount = current.summary.service_count || 0;
+      const clusterStatus = current.cluster.status || "unknown";
+      const clusterBadge = clusterStatus === "healthy"
+        ? "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300"
+        : "rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-300";
 
-      function formatTime(value) {
-        if (!value) return "unknown";
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return value;
-        return date.toLocaleString();
-      }
+      document.getElementById("pageTitle").textContent = sectionTitles[state.section] || "Overview";
+      document.getElementById("lastRefreshBadge").textContent = current.generated_at ? `Last refresh: ${formatTime(current.generated_at)}` : "Last refresh: waiting";
+      document.getElementById("currentScenarioBadge").textContent = `Scenario: ${latestScenarioLabel()}`;
+      document.getElementById("clusterName").textContent = current.cluster.name || "ims-demo-lab";
+      document.getElementById("clusterSubtitle").textContent = `${healthyServices}/${serviceCount} services healthy`;
+      document.getElementById("clusterStatusBadge").className = clusterBadge;
+      document.getElementById("clusterStatusBadge").textContent = titleize(clusterStatus);
+      document.getElementById("clusterActiveIncident").textContent = current.cluster.active_incident_id ? `${String(current.cluster.active_incident_id).slice(0, 12)}...` : "none";
+      document.getElementById("clusterAutoRefresh").textContent = state.autoRefresh ? "on" : "off";
+      document.getElementById("clusterRcaStatus").textContent = current.cluster.rca_status || "none";
+      document.getElementById("refreshButton").textContent = state.loading ? "Refreshing..." : "Refresh now";
+      document.getElementById("autoRefreshButton").textContent = `Auto refresh: ${state.autoRefresh ? "on" : "off"}`;
+      document.getElementById("apiToken").value = document.getElementById("apiToken").value || defaultToken;
 
-      function formatAction(action) {
-        if (!action) return "none";
-        return action.replaceAll("_", " ");
-      }
+      ["overview", "incidents", "traffic", "rca", "models", "services", "audit"].forEach((sectionId) => {
+        document.getElementById(`nav-${sectionId}`).className = navButtonClass(state.section === sectionId);
+        document.getElementById(sectionId).classList.toggle("hidden", state.section !== sectionId);
+      });
 
-      function truncateText(value, maxLength = 120) {
-        const text = typeof value === "string" ? value : JSON.stringify(value);
-        if (!text) return "n/a";
-        return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
-      }
-
-      function summarizePayload(payload) {
-        if (payload === null || payload === undefined) return "no payload";
-        if (typeof payload !== "object") return String(payload);
-
-        const preferredKeys = [
-          "status",
-          "message",
-          "version",
-          "ready",
-          "selected_model_version",
-          "deployed_model_version",
-          "llm_endpoint_configured",
-          "milvus_endpoint_configured",
-          "incident_count",
-          "record_count",
-          "count"
-        ];
-        const lines = [];
-
-        for (const key of preferredKeys) {
-          if (!(key in payload)) continue;
-          lines.push(`${key}: ${truncateText(payload[key])}`);
-        }
-
-        for (const [key, value] of Object.entries(payload)) {
-          if (lines.length >= 8 || preferredKeys.includes(key)) continue;
-          let summary;
-          if (Array.isArray(value)) {
-            summary = `${value.length} items`;
-          } else if (value && typeof value === "object") {
-            summary = `${Object.keys(value).length} fields`;
-          } else {
-            summary = truncateText(value);
-          }
-          lines.push(`${key}: ${summary}`);
-        }
-
-        return lines.join("\n");
-      }
-
-      function setText(id, value) {
-        document.getElementById(id).textContent = value;
-      }
-
-      function setHtml(id, value) {
-        document.getElementById(id).innerHTML = value;
-      }
-
-      function renderServiceHealth(health) {
-        const healthy = health.filter((service) => service.ok).length;
-        setText("metric-services", `${healthy}/${health.length}`);
-        setText("metric-services-detail", healthy === health.length ? "All live services responding" : "One or more services need attention");
-
-        const markup = health.map((service) => {
-          const badgeClass = service.ok ? "good" : "bad";
-          const status = service.ok ? "healthy" : "unreachable";
-          const detail = service.ok
-            ? escapeHtml(summarizePayload(service.payload))
-            : escapeHtml(service.error || "request failed");
-          return `
-            <div class="card">
-              <span class="label">${escapeHtml(service.name)}</span>
-              <span class="pill ${badgeClass}">${status}</span>
-              <div class="health-detail mono">${detail}</div>
-            </div>
-          `;
-        }).join("");
-
-        setHtml("service-health", markup);
-      }
-
-      function renderLatestIncident(latestIncident) {
-        if (!latestIncident) {
-          setHtml("latest-incident", `<div class="empty">No incidents recorded yet. Use a scenario button to generate a live feature window and score it.</div>`);
-          setHtml("action-summary", `<div class="empty">No incident selected. Approval and notification actions are disabled until an anomaly is recorded.</div>`);
-          updateActionButtons(false);
-          return;
-        }
-
-        updateActionButtons(true);
-        const rcaStatus = latestIncident.rca_payload ? "attached" : "pending";
-        const recommendation = latestIncident.recommendation || "No remediation recommendation attached yet.";
-        setHtml(
-          "latest-incident",
-          `
-            <div class="stack">
-              <div class="card">
-                <span class="label">Incident ID</span>
-                <div class="mono">${escapeHtml(latestIncident.id)}</div>
-              </div>
-              <div class="kv">
-                <div class="card"><span class="label">Type</span><strong>${escapeHtml(latestIncident.anomaly_type)}</strong></div>
-                <div class="card"><span class="label">Score</span><strong>${Number(latestIncident.anomaly_score || 0).toFixed(2)}</strong></div>
-                <div class="card"><span class="label">Status</span><strong>${escapeHtml(latestIncident.status || "open")}</strong></div>
-                <div class="card"><span class="label">RCA</span><strong>${escapeHtml(rcaStatus)}</strong></div>
-              </div>
-              <div class="card">
-                <span class="label">Recommendation</span>
-                <div>${escapeHtml(recommendation)}</div>
-              </div>
-              <div class="subtle">Created ${escapeHtml(formatTime(latestIncident.created_at))}</div>
-            </div>
-          `
-        );
-
-        setHtml(
-          "action-summary",
-          `
-            <div class="stack">
-              <div class="card">
-                <span class="label">Selected Incident</span>
-                <div class="mono">${escapeHtml(latestIncident.id)}</div>
-              </div>
-              <div class="card">
-                <span class="label">Feature Window</span>
-                <div>${escapeHtml(latestIncident.feature_window_id || "not recorded")}</div>
-              </div>
-              <div class="card">
-                <span class="label">Model Version</span>
-                <div>${escapeHtml(latestIncident.model_version || "unknown")}</div>
-              </div>
-            </div>
-          `
-        );
-      }
-
-      function renderFeatureSnapshot(latestIncident) {
-        const snapshot = latestIncident?.feature_snapshot || state.lastFeatureWindow?.features;
-        const windowId = latestIncident?.feature_window_id || state.lastFeatureWindow?.window_id;
-        if (!snapshot || Object.keys(snapshot).length === 0) {
-          setHtml("feature-snapshot", `<div class="empty">No feature snapshot available yet.</div>`);
-          return;
-        }
-
-        const entries = Object.entries(snapshot)
-          .filter((entry) => typeof entry[1] !== "object")
-          .slice(0, 10)
-          .map(([key, value]) => `<li><strong>${escapeHtml(key)}</strong><span class="subtle">${escapeHtml(String(value))}</span></li>`)
-          .join("");
-
-        setHtml(
-          "feature-snapshot",
-          `
-            <div class="stack">
-              <div class="card">
-                <span class="label">Feature Window</span>
-                <div class="mono">${escapeHtml(windowId || "browser session only")}</div>
-              </div>
-              <ul class="list">${entries}</ul>
-            </div>
-          `
-        );
-      }
-
-      function renderRca(latestIncident) {
-        const rca = latestIncident?.rca_payload;
-        if (!rca) {
-          setHtml("rca-panel", `<div class="empty">No RCA payload attached to the latest incident yet.</div>`);
-          return;
-        }
-
-        const evidence = (rca.evidence || []).map((item) => {
-          return `<li><strong>${escapeHtml(item.type || "evidence")}</strong>${escapeHtml(item.reference || "n/a")} · weight ${escapeHtml(String(item.weight ?? "n/a"))}</li>`;
-        }).join("");
-        const retrievedDocs = (rca.retrieved_documents || []).map((item) => {
-          return `<li><strong>${escapeHtml(item.reference || item.title || "retrieved-doc")}</strong>${escapeHtml(item.title || "")} · score ${escapeHtml(String(item.score ?? "n/a"))}</li>`;
-        }).join("");
-
-        setHtml(
-          "rca-panel",
-          `
-            <div class="stack">
-              <div class="card">
-                <span class="label">Root Cause</span>
-                <div>${escapeHtml(rca.root_cause || "unknown")}</div>
-              </div>
-              <div class="kv">
-                <div class="card"><span class="label">Confidence</span><strong>${escapeHtml(String(rca.confidence ?? "n/a"))}</strong></div>
-                <div class="card"><span class="label">Evidence Sources</span><strong>${escapeHtml(String((rca.evidence || []).length))}</strong></div>
-              </div>
-              <div class="card">
-                <span class="label">Recommendation</span>
-                <div>${escapeHtml(rca.recommendation || "none")}</div>
-              </div>
-              <ul class="list">${evidence}</ul>
-              ${retrievedDocs ? `<div><span class="label">Retrieved Context</span><ul class="list">${retrievedDocs}</ul></div>` : ""}
-            </div>
-          `
-        );
-      }
-
-      function renderIncidents(incidents) {
-        if (!incidents.length) {
-          setHtml("incidents-panel", `<div class="empty">No incidents recorded in the control plane.</div>`);
-          return;
-        }
-
-        const markup = incidents.slice(0, 6).map((incident) => {
-          const score = Number(incident.anomaly_score || 0).toFixed(2);
-          return `
-            <li>
-              <strong>${escapeHtml(incident.anomaly_type)}</strong>
-              <div class="subtle">${escapeHtml(formatTime(incident.created_at))}</div>
-              <div class="mono">${escapeHtml(incident.id)}</div>
-              <div>score ${escapeHtml(score)} · model ${escapeHtml(incident.model_version || "unknown")} · status ${escapeHtml(incident.status || "open")}</div>
-            </li>
-          `;
-        }).join("");
-
-        setHtml("incidents-panel", `<ul class="list">${markup}</ul>`);
-      }
-
-      function renderAudit(audit) {
-        if (!audit.length) {
-          setHtml("audit-panel", `<div class="empty">No audit events recorded yet.</div>`);
-          return;
-        }
-
-        const markup = audit.slice(0, 8).map((event) => {
-          const payload = event.payload || {};
-          const payloadSummary = payload.action || payload.status || payload.root_cause || payload.model_version || "";
-          return `
-            <li>
-              <strong>${escapeHtml(event.event_type)}</strong>
-              <div class="subtle">${escapeHtml(formatTime(event.created_at))}</div>
-              <div>actor ${escapeHtml(event.actor || "unknown")}${event.incident_id ? ` · incident ${escapeHtml(event.incident_id)}` : ""}</div>
-              <div class="subtle">${escapeHtml(String(payloadSummary))}</div>
-            </li>
-          `;
-        }).join("");
-
-        setHtml("audit-panel", `<ul class="list">${markup}</ul>`);
-      }
-
-      function renderModels(models) {
-        const candidates = models.models || [];
-        const header = `
-          <div class="card">
-            <span class="label">Deployed Model</span>
-            <strong>${escapeHtml(models.deployed_model_version || "unknown")}</strong>
-            <div class="subtle">selected ${escapeHtml(models.selected_model_version || models.deployment_source_model_version || "unknown")} · feature schema ${escapeHtml(models.feature_schema_version || "unknown")} · dataset ${escapeHtml(models.dataset_version || "unknown")}</div>
+      const notice = document.getElementById("globalNotice");
+      if (state.error) {
+        notice.innerHTML = `
+          <div class="rounded-3xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+            ${escapeHtml(state.error)}
           </div>
         `;
+      } else if (!incidents.length && state.lastRun && state.lastRun.score && !state.lastRun.score.is_anomaly) {
+        notice.innerHTML = `
+          <div class="rounded-3xl border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+            ${escapeHtml(latestScenarioStatus())}
+          </div>
+        `;
+      } else if (selected && selected.status !== "open") {
+        notice.innerHTML = `
+          <div class="rounded-3xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+            Selected incident is ${escapeHtml(selected.status)}.
+          </div>
+        `;
+      } else {
+        notice.innerHTML = "";
+      }
+    }
 
-        const items = candidates.map((model) => {
-          const metrics = model.metrics || {};
-          return `
-            <li>
-              <strong>${escapeHtml(model.version)}</strong>
-              <div>${escapeHtml(model.kind || "model")} · precision ${escapeHtml(String(metrics.precision ?? "n/a"))} · recall ${escapeHtml(String(metrics.recall ?? "n/a"))}</div>
-              <div class="subtle">f1 ${escapeHtml(String(metrics.f1 ?? "n/a"))} · stability ${escapeHtml(String(metrics.stability_score ?? "n/a"))}</div>
-            </li>
-          `;
-        }).join("");
+    function renderOverview() {
+      const current = consoleState();
+      const summary = current.summary || {};
+      const incidents = current.incidents || [];
+      const selected = selectedIncident();
+      const preview = currentTrafficPreview();
+      const registerSeries = metricSeries(incidents, "register_rate");
+      const errorSeries = metricSeries(incidents, "error_4xx_ratio");
+      const latencySeries = metricSeries(incidents, "latency_p95");
+      const reqPerMinute = formatCount((preview.stats.requests_per_second || 0) * 60);
+      const scenarioStatus = latestScenarioStatus();
+      const timeline = selected
+        ? selected.timeline || []
+        : (current.audit || []).slice(0, 3).map((event) => ({
+            time: event.created_at,
+            title: auditTitle(event.event_type),
+            detail: auditDetail(event)
+          }));
 
-        setHtml("models-panel", `${header}<ul class="list" style="margin-top: 12px;">${items}</ul>`);
+      document.getElementById("overview").innerHTML = `
+        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Active incidents</div>
+            <div class="mt-4 flex items-end justify-between">
+              <div class="text-4xl font-semibold">${formatCount(summary.incident_count || 0)}</div>
+              <div class="text-sm text-rose-300">${formatCount(summary.critical_incidents || 0)} critical</div>
+            </div>
+            <div class="mt-4 h-2 rounded-full bg-slate-800"><div class="h-2 rounded-full bg-rose-400" style="width:${Math.min(100, ((summary.open_incidents || 0) * 20) || 4)}%"></div></div>
+          </div>
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Anomaly score</div>
+            <div class="mt-4 flex items-end justify-between">
+              <div class="text-4xl font-semibold">${selected ? formatScore(selected.anomaly_score) : "0.00"}</div>
+              <div class="text-sm text-amber-300">${selected ? escapeHtml(selected.severity) : "No incident"}</div>
+            </div>
+            <div class="mt-4 text-sm text-slate-400">${selected ? escapeHtml(selected.subtitle) : "No active anomaly is selected."}</div>
+          </div>
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Traffic rate</div>
+            <div class="mt-4 flex items-end justify-between">
+              <div class="text-4xl font-semibold">${reqPerMinute}</div>
+              <div class="text-sm text-sky-300">req/min</div>
+            </div>
+            <div class="mt-4 text-sm text-slate-400">Derived from the most recent feature window or selected incident snapshot.</div>
+          </div>
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Service health</div>
+            <div class="mt-4 flex items-end justify-between">
+              <div class="text-4xl font-semibold">${formatCount(summary.healthy_services || 0)}/${formatCount(summary.service_count || 0)}</div>
+              <div class="text-sm text-emerald-300">${formatCount(summary.service_count - summary.healthy_services || 0)} degraded</div>
+            </div>
+            <div class="mt-4 text-sm text-slate-400">Core workflow health from control-plane, gateway, scoring, RCA, and predictive serving.</div>
+          </div>
+        </div>
+
+        <div class="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Live health signals</div>
+                <h2 class="mt-2 text-xl font-semibold">Service and traffic posture</h2>
+              </div>
+              <div class="rounded-full border border-slate-800 bg-slate-950 px-3 py-1 text-xs text-slate-400">Recent windows</div>
+            </div>
+            <div class="mt-6 grid gap-4 lg:grid-cols-3">
+              <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <div class="text-sm text-slate-400">Registration rate</div>
+                <div class="mt-3 h-28 flex items-end gap-2">${renderBars(registerSeries, "bg-sky-400/80")}</div>
+                <div class="mt-3 text-xs text-slate-500">Series is built from recent incident windows and the last locally executed scenario.</div>
+              </div>
+              <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <div class="text-sm text-slate-400">4xx ratio</div>
+                ${renderLine(errorSeries, "#f59e0b")}
+                <div class="mt-3 text-xs text-slate-500">Highlights validation pressure and malformed traffic patterns.</div>
+              </div>
+              <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <div class="text-sm text-slate-400">Latency p95</div>
+                ${renderLine(latencySeries, "#38bdf8")}
+                <div class="mt-3 text-xs text-slate-500">Tracks response-time drift on the registration path.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Immediate actions</div>
+            <h2 class="mt-2 text-xl font-semibold">Run scenarios and respond</h2>
+            <div class="mt-5 space-y-3">
+              <button class="w-full rounded-2xl bg-slate-950 px-4 py-3 text-left ring-1 ring-slate-800 hover:bg-slate-900" onclick="runScenario('normal')">
+                <div class="font-medium text-white">Run Normal</div>
+                <div class="mt-1 text-sm text-slate-400">Generate a nominal feature window and verify no incident is created.</div>
+              </button>
+              <button class="w-full rounded-2xl bg-rose-500/15 px-4 py-3 text-left ring-1 ring-rose-400/20 hover:bg-rose-500/20" onclick="runScenario('registration_storm')">
+                <div class="font-medium text-rose-200">Run Registration Storm</div>
+                <div class="mt-1 text-sm text-slate-400">Drive a burst scenario through feature generation, scoring, and RCA.</div>
+              </button>
+              <button class="w-full rounded-2xl bg-amber-500/10 px-4 py-3 text-left ring-1 ring-amber-400/20 hover:bg-amber-500/15" onclick="runScenario('malformed_invite')">
+                <div class="font-medium text-amber-200">Run Malformed INVITE</div>
+                <div class="mt-1 text-sm text-slate-400">Exercise malformed SIP handling and the validation failure path.</div>
+              </button>
+            </div>
+            <div class="mt-5 rounded-2xl border border-slate-800 bg-slate-950 p-4 text-sm text-slate-300">
+              ${escapeHtml(scenarioStatus)}
+            </div>
+            <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <button class="rounded-2xl bg-sky-500/10 px-4 py-3 ring-1 ring-sky-400/20 hover:bg-sky-500/15" onclick="approveSelected('scale_scscf')">Approve S-CSCF scale</button>
+              <button class="rounded-2xl bg-slate-950 px-4 py-3 ring-1 ring-slate-800 hover:bg-slate-900" onclick="approveSelected('rate_limit_pcscf')">Approve rate limit</button>
+              <button class="rounded-2xl bg-sky-500/10 px-4 py-3 ring-1 ring-sky-400/20 hover:bg-sky-500/15" onclick="notifySelected('slack')">Send to Slack</button>
+              <button class="rounded-2xl bg-slate-950 px-4 py-3 ring-1 ring-slate-800 hover:bg-slate-900" onclick="notifySelected('jira')">Open Jira</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Hot incidents</div>
+                <h2 class="mt-2 text-xl font-semibold">Needs operator attention</h2>
+              </div>
+              <button class="text-sm text-sky-300" onclick="activateSection('incidents')">Open queue →</button>
+            </div>
+            <div class="mt-5 overflow-hidden rounded-2xl border border-slate-800">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-slate-950 text-slate-400">
+                  <tr>
+                    <th class="px-4 py-3 font-medium">Incident</th>
+                    <th class="px-4 py-3 font-medium">Severity</th>
+                    <th class="px-4 py-3 font-medium">Score</th>
+                    <th class="px-4 py-3 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(incidents.length ? incidents.slice(0, 5).map((incident) => `
+                    <tr class="border-t border-slate-800 hover:bg-slate-950/60 cursor-pointer" onclick="selectIncident('${escapeHtml(incident.id)}')">
+                      <td class="px-4 py-3">${escapeHtml(incident.anomaly_type)}</td>
+                      <td class="px-4 py-3">${escapeHtml(incident.severity)}</td>
+                      <td class="px-4 py-3">${formatScore(incident.anomaly_score)}</td>
+                      <td class="px-4 py-3">${escapeHtml(incident.status)}</td>
+                    </tr>
+                  `).join("") : `
+                    <tr class="border-t border-slate-800">
+                      <td colspan="4" class="px-4 py-6 text-slate-400">No incidents recorded yet. Run a non-nominal scenario to populate the queue.</td>
+                    </tr>
+                  `)}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Topology</div>
+            <h2 class="mt-2 text-xl font-semibold">Impacted path</h2>
+            <div class="mt-6 flex items-center justify-between gap-2 text-center text-sm">
+              ${(selected ? selected.topology : ["UE", "P-CSCF", "S-CSCF", "HSS"]).map((node, index, nodes) => `
+                ${index > 0 ? `<div class="text-slate-600">→</div>` : ""}
+                <div class="flex-1 rounded-2xl border ${index === 1 ? "border-sky-400/30 bg-sky-500/10 text-sky-200" : index === 2 ? "border-rose-400/40 bg-rose-500/10 text-rose-200" : "border-slate-800 bg-slate-950"} p-4">${escapeHtml(node)}</div>
+              `).join("")}
+            </div>
+            <div class="mt-4 text-sm text-slate-400">${selected ? escapeHtml(selected.blast_radius) : "Topology will reflect the selected incident once one is available."}</div>
+          </div>
+
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Recent timeline</div>
+            <h2 class="mt-2 text-xl font-semibold">Latest activity</h2>
+            <div class="mt-5 space-y-4 text-sm">
+              ${(timeline.length ? timeline.slice(0, 4).map((entry) => `
+                <div class="flex gap-3">
+                  <span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-400"></span>
+                  <div>
+                    <div class="font-medium">${escapeHtml(titleize(entry.title || "event"))}</div>
+                    <div class="text-slate-400">${escapeHtml(entry.detail || "")}</div>
+                  </div>
+                </div>
+              `).join("") : `<div class="text-slate-400">No activity recorded yet.</div>`)}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function incidentTabButton(tab, label) {
+      const active = state.selectedIncidentTab === tab;
+      return `<button class="incident-tab rounded-2xl px-4 py-2 ${active ? "bg-sky-500/10 text-sky-300 ring-1 ring-sky-400/30" : "bg-slate-950 text-slate-300 ring-1 ring-slate-800"}" onclick="setIncidentTab('${tab}')">${label}</button>`;
+    }
+
+    function renderIncidents() {
+      const incidents = consoleState().incidents || [];
+      const incident = selectedIncident();
+      const volumeSeries = metricSeries(incidents, "register_rate");
+      const latencySeries = metricSeries(incidents, "latency_p95");
+
+      if (!incident) {
+        document.getElementById("incidents").innerHTML = `
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-soft text-slate-300">
+            No incidents recorded yet. Run a non-nominal scenario to populate the operator queue.
+          </div>
+        `;
+        return;
       }
 
-      function renderPayload(latestIncident, latestAudit) {
-        const payload = latestIncident
-          ? {
-              incident: latestIncident,
-              latest_audit: latestAudit || null
-            }
-          : {
-              last_feature_window: state.lastFeatureWindow,
-              latest_audit: latestAudit || null
-            };
-        setText("payload-panel", JSON.stringify(payload, null, 2));
+      const rcaPayload = incident.rca_payload || {};
+      const evidence = incident.evidence_sources || [];
+      const explainability = incident.explainability || [];
+      const recommendation = incident.recommendation || "No recommendation attached.";
+      const tone = toneClasses(incident.severity_tone);
+
+      document.getElementById("incidents").innerHTML = `
+        <div class="grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 shadow-soft overflow-hidden">
+            <div class="p-5 border-b border-slate-800">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Operator queue</div>
+              <h2 class="mt-2 text-xl font-semibold">Incident list</h2>
+              <div class="mt-4 grid grid-cols-2 gap-2 text-sm">
+                <div class="rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2">Severity: All</div>
+                <div class="rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2">Window: Recent</div>
+              </div>
+            </div>
+            <div class="mini-scroll max-h-[70vh] overflow-y-auto">
+              ${incidents.map((entry) => {
+                const active = entry.id === incident.id;
+                const entryTone = toneClasses(entry.severity_tone);
+                return `
+                  <button class="w-full text-left p-4 border-b border-slate-800 ${active ? "bg-sky-500/10" : "hover:bg-slate-950/60"}" onclick="selectIncident('${escapeHtml(entry.id)}')">
+                    <div class="flex items-start justify-between gap-4">
+                      <div>
+                        <div class="font-medium">${escapeHtml(entry.anomaly_type)}</div>
+                        <div class="mt-1 text-sm text-slate-400">${escapeHtml(entry.subtitle)}</div>
+                      </div>
+                      <span class="rounded-full px-2.5 py-1 text-xs ${entryTone.badge}">${escapeHtml(entry.severity)}</span>
+                    </div>
+                    <div class="mt-3 flex items-center justify-between text-xs text-slate-500"><span>score ${formatScore(entry.anomaly_score)}</span><span>${escapeHtml(formatTime(entry.created_at))}</span></div>
+                  </button>
+                `;
+              }).join("")}
+            </div>
+          </div>
+
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+            <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div>
+                <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Selected incident</div>
+                <h2 class="mt-2 text-2xl font-semibold">${escapeHtml(incident.anomaly_type)}</h2>
+                <div class="mt-1 text-slate-400">${escapeHtml(incident.subtitle)}</div>
+              </div>
+              <div class="flex flex-wrap gap-2 text-sm">
+                <span class="rounded-full px-3 py-1.5 ${tone.badge}">${escapeHtml(incident.severity)}</span>
+                <span class="rounded-full bg-slate-950 px-3 py-1.5 text-slate-300 ring-1 ring-slate-800">${escapeHtml(incident.status)}</span>
+                <span class="rounded-full bg-slate-950 px-3 py-1.5 text-slate-300 ring-1 ring-slate-800">Score ${formatScore(incident.anomaly_score)}</span>
+              </div>
+            </div>
+
+            <div class="mt-6 border-b border-slate-800">
+              <div class="flex flex-wrap gap-2 pb-4 text-sm">
+                ${incidentTabButton("summary", "Summary")}
+                ${incidentTabButton("metrics", "Metrics")}
+                ${incidentTabButton("rca", "RCA")}
+                ${incidentTabButton("payload", "Payload")}
+                ${incidentTabButton("actions", "Actions")}
+              </div>
+            </div>
+
+            <div class="pt-6 space-y-6">
+              <div class="${state.selectedIncidentTab === "summary" ? "" : "hidden"}">
+                <div class="grid gap-4 lg:grid-cols-3">
+                  <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                    <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Impact</div>
+                    <div class="mt-3 text-sm text-slate-300">${escapeHtml(incident.impact)}</div>
+                  </div>
+                  <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                    <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Blast radius</div>
+                    <div class="mt-3 text-sm text-slate-300">${escapeHtml(incident.blast_radius)}</div>
+                  </div>
+                  <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                    <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Recommended</div>
+                    <div class="mt-3 text-sm text-slate-300">${escapeHtml(recommendation)}</div>
+                  </div>
+                </div>
+                <div class="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                  <div class="text-sm text-slate-400">Incident timeline</div>
+                  <div class="mt-4 space-y-3 text-sm">
+                    ${(incident.timeline || []).map((entry) => `
+                      <div class="flex gap-3">
+                        <span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-400"></span>
+                        <div>
+                          <div class="font-medium">${escapeHtml(formatTime(entry.time))} · ${escapeHtml(entry.title)}</div>
+                          <div class="text-slate-400">${escapeHtml(entry.detail)}</div>
+                        </div>
+                      </div>
+                    `).join("")}
+                  </div>
+                </div>
+              </div>
+
+              <div class="${state.selectedIncidentTab === "metrics" ? "" : "hidden"}">
+                <div class="grid gap-4 lg:grid-cols-2">
+                  <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                    <div class="text-sm text-slate-400">Request volume trend</div>
+                    ${renderLine(volumeSeries, "#38bdf8")}
+                  </div>
+                  <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                    <div class="text-sm text-slate-400">Latency / errors</div>
+                    ${renderLine(latencySeries, "#f59e0b")}
+                  </div>
+                </div>
+                <div class="mt-4 grid gap-4 lg:grid-cols-4">
+                  <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4"><div class="text-slate-400 text-sm">Register rate</div><div class="mt-2 text-2xl font-semibold">${round((incident.feature_snapshot || {}).register_rate, 2)}</div></div>
+                  <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4"><div class="text-slate-400 text-sm">Latency p95</div><div class="mt-2 text-2xl font-semibold">${round((incident.feature_snapshot || {}).latency_p95, 1)}ms</div></div>
+                  <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4"><div class="text-slate-400 text-sm">Retries</div><div class="mt-2 text-2xl font-semibold">${round((incident.feature_snapshot || {}).retransmission_count, 0)}</div></div>
+                  <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4"><div class="text-slate-400 text-sm">4xx ratio</div><div class="mt-2 text-2xl font-semibold">${round((incident.feature_snapshot || {}).error_4xx_ratio, 2)}</div></div>
+                </div>
+              </div>
+
+              <div class="${state.selectedIncidentTab === "rca" ? "" : "hidden"}">
+                <div class="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+                  <div class="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+                    <div class="text-sm text-slate-400">Root cause narrative</div>
+                    <div class="mt-3 text-slate-200 leading-7">${escapeHtml(incident.narrative)}</div>
+                    <div class="mt-5 grid gap-3 sm:grid-cols-3 text-sm">
+                      <div class="rounded-2xl border border-slate-800 p-4"><div class="text-slate-500">Confidence</div><div class="mt-2 text-xl font-semibold">${formatScore(rcaPayload.confidence || 0)}</div></div>
+                      <div class="rounded-2xl border border-slate-800 p-4"><div class="text-slate-500">Evidence</div><div class="mt-2 text-xl font-semibold">${formatCount(evidence.length)}</div></div>
+                      <div class="rounded-2xl border border-slate-800 p-4"><div class="text-slate-500">Model</div><div class="mt-2 text-xl font-semibold">${escapeHtml(incident.model_version)}</div></div>
+                    </div>
+                  </div>
+                  <div class="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+                    <div class="text-sm text-slate-400">Evidence sources</div>
+                    <div class="mt-4 space-y-3 text-sm">
+                      ${(evidence.length ? evidence.map((item) => `
+                        <div class="rounded-2xl border border-slate-800 p-4">
+                          <div class="font-medium">${escapeHtml(item.title)}</div>
+                          <div class="mt-1 text-slate-400">${escapeHtml(item.detail)}</div>
+                        </div>
+                      `).join("") : `<div class="text-slate-400">No evidence sources attached yet.</div>`)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="${state.selectedIncidentTab === "payload" ? "" : "hidden"}">
+                <div class="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+                  <div class="flex items-center justify-between">
+                    <div class="text-sm text-slate-400">Formatted incident payload</div>
+                    <button class="rounded-xl border border-slate-800 px-3 py-1.5 text-sm" onclick="copyPayload()">Copy</button>
+                  </div>
+                  <pre id="incidentPayloadBox" class="mt-4 overflow-x-auto text-sm text-slate-300">${escapeHtml(incident.payload_pretty)}</pre>
+                </div>
+              </div>
+
+              <div class="${state.selectedIncidentTab === "actions" ? "" : "hidden"}">
+                <div class="grid gap-4 lg:grid-cols-2">
+                  <button class="rounded-2xl bg-rose-500/15 p-5 text-left ring-1 ring-rose-400/20 hover:bg-rose-500/20" onclick="approveSelected('scale_scscf')">
+                    <div class="font-semibold text-rose-200">Approve S-CSCF scale</div>
+                    <div class="mt-2 text-sm text-slate-400">Scale the deployment response path for registration pressure.</div>
+                  </button>
+                  <button class="rounded-2xl bg-amber-500/10 p-5 text-left ring-1 ring-amber-400/20 hover:bg-amber-500/15" onclick="approveSelected('rate_limit_pcscf')">
+                    <div class="font-semibold text-amber-200">Approve P-CSCF rate limit</div>
+                    <div class="mt-2 text-sm text-slate-400">Apply a temporary throttle while the incident remains open.</div>
+                  </button>
+                  <button class="rounded-2xl bg-sky-500/10 p-5 text-left ring-1 ring-sky-400/20 hover:bg-sky-500/15" onclick="notifySelected('slack')">
+                    <div class="font-semibold text-sky-200">Send to Slack</div>
+                    <div class="mt-2 text-sm text-slate-400">Broadcast incident status, RCA, and the next operator action.</div>
+                  </button>
+                  <button class="rounded-2xl bg-slate-950 p-5 text-left ring-1 ring-slate-800 hover:bg-slate-900" onclick="notifySelected('jira')">
+                    <div class="font-semibold text-white">Open Jira</div>
+                    <div class="mt-2 text-sm text-slate-400">Create a remediation work item with the evidence bundle.</div>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTraffic() {
+      const preview = currentTrafficPreview();
+      const rows = preview.rows || [];
+      const requestsPerSecond = round((preview.stats || {}).requests_per_second || 0, 2);
+      const retryRatio = round((preview.stats || {}).retry_ratio || 0, 2);
+      const activeNode = (preview.stats || {}).active_node || "pcscf-1";
+      const scenarioName = preview.scenario_name || "none";
+
+      document.getElementById("traffic").innerHTML = `
+        <div class="grid gap-4 xl:grid-cols-[1fr_360px]">
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Real-time feed</div>
+                <h2 class="mt-2 text-xl font-semibold">SIP traffic explorer</h2>
+              </div>
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                <div class="rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2">Node: ${escapeHtml(activeNode)}</div>
+                <div class="rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2">Method: mixed</div>
+                <div class="rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2">Window: latest</div>
+                <div class="rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2">Scenario: ${escapeHtml(titleize(scenarioName))}</div>
+              </div>
+            </div>
+            <div class="mt-5 overflow-hidden rounded-2xl border border-slate-800">
+              <div class="grid grid-cols-[120px_120px_1fr_120px_120px] bg-slate-950 px-4 py-3 text-xs uppercase tracking-[0.2em] text-slate-500">
+                <div>Time</div><div>Method</div><div>Path</div><div>Status</div><div>Latency</div>
+              </div>
+              <div class="mini-scroll max-h-[65vh] overflow-y-auto text-sm">
+                ${(rows.length ? rows.map((row) => `
+                  <div class="traffic-line grid grid-cols-[120px_120px_1fr_120px_120px] px-4 py-3 border-t border-slate-800">
+                    <div>${escapeHtml(row.time)}</div>
+                    <div>${escapeHtml(row.method)}</div>
+                    <div>${escapeHtml(row.path)}</div>
+                    <div class="${row.status.includes("Malformed") || row.status.includes("400") || row.status.includes("401") ? "text-rose-300" : row.status.includes("202") ? "text-amber-300" : "text-emerald-300"}">${escapeHtml(row.status)}</div>
+                    <div>${escapeHtml(String(row.latency_ms))}ms</div>
+                  </div>
+                `).join("") : `
+                  <div class="px-4 py-6 text-slate-400">No traffic preview is available yet. Run a scenario to populate this view.</div>
+                `)}
+              </div>
+            </div>
+          </div>
+          <div class="space-y-4">
+            <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Stream stats</div>
+              <h2 class="mt-2 text-xl font-semibold">What the operator sees</h2>
+              <div class="mt-4 space-y-3 text-sm">
+                <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4"><div class="text-slate-400">req/sec</div><div class="mt-2 text-2xl font-semibold">${requestsPerSecond}</div></div>
+                <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4"><div class="text-slate-400">retry ratio</div><div class="mt-2 text-2xl font-semibold">${retryRatio}</div></div>
+                <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4"><div class="text-slate-400">active node</div><div class="mt-2 text-2xl font-semibold">${escapeHtml(activeNode)}</div></div>
+                <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4"><div class="text-slate-400">source</div><div class="mt-2 text-base font-semibold">${escapeHtml(preview.source || "derived")}</div></div>
+              </div>
+            </div>
+            <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Inspect packet</div>
+              <pre class="mt-4 overflow-x-auto text-sm text-slate-300 rounded-2xl border border-slate-800 bg-slate-950 p-4">${escapeHtml(preview.packet_sample || "No packet sample available.")}</pre>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderRca() {
+      const incident = selectedIncident();
+      if (!incident) {
+        document.getElementById("rca").innerHTML = `
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-soft text-slate-300">
+            RCA analysis will appear here once an incident has been recorded and enriched.
+          </div>
+        `;
+        return;
       }
 
-      function updateSummary(health, incidents, audit, models) {
-        const latestIncident = incidents[0] || null;
-        const latestAudit = audit[0] || null;
-        const openIncidents = incidents.filter((incident) => incident.status !== "resolved").length;
+      const explainability = incident.explainability || [];
+      const similar = incident.similar_incidents || [];
 
-        state.activeIncidentId = latestIncident ? latestIncident.id : null;
-        setText("metric-incidents", String(incidents.length));
-        setText("metric-incidents-detail", latestIncident ? `Latest ${latestIncident.anomaly_type}` : "No incident history yet");
-        setText("metric-open", String(openIncidents));
-        setText("metric-open-detail", openIncidents ? `${openIncidents} incident(s) require review` : "No active anomalies");
-        setText("metric-score", latestIncident ? Number(latestIncident.anomaly_score || 0).toFixed(2) : "0.00");
-        setText("metric-score-detail", latestIncident ? `Latest incident ${latestIncident.id.slice(0, 8)}` : "No anomaly scored yet");
-        setText("metric-model", models.deployed_model_version || "unknown");
-        setText("metric-model-detail", `${(models.models || []).length} model candidate(s) in registry`);
+      document.getElementById("rca").innerHTML = `
+        <div class="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Model explainability</div>
+            <h2 class="mt-2 text-xl font-semibold">Why this anomaly fired</h2>
+            <div class="mt-6 space-y-4">
+              ${explainability.map((item) => {
+                const tone = item.tone === "amber" ? "bg-amber-400" : item.tone === "rose" ? "bg-rose-400" : item.tone === "emerald" ? "bg-emerald-400" : "bg-sky-400";
+                return `
+                  <div>
+                    <div class="flex justify-between text-sm"><span>${escapeHtml(item.feature)}</span><span>${formatScore(item.weight)}</span></div>
+                    <div class="mt-2 h-2 rounded-full bg-slate-800"><div class="h-2 rounded-full ${tone}" style="width:${Math.max(8, item.weight * 100)}%"></div></div>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+            <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-950 p-4 text-sm text-slate-300">
+              ${escapeHtml(incident.narrative)}
+            </div>
+          </div>
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Similar incidents</div>
+            <h2 class="mt-2 text-xl font-semibold">Historical matches</h2>
+            <div class="mt-5 space-y-3 text-sm">
+              ${(similar.length ? similar.map((item) => `
+                <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                  <div class="font-medium">${escapeHtml(item.title)}</div>
+                  <div class="mt-1 text-slate-400">${escapeHtml(item.detail)}</div>
+                </div>
+              `).join("") : `<div class="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-400">No historical matches are available yet.</div>`)}
+            </div>
+          </div>
+        </div>
+      `;
+    }
 
-        setText("last-refresh-pill", `Last refresh: ${formatTime(new Date().toISOString())}`);
-        setText("active-incident-pill", `Active incident: ${latestIncident ? latestIncident.id : "none"}`);
-        setText("latest-event-pill", `Latest audit event: ${latestAudit ? latestAudit.event_type : "none"}`);
+    function renderModels() {
+      const registry = consoleState().models || { models: [] };
+      const models = registry.models || [];
+      const deployedVersion = registry.deployed_model_version || "unknown";
+      const candidate = models.find((model) => model.version && model.version !== deployedVersion) || null;
 
-        renderLatestIncident(latestIncident);
-        renderFeatureSnapshot(latestIncident);
-        renderRca(latestIncident);
-        renderIncidents(incidents);
-        renderAudit(audit);
-        renderModels(models);
-        renderPayload(latestIncident, latestAudit);
+      document.getElementById("models").innerHTML = `
+        <div class="space-y-4">
+          <div class="grid gap-4 md:grid-cols-3">
+            <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Deployed model</div>
+              <div class="mt-3 text-2xl font-semibold">${escapeHtml(deployedVersion)}</div>
+            </div>
+            <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Dataset version</div>
+              <div class="mt-3 text-2xl font-semibold">${escapeHtml(registry.dataset_version || "unknown")}</div>
+            </div>
+            <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Feature schema</div>
+              <div class="mt-3 text-2xl font-semibold">${escapeHtml(registry.feature_schema_version || "feature_schema_v1")}</div>
+            </div>
+          </div>
+
+          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft overflow-hidden">
+            <div class="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Registry</div>
+                <h2 class="mt-2 text-xl font-semibold">Model inventory</h2>
+              </div>
+              <button class="rounded-2xl ${candidate ? "bg-sky-500 text-slate-950" : "bg-slate-800 text-slate-400 cursor-not-allowed"} px-4 py-2 text-sm font-medium" ${candidate ? 'onclick="promoteCandidate()"' : "disabled"}>${candidate ? `Promote ${escapeHtml(candidate.version)}` : "No candidate available"}</button>
+            </div>
+            <div class="mt-5 overflow-hidden rounded-2xl border border-slate-800">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-slate-950 text-slate-400">
+                  <tr>
+                    <th class="px-4 py-3 font-medium">Model</th>
+                    <th class="px-4 py-3 font-medium">Version</th>
+                    <th class="px-4 py-3 font-medium">Precision</th>
+                    <th class="px-4 py-3 font-medium">Recall</th>
+                    <th class="px-4 py-3 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(models.length ? models.map((model) => {
+                    const metrics = model.metrics || {};
+                    const status = model.version === deployedVersion ? "Deployed" : model.version === registry.selected_model_version ? "Selected" : "Ready";
+                    const statusClass = status === "Deployed" ? "text-emerald-300" : status === "Selected" ? "text-sky-300" : "text-slate-300";
+                    return `
+                      <tr class="border-t border-slate-800">
+                        <td class="px-4 py-3 font-medium">${escapeHtml(model.name || model.version || "model")}</td>
+                        <td class="px-4 py-3">${escapeHtml(model.version || "unknown")}</td>
+                        <td class="px-4 py-3">${formatScore(metrics.precision || 0)}</td>
+                        <td class="px-4 py-3">${formatScore(metrics.recall || 0)}</td>
+                        <td class="px-4 py-3 ${statusClass}">${status}</td>
+                      </tr>
+                    `;
+                  }).join("") : `
+                    <tr class="border-t border-slate-800">
+                      <td colspan="5" class="px-4 py-6 text-slate-400">Model registry has not been populated yet.</td>
+                    </tr>
+                  `)}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderServices() {
+      const services = consoleState().services || [];
+      document.getElementById("services").innerHTML = `
+        <div class="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          ${(services.length ? services.map((service) => {
+            const tone = service.ok ? "emerald" : "amber";
+            const palette = toneClasses(tone);
+            return `
+              <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+                <div class="flex items-center justify-between gap-4">
+                  <h3 class="text-lg font-semibold">${escapeHtml(service.name)}</h3>
+                  <span class="rounded-full px-2.5 py-1 text-xs ${palette.badge}">${escapeHtml(titleize(service.status))}</span>
+                </div>
+                <div class="mt-4 text-sm text-slate-400 whitespace-pre-wrap">${escapeHtml(summarizePayload(service.payload))}</div>
+                <div class="mt-4 text-xs text-slate-500">${escapeHtml(service.endpoint || "")}</div>
+              </div>
+            `;
+          }).join("") : `<div class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-soft text-slate-300">No service health data available yet.</div>`)}
+        </div>
+      `;
+    }
+
+    function renderAudit() {
+      const events = consoleState().audit || [];
+      document.getElementById("audit").innerHTML = `
+        <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+          <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Traceability</div>
+          <h2 class="mt-2 text-xl font-semibold">Audit activity</h2>
+          <div class="mt-5 space-y-3 text-sm">
+            ${(events.length ? events.slice(0, 12).map((event) => `
+              <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <div class="font-medium">${escapeHtml(auditTitle(event.event_type))}</div>
+                <div class="mt-1 text-slate-400">${escapeHtml(auditDetail(event))}</div>
+                <div class="mt-2 text-xs text-slate-500">${escapeHtml(formatTime(event.created_at))}</div>
+              </div>
+            `).join("") : `<div class="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-400">No audit events recorded yet.</div>`)}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderAll() {
+      ensureSelectedIncident();
+      renderChrome();
+      renderOverview();
+      renderIncidents();
+      renderTraffic();
+      renderRca();
+      renderModels();
+      renderServices();
+      renderAudit();
+    }
+
+    async function refreshDashboard(force = false) {
+      if (state.loading && !force) {
+        return;
       }
-
-      function updateActionButtons(enabled) {
-        document.querySelectorAll(".action-button").forEach((button) => {
-          button.disabled = !enabled;
+      state.loading = true;
+      state.error = "";
+      renderChrome();
+      try {
+        state.console = await fetchJson(`${controlPlaneService}/console/state?project=${encodeURIComponent(defaultProject)}`, {
+          headers: authHeaders()
         });
+      } catch (error) {
+        state.error = error instanceof Error ? error.message : String(error);
+      } finally {
+        state.loading = false;
+        renderAll();
       }
+    }
 
-      async function refreshDashboard() {
-        try {
-          const [health, incidents, audit, models] = await Promise.all([
-            fetchServiceHealth(),
-            fetchJson(`${controlPlaneService}/incidents`, { headers: authHeaders() }),
-            fetchJson(`${controlPlaneService}/audit`, { headers: authHeaders() }),
-            fetchJson(`${controlPlaneService}/models`, { headers: authHeaders() })
-          ]);
-          renderServiceHealth(health);
-          updateSummary(health, incidents, audit, models);
-        } catch (error) {
-          setHtml("incidents-panel", `<div class="empty">Dashboard refresh failed: ${escapeHtml(errorMessage(error))}</div>`);
+    async function runScenario(scenario) {
+      state.loading = true;
+      state.error = "";
+      renderChrome();
+      try {
+        const result = await fetchJson(`${controlPlaneService}/console/run-scenario`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ scenario, project: defaultProject })
+        });
+        state.lastRun = {
+          scenario,
+          feature_window: result.feature_window,
+          score: result.score,
+          rca: result.rca,
+          executed_at: new Date().toISOString()
+        };
+        writeJson(storageKeys.lastRun, state.lastRun);
+        state.console = result.state;
+        if (result.incident && result.incident.id) {
+          state.selectedIncidentId = result.incident.id;
+          state.section = "incidents";
+        } else {
+          state.section = "traffic";
         }
+      } catch (error) {
+        state.error = error instanceof Error ? `Scenario execution failed: ${error.message}` : `Scenario execution failed: ${String(error)}`;
+      } finally {
+        state.loading = false;
+        renderAll();
       }
+    }
 
-      async function runScenario(scenario) {
-        let stage = "feature generation";
-        try {
-          setText("scenario-status", `Generating live feature window for ${scenario}.`);
-
-          const featureWindow = await fetchJson(`${featureService}/live-window/${scenario}`);
-          storeWindow(featureWindow);
-
-          stage = "anomaly scoring";
-          setText("scenario-status", `Scoring feature window ${featureWindow.window_id}.`);
-          const anomaly = await fetchJson(`${anomalyService}/score`, {
-            method: "POST",
-            headers: authHeaders(),
-            body: JSON.stringify({
-              features: featureWindow.features,
-              feature_window_id: featureWindow.window_id,
-              project: "ims-demo"
-            })
-          });
-
-          if (!anomaly.is_anomaly) {
-            setText("scenario-status", `Scenario ${scenario} produced nominal traffic. No incident was created.`);
-            await refreshDashboard();
-            return;
-          }
-
-          state.activeIncidentId = anomaly.incident_id;
-          stage = "RCA generation";
-          setText("scenario-status", `Generating RCA for incident ${anomaly.incident_id}.`);
-          const rca = await fetchJson(`${rcaService}/rca`, {
-            method: "POST",
-            headers: authHeaders(),
-            body: JSON.stringify({
-              incident_id: anomaly.incident_id,
-              context: {
-                anomaly_type: anomaly.anomaly_type,
-                feature_window_id: featureWindow.window_id,
-                model_version: anomaly.model_version
-              }
-            })
-          });
-
-          setText("scenario-status", `Scenario ${scenario} created incident ${anomaly.incident_id} and attached RCA confidence ${rca.confidence}.`);
-          await refreshDashboard();
-        } catch (error) {
-          setText("scenario-status", `Scenario execution failed during ${stage}: ${errorMessage(error)}`);
-        }
+    async function approveSelected(action) {
+      const incident = selectedIncident();
+      if (!incident) {
+        state.error = "No incident is selected.";
+        renderAll();
+        return;
       }
-
-      async function approveIncident(action) {
-        if (!state.activeIncidentId) return;
-        const result = await fetchJson(`${controlPlaneService}/incidents/${state.activeIncidentId}/approve`, {
+      state.loading = true;
+      state.error = "";
+      renderChrome();
+      try {
+        await fetchJson(`${controlPlaneService}/incidents/${encodeURIComponent(incident.id)}/approve`, {
           method: "POST",
           headers: authHeaders(),
           body: JSON.stringify({
             action,
-            approved_by: "demo-operator",
-            notes: "Approved during customer demo",
-            execute: true
+            approved_by: "demo-ui",
+            notes: "Triggered from the IMS operations console",
+            execute: false
           })
         });
-        setText("scenario-status", `${formatAction(action)} for incident ${state.activeIncidentId} returned ${result.status}.`);
-        await refreshDashboard();
+        await refreshDashboard(true);
+        state.section = "incidents";
+      } catch (error) {
+        state.loading = false;
+        state.error = error instanceof Error ? error.message : String(error);
+        renderAll();
       }
+    }
 
-      async function notifySlack() {
-        if (!state.activeIncidentId) return;
-        const result = await fetchJson(`${controlPlaneService}/incidents/${state.activeIncidentId}/notify/slack`, {
+    async function notifySelected(target) {
+      const incident = selectedIncident();
+      if (!incident) {
+        state.error = "No incident is selected.";
+        renderAll();
+        return;
+      }
+      state.loading = true;
+      state.error = "";
+      renderChrome();
+      try {
+        await fetchJson(`${controlPlaneService}/incidents/${encodeURIComponent(incident.id)}/notify/${target}`, {
           method: "POST",
           headers: authHeaders()
         });
-        setText("scenario-status", `Slack action for incident ${state.activeIncidentId} returned ${result.status}.`);
-        await refreshDashboard();
+        await refreshDashboard(true);
+      } catch (error) {
+        state.loading = false;
+        state.error = error instanceof Error ? error.message : String(error);
+        renderAll();
+      }
+    }
+
+    async function promoteCandidate() {
+      const registry = consoleState().models || { models: [] };
+      const deployedVersion = registry.deployed_model_version || "";
+      const candidate = (registry.models || []).find((model) => model.version && model.version !== deployedVersion);
+      if (!candidate) {
+        state.error = "No candidate model is available for promotion.";
+        renderAll();
+        return;
       }
 
-      async function notifyJira() {
-        if (!state.activeIncidentId) return;
-        const result = await fetchJson(`${controlPlaneService}/incidents/${state.activeIncidentId}/notify/jira`, {
+      state.loading = true;
+      state.error = "";
+      renderChrome();
+      try {
+        await fetchJson(`${controlPlaneService}/models/promote`, {
           method: "POST",
-          headers: authHeaders()
+          headers: authHeaders(),
+          body: JSON.stringify({
+            version: candidate.version,
+            approved_by: "demo-ui",
+            stage: "prod"
+          })
         });
-        setText("scenario-status", `Jira action for incident ${state.activeIncidentId} returned ${result.status}.`);
-        await refreshDashboard();
+        await refreshDashboard(true);
+      } catch (error) {
+        state.loading = false;
+        state.error = error instanceof Error ? error.message : String(error);
+        renderAll();
       }
+    }
 
-      function toggleAutoRefresh() {
-        state.autoRefresh = !state.autoRefresh;
-        document.getElementById("auto-refresh-button").textContent = `Auto refresh: ${state.autoRefresh ? "on" : "off"}`;
-        if (state.autoRefresh) {
-          state.refreshTimer = window.setInterval(refreshDashboard, 15000);
-        } else if (state.refreshTimer) {
-          window.clearInterval(state.refreshTimer);
-          state.refreshTimer = null;
-        }
+    function activateSection(section) {
+      state.section = section;
+      renderAll();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function selectIncident(incidentId) {
+      state.selectedIncidentId = incidentId;
+      state.section = "incidents";
+      renderAll();
+    }
+
+    function setIncidentTab(tab) {
+      state.selectedIncidentTab = tab;
+      renderIncidents();
+    }
+
+    function toggleAutoRefresh() {
+      state.autoRefresh = !state.autoRefresh;
+      writeJson(storageKeys.autoRefresh, state.autoRefresh);
+      syncAutoRefresh();
+      renderChrome();
+    }
+
+    function syncAutoRefresh() {
+      if (state.refreshTimer) {
+        window.clearInterval(state.refreshTimer);
       }
+      if (state.autoRefresh) {
+        state.refreshTimer = window.setInterval(() => {
+          refreshDashboard();
+        }, 15000);
+      }
+    }
 
-      updateActionButtons(false);
-      refreshDashboard();
-      state.refreshTimer = window.setInterval(refreshDashboard, 15000);
-    </script>
-  </body>
+    async function copyPayload() {
+      const element = document.getElementById("incidentPayloadBox");
+      if (!element) {
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(element.textContent || "");
+      } catch (error) {
+        state.error = "Could not copy the incident payload.";
+        renderAll();
+      }
+    }
+
+    window.activateSection = activateSection;
+    window.selectIncident = selectIncident;
+    window.setIncidentTab = setIncidentTab;
+    window.refreshDashboard = refreshDashboard;
+    window.runScenario = runScenario;
+    window.approveSelected = approveSelected;
+    window.notifySelected = notifySelected;
+    window.promoteCandidate = promoteCandidate;
+    window.toggleAutoRefresh = toggleAutoRefresh;
+    window.copyPayload = copyPayload;
+
+    renderAll();
+    syncAutoRefresh();
+    refreshDashboard();
+  </script>
+</body>
 </html>
