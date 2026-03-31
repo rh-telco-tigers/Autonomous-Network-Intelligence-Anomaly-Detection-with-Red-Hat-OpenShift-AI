@@ -7,7 +7,7 @@
       Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
       From: <sip:caller-[call_number]@[local_ip]>;tag=[call_number]
       To: <sip:callee-[call_number]@[service]>
-      Call-ID: malformed-[call_number]
+      Call-ID: [call_id]
       CSeq: 1 INVITE
       Contact: <sip:caller-[call_number]@[local_ip]:[local_port]>
       Max-Forwards: 1
@@ -20,4 +20,3 @@
 
   <recv response="4[0-9][0-9]" optional="true" />
 </scenario>
-

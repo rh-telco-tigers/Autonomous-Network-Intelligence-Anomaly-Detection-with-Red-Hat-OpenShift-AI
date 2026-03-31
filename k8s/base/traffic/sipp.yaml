@@ -5,10 +5,13 @@ metadata:
   namespace: ims-demo-lab
 spec:
   schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 300
       template:
         spec:
           restartPolicy: Never
@@ -41,10 +44,13 @@ metadata:
 spec:
   schedule: "*/30 * * * *"
   suspend: true
+  concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 300
       template:
         spec:
           restartPolicy: Never
@@ -77,10 +83,13 @@ metadata:
 spec:
   schedule: "*/30 * * * *"
   suspend: true
+  concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 300
       template:
         spec:
           restartPolicy: Never

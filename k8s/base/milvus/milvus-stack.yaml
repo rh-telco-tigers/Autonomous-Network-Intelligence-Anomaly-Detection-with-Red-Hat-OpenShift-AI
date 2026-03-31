@@ -328,4 +328,5 @@ spec:
                 sleep 5
               done
               export MILVUS_URI=http://milvus:19530
+              export PYTHONPATH=/app:${PYTHONPATH}
               python ai/rag/bootstrap_knowledge.py

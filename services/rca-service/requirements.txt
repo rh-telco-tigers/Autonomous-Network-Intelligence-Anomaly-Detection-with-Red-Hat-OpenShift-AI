@@ -3,3 +3,4 @@ uvicorn==0.34.0
 requests==2.32.3
 prometheus-client==0.21.1
 pymilvus==2.4.8
+marshmallow<4

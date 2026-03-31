@@ -7,7 +7,7 @@
       Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
       From: <sip:storm-[call_number]@[local_ip]>;tag=[pid]-[call_number]
       To: <sip:storm-[call_number]@[local_ip]>
-      Call-ID: reg-storm-[pid]-[call_number]
+      Call-ID: [call_id]
       CSeq: 1 REGISTER
       Contact: <sip:storm-[call_number]@[local_ip]:[local_port]>
       Max-Forwards: 70
@@ -20,4 +20,3 @@
   <pause milliseconds="100" />
   <recv response="200" optional="true" />
 </scenario>
-
