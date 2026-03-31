@@ -231,6 +231,7 @@ def generate_with_llm(prompt: str) -> Dict[str, object] | None:
     endpoint = os.getenv("LLM_ENDPOINT", "").rstrip("/")
     model_name = os.getenv("LLM_MODEL", "granite")
     api_key = os.getenv("LLM_API_KEY", "").strip()
+    request_timeout_seconds = float(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "10"))
     if not endpoint:
         return None
 
@@ -249,7 +250,7 @@ def generate_with_llm(prompt: str) -> Dict[str, object] | None:
                 ],
                 "temperature": 0.1,
             },
-            timeout=60,
+            timeout=request_timeout_seconds,
         )
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
