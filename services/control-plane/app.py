@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from shared.cors import install_cors
 from shared.db import (
     attach_rca,
     create_incident,
@@ -59,6 +60,7 @@ class ModelPromotionRequest(BaseModel):
 
 
 app = FastAPI(title="control-plane", version="0.1.0")
+install_cors(app)
 install_metrics(app, "control-plane")
 
 

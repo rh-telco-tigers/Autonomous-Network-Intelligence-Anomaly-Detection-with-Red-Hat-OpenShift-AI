@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from shared.control_plane_client import create_incident
+from shared.cors import install_cors
 from shared.metrics import install_metrics
 from shared.model_store import ModelUnavailableError, current_model_status, score_features_detailed
 from shared.security import AuthContext, ensure_project_access, ensure_role, require_api_key
@@ -22,6 +23,7 @@ class BatchScoreRequest(BaseModel):
 
 
 app = FastAPI(title="anomaly-service", version="0.1.0")
+install_cors(app)
 install_metrics(app, "anomaly-service")
 
 

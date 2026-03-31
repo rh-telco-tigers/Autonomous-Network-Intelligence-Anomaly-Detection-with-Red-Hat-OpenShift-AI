@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel, Field
 import requests
 
+from shared.cors import install_cors
 from shared.metrics import install_metrics
 
 
@@ -32,6 +33,7 @@ class FeatureWindowRequest(BaseModel):
 
 
 app = FastAPI(title="feature-gateway", version="0.1.0")
+install_cors(app)
 install_metrics(app, "feature-gateway")
 
 IMS_PCSCF_HOST = os.getenv("IMS_PCSCF_HOST", "ims-pcscf.ims-demo-lab.svc.cluster.local")

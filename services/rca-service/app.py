@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel, Field
 
 from shared.control_plane_client import attach_rca
+from shared.cors import install_cors
 from shared.metrics import install_metrics, record_rca
 from shared.rag import build_prompt, generate_with_llm, retrieve_context
 from shared.security import require_api_key
@@ -15,6 +16,7 @@ class RCARequest(BaseModel):
 
 
 app = FastAPI(title="rca-service", version="0.1.0")
+install_cors(app)
 install_metrics(app, "rca-service")
 
 
