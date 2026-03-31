@@ -97,6 +97,9 @@ spec:
     name: control-plane
   port:
     targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -159,6 +162,9 @@ spec:
     name: feature-gateway
   port:
     targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -231,6 +237,9 @@ spec:
     name: anomaly-service
   port:
     targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -307,6 +316,9 @@ spec:
     name: rca-service
   port:
     targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -361,4 +373,6 @@ spec:
     name: demo-ui
   port:
     targetPort: http
-
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

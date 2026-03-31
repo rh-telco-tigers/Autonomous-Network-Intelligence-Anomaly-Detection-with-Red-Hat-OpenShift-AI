@@ -54,6 +54,9 @@ spec:
     name: model-storage-minio
   port:
     targetPort: console
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
 ---
 apiVersion: apps/v1
 kind: Deployment
