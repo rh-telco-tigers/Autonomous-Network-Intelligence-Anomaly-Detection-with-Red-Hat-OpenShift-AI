@@ -663,6 +663,18 @@ IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI/
 - UI presents the full detection-to-RCA flow
 - Slack or Jira integration can be triggered from the console
 
+### 14.1 Demo Access Inventory
+
+The demo environment publishes a small set of known access points and credentials so the runbook does not depend on ad hoc discovery during customer delivery.
+
+| Component | Access Pattern | Credentials |
+| --- | --- | --- |
+| Demo Console UI | OpenShift route for `demo-ui` | none |
+| API services | OpenShift routes for `feature-gateway`, `anomaly-service`, `control-plane`, and `rca-service` | shared demo API key |
+| MinIO console | OpenShift route for `model-storage-minio-console` | `minioadmin` / `minioadmin` |
+| Milvus UI (Attu) | OpenShift route for `milvus-attu` | no separate UI username or password in this demo |
+| Gitea | OpenShift route for `gitea-gitea` | `gitadmin` / `GiteaAdmin123!` |
+
 ## 15. Positioning
 
 This PoC demonstrates:

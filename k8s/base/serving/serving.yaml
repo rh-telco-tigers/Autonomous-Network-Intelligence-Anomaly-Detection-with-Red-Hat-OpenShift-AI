@@ -45,8 +45,8 @@ spec:
     serviceAccountName: model-storage-sa
     minReplicas: 1
     maxReplicas: 1
-    runtime: predictive-sklearn-runtime
     model:
+      runtime: predictive-sklearn-runtime
       modelFormat:
         name: sklearn
       storageUri: s3://ims-models/predictive/

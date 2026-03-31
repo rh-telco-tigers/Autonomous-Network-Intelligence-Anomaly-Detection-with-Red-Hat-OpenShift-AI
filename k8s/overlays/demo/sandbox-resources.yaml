@@ -125,10 +125,10 @@ spec:
               value: /app/ai/rag/runbooks
           resources:
             requests:
-              cpu: 2m
-              memory: 96Mi
+              cpu: 1m
+              memory: 64Mi
             limits:
-              memory: 192Mi
+              memory: 128Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -159,10 +159,10 @@ spec:
         - name: ims-node
           resources:
             requests:
-              cpu: 2m
-              memory: 96Mi
+              cpu: 1m
+              memory: 64Mi
             limits:
-              memory: 192Mi
+              memory: 128Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -176,10 +176,10 @@ spec:
         - name: ims-node
           resources:
             requests:
-              cpu: 2m
-              memory: 96Mi
+              cpu: 1m
+              memory: 64Mi
             limits:
-              memory: 192Mi
+              memory: 128Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -193,10 +193,10 @@ spec:
         - name: ims-node
           resources:
             requests:
-              cpu: 2m
-              memory: 96Mi
+              cpu: 1m
+              memory: 64Mi
             limits:
-              memory: 192Mi
+              memory: 128Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -227,10 +227,10 @@ spec:
         - name: etcd
           resources:
             requests:
-              cpu: 5m
-              memory: 128Mi
+              cpu: 1m
+              memory: 64Mi
             limits:
-              memory: 256Mi
+              memory: 128Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -244,10 +244,10 @@ spec:
         - name: minio
           resources:
             requests:
-              cpu: 2m
-              memory: 64Mi
+              cpu: 1m
+              memory: 48Mi
             limits:
-              memory: 128Mi
+              memory: 96Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -261,10 +261,10 @@ spec:
         - name: milvus
           resources:
             requests:
-              cpu: 10m
-              memory: 384Mi
+              cpu: 1m
+              memory: 256Mi
             limits:
-              memory: 768Mi
+              memory: 512Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -278,10 +278,10 @@ spec:
         - name: attu
           resources:
             requests:
-              cpu: 2m
-              memory: 96Mi
+              cpu: 1m
+              memory: 64Mi
             limits:
-              memory: 192Mi
+              memory: 128Mi
 ---
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
@@ -293,10 +293,10 @@ spec:
     model:
       resources:
         requests:
-          cpu: 25m
-          memory: 256Mi
+          cpu: 1m
+          memory: 128Mi
         limits:
-          memory: 512Mi
+          memory: 256Mi
 ---
 apiVersion: batch/v1
 kind: Job
