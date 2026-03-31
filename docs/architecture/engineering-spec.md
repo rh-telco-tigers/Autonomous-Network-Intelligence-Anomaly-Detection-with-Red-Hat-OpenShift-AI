@@ -63,48 +63,154 @@ This separation keeps data generation, model lifecycle management, and operator 
 
 ### 3.1 High-Level Architecture
 
-```text
-[ OpenIMSs ] <--- SIP signaling ---> [ SIPp ]
+This architecture is easier to read as a few small views instead of one large diagram.
 
-        |
-        v
+#### 3.1.1 Runtime Overview
 
-[ Data Ingestion / Feature Windows ]
+```mermaid
+flowchart LR
+  UI["demo-ui"]
 
-        |
-        v
+  FG["feature-gateway"]
+  AN["anomaly-service"]
+  CP["control-plane"]
+  RCA["rca-service"]
 
-[ OpenShift AI ]
+  SIPP["sipp-runner CronJobs"]
+  IMS["OpenIMSs<br/>P-CSCF / I-CSCF / S-CSCF / HSS"]
+  IMSNODE["ims-node<br/>optional helper"]
 
-   |- KFP Pipelines
-   |- AutoGluon AutoML
-   |- Baseline Model Training
-   |- Model Registry
-   |- Model Serving (KServe)
+  MinIO["MinIO"]
+  KFP["KFP pipelines"]
+  KServe["KServe / Triton<br/>ims-predictive"]
 
-        |
-        v
+  Milvus["Milvus"]
+  LLM["Generative proxy / vLLM"]
 
-[ RCA Layer ]
+  Slack["Slack"]
+  Jira["Jira"]
+  Ansible["Ansible"]
 
-   |- Milvus
-   |- vLLM
-   |- Retrieval and Prompt Assembly
+  UI --> FG
+  UI --> AN
+  UI --> CP
+  UI --> RCA
 
-        |
-        v
+  SIPP --> IMS
+  IMSNODE -.-> FG
 
-[ API Layer ]
+  SIPP --> MinIO
+  MinIO --> KFP
+  KFP --> KServe
+  AN --> KServe
 
-        |
-        v
+  AN --> CP
+  RCA --> Milvus
+  RCA --> LLM
+  RCA --> CP
 
-[ Demo Console UI ]
+  CP --> Slack
+  CP --> Jira
+  CP --> Ansible
+```
 
-        |
-        v
+#### 3.1.2 Training and Model Lifecycle
 
-[ Slack / Ansible / Jira (Optional) ]
+```mermaid
+flowchart TD
+  SIPP["sipp-runner"]
+  IMS["OpenIMSs"]
+  Windows["Labeled feature windows<br/>live-sipp-v1"]
+  MinIO["MinIO dataset store"]
+  Synthetic["Synthetic fallback<br/>only when live data is undersized"]
+  Ingest["KFP ingest-data"]
+  Train["train-baseline<br/>train-autogluon"]
+  Evaluate["evaluate<br/>select-best"]
+  Registry["model registry"]
+  TritonRepo["Triton serving repository"]
+  KServe["ims-predictive"]
+
+  SIPP --> IMS
+  SIPP --> Windows
+  Windows --> MinIO
+  MinIO --> Ingest
+  Synthetic -.-> Ingest
+  Ingest --> Train
+  Train --> Evaluate
+  Evaluate --> Registry
+  Evaluate --> TritonRepo
+  TritonRepo --> MinIO
+  MinIO --> KServe
+```
+
+#### 3.1.3 Live Detection and RCA Flow
+
+```mermaid
+flowchart LR
+  UI["demo-ui"]
+  FG["feature-gateway"]
+  Window["feature window"]
+  AN["anomaly-service"]
+  Registry["model registry"]
+  KServe["ims-predictive"]
+  CP["control-plane incident"]
+  RCA["rca-service"]
+  Milvus["Milvus"]
+  LLM["Generative proxy / vLLM"]
+  Actions["Slack / Jira / Ansible"]
+
+  UI -->|run scenario| FG
+  FG --> Window
+  UI -->|submit features| AN
+  Window --> AN
+  Registry --> AN
+  AN --> KServe
+  AN --> CP
+  CP --> RCA
+  RCA --> Milvus
+  RCA --> LLM
+  RCA --> CP
+  CP --> UI
+  CP --> Actions
+```
+
+#### 3.1.4 Repository to Runtime Mapping
+
+```mermaid
+flowchart LR
+  subgraph Services["services/"]
+    DemoUIDir["demo-ui/"]
+    FeatureDir["feature-gateway/"]
+    AnomalyDir["anomaly-service/"]
+    ControlDir["control-plane/"]
+    RCADir["rca-service/"]
+    SIPPDir["sipp-runner/"]
+    IMSNodeDir["ims-node/"]
+    SharedDir["shared/"]
+  end
+
+  subgraph AI["ai/"]
+    PipelinesDir["pipelines/"]
+    TrainingDir["training/"]
+    ModelsDir["models/serving/predictive/"]
+    RegistryDir["registry/"]
+    RagDir["rag/"]
+  end
+
+  DemoUIDir --> DemoUIRun["demo-ui deployment"]
+  FeatureDir --> FeatureRun["feature-gateway deployment"]
+  AnomalyDir --> AnomalyRun["anomaly-service deployment"]
+  ControlDir --> ControlRun["control-plane deployment"]
+  RCADir --> RCARun["rca-service deployment"]
+  SIPPDir --> SIPPRun["sipp-runner CronJobs"]
+  IMSNodeDir --> IMSNodeRun["ims-node helper"]
+  SharedDir --> SharedUse["shared library used by API services"]
+
+  PipelinesDir --> KFPDef["KFP definition and publisher"]
+  TrainingDir --> TrainSteps["training step implementation"]
+  ModelsDir --> TritonFiles["served Triton files"]
+  RegistryDir --> RegistryMeta["model registry metadata"]
+  RagDir --> RagCorpus["Milvus bootstrap corpus"]
 ```
 
 ### 3.2 Core Domain Entities
@@ -162,12 +268,12 @@ model:
 
 Each entity has a clear producer and system of record.
 
-| Entity | Producer | System of Record | Consumers |
-| --- | --- | --- | --- |
-| FeatureWindow | ingestion and feature pipeline | dataset store | training pipeline, scoring services |
-| ModelVersion | KFP training pipeline | model registry | anomaly-service, UI, deployment automation |
-| Incident | anomaly-service | incident store | rca-service, UI, collaboration, automation |
-| RCAResult | rca-service | RCA store or incident enrichment layer | UI, approval workflow, audit pipeline |
+| Entity        | Producer                       | System of Record                       | Consumers                                  |
+| ------------- | ------------------------------ | -------------------------------------- | ------------------------------------------ |
+| FeatureWindow | ingestion and feature pipeline | dataset store                          | training pipeline, scoring services        |
+| ModelVersion  | KFP training pipeline          | model registry                         | anomaly-service, UI, deployment automation |
+| Incident      | anomaly-service                | incident store                         | rca-service, UI, collaboration, automation |
+| RCAResult     | rca-service                    | RCA store or incident enrichment layer | UI, approval workflow, audit pipeline      |
 
 ## 4. Workstream Breakdown
 
@@ -201,13 +307,13 @@ Each entity has a clear producer and system of record.
 
 #### Scenario Types
 
-| Type | Example |
-| --- | --- |
-| Normal | steady REGISTER and INVITE traffic |
-| Stress | burst load |
-| Fault | malformed SIP messages |
-| Degradation | latency injection |
-| Regression | replay of known scenarios |
+| Type        | Example                            |
+| ----------- | ---------------------------------- |
+| Normal      | steady REGISTER and INVITE traffic |
+| Stress      | burst load                         |
+| Fault       | malformed SIP messages             |
+| Degradation | latency injection                  |
+| Regression  | replay of known scenarios          |
 
 #### Output Contract
 
@@ -305,12 +411,12 @@ The system enforces:
 
 #### 4.3.3 Training Modes
 
-| Mode | Description |
-| --- | --- |
-| Unsupervised | autoencoder training without explicit labels |
-| Weakly supervised | SIPp scenario labels used as supervision |
-| Supervised | future extension using incident-labeled data |
-| Forecasting | deviation detection against expected trends |
+| Mode              | Description                                  |
+| ----------------- | -------------------------------------------- |
+| Unsupervised      | autoencoder training without explicit labels |
+| Weakly supervised | SIPp scenario labels used as supervision     |
+| Supervised        | future extension using incident-labeled data |
+| Forecasting       | deviation detection against expected trends  |
 
 #### 4.3.4 KFP Pipeline
 
@@ -362,18 +468,18 @@ dev -> test -> prod
 
 ##### Modes
 
-| Mode | Description |
-| --- | --- |
-| synchronous | real-time scoring via API |
-| batch | scheduled scoring over feature windows |
+| Mode               | Description                             |
+| ------------------ | --------------------------------------- |
+| synchronous        | real-time scoring via API               |
+| batch              | scheduled scoring over feature windows  |
 | streaming (future) | event-driven scoring over a message bus |
 
 ##### Services
 
-| Service | Purpose |
-| --- | --- |
+| Service         | Purpose                                            |
+| --------------- | -------------------------------------------------- |
 | anomaly-service | synchronous or batch scoring and incident creation |
-| rca-service | RCA generation, retrieval, and evidence packaging |
+| rca-service     | RCA generation, retrieval, and evidence packaging  |
 
 ##### Inference Flow
 
@@ -496,11 +602,11 @@ Milvus functions as the RCA knowledge retrieval layer.
 
 Clean separation of responsibilities:
 
-| Layer | Purpose |
-| --- | --- |
-| predictive model | detect anomaly |
-| Milvus | retrieve relevant RCA context |
-| LLM | reason over retrieved context and generate RCA output |
+| Layer            | Purpose                                               |
+| ---------------- | ----------------------------------------------------- |
+| predictive model | detect anomaly                                        |
+| Milvus           | retrieve relevant RCA context                         |
+| LLM              | reason over retrieved context and generate RCA output |
 
 For the demo profile, the Milvus corpus should remain intentionally small and preloaded. A few hundred documents is sufficient.
 
@@ -657,13 +763,13 @@ RCA recommendation -> operator approval -> automation execution
 
 ## 10. Failure Modes
 
-| Failure Mode | Mitigation |
-| --- | --- |
-| noisy data | smoothing and feature stabilization |
-| model drift | retraining and threshold review |
-| hallucinated RCA | retrieval grounding and evidence checks |
+| Failure Mode     | Mitigation                                 |
+| ---------------- | ------------------------------------------ |
+| noisy data       | smoothing and feature stabilization        |
+| model drift      | retraining and threshold review            |
+| hallucinated RCA | retrieval grounding and evidence checks    |
 | missing features | fallback rules and degraded inference mode |
-| false positives | threshold tuning and model comparison |
+| false positives  | threshold tuning and model comparison      |
 
 ## 11. Repository Structure
 
@@ -685,6 +791,9 @@ IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI/
   lab-assets/
     sipp/
   services/
+    shared/
+    ims-node/
+    sipp-runner/
     control-plane/
     feature-gateway/
     anomaly-service/
@@ -758,15 +867,15 @@ IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI/
 
 The demo environment publishes a small set of known access points and credentials so the runbook does not depend on ad hoc discovery during customer delivery.
 
-| Component | Access Pattern | Credentials |
-| --- | --- | --- |
-| Demo Console UI | OpenShift route for `demo-ui` | none |
-| API services | OpenShift routes for `feature-gateway`, `anomaly-service`, `control-plane`, and `rca-service` | `demo-token` (admin), `demo-operator-token` (operator), `demo-viewer-token` (viewer) |
-| MinIO console | OpenShift route for `model-storage-minio-console` | `minioadmin` / `minioadmin` |
-| Milvus UI (Attu) | OpenShift route for `milvus-attu` | no separate UI username or password in this demo |
-| Gitea | OpenShift route for `gitea-gitea` | `gitadmin` / `GiteaAdmin123!` |
-| Slack and Jira actions | control-plane demo relay when external endpoints are not configured | no additional credentials in demo relay mode |
-| Automation approvals | control-plane approval endpoint with simulated execution by default | `demo-token` |
+| Component              | Access Pattern                                                                                | Credentials                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Demo Console UI        | OpenShift route for `demo-ui`                                                                 | none                                                                                 |
+| API services           | OpenShift routes for `feature-gateway`, `anomaly-service`, `control-plane`, and `rca-service` | `demo-token` (admin), `demo-operator-token` (operator), `demo-viewer-token` (viewer) |
+| MinIO console          | OpenShift route for `model-storage-minio-console`                                             | `minioadmin` / `minioadmin`                                                          |
+| Milvus UI (Attu)       | OpenShift route for `milvus-attu`                                                             | no separate UI username or password in this demo                                     |
+| Gitea                  | OpenShift route for `gitea-gitea`                                                             | `gitadmin` / `GiteaAdmin123!`                                                        |
+| Slack and Jira actions | control-plane demo relay when external endpoints are not configured                           | no additional credentials in demo relay mode                                         |
+| Automation approvals   | control-plane approval endpoint with simulated execution by default                           | `demo-token`                                                                         |
 
 ## 15. Positioning
 
