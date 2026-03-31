@@ -114,6 +114,22 @@ data:
       name: ims-demo-platform
       namespace: openshift-gitops
     spec:
+      ignoreDifferences:
+        - group: route.openshift.io
+          kind: Route
+          jsonPointers:
+            - /metadata/annotations/openshift.io~1host.generated
+            - /spec/host
+        - group: serving.kserve.io
+          kind: InferenceService
+          jsonPointers:
+            - /metadata/annotations/ims-demo~1refresh-ts
+            - /metadata/annotations/ims-demo~1runtime-fix-ts
+            - /metadata/annotations/ims-demo~1storage-fix-ts
+            - /metadata/annotations/ims-demo~1zero-cpu-ts
+            - /metadata/finalizers
+            - /spec/predictor/automountServiceAccountToken
+            - /spec/predictor/model/name
       destination:
         namespace: ims-demo-lab
         server: https://kubernetes.default.svc
@@ -128,4 +144,5 @@ data:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
+          - RespectIgnoreDifferences=true
           - SkipDryRunOnMissingResource=true

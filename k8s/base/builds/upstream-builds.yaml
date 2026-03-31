@@ -3,18 +3,27 @@ kind: ImageStream
 metadata:
   name: openimss-open5gs
   namespace: ims-demo-lab
+spec:
+  lookupPolicy:
+    local: false
 ---
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
   name: openimss-opensips
   namespace: ims-demo-lab
+spec:
+  lookupPolicy:
+    local: false
 ---
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
   name: sipp
   namespace: ims-demo-lab
+spec:
+  lookupPolicy:
+    local: false
 ---
 apiVersion: build.openshift.io/v1
 kind: BuildConfig
@@ -81,4 +90,3 @@ spec:
     type: Docker
   triggers:
     - type: ConfigChange
-

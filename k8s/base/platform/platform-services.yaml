@@ -122,11 +122,13 @@ spec:
   to:
     kind: Service
     name: control-plane
+    weight: 100
   port:
     targetPort: http
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -198,11 +200,13 @@ spec:
   to:
     kind: Service
     name: feature-gateway
+    weight: 100
   port:
     targetPort: http
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -282,11 +286,13 @@ spec:
   to:
     kind: Service
     name: anomaly-service
+    weight: 100
   port:
     targetPort: http
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -366,11 +372,13 @@ spec:
   to:
     kind: Service
     name: rca-service
+    weight: 100
   port:
     targetPort: http
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -423,8 +431,10 @@ spec:
   to:
     kind: Service
     name: demo-ui
+    weight: 100
   port:
     targetPort: http
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

@@ -52,11 +52,13 @@ spec:
   to:
     kind: Service
     name: model-storage-minio
+    weight: 100
   port:
     targetPort: console
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
 ---
 apiVersion: apps/v1
 kind: Deployment

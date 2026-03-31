@@ -301,11 +301,13 @@ spec:
   to:
     kind: Service
     name: milvus-attu
+    weight: 100
   port:
     targetPort: http
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
 ---
 apiVersion: batch/v1
 kind: Job

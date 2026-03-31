@@ -51,48 +51,72 @@ kind: ImageStream
 metadata:
   name: ims-node
   namespace: ims-demo-lab
+spec:
+  lookupPolicy:
+    local: false
 ---
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
   name: sipp-runner
   namespace: ims-demo-lab
+spec:
+  lookupPolicy:
+    local: false
 ---
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
   name: feature-gateway
   namespace: ims-demo-lab
+spec:
+  lookupPolicy:
+    local: false
 ---
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
   name: anomaly-service
   namespace: ims-demo-lab
+spec:
+  lookupPolicy:
+    local: false
 ---
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
   name: rca-service
   namespace: ims-demo-lab
+spec:
+  lookupPolicy:
+    local: false
 ---
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
   name: demo-ui
   namespace: ims-demo-lab
+spec:
+  lookupPolicy:
+    local: false
 ---
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
   name: control-plane
   namespace: ims-demo-lab
+spec:
+  lookupPolicy:
+    local: false
 ---
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
   name: ims-ai-trainer
   namespace: ims-demo-lab
+spec:
+  lookupPolicy:
+    local: false
 ---
 apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerBinding
@@ -148,6 +172,8 @@ metadata:
   namespace: ims-demo-lab
 spec:
   serviceAccountName: pipeline
+  namespaceSelector: {}
+  resources: {}
   triggers:
     - name: main-branch-commit
       interceptors:
@@ -158,6 +184,7 @@ spec:
             - name: filter
               value: header.match('X-Gitea-Event', 'push') && body.ref == 'refs/heads/main'
       bindings:
-        - ref: ims-demo-gitea-binding
+        - kind: TriggerBinding
+          ref: ims-demo-gitea-binding
       template:
         ref: ims-demo-gitea-template
