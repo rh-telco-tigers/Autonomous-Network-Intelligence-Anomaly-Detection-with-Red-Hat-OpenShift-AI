@@ -49,6 +49,9 @@
       .content-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }
+      .content-grid > * {
+        min-width: 0;
+      }
       .panel {
         background: var(--panel);
         border: 1px solid var(--line);
@@ -56,6 +59,10 @@
         padding: 22px;
         backdrop-filter: blur(14px);
         box-shadow: 0 16px 38px rgba(21, 38, 58, 0.08);
+        min-width: 0;
+      }
+      .panel-wide {
+        grid-column: span 2;
       }
       h1, h2, h3, p { margin-top: 0; }
       h1 {
@@ -155,12 +162,14 @@
       .stack {
         display: grid;
         gap: 12px;
+        min-width: 0;
       }
       .card {
         border: 1px solid var(--line);
         border-radius: 18px;
         padding: 14px 16px;
         background: rgba(255, 255, 255, 0.68);
+        min-width: 0;
       }
       .label {
         display: block;
@@ -181,6 +190,25 @@
       .mono {
         font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
         font-size: 0.92rem;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+      .health-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+      }
+      .health-detail {
+        margin-top: 10px;
+        padding: 12px;
+        border-radius: 14px;
+        background: rgba(21, 38, 58, 0.04);
+        border: 1px solid var(--line);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        max-height: 180px;
+        overflow: auto;
       }
       .list {
         list-style: none;
@@ -209,12 +237,15 @@
       .code {
         white-space: pre-wrap;
         word-break: break-word;
+        overflow-wrap: anywhere;
         background: rgba(21, 38, 58, 0.04);
         border: 1px solid var(--line);
         border-radius: 18px;
         padding: 16px;
         min-height: 120px;
         font-size: 0.9rem;
+        max-height: 360px;
+        overflow: auto;
       }
       @media (max-width: 1120px) {
         .metric-grid {
@@ -305,9 +336,9 @@
       </section>
 
       <section class="content-grid">
-        <article class="panel">
+        <article class="panel panel-wide">
           <h2>Service Health</h2>
-          <div id="service-health" class="stack"></div>
+          <div id="service-health" class="health-grid"></div>
         </article>
 
         <article class="panel">
@@ -469,13 +500,13 @@
           const badgeClass = service.ok ? "good" : "bad";
           const status = service.ok ? "healthy" : "unreachable";
           const detail = service.ok
-            ? escapeHtml(JSON.stringify(service.payload))
+            ? escapeHtml(JSON.stringify(service.payload, null, 2))
             : escapeHtml(service.error || "request failed");
           return `
             <div class="card">
               <span class="label">${escapeHtml(service.name)}</span>
               <span class="pill ${badgeClass}">${status}</span>
-              <div class="mono subtle" style="margin-top: 10px;">${detail}</div>
+              <div class="health-detail mono">${detail}</div>
             </div>
           `;
         }).join("");

@@ -11,9 +11,11 @@ kind: ServingRuntime
 metadata:
   name: nvidia-triton-runtime
   namespace: ims-demo-lab
-spec:
   annotations:
     openshift.io/display-name: NVIDIA Triton Runtime
+  labels:
+    opendatahub.io/dashboard: "true"
+spec:
   supportedModelFormats:
     - name: triton
       version: "2"
