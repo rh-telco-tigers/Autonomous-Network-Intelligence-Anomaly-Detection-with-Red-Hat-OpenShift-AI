@@ -60,9 +60,10 @@
         backdrop-filter: blur(14px);
         box-shadow: 0 16px 38px rgba(21, 38, 58, 0.08);
         min-width: 0;
+        overflow: hidden;
       }
       .panel-wide {
-        grid-column: span 2;
+        grid-column: 1 / -1;
       }
       h1, h2, h3, p { margin-top: 0; }
       h1 {
@@ -170,6 +171,7 @@
         padding: 14px 16px;
         background: rgba(255, 255, 255, 0.68);
         min-width: 0;
+        overflow: hidden;
       }
       .label {
         display: block;
@@ -198,7 +200,11 @@
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 12px;
       }
+      .health-grid > * {
+        min-width: 0;
+      }
       .health-detail {
+        display: block;
         margin-top: 10px;
         padding: 12px;
         border-radius: 14px;
@@ -207,8 +213,13 @@
         white-space: pre-wrap;
         overflow-wrap: anywhere;
         word-break: break-word;
+        width: 100%;
+        max-width: 100%;
         max-height: 180px;
-        overflow: auto;
+        overflow-x: auto;
+        overflow-y: auto;
+        line-height: 1.35;
+        font-size: 0.84rem;
       }
       .list {
         list-style: none;
@@ -483,6 +494,52 @@
         return action.replaceAll("_", " ");
       }
 
+      function truncateText(value, maxLength = 120) {
+        const text = typeof value === "string" ? value : JSON.stringify(value);
+        if (!text) return "n/a";
+        return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
+      }
+
+      function summarizePayload(payload) {
+        if (payload === null || payload === undefined) return "no payload";
+        if (typeof payload !== "object") return String(payload);
+
+        const preferredKeys = [
+          "status",
+          "message",
+          "version",
+          "ready",
+          "selected_model_version",
+          "deployed_model_version",
+          "llm_endpoint_configured",
+          "milvus_endpoint_configured",
+          "incident_count",
+          "record_count",
+          "count"
+        ];
+        const lines = [];
+
+        for (const key of preferredKeys) {
+          if (!(key in payload)) continue;
+          lines.push(`${key}: ${truncateText(payload[key])}`);
+        }
+
+        for (const [key, value] of Object.entries(payload)) {
+          if (lines.length >= 8 || preferredKeys.includes(key)) continue;
+          let summary;
+          if (Array.isArray(value)) {
+            summary = `${value.length} items`;
+          } else if (value && typeof value === "object") {
+            summary = `${Object.keys(value).length} fields`;
+          } else {
+            summary = truncateText(value);
+          }
+          lines.push(`${key}: ${summary}`);
+        }
+
+        return lines.join("\n");
+      }
+
       function setText(id, value) {
         document.getElementById(id).textContent = value;
       }
@@ -500,7 +557,7 @@
           const badgeClass = service.ok ? "good" : "bad";
           const status = service.ok ? "healthy" : "unreachable";
           const detail = service.ok
-            ? escapeHtml(JSON.stringify(service.payload, null, 2))
+            ? escapeHtml(summarizePayload(service.payload))
             : escapeHtml(service.error || "request failed");
           return `
             <div class="card">

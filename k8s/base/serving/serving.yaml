@@ -42,7 +42,10 @@ kind: InferenceService
 metadata:
   name: ims-predictive
   namespace: ims-demo-lab
+  labels:
+    opendatahub.io/dashboard: "true"
   annotations:
+    openshift.io/display-name: ims-predictive
     serving.kserve.io/deploymentMode: RawDeployment
 spec:
   predictor:
