@@ -306,7 +306,7 @@
           active_incident_id: null,
           rca_status: "none",
           current_scenario: "none",
-          auto_refresh_seconds: 15
+          auto_refresh_seconds: 5
         },
         summary: {
           incident_count: 0,
@@ -325,6 +325,11 @@
         automation_actions: [],
         traffic_preview: { rows: [], stats: { requests_per_second: 0, retry_ratio: 0, active_node: "pcscf-1" }, packet_sample: "" }
       };
+    }
+
+    function autoRefreshSeconds() {
+      const seconds = Math.floor(toNumber(consoleState().cluster.auto_refresh_seconds, 5));
+      return seconds > 0 ? seconds : 5;
     }
 
     function ensureSelectedIncident() {
@@ -577,6 +582,7 @@
       const healthyServices = current.summary.healthy_services || 0;
       const serviceCount = current.summary.service_count || 0;
       const clusterStatus = current.cluster.status || "unknown";
+      const refreshLabel = state.autoRefresh ? `on (${autoRefreshSeconds()}s)` : "off";
       const clusterBadge = clusterStatus === "healthy"
         ? "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300"
         : "rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-300";
@@ -589,10 +595,10 @@
       document.getElementById("clusterStatusBadge").className = clusterBadge;
       document.getElementById("clusterStatusBadge").textContent = titleize(clusterStatus);
       document.getElementById("clusterActiveIncident").textContent = current.cluster.active_incident_id ? `${String(current.cluster.active_incident_id).slice(0, 12)}...` : "none";
-      document.getElementById("clusterAutoRefresh").textContent = state.autoRefresh ? "on" : "off";
+      document.getElementById("clusterAutoRefresh").textContent = refreshLabel;
       document.getElementById("clusterRcaStatus").textContent = current.cluster.rca_status || "none";
       document.getElementById("refreshButton").textContent = state.loading ? "Refreshing..." : "Refresh now";
-      document.getElementById("autoRefreshButton").textContent = `Auto refresh: ${state.autoRefresh ? "on" : "off"}`;
+      document.getElementById("autoRefreshButton").textContent = `Auto refresh: ${refreshLabel}`;
       document.getElementById("apiToken").value = document.getElementById("apiToken").value || defaultToken;
 
       ["overview", "incidents", "traffic", "rca", "models", "services", "audit"].forEach((sectionId) => {
@@ -1246,6 +1252,7 @@
         state.error = error instanceof Error ? error.message : String(error);
       } finally {
         state.loading = false;
+        syncAutoRefresh();
         renderAll();
       }
     }
@@ -1398,7 +1405,7 @@
       if (state.autoRefresh) {
         state.refreshTimer = window.setInterval(() => {
           refreshDashboard();
-        }, 15000);
+        }, autoRefreshSeconds() * 1000);
       }
     }
 

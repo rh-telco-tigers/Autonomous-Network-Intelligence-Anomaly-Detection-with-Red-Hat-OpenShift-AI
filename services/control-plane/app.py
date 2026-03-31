@@ -78,8 +78,19 @@ PLAYBOOKS = {
     "quarantine_imsi": "/app/automation/ansible/playbooks/quarantine-imsi.yaml",
 }
 
+
+def _positive_int_from_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 CONSOLE_SCENARIOS = {"normal", "registration_storm", "malformed_invite"}
 CONSOLE_CLUSTER_NAME = os.getenv("CONSOLE_CLUSTER_NAME", "ims-demo-lab")
+CONSOLE_AUTO_REFRESH_SECONDS = _positive_int_from_env("CONSOLE_AUTO_REFRESH_SECONDS", 5)
 UPSTREAM_TIMEOUT_SECONDS = float(os.getenv("CONSOLE_UPSTREAM_TIMEOUT_SECONDS", "20"))
 FEATURE_GATEWAY_URL = os.getenv("FEATURE_GATEWAY_URL", "http://feature-gateway.ims-demo-lab.svc.cluster.local:8080").rstrip("/")
 ANOMALY_SERVICE_URL = os.getenv("ANOMALY_SERVICE_URL", "http://anomaly-service.ims-demo-lab.svc.cluster.local:8080").rstrip("/")
@@ -631,7 +642,7 @@ def _build_console_state(project: str) -> Dict[str, object]:
             "active_incident_id": latest_incident.get("id") if latest_incident else None,
             "rca_status": "attached" if latest_incident and latest_incident.get("rca_payload") else "none",
             "current_scenario": active_scenario,
-            "auto_refresh_seconds": 15,
+            "auto_refresh_seconds": CONSOLE_AUTO_REFRESH_SECONDS,
         },
         "summary": {
             "incident_count": len(enriched_incidents),

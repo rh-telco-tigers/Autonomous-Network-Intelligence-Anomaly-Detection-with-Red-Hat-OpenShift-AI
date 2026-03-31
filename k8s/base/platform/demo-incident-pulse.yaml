@@ -1,0 +1,81 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: demo-incident-pulse
+  namespace: ims-demo-lab
+spec:
+  schedule: "*/3 * * * *"
+  suspend: false
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 60
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 180
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: demo-incident-pulse
+              image: control-plane:latest
+              imagePullPolicy: Always
+              command:
+                - python
+                - -c
+              args:
+                - |
+                  import json
+                  import os
+                  import time
+
+                  import requests
+
+                  url = os.environ["CONTROL_PLANE_URL"].rstrip("/") + "/console/run-scenario"
+                  project = os.getenv("DEMO_PROJECT", "ims-demo")
+                  scenarios = [
+                      item.strip()
+                      for item in os.getenv("DEMO_SCENARIOS", "registration_storm,malformed_invite").split(",")
+                      if item.strip()
+                  ]
+                  slot = int(time.time() // 180) % len(scenarios)
+                  scenario = scenarios[slot]
+                  response = requests.post(
+                      url,
+                      headers={
+                          "Content-Type": "application/json",
+                          "x-api-key": os.environ["API_KEY"],
+                      },
+                      json={"project": project, "scenario": scenario},
+                      timeout=90,
+                  )
+                  response.raise_for_status()
+                  payload = response.json()
+                  print(
+                      json.dumps(
+                          {
+                              "scenario": scenario,
+                              "incident_id": (payload.get("incident") or {}).get("id"),
+                              "generated_at": (payload.get("state") or {}).get("generated_at"),
+                          }
+                      )
+                  )
+              env:
+                - name: CONTROL_PLANE_URL
+                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                - name: DEMO_PROJECT
+                  value: ims-demo
+                - name: DEMO_SCENARIOS
+                  value: registration_storm,malformed_invite
+                - name: API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: demo-api-auth
+                      key: API_KEY
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi

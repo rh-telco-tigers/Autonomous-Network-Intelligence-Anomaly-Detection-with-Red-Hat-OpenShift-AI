@@ -69,11 +69,11 @@ This architecture is easier to read as a few small views instead of one large di
 
 ```mermaid
 flowchart LR
-  UI["demo-ui"]
-
+  UI["demo-ui SPA"]
+  Pulse["demo-incident-pulse<br/>CronJob"]
+  CP["control-plane<br/>console API"]
   FG["feature-gateway"]
   AN["anomaly-service"]
-  CP["control-plane"]
   RCA["rca-service"]
 
   SIPP["sipp-runner CronJobs"]
@@ -91,10 +91,11 @@ flowchart LR
   Jira["Jira"]
   Ansible["Ansible"]
 
-  UI --> FG
-  UI --> AN
-  UI --> CP
-  UI --> RCA
+  UI -->|/console/state<br/>/console/run-scenario| CP
+  Pulse -->|scheduled scenario| CP
+  CP --> FG
+  CP --> AN
+  CP --> RCA
 
   SIPP --> IMS
   IMSNODE -.-> FG
@@ -113,6 +114,8 @@ flowchart LR
   CP --> Jira
   CP --> Ansible
 ```
+
+The operator UI now talks only to the `control-plane` console API. A background `demo-incident-pulse` CronJob calls the same scenario endpoint every three minutes and alternates anomaly scenarios so the dashboard keeps moving during a live demo. The control plane publishes a five-second browser refresh cadence in its console state response.
 
 #### 3.1.2 Training and Model Lifecycle
 
@@ -148,21 +151,24 @@ flowchart TD
 ```mermaid
 flowchart LR
   UI["demo-ui"]
+  Pulse["demo-incident-pulse"]
+  CP["control-plane console API"]
   FG["feature-gateway"]
   Window["feature window"]
   AN["anomaly-service"]
   Registry["model registry"]
   KServe["ims-predictive"]
-  CP["control-plane incident"]
   RCA["rca-service"]
   Milvus["Milvus"]
   LLM["Generative proxy / vLLM"]
   Actions["Slack / Jira / Ansible"]
 
-  UI -->|run scenario| FG
+  UI -->|refresh state or run scenario| CP
+  Pulse -->|scheduled scenario| CP
+  CP -->|request live window| FG
   FG --> Window
-  UI -->|submit features| AN
-  Window --> AN
+  Window --> CP
+  CP -->|submit features| AN
   Registry --> AN
   AN --> KServe
   AN --> CP
@@ -197,14 +203,19 @@ flowchart LR
     RagDir["rag/"]
   end
 
+  subgraph Manifests["k8s/base/"]
+    PlatformDir["platform/"]
+  end
+
   DemoUIDir --> DemoUIRun["demo-ui deployment"]
   FeatureDir --> FeatureRun["feature-gateway deployment"]
   AnomalyDir --> AnomalyRun["anomaly-service deployment"]
-  ControlDir --> ControlRun["control-plane deployment"]
+  ControlDir --> ControlRun["control-plane deployment + console API"]
   RCADir --> RCARun["rca-service deployment"]
   SIPPDir --> SIPPRun["sipp-runner CronJobs"]
   IMSNodeDir --> IMSNodeRun["ims-node helper"]
   SharedDir --> SharedUse["shared library used by API services"]
+  PlatformDir --> PulseRun["demo-incident-pulse CronJob"]
 
   PipelinesDir --> KFPDef["KFP definition and publisher"]
   TrainingDir --> TrainSteps["training step implementation"]
