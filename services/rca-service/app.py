@@ -1,3 +1,4 @@
+import json
 from typing import Dict, List
 
 from fastapi import Depends, FastAPI
@@ -6,7 +7,7 @@ from pydantic import BaseModel, Field
 from shared.control_plane_client import attach_rca
 from shared.cors import install_cors
 from shared.metrics import install_metrics, record_rca
-from shared.rag import build_prompt, generate_with_llm, retrieve_context
+from shared.rag import build_prompt, generate_with_llm, publish_document, retrieve_context
 from shared.security import require_api_key
 
 
@@ -152,5 +153,25 @@ def rca(request: RCARequest):
             "generation_mode": response.get("generation_mode"),
             "retrieved_documents": response.get("retrieved_documents", []),
         },
+    )
+    publish_document(
+        collection_name="ims_incidents",
+        reference=f"incidents/{request.incident_id}.json",
+        title=f"Incident {request.incident_id}",
+        content=json.dumps(
+            {
+                "incident_id": request.incident_id,
+                "context": request.context,
+                "rca": {
+                    "root_cause": response["root_cause"],
+                    "confidence": response["confidence"],
+                    "recommendation": response["recommendation"],
+                    "evidence": response["evidence"],
+                    "retrieved_documents": response.get("retrieved_documents", []),
+                },
+            },
+            indent=2,
+        ),
+        doc_type="incident",
     )
     return response

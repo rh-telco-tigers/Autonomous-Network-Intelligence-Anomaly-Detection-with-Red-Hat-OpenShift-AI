@@ -443,7 +443,13 @@
 
       async function fetchJson(url, options = {}, allowRetry = true) {
         const response = await fetch(url, options);
-        const payload = await response.json();
+        const raw = await response.text();
+        let payload;
+        try {
+          payload = raw ? JSON.parse(raw) : null;
+        } catch (error) {
+          payload = raw;
+        }
         if (response.status === 401 && allowRetry) {
           const tokenInput = document.getElementById("api-token");
           tokenInput.value = defaultApiToken;
@@ -457,9 +463,17 @@
           return fetchJson(url, retryOptions, false);
         }
         if (!response.ok) {
-          throw new Error(JSON.stringify(payload));
+          const detail = typeof payload === "string" ? payload : JSON.stringify(payload);
+          throw new Error(`${response.status} ${response.statusText}: ${detail}`);
         }
         return payload;
+      }
+
+      function errorMessage(error) {
+        if (error instanceof Error && error.message) {
+          return error.message;
+        }
+        return String(error);
       }
 
       async function fetchServiceHealth() {
@@ -816,17 +830,20 @@
           renderServiceHealth(health);
           updateSummary(health, incidents, audit, models);
         } catch (error) {
-          setHtml("incidents-panel", `<div class="empty">Dashboard refresh failed: ${escapeHtml(String(error))}</div>`);
+          setHtml("incidents-panel", `<div class="empty">Dashboard refresh failed: ${escapeHtml(errorMessage(error))}</div>`);
         }
       }
 
       async function runScenario(scenario) {
+        let stage = "feature generation";
         try {
-          setText("scenario-status", `Running ${scenario} through feature generation, scoring, and RCA.`);
+          setText("scenario-status", `Generating live feature window for ${scenario}.`);
 
           const featureWindow = await fetchJson(`${featureService}/live-window/${scenario}`);
           storeWindow(featureWindow);
 
+          stage = "anomaly scoring";
+          setText("scenario-status", `Scoring feature window ${featureWindow.window_id}.`);
           const anomaly = await fetchJson(`${anomalyService}/score`, {
             method: "POST",
             headers: authHeaders(),
@@ -844,6 +861,8 @@
           }
 
           state.activeIncidentId = anomaly.incident_id;
+          stage = "RCA generation";
+          setText("scenario-status", `Generating RCA for incident ${anomaly.incident_id}.`);
           const rca = await fetchJson(`${rcaService}/rca`, {
             method: "POST",
             headers: authHeaders(),
@@ -860,7 +879,7 @@
           setText("scenario-status", `Scenario ${scenario} created incident ${anomaly.incident_id} and attached RCA confidence ${rca.confidence}.`);
           await refreshDashboard();
         } catch (error) {
-          setText("scenario-status", `Scenario execution failed: ${String(error)}`);
+          setText("scenario-status", `Scenario execution failed during ${stage}: ${errorMessage(error)}`);
         }
       }
 

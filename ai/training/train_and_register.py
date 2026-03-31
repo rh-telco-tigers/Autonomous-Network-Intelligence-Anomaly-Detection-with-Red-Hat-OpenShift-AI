@@ -330,7 +330,7 @@ import triton_python_backend_utils as pb_utils
 
 class TritonPythonModel:
     def initialize(self, args):
-        version_dir = Path(args["model_repository"]) / args["model_name"] / args["model_version"]
+        version_dir = Path(__file__).resolve().parent
         weights = json.loads((version_dir / "weights.json").read_text())
         self.mean = np.asarray(weights["scaler_mean"], dtype=np.float32)
         self.scale = np.asarray(weights["scaler_scale"], dtype=np.float32)

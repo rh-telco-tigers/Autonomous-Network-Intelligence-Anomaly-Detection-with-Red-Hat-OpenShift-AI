@@ -398,9 +398,9 @@ spec:
       resources:
         $patch: replace
         requests:
-          memory: 128Mi
+          memory: 1Gi
         limits:
-          memory: 256Mi
+          memory: 2Gi
 ---
 apiVersion: batch/v1
 kind: Job

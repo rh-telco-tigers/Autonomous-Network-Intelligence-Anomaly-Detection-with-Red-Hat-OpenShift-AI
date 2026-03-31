@@ -30,7 +30,7 @@ spec:
       args:
         - --model-repository=/mnt/models
         - --allow-http=true
-        - --http_port=8080
+        - --http-port=8080
         - --grpc-port=9000
         - --metrics-port=8002
       ports:

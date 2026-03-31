@@ -32,6 +32,10 @@ NUMERIC_FEATURES = [
     "inter_arrival_mean",
     "payload_variance",
 ]
+SIPP_TRANSPORT_MAP = {
+    "udp": "u1",
+    "tcp": "t1",
+}
 SHORTMSG_DIRECTION_INDEX = 3
 SHORTMSG_CALL_ID_INDEX = 4
 SHORTMSG_CSEQ_INDEX = 5
@@ -114,6 +118,11 @@ def _scenario_anomaly_type(scenario_name: str) -> str:
     return scenario_name
 
 
+def _cseq_method(cseq: str) -> str:
+    parts = cseq.split()
+    return parts[-1].upper() if parts else ""
+
+
 def _parse_stats_csv(trace_dir: Path) -> dict[str, str]:
     stats_files = sorted(trace_dir.glob("*.csv"))
     if not stats_files:
@@ -148,11 +157,13 @@ def _parse_shortmessages(trace_dir: Path) -> dict[str, Any]:
 
     sent_timestamps: list[float] = []
     response_codes: list[int] = []
-    transactions: dict[tuple[str, str], list[float]] = {}
+    transactions: dict[tuple[str, str], dict[str, Any]] = {}
     latencies_ms: list[float] = []
     method_counts = {"REGISTER": 0, "INVITE": 0, "BYE": 0}
     first_seen: float | None = None
     last_seen: float | None = None
+    effective_response_codes: list[int] = []
+    auth_challenge_count = 0
 
     for path in short_files:
         for raw_line in path.read_text().splitlines():
@@ -170,15 +181,30 @@ def _parse_shortmessages(trace_dir: Path) -> dict[str, Any]:
             if direction == "S":
                 method = summary.split(" ", 1)[0].upper()
                 if method in method_counts:
-                    method_counts[method] += 1
-                    sent_timestamps.append(timestamp)
-                    transactions.setdefault((call_id, cseq), []).append(timestamp)
+                    key = (call_id, cseq)
+                    transaction = transactions.get(key)
+                    if transaction is None:
+                        method_counts[method] += 1
+                        sent_timestamps.append(timestamp)
+                        transactions[key] = {
+                            "method": method,
+                            "first_send": timestamp,
+                            "last_send": timestamp,
+                        }
+                    else:
+                        transaction["last_send"] = timestamp
             elif direction == "R" and summary.startswith("SIP/2.0 "):
                 code = int(summary.split()[1])
                 response_codes.append(code)
-                prior_sends = transactions.get((call_id, cseq), [])
-                if prior_sends:
-                    latencies_ms.append(max(timestamp - prior_sends[-1], 0.0) * 1000.0)
+                transaction = transactions.get((call_id, cseq))
+                method = _cseq_method(cseq)
+                is_expected_auth_challenge = code == 401 and method == "REGISTER"
+                if is_expected_auth_challenge:
+                    auth_challenge_count += 1
+                else:
+                    effective_response_codes.append(code)
+                if transaction:
+                    latencies_ms.append(max(timestamp - float(transaction["first_send"]), 0.0) * 1000.0)
 
     duration_seconds = 0.0
     if first_seen is not None and last_seen is not None:
@@ -187,7 +213,7 @@ def _parse_shortmessages(trace_dir: Path) -> dict[str, Any]:
     inter_arrivals = [
         later - earlier for earlier, later in zip(sent_timestamps, sent_timestamps[1:])
     ]
-    total_responses = max(len(response_codes), 1)
+    total_responses = max(len(effective_response_codes), 1)
     return {
         "duration_seconds": duration_seconds,
         "method_counts": method_counts,
@@ -196,9 +222,10 @@ def _parse_shortmessages(trace_dir: Path) -> dict[str, Any]:
         "inter_arrival_mean": mean(inter_arrivals) if inter_arrivals else duration_seconds / max(len(sent_timestamps), 1),
         "first_seen": first_seen,
         "last_seen": last_seen,
-        "error_4xx_ratio": sum(1 for code in response_codes if 400 <= code < 500) / total_responses,
-        "error_5xx_ratio": sum(1 for code in response_codes if code >= 500) / total_responses,
+        "error_4xx_ratio": sum(1 for code in effective_response_codes if 400 <= code < 500) / total_responses,
+        "error_5xx_ratio": sum(1 for code in effective_response_codes if code >= 500) / total_responses,
         "event_count": len(sent_timestamps) + len(response_codes),
+        "auth_challenge_count": auth_challenge_count,
     }
 
 
@@ -251,6 +278,7 @@ def _build_feature_window(args: argparse.Namespace, trace_dir: Path, sipp_result
             "rate": args.rate,
             "event_count": parsed["event_count"],
             "response_codes": parsed["response_codes"],
+            "auth_challenge_count": parsed["auth_challenge_count"],
             "return_code": sipp_result.returncode,
             "stdout_tail": "\n".join((sipp_result.stdout or "").splitlines()[-20:]),
             "stderr_tail": "\n".join((sipp_result.stderr or "").splitlines()[-20:]),
@@ -282,6 +310,8 @@ def _run_sipp(args: argparse.Namespace, trace_dir: Path) -> subprocess.Completed
         f"{args.target_host}:{args.target_port}",
         "-sf",
         args.scenario_file,
+        "-t",
+        SIPP_TRANSPORT_MAP[args.transport],
         "-m",
         str(args.call_limit),
         "-r",
@@ -289,6 +319,7 @@ def _run_sipp(args: argparse.Namespace, trace_dir: Path) -> subprocess.Completed
         "-trace_msg",
         "-trace_shortmsg",
         "-trace_stat",
+        "-trace_err",
         "-fd",
         "1",
     ]
@@ -309,6 +340,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scenario-name", required=True)
     parser.add_argument("--call-limit", type=int, required=True)
     parser.add_argument("--rate", type=int, required=True)
+    parser.add_argument("--transport", choices=sorted(SIPP_TRANSPORT_MAP.keys()), default="udp")
     parser.add_argument("--dataset-version", default=os.getenv("DATASET_VERSION", DEFAULT_DATASET_VERSION))
     return parser.parse_args()
 

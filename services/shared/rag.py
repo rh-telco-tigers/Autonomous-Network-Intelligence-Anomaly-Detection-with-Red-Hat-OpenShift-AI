@@ -1,3 +1,4 @@
+import hashlib
 import json
 import math
 import os
@@ -13,6 +14,7 @@ DEFAULT_MILVUS_COLLECTIONS = (
     "ims_topology",
     "ims_signal_patterns",
 )
+VECTOR_DIMENSION = 64
 LOCAL_COLLECTION_DIRS = {
     "ims_runbooks": "runbooks",
     "ims_incidents": "incidents",
@@ -34,6 +36,72 @@ def _milvus_collections() -> List[str]:
     raw = os.getenv("MILVUS_COLLECTIONS", ",".join(DEFAULT_MILVUS_COLLECTIONS))
     collections = [item.strip() for item in raw.split(",") if item.strip()]
     return collections or list(DEFAULT_MILVUS_COLLECTIONS)
+
+
+def _milvus_client():
+    uri = os.getenv("MILVUS_URI", "").strip()
+    if not uri:
+        return None
+    try:
+        from pymilvus import MilvusClient
+    except Exception:
+        return None
+    return MilvusClient(uri=uri)
+
+
+def _stable_document_id(reference: str) -> int:
+    digest = hashlib.sha256(reference.encode("utf-8")).hexdigest()
+    return int(digest[:15], 16)
+
+
+def _ensure_milvus_collection(client, collection_name: str) -> bool:
+    try:
+        if client.has_collection(collection_name=collection_name):
+            return True
+        from pymilvus import DataType
+    except Exception:
+        return False
+
+    schema = client.create_schema(auto_id=False, enable_dynamic_field=False)
+    schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True)
+    schema.add_field(field_name="title", datatype=DataType.VARCHAR, max_length=256)
+    schema.add_field(field_name="reference", datatype=DataType.VARCHAR, max_length=256)
+    schema.add_field(field_name="doc_type", datatype=DataType.VARCHAR, max_length=64)
+    schema.add_field(field_name="content", datatype=DataType.VARCHAR, max_length=16384)
+    schema.add_field(field_name="embedding", datatype=DataType.FLOAT_VECTOR, dim=VECTOR_DIMENSION)
+
+    index_params = client.prepare_index_params()
+    index_params.add_index(field_name="embedding", index_type="AUTOINDEX", metric_type="COSINE")
+    client.create_collection(collection_name=collection_name, schema=schema, index_params=index_params)
+    return True
+
+
+def publish_document(
+    collection_name: str,
+    reference: str,
+    title: str,
+    content: str,
+    doc_type: str | None = None,
+) -> bool:
+    client = _milvus_client()
+    if client is None:
+        return False
+    if not _ensure_milvus_collection(client, collection_name):
+        return False
+
+    payload = {
+        "id": _stable_document_id(reference),
+        "title": title[:256],
+        "reference": reference[:256],
+        "doc_type": (doc_type or collection_name.removeprefix("ims_"))[:64],
+        "content": content[:16384],
+        "embedding": hash_embedding(content, size=VECTOR_DIMENSION),
+    }
+    try:
+        client.upsert(collection_name=collection_name, data=[payload])
+        return True
+    except Exception:
+        return False
 
 
 def _render_local_document(path: Path, collection: str) -> Dict[str, object]:

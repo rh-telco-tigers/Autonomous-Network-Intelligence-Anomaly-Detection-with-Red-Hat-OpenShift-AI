@@ -41,6 +41,8 @@ IMS_PCSCF_PORT = int(os.getenv("IMS_PCSCF_PORT", "5060"))
 IMS_PCSCF_TELEMETRY = os.getenv("IMS_PCSCF_TELEMETRY_URL", "")
 IMS_SCSCF_TELEMETRY = os.getenv("IMS_SCSCF_TELEMETRY_URL", "")
 IMS_HSS_TELEMETRY = os.getenv("IMS_HSS_TELEMETRY_URL", "")
+IMS_TELEMETRY_RESET_TIMEOUT = float(os.getenv("IMS_TELEMETRY_RESET_TIMEOUT_SECONDS", "0.5"))
+IMS_TELEMETRY_FETCH_TIMEOUT = float(os.getenv("IMS_TELEMETRY_FETCH_TIMEOUT_SECONDS", "1.5"))
 
 
 def aggregate_features(events: List[Event], node_id: str, node_role: str, duration_seconds: int, scenario: str) -> Dict[str, object]:
@@ -125,13 +127,8 @@ def _sip_payload(method: str, malformed: bool = False, retransmission: bool = Fa
 
 def _send_udp_traffic(payloads: List[bytes]) -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.settimeout(0.5)
         for payload in payloads:
             sock.sendto(payload, (IMS_PCSCF_HOST, IMS_PCSCF_PORT))
-            try:
-                sock.recvfrom(2048)
-            except Exception:
-                pass
 
 
 def _reset_telemetry() -> None:
@@ -139,7 +136,7 @@ def _reset_telemetry() -> None:
         if not base_url:
             continue
         try:
-            requests.post(f"{base_url}/reset", timeout=5)
+            requests.post(f"{base_url}/reset", timeout=IMS_TELEMETRY_RESET_TIMEOUT)
         except Exception:
             continue
 
@@ -147,7 +144,7 @@ def _reset_telemetry() -> None:
 def _fetch_telemetry(base_url: str) -> Dict[str, object]:
     if not base_url:
         raise RuntimeError("IMS telemetry endpoint not configured")
-    response = requests.get(f"{base_url}/telemetry", timeout=10)
+    response = requests.get(f"{base_url}/telemetry", timeout=IMS_TELEMETRY_FETCH_TIMEOUT)
     response.raise_for_status()
     return response.json()
 

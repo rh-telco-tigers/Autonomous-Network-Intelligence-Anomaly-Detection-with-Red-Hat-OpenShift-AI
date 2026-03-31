@@ -29,6 +29,8 @@ spec:
                 - /scenarios/register-normal.xml
                 - --scenario-name
                 - normal
+                - --transport
+                - udp
                 - --call-limit
                 - "1"
                 - --rate
@@ -98,6 +100,8 @@ spec:
                 - /scenarios/register-storm.xml
                 - --scenario-name
                 - registration_storm
+                - --transport
+                - udp
                 - --call-limit
                 - "400"
                 - --rate
@@ -167,6 +171,8 @@ spec:
                 - /scenarios/invite-malformed.xml
                 - --scenario-name
                 - malformed_invite
+                - --transport
+                - udp
                 - --call-limit
                 - "24"
                 - --rate

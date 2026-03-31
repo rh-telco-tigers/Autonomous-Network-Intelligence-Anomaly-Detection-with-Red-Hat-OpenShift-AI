@@ -156,11 +156,11 @@ spec:
             - name: IMS_PCSCF_PORT
               value: "5060"
             - name: IMS_PCSCF_TELEMETRY_URL
-              value: http://ims-pcscf.ims-demo-lab.svc.cluster.local:8080
+              value: ""
             - name: IMS_SCSCF_TELEMETRY_URL
-              value: http://ims-scscf.ims-demo-lab.svc.cluster.local:8080
+              value: ""
             - name: IMS_HSS_TELEMETRY_URL
-              value: http://ims-hss.ims-demo-lab.svc.cluster.local:8080
+              value: ""
           readinessProbe:
             httpGet:
               path: /healthz
@@ -172,9 +172,9 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi
-            limits:
               memory: 256Mi
+            limits:
+              memory: 512Mi
 ---
 apiVersion: v1
 kind: Service
