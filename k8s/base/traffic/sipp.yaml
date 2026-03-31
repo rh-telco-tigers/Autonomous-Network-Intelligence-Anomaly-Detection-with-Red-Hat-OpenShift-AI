@@ -5,6 +5,8 @@ metadata:
   namespace: ims-demo-lab
 spec:
   schedule: "*/10 * * * *"
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
       template:
@@ -12,13 +14,13 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp:latest
+              image: sipp-runner:latest
               command:
                 - /bin/sh
                 - -c
               args:
                 - >
-                  sipp openimss-pcscf.ims-demo-lab.svc.cluster.local:5060
+                  sipp ims-pcscf.ims-demo-lab.svc.cluster.local:5060
                   -sf /scenarios/register-normal.xml
                   -m 50
                   -r 2
@@ -39,6 +41,8 @@ metadata:
 spec:
   schedule: "*/30 * * * *"
   suspend: true
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
       template:
@@ -46,13 +50,13 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp:latest
+              image: sipp-runner:latest
               command:
                 - /bin/sh
                 - -c
               args:
                 - >
-                  sipp openimss-pcscf.ims-demo-lab.svc.cluster.local:5060
+                  sipp ims-pcscf.ims-demo-lab.svc.cluster.local:5060
                   -sf /scenarios/register-storm.xml
                   -m 400
                   -r 20
@@ -73,6 +77,8 @@ metadata:
 spec:
   schedule: "*/30 * * * *"
   suspend: true
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
       template:
@@ -80,13 +86,13 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp:latest
+              image: sipp-runner:latest
               command:
                 - /bin/sh
                 - -c
               args:
                 - >
-                  sipp openimss-pcscf.ims-demo-lab.svc.cluster.local:5060
+                  sipp ims-pcscf.ims-demo-lab.svc.cluster.local:5060
                   -sf /scenarios/invite-malformed.xml
                   -m 80
                   -r 8
@@ -98,4 +104,3 @@ spec:
             - name: scenarios
               configMap:
                 name: sipp-scenarios
-

@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 from typing import Dict, Tuple
 
+import requests
+
 
 NUMERIC_FEATURES = [
     "register_rate",
@@ -64,6 +66,11 @@ def classify_anomaly_type(features: Dict[str, object]) -> str:
 
 def score_features(features: Dict[str, object]) -> Tuple[float, bool, str, str]:
     deployed = load_deployed_model()
+    remote_score = _remote_score(features)
+    if remote_score and deployed:
+        anomaly_type = classify_anomaly_type(features)
+        return remote_score[0], remote_score[1], anomaly_type, deployed["metadata"]["version"]
+
     if not deployed:
         return _heuristic_score(features)
 
@@ -76,6 +83,39 @@ def score_features(features: Dict[str, object]) -> Tuple[float, bool, str, str]:
         score = _score_weighted(features, artifact)
     anomaly_type = classify_anomaly_type(features)
     return round(score, 2), score >= float(artifact.get("threshold", 0.6)), anomaly_type, metadata["version"]
+
+
+def _remote_score(features: Dict[str, object]) -> Tuple[float, bool] | None:
+    endpoint = os.getenv("PREDICTIVE_ENDPOINT", "").rstrip("/")
+    model_name = os.getenv("PREDICTIVE_MODEL_NAME", "ims-predictive")
+    if not endpoint:
+        return None
+
+    values = [[float(features.get(feature, 0.0)) for feature in NUMERIC_FEATURES]]
+    try:
+        response = requests.post(
+            f"{endpoint}/v2/models/{model_name}/infer",
+            json={
+                "inputs": [
+                    {
+                        "name": "predict",
+                        "shape": [1, len(NUMERIC_FEATURES)],
+                        "datatype": "FP32",
+                        "data": values,
+                    }
+                ]
+            },
+            timeout=10,
+        )
+        response.raise_for_status()
+        outputs = response.json().get("outputs", [])
+        if not outputs:
+            return None
+        raw = outputs[0].get("data", [0.0])
+        score = float(raw[0] if isinstance(raw, list) else raw)
+        return round(score, 2), score >= 0.6
+    except Exception:
+        return None
 
 
 def _score_baseline(features: Dict[str, object], artifact: Dict[str, object]) -> float:
@@ -133,4 +173,3 @@ def _heuristic_score(features: Dict[str, object]) -> Tuple[float, bool, str, str
     anomaly_type = classify_anomaly_type(features)
     score = min(score, 0.99)
     return round(score, 2), score >= 0.6, anomaly_type, "heuristic-fallback"
-

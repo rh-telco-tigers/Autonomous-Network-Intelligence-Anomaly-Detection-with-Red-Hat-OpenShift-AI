@@ -33,50 +33,18 @@ spec:
         - name: STORAGE_URI
           value: "{{.StorageURI}}"
 ---
-apiVersion: serving.kserve.io/v1alpha1
-kind: ServingRuntime
-metadata:
-  name: generative-vllm-runtime
-  namespace: ims-demo-lab
-spec:
-  annotations:
-    openshift.io/display-name: Generative vLLM Runtime
-  supportedModelFormats:
-    - name: vllm
-      version: "1"
-      autoSelect: true
-  protocolVersions:
-    - v2
-  containers:
-    - name: kserve-container
-      image: docker.io/vllm/vllm-openai:v0.8.4
-      command:
-        - python
-        - -m
-        - vllm.entrypoints.openai.api_server
-      args:
-        - --host
-        - 0.0.0.0
-        - --port
-        - "8080"
-        - --model
-        - /mnt/models
-        - --served-model-name
-        - "{{.Name}}"
-      ports:
-        - containerPort: 8080
-      env:
-        - name: STORAGE_URI
-          value: "{{.StorageURI}}"
----
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
   name: ims-predictive
   namespace: ims-demo-lab
+  annotations:
+    serving.kserve.io/deploymentMode: RawDeployment
 spec:
   predictor:
     serviceAccountName: model-storage-sa
+    minReplicas: 1
+    maxReplicas: 1
     runtime: predictive-sklearn-runtime
     model:
       modelFormat:
@@ -84,27 +52,20 @@ spec:
       storageUri: s3://ims-models/predictive/
       resources:
         requests:
-          cpu: "1"
-          memory: 2Gi
+          cpu: 100m
+          memory: 512Mi
         limits:
-          memory: 4Gi
+          memory: 1Gi
 ---
-apiVersion: serving.kserve.io/v1beta1
-kind: InferenceService
+apiVersion: v1
+kind: Service
 metadata:
-  name: ims-generative
+  name: ims-generative-proxy
   namespace: ims-demo-lab
 spec:
-  predictor:
-    serviceAccountName: model-storage-sa
-    runtime: generative-vllm-runtime
-    model:
-      modelFormat:
-        name: vllm
-      storageUri: s3://ims-models/generative/
-      resources:
-        requests:
-          cpu: "2"
-          memory: 8Gi
-        limits:
-          memory: 16Gi
+  type: ExternalName
+  externalName: llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

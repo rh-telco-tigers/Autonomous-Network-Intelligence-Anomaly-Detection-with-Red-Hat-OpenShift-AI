@@ -121,6 +121,17 @@ spec:
           image: feature-gateway:latest
           ports:
             - containerPort: 8080
+          env:
+            - name: IMS_PCSCF_HOST
+              value: ims-pcscf.ims-demo-lab.svc.cluster.local
+            - name: IMS_PCSCF_PORT
+              value: "5060"
+            - name: IMS_PCSCF_TELEMETRY_URL
+              value: http://ims-pcscf.ims-demo-lab.svc.cluster.local:8080
+            - name: IMS_SCSCF_TELEMETRY_URL
+              value: http://ims-scscf.ims-demo-lab.svc.cluster.local:8080
+            - name: IMS_HSS_TELEMETRY_URL
+              value: http://ims-hss.ims-demo-lab.svc.cluster.local:8080
           readinessProbe:
             httpGet:
               path: /healthz
@@ -196,6 +207,10 @@ spec:
               value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
             - name: MODEL_REGISTRY_PATH
               value: /app/ai/registry/model_registry.json
+            - name: PREDICTIVE_ENDPOINT
+              value: http://ims-predictive-predictor.ims-demo-lab.svc.cluster.local
+            - name: PREDICTIVE_MODEL_NAME
+              value: ims-predictive
           readinessProbe:
             httpGet:
               path: /healthz
@@ -272,7 +287,7 @@ spec:
             - name: MILVUS_URI
               value: http://milvus.ims-demo-lab.svc.cluster.local:19530
             - name: LLM_ENDPOINT
-              value: http://ims-generative-predictor.ims-demo-lab.svc.cluster.local:8080
+              value: http://ims-generative-proxy.ims-demo-lab.svc.cluster.local:8080
             - name: RUNBOOK_DIR
               value: /app/ai/rag/runbooks
           readinessProbe:

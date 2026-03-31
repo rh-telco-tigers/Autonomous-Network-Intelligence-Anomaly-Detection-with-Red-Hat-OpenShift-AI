@@ -18,6 +18,36 @@ spec:
     requests:
       storage: 1Gi
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: milvus-etcd-data
+  namespace: ims-demo-lab
+spec:
+  resources:
+    requests:
+      storage: 512Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: milvus-minio-data
+  namespace: ims-demo-lab
+spec:
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: milvus-data
+  namespace: ims-demo-lab
+spec:
+  resources:
+    requests:
+      storage: 1Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -88,9 +118,9 @@ spec:
             - name: CONTROL_PLANE_URL
               value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
             - name: MILVUS_URI
-              value: ""
+              value: http://milvus.ims-demo-lab.svc.cluster.local:19530
             - name: LLM_ENDPOINT
-              value: ""
+              value: http://ims-generative-proxy.ims-demo-lab.svc.cluster.local:8080
             - name: RUNBOOK_DIR
               value: /app/ai/rag/runbooks
           resources:
@@ -120,6 +150,57 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: ims-pcscf
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: ims-node
+          resources:
+            requests:
+              cpu: 2m
+              memory: 96Mi
+            limits:
+              memory: 192Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ims-scscf
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: ims-node
+          resources:
+            requests:
+              cpu: 2m
+              memory: 96Mi
+            limits:
+              memory: 192Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ims-hss
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: ims-node
+          resources:
+            requests:
+              cpu: 2m
+              memory: 96Mi
+            limits:
+              memory: 192Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
   name: model-storage-minio
   namespace: ims-demo-lab
 spec:
@@ -133,6 +214,89 @@ spec:
               memory: 64Mi
             limits:
               memory: 128Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: milvus-etcd
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: etcd
+          resources:
+            requests:
+              cpu: 5m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: milvus-minio
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: minio
+          resources:
+            requests:
+              cpu: 2m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: milvus
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: milvus
+          resources:
+            requests:
+              cpu: 10m
+              memory: 384Mi
+            limits:
+              memory: 768Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: milvus-attu
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: attu
+          resources:
+            requests:
+              cpu: 2m
+              memory: 96Mi
+            limits:
+              memory: 192Mi
+---
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: ims-predictive
+  namespace: ims-demo-lab
+spec:
+  predictor:
+    model:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
 ---
 apiVersion: batch/v1
 kind: Job

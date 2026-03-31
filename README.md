@@ -8,6 +8,7 @@ This repository packages an OpenShift-native demo stack for IMS anomaly detectio
 - operator installation managed by OpenShift GitOps and Argo CD
 - predictive and generative model serving on KServe
 - Milvus-backed RCA context retrieval
+- Attu UI for Milvus inspection through an OpenShift route
 - customer-demo documentation and lab guides
 
 ## What is in scope
@@ -87,6 +88,6 @@ The repository now contains a deployable scaffold for the full demo stack. Opera
 Cluster-specific values still need to be supplied before a live deployment:
 
 - image registry destinations for locally built services
-- OpenIMSs environment values appropriate for the target lab network
+- if you do not have a shared vLLM endpoint already available, the generative RCA endpoint must be updated from the demo default
 - route hostnames and TLS policy for the target cluster
 - the repository must be pushed into the in-cluster Gitea instance before Argo CD bootstrap

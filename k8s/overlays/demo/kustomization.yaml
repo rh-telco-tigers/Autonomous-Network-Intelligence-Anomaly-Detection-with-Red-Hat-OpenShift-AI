@@ -2,13 +2,23 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base/namespaces
+  - ../../base/ims
+  - ../../base/traffic
+  - ../../base/milvus
   - ../../base/minio
   - ../../base/platform
+  - ../../base/serving
   - ../../base/observability
   - ../../base/pipelines
 patches:
   - path: sandbox-resources.yaml
 images:
+  - name: ims-node
+    newName: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-node
+    newTag: latest
+  - name: sipp-runner
+    newName: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner
+    newTag: latest
   - name: control-plane
     newName: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/control-plane
     newTag: latest

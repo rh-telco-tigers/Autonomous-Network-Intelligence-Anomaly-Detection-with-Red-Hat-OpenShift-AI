@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 from services.shared.rag import hash_embedding
@@ -24,7 +25,7 @@ def main():
             }
         )
 
-    client = MilvusClient(uri="http://localhost:19530")
+    client = MilvusClient(uri=os.getenv("MILVUS_URI", "http://localhost:19530"))
     if client.has_collection(collection_name=collection_name):
         client.drop_collection(collection_name=collection_name)
 
@@ -45,4 +46,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

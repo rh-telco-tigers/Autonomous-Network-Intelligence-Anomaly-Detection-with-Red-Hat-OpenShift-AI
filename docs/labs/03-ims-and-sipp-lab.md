@@ -6,24 +6,25 @@ Deploy the IMS lab plane and start repeatable SIP traffic generation.
 
 ## Components
 
-- OpenIMSs-derived control-plane images:
-  - Open5GS image for HSS
-  - OpenSIPS image for P-CSCF and S-CSCF
-- MongoDB backing store for the HSS path
-- MySQL backing store for OpenSIPS state where required by the upstream image contract
-- SIPp runner with scenario files from `lab-assets/sipp`
+- lightweight IMS function simulators for:
+  - P-CSCF
+  - S-CSCF
+  - HSS
+- SIPp runner image built from this repo
+- scenario files mounted from `k8s/base/traffic/scenarios`
+- live telemetry endpoints on each IMS function, consumed by `feature-gateway`
 
 ## Steps
 
-1. Trigger the upstream image builds defined in `k8s/base/builds`.
-2. Apply `k8s/base/ims`.
-3. Apply `k8s/base/traffic`.
-4. Run the normal SIPp scenario first.
-5. Switch to the registration storm or malformed INVITE scenario to generate anomaly-driving traffic.
+1. Sync the `ims-demo-platform` Argo CD application or apply `k8s/overlays/demo`.
+2. Verify the `ims-pcscf`, `ims-scscf`, and `ims-hss` deployments are `Running`.
+3. Verify the SIPp CronJobs exist in `ims-demo-lab`.
+4. Use the demo UI or call `feature-gateway/live-window/{scenario}` to drive live SIP traffic through the P-CSCF endpoint and convert the resulting telemetry into a feature window.
+5. Use `normal`, `registration_storm`, and `malformed_invite` scenarios to generate nominal and anomalous traffic patterns.
 
 ## Demo checkpoints
 
 - IMS services start and expose internal cluster services
-- SIPp jobs can target the P-CSCF service endpoint
-- traffic scenarios are mounted from ConfigMaps instead of being embedded in ad hoc pods
-
+- live traffic reaches the P-CSCF simulator on `ims-pcscf:5060`
+- `feature-gateway` can turn live node telemetry into a feature window
+- SIPp scenarios remain mounted from ConfigMaps instead of being embedded in ad hoc pods

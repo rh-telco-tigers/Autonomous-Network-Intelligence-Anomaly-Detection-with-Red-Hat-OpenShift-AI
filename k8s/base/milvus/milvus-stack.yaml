@@ -9,6 +9,42 @@ stringData:
   secretkey: minioadmin
 ---
 apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: milvus-etcd-data
+  namespace: ims-demo-lab
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: milvus-minio-data
+  namespace: ims-demo-lab
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: milvus-data
+  namespace: ims-demo-lab
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: milvus-etcd
@@ -36,6 +72,10 @@ spec:
       labels:
         app: milvus-etcd
     spec:
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: milvus-etcd-data
       containers:
         - name: etcd
           image: quay.io/coreos/etcd:v3.5.14
@@ -45,6 +85,9 @@ spec:
             - --advertise-client-urls=http://0.0.0.0:2379
             - --listen-client-urls=http://0.0.0.0:2379
             - --data-dir=/etcd
+          volumeMounts:
+            - name: data
+              mountPath: /etcd
           ports:
             - containerPort: 2379
           resources:
@@ -85,6 +128,10 @@ spec:
       labels:
         app: milvus-minio
     spec:
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: milvus-minio-data
       containers:
         - name: minio
           image: quay.io/minio/minio:RELEASE.2024-08-03T04-33-23Z
@@ -92,6 +139,9 @@ spec:
             - server
             - /data
             - --console-address=:9001
+          volumeMounts:
+            - name: data
+              mountPath: /data
           ports:
             - containerPort: 9000
             - containerPort: 9001
@@ -144,6 +194,10 @@ spec:
       labels:
         app: milvus
     spec:
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: milvus-data
       containers:
         - name: milvus
           image: docker.io/milvusdb/milvus:v2.4.13
@@ -170,10 +224,108 @@ spec:
                 secretKeyRef:
                   name: milvus-minio-credentials
                   key: secretkey
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/milvus
           resources:
             requests:
               cpu: 250m
               memory: 1Gi
             limits:
               memory: 2Gi
-
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: milvus-attu
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: milvus-attu
+  template:
+    metadata:
+      labels:
+        app: milvus-attu
+    spec:
+      containers:
+        - name: attu
+          image: docker.io/zilliz/attu:v2.4.12
+          env:
+            - name: MILVUS_URL
+              value: milvus:19530
+            - name: SERVER_PORT
+              value: "3000"
+          ports:
+            - containerPort: 3000
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: milvus-attu
+  namespace: ims-demo-lab
+spec:
+  selector:
+    app: milvus-attu
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: milvus-attu
+  namespace: ims-demo-lab
+spec:
+  to:
+    kind: Service
+    name: milvus-attu
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: milvus-bootstrap
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/rca-service:latest
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              until python -c "from pymilvus import MilvusClient; MilvusClient(uri='http://milvus:19530').list_collections(); print('ready')"; do
+                sleep 5
+              done
+              export MILVUS_URI=http://milvus:19530
+              python ai/rag/bootstrap_knowledge.py

@@ -16,8 +16,34 @@ spec:
           - anomaly-service
           - rca-service
           - control-plane
+          - ims-pcscf
+          - ims-scscf
+          - ims-hss
   endpoints:
     - port: http
       path: /metrics
       interval: 30s
-
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ims-demo-alerts
+  namespace: ims-demo-lab
+spec:
+  groups:
+    - name: ims-demo.rules
+      rules:
+        - alert: IMSDemoServiceHigh5xxRate
+          expr: sum(rate(ims_demo_http_requests_total{status=~"5.."}[5m])) by (service) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: IMS demo service returning sustained 5xx responses
+        - alert: IMSDemoServiceLatencyHigh
+          expr: histogram_quantile(0.95, sum(rate(ims_demo_http_request_duration_seconds_bucket[5m])) by (le, service)) > 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: IMS demo service p95 latency above one second

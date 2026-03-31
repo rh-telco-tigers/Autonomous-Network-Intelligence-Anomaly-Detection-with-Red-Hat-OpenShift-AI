@@ -26,9 +26,39 @@ spec:
       workspaces:
         - name: output
           workspace: source
-    - name: build-feature-gateway
+    - name: build-ims-node
       runAfter:
         - clone
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-node:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: services/ims-node/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-sipp-runner
+      runAfter:
+        - build-ims-node
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: services/sipp-runner/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-feature-gateway
+      runAfter:
+        - build-sipp-runner
       taskRef:
         name: buildah-lite
       params:
@@ -98,6 +128,21 @@ spec:
           value: .
         - name: DOCKERFILE
           value: services/control-plane/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-ims-ai-trainer
+      runAfter:
+        - build-control-plane
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: ai/training/Containerfile
       workspaces:
         - name: source
           workspace: source

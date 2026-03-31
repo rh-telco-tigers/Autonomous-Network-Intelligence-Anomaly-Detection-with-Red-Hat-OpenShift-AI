@@ -241,8 +241,8 @@
           <h1>IMS anomaly operations driven by current cluster state</h1>
           <p class="subtle">
             This screen is rendered from the running services, control-plane database, RCA payloads,
-            audit history, and deployed model registry. Scenario buttons drive new live events into
-            the same system shown below.
+            audit history, and deployed model registry. Scenario buttons drive live SIP traffic into
+            the in-cluster IMS lab and then score the resulting feature windows.
           </p>
           <div class="hero-actions">
             <input id="api-token" value="demo-token" placeholder="API token" />
@@ -717,7 +717,7 @@
         try {
           setText("scenario-status", `Running ${scenario} through feature generation, scoring, and RCA.`);
 
-          const featureWindow = await fetchJson(`${featureService}/sample-window/${scenario}`);
+          const featureWindow = await fetchJson(`${featureService}/live-window/${scenario}`);
           storeWindow(featureWindow);
 
           const anomaly = await fetchJson(`${anomalyService}/score`, {

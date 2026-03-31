@@ -1,11 +1,12 @@
 FROM python:3.11-slim
 
 WORKDIR /app
-COPY services/rca-service/requirements.txt requirements.txt
+
+COPY services/ims-node/requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
+
 COPY services/shared shared
-COPY ai ai
-COPY services/rca-service/app.py app.py
+COPY services/ims-node/app.py app.py
 
 EXPOSE 8080
 
