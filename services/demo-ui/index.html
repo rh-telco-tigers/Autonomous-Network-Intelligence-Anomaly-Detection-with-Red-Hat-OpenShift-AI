@@ -358,6 +358,7 @@
       const rcaService = window.location.origin.replace("demo-ui", "rca-service");
       const controlPlaneService = window.location.origin.replace("demo-ui", "control-plane");
       const persistedWindowKey = "ims-demo-last-feature-window";
+      const defaultApiToken = "demo-token";
 
       const serviceCatalog = [
         { name: "Feature Gateway", url: `${featureService}/healthz` },
@@ -392,13 +393,27 @@
       }
 
       function authHeaders() {
-        const token = document.getElementById("api-token").value.trim();
+        const input = document.getElementById("api-token");
+        const token = (input.value.trim() || defaultApiToken);
+        input.value = token;
         return token ? { "x-api-key": token, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
       }
 
-      async function fetchJson(url, options = {}) {
+      async function fetchJson(url, options = {}, allowRetry = true) {
         const response = await fetch(url, options);
         const payload = await response.json();
+        if (response.status === 401 && allowRetry) {
+          const tokenInput = document.getElementById("api-token");
+          tokenInput.value = defaultApiToken;
+          const retryOptions = {
+            ...options,
+            headers: {
+              ...(options.headers || {}),
+              "x-api-key": defaultApiToken
+            }
+          };
+          return fetchJson(url, retryOptions, false);
+        }
         if (!response.ok) {
           throw new Error(JSON.stringify(payload));
         }
