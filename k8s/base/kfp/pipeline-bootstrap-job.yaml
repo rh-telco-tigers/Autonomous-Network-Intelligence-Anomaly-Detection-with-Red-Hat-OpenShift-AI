@@ -1,3 +1,27 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ims-kfp-bootstrap
+  namespace: ims-demo-lab
+  annotations:
+    argocd.argoproj.io/sync-wave: "30"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ims-kfp-bootstrap-admin
+  namespace: ims-demo-lab
+  annotations:
+    argocd.argoproj.io/sync-wave: "30"
+subjects:
+  - kind: ServiceAccount
+    name: ims-kfp-bootstrap
+    namespace: ims-demo-lab
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -14,6 +38,7 @@ spec:
       labels:
         app: ims-kfp-bootstrap
     spec:
+      serviceAccountName: ims-kfp-bootstrap
       restartPolicy: OnFailure
       containers:
         - name: publish-pipeline
@@ -43,8 +68,8 @@ spec:
             - -lc
           args:
             - |
-              python -m pip install --no-cache-dir --user kfp==2.8.0
-              export PATH="${HOME}/.local/bin:${PATH}"
+              python -m pip install --no-cache-dir --target /tmp/kfp-site kfp==2.8.0
+              export PYTHONPATH="/tmp/kfp-site:${PYTHONPATH}"
               python /opt/kfp/publish_pipeline.py
           volumeMounts:
             - name: kfp-assets

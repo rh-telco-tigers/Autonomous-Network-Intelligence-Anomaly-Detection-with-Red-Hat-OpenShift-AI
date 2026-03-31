@@ -16,6 +16,7 @@ DEFAULT_RUN_NAME = "ims-anomaly-platform-demo"
 DEFAULT_PACKAGE_PATH = "/opt/kfp/ims_anomaly_pipeline.yaml"
 DEFAULT_KFP_HOST_TEMPLATE = "https://ds-pipeline-{dspa}.{namespace}.svc.cluster.local:8443"
 DEFAULT_SERVICE_CA_CERT = "/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
+DEFAULT_SA_TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 DEFAULT_PIPELINE_PARAMETERS = {
     "dataset_version": "synthetic-v1",
     "baseline_version": "baseline-v1",
@@ -67,9 +68,16 @@ def wait_for_client(host: str, namespace: str, timeout_seconds: int = 600) -> Cl
     ssl_ca_cert = os.getenv("KFP_SSL_CA_CERT", DEFAULT_SERVICE_CA_CERT)
     if ssl_ca_cert and not Path(ssl_ca_cert).exists():
         ssl_ca_cert = None
+    token_path = Path(os.getenv("KFP_TOKEN_PATH", DEFAULT_SA_TOKEN_PATH))
+    existing_token = token_path.read_text().strip() if token_path.exists() else None
     while time.time() < deadline:
         try:
-            client = Client(host=host, ssl_ca_cert=ssl_ca_cert, verify_ssl=bool(ssl_ca_cert))
+            client = Client(
+                host=host,
+                ssl_ca_cert=ssl_ca_cert,
+                verify_ssl=bool(ssl_ca_cert),
+                existing_token=existing_token,
+            )
             client.list_pipelines(page_size=1, namespace=namespace)
             return client
         except Exception as exc:  # noqa: BLE001
