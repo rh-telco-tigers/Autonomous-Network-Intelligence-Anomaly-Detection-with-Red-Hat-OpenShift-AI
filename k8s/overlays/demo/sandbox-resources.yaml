@@ -162,6 +162,63 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: mongo
+  namespace: ims-demo-lab
+spec:
+  strategy:
+    type: Recreate
+  template:
+    spec:
+      containers:
+        - name: mongo
+          resources:
+            $patch: replace
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: ims-demo-lab
+spec:
+  strategy:
+    type: Recreate
+  template:
+    spec:
+      containers:
+        - name: mysql
+          resources:
+            $patch: replace
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openimss-webui
+  namespace: ims-demo-lab
+spec:
+  strategy:
+    type: Recreate
+  template:
+    spec:
+      containers:
+        - name: open5gs
+          resources:
+            $patch: replace
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
   name: ims-pcscf
   namespace: ims-demo-lab
 spec:
@@ -170,13 +227,32 @@ spec:
   template:
     spec:
       containers:
-        - name: ims-node
+        - name: opensips
           resources:
             $patch: replace
             requests:
-              memory: 64Mi
+              memory: 256Mi
             limits:
-              memory: 128Mi
+              memory: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ims-icscf
+  namespace: ims-demo-lab
+spec:
+  strategy:
+    type: Recreate
+  template:
+    spec:
+      containers:
+        - name: opensips
+          resources:
+            $patch: replace
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 512Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -189,13 +265,13 @@ spec:
   template:
     spec:
       containers:
-        - name: ims-node
+        - name: opensips
           resources:
             $patch: replace
             requests:
-              memory: 64Mi
+              memory: 256Mi
             limits:
-              memory: 128Mi
+              memory: 512Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -208,13 +284,13 @@ spec:
   template:
     spec:
       containers:
-        - name: ims-node
+        - name: open5gs
           resources:
             $patch: replace
             requests:
-              memory: 64Mi
+              memory: 256Mi
             limits:
-              memory: 128Mi
+              memory: 512Mi
 ---
 apiVersion: apps/v1
 kind: Deployment

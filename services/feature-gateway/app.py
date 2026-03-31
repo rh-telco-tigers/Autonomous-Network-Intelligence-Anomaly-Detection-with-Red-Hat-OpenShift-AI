@@ -38,9 +38,9 @@ install_metrics(app, "feature-gateway")
 
 IMS_PCSCF_HOST = os.getenv("IMS_PCSCF_HOST", "ims-pcscf.ims-demo-lab.svc.cluster.local")
 IMS_PCSCF_PORT = int(os.getenv("IMS_PCSCF_PORT", "5060"))
-IMS_PCSCF_TELEMETRY = os.getenv("IMS_PCSCF_TELEMETRY_URL", "http://ims-pcscf.ims-demo-lab.svc.cluster.local:8080")
-IMS_SCSCF_TELEMETRY = os.getenv("IMS_SCSCF_TELEMETRY_URL", "http://ims-scscf.ims-demo-lab.svc.cluster.local:8080")
-IMS_HSS_TELEMETRY = os.getenv("IMS_HSS_TELEMETRY_URL", "http://ims-hss.ims-demo-lab.svc.cluster.local:8080")
+IMS_PCSCF_TELEMETRY = os.getenv("IMS_PCSCF_TELEMETRY_URL", "")
+IMS_SCSCF_TELEMETRY = os.getenv("IMS_SCSCF_TELEMETRY_URL", "")
+IMS_HSS_TELEMETRY = os.getenv("IMS_HSS_TELEMETRY_URL", "")
 
 
 def aggregate_features(events: List[Event], node_id: str, node_role: str, duration_seconds: int, scenario: str) -> Dict[str, object]:
@@ -136,6 +136,8 @@ def _send_udp_traffic(payloads: List[bytes]) -> None:
 
 def _reset_telemetry() -> None:
     for base_url in [IMS_PCSCF_TELEMETRY, IMS_SCSCF_TELEMETRY, IMS_HSS_TELEMETRY]:
+        if not base_url:
+            continue
         try:
             requests.post(f"{base_url}/reset", timeout=5)
         except Exception:
@@ -143,6 +145,8 @@ def _reset_telemetry() -> None:
 
 
 def _fetch_telemetry(base_url: str) -> Dict[str, object]:
+    if not base_url:
+        raise RuntimeError("IMS telemetry endpoint not configured")
     response = requests.get(f"{base_url}/telemetry", timeout=10)
     response.raise_for_status()
     return response.json()
@@ -202,11 +206,31 @@ def live_window_for_scenario(scenario: str) -> Dict[str, object]:
 
     _send_udp_traffic(payloads)
     time.sleep(1.0)
-    telemetry = _fetch_telemetry(IMS_PCSCF_TELEMETRY)
-    window = _telemetry_to_window(scenario_key, telemetry)
-    window["event_count"] = int(telemetry.get("message_count", len(payloads)))
-    window["latency_mean"] = round(float(telemetry.get("latency_mean", 0.0)), 2)
-    return window
+    try:
+        telemetry = _fetch_telemetry(IMS_PCSCF_TELEMETRY)
+        window = _telemetry_to_window(scenario_key, telemetry)
+        window["event_count"] = int(telemetry.get("message_count", len(payloads)))
+        window["latency_mean"] = round(float(telemetry.get("latency_mean", 0.0)), 2)
+        window["feature_source"] = "ims-telemetry"
+        return window
+    except Exception:
+        events = scenario_events(scenario_key)
+        window = aggregate_features(
+            events=events,
+            node_id="pcscf-1",
+            node_role="P-CSCF",
+            duration_seconds=30,
+            scenario=scenario_key,
+        )
+        window["event_count"] = len(events)
+        window["latency_mean"] = round(mean([event.latency_ms for event in events]) if events else 0.0, 2)
+        window["feature_source"] = "scenario-fallback"
+        window["telemetry_sources"] = {
+            "pcscf": IMS_PCSCF_TELEMETRY,
+            "scscf": IMS_SCSCF_TELEMETRY,
+            "hss": IMS_HSS_TELEMETRY,
+        }
+        return window
 
 
 @app.get("/healthz")

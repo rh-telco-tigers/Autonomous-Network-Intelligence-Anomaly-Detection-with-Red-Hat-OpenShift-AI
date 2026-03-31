@@ -1,71 +1,349 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ims-pcscf
+  name: mongo
   namespace: ims-demo-lab
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: ims-pcscf
+      app: mongo
   template:
     metadata:
       labels:
-        app: ims-pcscf
+        app: mongo
     spec:
       containers:
-        - name: ims-node
-          image: ims-node:latest
-          env:
-            - name: IMS_NODE_ID
-              value: pcscf-1
-            - name: IMS_NODE_ROLE
-              value: P-CSCF
-            - name: SIP_PORT
-              value: "5060"
+        - name: mongo
+          image: docker.io/mongo:7.0
+          args:
+            - --bind_ip_all
+            - --dbpath
+            - /tmp/mongo
           ports:
-            - containerPort: 8080
-              name: http
-            - containerPort: 5060
-              name: sip-udp
-              protocol: UDP
-            - containerPort: 5060
-              name: sip-tcp
-              protocol: TCP
+            - containerPort: 27017
+              name: mongodb
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /tmp/mongo
           readinessProbe:
-            httpGet:
-              path: /healthz
-              port: 8080
+            tcpSocket:
+              port: mongodb
           livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 8080
+            tcpSocket:
+              port: mongodb
           resources:
             requests:
-              cpu: 25m
+              cpu: 50m
               memory: 128Mi
             limits:
               memory: 256Mi
+      volumes:
+        - name: mongo-data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: ims-pcscf
+  name: mongo
   namespace: ims-demo-lab
 spec:
   selector:
-    app: ims-pcscf
+    app: mongo
+  ports:
+    - name: mongodb
+      port: 27017
+      targetPort: mongodb
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: docker.io/mysql:8.0
+          env:
+            - name: MYSQL_ALLOW_EMPTY_PASSWORD
+              value: "yes"
+            - name: MYSQL_ROOT_HOST
+              value: "%"
+          ports:
+            - containerPort: 3306
+              name: mysql
+          readinessProbe:
+            tcpSocket:
+              port: mysql
+          livenessProbe:
+            tcpSocket:
+              port: mysql
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: ims-demo-lab
+spec:
+  selector:
+    app: mysql
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openimss-webui
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openimss-webui
+  template:
+    metadata:
+      labels:
+        app: openimss-webui
+    spec:
+      containers:
+        - name: open5gs
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-open5gs:latest
+          env:
+            - name: COMPONENT_NAME
+              value: webui
+            - name: MONGO_IP
+              value: mongo.ims-demo-lab.svc.cluster.local
+          ports:
+            - containerPort: 3000
+              name: http
+          volumeMounts:
+            - name: webui-config
+              mountPath: /mnt/webui/webui_init.sh
+              subPath: webui_init.sh
+          readinessProbe:
+            tcpSocket:
+              port: http
+          livenessProbe:
+            tcpSocket:
+              port: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: webui-config
+          configMap:
+            name: openimss-webui-config
+            defaultMode: 493
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openimss-webui
+  namespace: ims-demo-lab
+spec:
+  selector:
+    app: openimss-webui
   ports:
     - name: http
-      port: 8080
+      port: 3000
       targetPort: http
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: openimss-webui
+  namespace: ims-demo-lab
+spec:
+  to:
+    kind: Service
+    name: openimss-webui
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ims-hss
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ims-hss
+  template:
+    metadata:
+      labels:
+        app: ims-hss
+    spec:
+      containers:
+        - name: open5gs
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-open5gs:latest
+          env:
+            - name: COMPONENT_NAME
+              value: hss-1
+            - name: MONGO_IP
+              value: mongo.ims-demo-lab.svc.cluster.local
+            - name: HSS_IP
+              value: ims-hss.ims-demo-lab.svc.cluster.local
+            - name: MME_IP
+              value: mme-placeholder
+            - name: MCC
+              value: "001"
+            - name: MNC
+              value: "01"
+          ports:
+            - containerPort: 3868
+              name: diameter
+              protocol: TCP
+            - containerPort: 5868
+              name: diameter-alt
+              protocol: TCP
+          volumeMounts:
+            - name: hss-config
+              mountPath: /mnt/hss/hss.yaml
+              subPath: hss.yaml
+            - name: hss-config
+              mountPath: /mnt/hss/hss.conf
+              subPath: hss.conf
+            - name: hss-config
+              mountPath: /mnt/hss/make_certs.sh
+              subPath: make_certs.sh
+            - name: hss-config
+              mountPath: /mnt/hss/hss_init.sh
+              subPath: hss_init.sh
+          readinessProbe:
+            tcpSocket:
+              port: diameter
+          livenessProbe:
+            tcpSocket:
+              port: diameter
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: hss-config
+          configMap:
+            name: openimss-hss-config
+            defaultMode: 493
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ims-hss
+  namespace: ims-demo-lab
+spec:
+  selector:
+    app: ims-hss
+  ports:
+    - name: diameter
+      port: 3868
+      targetPort: diameter
+      protocol: TCP
+    - name: diameter-alt
+      port: 5868
+      targetPort: diameter-alt
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ims-icscf
+  namespace: ims-demo-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ims-icscf
+  template:
+    metadata:
+      labels:
+        app: ims-icscf
+    spec:
+      containers:
+        - name: opensips
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
+          env:
+            - name: COMPONENT_NAME
+              value: icscf-1
+            - name: OPENSIPS_TEMPLATE
+              value: icscf
+          ports:
+            - containerPort: 4060
+              name: sip-udp
+              protocol: UDP
+            - containerPort: 4060
+              name: sip-tcp
+              protocol: TCP
+            - containerPort: 3866
+              name: diameter
+              protocol: TCP
+          volumeMounts:
+            - name: icscf-config
+              mountPath: /etc/opensips
+          readinessProbe:
+            tcpSocket:
+              port: sip-tcp
+          livenessProbe:
+            tcpSocket:
+              port: sip-tcp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: icscf-config
+          configMap:
+            name: openimss-icscf-config
+            defaultMode: 420
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ims-icscf
+  namespace: ims-demo-lab
+spec:
+  selector:
+    app: ims-icscf
+  ports:
     - name: sip-udp
-      port: 5060
+      port: 4060
       targetPort: sip-udp
       protocol: UDP
     - name: sip-tcp
-      port: 5060
+      port: 4060
       targetPort: sip-tcp
+      protocol: TCP
+    - name: diameter
+      port: 3866
+      targetPort: diameter
       protocol: TCP
 ---
 apiVersion: apps/v1
@@ -84,38 +362,43 @@ spec:
         app: ims-scscf
     spec:
       containers:
-        - name: ims-node
-          image: ims-node:latest
+        - name: opensips
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
           env:
-            - name: IMS_NODE_ID
+            - name: COMPONENT_NAME
               value: scscf-1
-            - name: IMS_NODE_ROLE
-              value: S-CSCF
-            - name: SIP_PORT
-              value: "6060"
+            - name: OPENSIPS_TEMPLATE
+              value: scscf
           ports:
-            - containerPort: 8080
-              name: http
             - containerPort: 6060
               name: sip-udp
               protocol: UDP
             - containerPort: 6060
               name: sip-tcp
               protocol: TCP
+            - containerPort: 3866
+              name: diameter
+              protocol: TCP
+          volumeMounts:
+            - name: scscf-config
+              mountPath: /etc/opensips
           readinessProbe:
-            httpGet:
-              path: /healthz
-              port: 8080
+            tcpSocket:
+              port: sip-tcp
           livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 8080
+            tcpSocket:
+              port: sip-tcp
           resources:
             requests:
-              cpu: 25m
-              memory: 128Mi
-            limits:
+              cpu: 100m
               memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: scscf-config
+          configMap:
+            name: openimss-scscf-config
+            defaultMode: 420
 ---
 apiVersion: v1
 kind: Service
@@ -126,9 +409,6 @@ spec:
   selector:
     app: ims-scscf
   ports:
-    - name: http
-      port: 8080
-      targetPort: http
     - name: sip-udp
       port: 6060
       targetPort: sip-udp
@@ -137,66 +417,102 @@ spec:
       port: 6060
       targetPort: sip-tcp
       protocol: TCP
+    - name: diameter
+      port: 3866
+      targetPort: diameter
+      protocol: TCP
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ims-hss
+  name: ims-pcscf
   namespace: ims-demo-lab
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: ims-hss
+      app: ims-pcscf
   template:
     metadata:
       labels:
-        app: ims-hss
+        app: ims-pcscf
     spec:
       containers:
-        - name: ims-node
-          image: ims-node:latest
+        - name: opensips
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
           env:
-            - name: IMS_NODE_ID
-              value: hss-1
-            - name: IMS_NODE_ROLE
-              value: HSS
-            - name: SIP_PORT
-              value: "3868"
+            - name: COMPONENT_NAME
+              value: pcscf-1
+            - name: OPENSIPS_TEMPLATE
+              value: pcscf
           ports:
-            - containerPort: 8080
-              name: http
-            - containerPort: 3868
+            - containerPort: 5060
+              name: sip-udp
+              protocol: UDP
+            - containerPort: 5060
+              name: sip-tcp
+              protocol: TCP
+            - containerPort: 3866
               name: diameter
               protocol: TCP
+          volumeMounts:
+            - name: pcscf-config
+              mountPath: /etc/opensips
+            - name: pcscf-dispatcher
+              mountPath: /etc/opensips/db/dispatcher
+              subPath: dispatcher
           readinessProbe:
-            httpGet:
-              path: /healthz
-              port: 8080
+            tcpSocket:
+              port: sip-tcp
           livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 8080
+            tcpSocket:
+              port: sip-tcp
           resources:
             requests:
-              cpu: 25m
-              memory: 128Mi
-            limits:
+              cpu: 100m
               memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: pcscf-config
+          configMap:
+            name: openimss-pcscf-config
+            defaultMode: 420
+            items:
+              - key: opensips.m4.template
+                path: opensips.m4.template
+              - key: opensips_proxy.m4
+                path: opensips_proxy.m4
+              - key: freeDiameter.conf
+                path: freeDiameter.conf
+              - key: pcscf.dictionary
+                path: pcscf.dictionary
+        - name: pcscf-dispatcher
+          configMap:
+            name: openimss-pcscf-config
+            defaultMode: 420
+            items:
+              - key: dispatcher
+                path: dispatcher
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: ims-hss
+  name: ims-pcscf
   namespace: ims-demo-lab
 spec:
   selector:
-    app: ims-hss
+    app: ims-pcscf
   ports:
-    - name: http
-      port: 8080
-      targetPort: http
+    - name: sip-udp
+      port: 5060
+      targetPort: sip-udp
+      protocol: UDP
+    - name: sip-tcp
+      port: 5060
+      targetPort: sip-tcp
+      protocol: TCP
     - name: diameter
-      port: 3868
+      port: 3866
       targetPort: diameter
       protocol: TCP

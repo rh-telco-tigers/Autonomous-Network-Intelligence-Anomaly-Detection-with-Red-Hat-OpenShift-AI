@@ -8,7 +8,7 @@ Run the full customer demo sequence from traffic generation through RCA.
 
 1. Start from the demo UI route and explain the four system planes.
 2. Show the IMS lab workloads and the SIPp scenario runner in OpenShift.
-3. Trigger the normal traffic scenario and confirm the feature window is generated from live IMS telemetry.
+3. Trigger the normal traffic scenario and confirm the feature window is generated from live traffic sent into the OpenIMSs P-CSCF.
 4. Trigger the registration storm scenario.
 5. Call the anomaly scoring API or use the demo UI to show incident creation.
 6. Open the persisted incident record and show the linked model version and feature window.

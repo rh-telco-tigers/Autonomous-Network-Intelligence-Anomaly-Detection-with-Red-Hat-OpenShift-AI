@@ -2,4 +2,34 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ims-lab.yaml
-
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: openimss-hss-config
+    files:
+      - assets/openimss/hss/hss.yaml
+      - assets/openimss/hss/hss.conf
+      - assets/openimss/hss/make_certs.sh
+      - assets/openimss/hss/hss_init.sh
+  - name: openimss-webui-config
+    files:
+      - assets/openimss/webui/webui_init.sh
+  - name: openimss-icscf-config
+    files:
+      - assets/openimss/ims_base/templates/icscf/opensips.m4.template
+      - assets/openimss/ims_base/templates/icscf/opensips_proxy.m4
+      - assets/openimss/ims_base/templates/icscf/freeDiameter.conf
+      - assets/openimss/ims_base/templates/icscf/icscf.dictionary
+  - name: openimss-scscf-config
+    files:
+      - assets/openimss/ims_base/templates/scscf/opensips.m4.template
+      - assets/openimss/ims_base/templates/scscf/opensips_proxy.m4
+      - assets/openimss/ims_base/templates/scscf/freeDiameter.conf
+      - assets/openimss/ims_base/templates/scscf/scscf.dictionary
+  - name: openimss-pcscf-config
+    files:
+      - assets/openimss/ims_base/templates/pcscf/opensips.m4.template
+      - assets/openimss/ims_base/templates/pcscf/opensips_proxy.m4
+      - assets/openimss/ims_base/templates/pcscf/freeDiameter.conf
+      - assets/openimss/ims_base/templates/pcscf/pcscf.dictionary
+      - assets/openimss/ims_base/templates/pcscf/db/dispatcher

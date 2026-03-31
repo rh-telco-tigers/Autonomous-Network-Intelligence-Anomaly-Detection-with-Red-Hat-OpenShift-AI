@@ -16,9 +16,6 @@ spec:
           - anomaly-service
           - rca-service
           - control-plane
-          - ims-pcscf
-          - ims-scscf
-          - ims-hss
   endpoints:
     - port: http
       path: /metrics

@@ -14,6 +14,7 @@ This repository packages an OpenShift-native demo stack for IMS anomaly detectio
 ## What is in scope
 
 - OpenShift manifests organized with Kustomize
+- actual OpenIMSs upstream runtime images and configuration adapted for OpenShift
 - FastAPI demo services for feature aggregation, anomaly scoring, and RCA orchestration
 - Tekton image-build assets adapted from the NetSentinel reference repository
 - Kubeflow pipeline source for the predictive training workflow
@@ -66,6 +67,7 @@ Demo API tokens for the platform services:
 - `demo-viewer-token` for read-limited browser testing
 - Slack and Jira actions default to an in-platform demo relay if live credentials are not supplied
 - remediation approvals default to simulated execution unless `AUTOMATION_MODE=execute`
+- OpenIMSs WebUI uses the upstream demo credentials `admin` / `1423`
 
 5. Bootstrap Argo CD and the operator subscriptions:
 

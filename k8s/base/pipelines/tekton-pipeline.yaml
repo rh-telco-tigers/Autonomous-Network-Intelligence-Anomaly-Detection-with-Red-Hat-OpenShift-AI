@@ -26,24 +26,9 @@ spec:
       workspaces:
         - name: output
           workspace: source
-    - name: build-ims-node
-      runAfter:
-        - clone
-      taskRef:
-        name: buildah-lite
-      params:
-        - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-node:latest
-        - name: CONTEXT
-          value: .
-        - name: DOCKERFILE
-          value: services/ims-node/Containerfile
-      workspaces:
-        - name: source
-          workspace: source
     - name: build-sipp-runner
       runAfter:
-        - build-ims-node
+        - clone
       taskRef:
         name: buildah-lite
       params:

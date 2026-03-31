@@ -25,6 +25,7 @@ This repo is meant to support a guided platform demo:
 - incidents, approvals, and notifications flow through a dedicated control-plane service
 - operator-facing flows are documented as labs and runbooks
 - integration points are named and versioned so the system is auditable
+- the IMS plane uses actual upstream OpenIMSs images and config, adapted for OpenShift service discovery
 
 ## Demo access notes
 
@@ -39,3 +40,6 @@ This repo is meant to support a guided platform demo:
 - MinIO console password: `minioadmin`
 - Milvus UI: Attu on the `milvus-attu` route
 - Attu does not use a separate username or password in this demo deployment
+- OpenIMSs WebUI route: `openimss-webui`
+- OpenIMSs WebUI user: `admin`
+- OpenIMSs WebUI password: `1423`
