@@ -11,6 +11,12 @@ This documentation set is organized for a customer-facing demo flow rather than 
 5. [OpenShift AI and model serving lab](./labs/04-rhoai-and-model-serving.md)
 6. [Demo runbook](./labs/05-demo-runbook.md)
 
+Labs 03 to 05 are written as a connected story:
+
+- Lab 03 explains how real SIPp-driven IMS traffic becomes labeled feature windows
+- Lab 04 explains how OpenShift AI trains and serves the predictive model from that dataset
+- Lab 05 explains how to present the full flow to an end user or customer audience
+
 ## Reference material
 
 - [Engineering specification](./architecture/engineering-spec.md)

@@ -1,5 +1,14 @@
-FROM docker.io/sieteunoseis/sipp:latest
+FROM python:3.11-slim
 
 WORKDIR /sipp
 
-ENTRYPOINT ["sipp"]
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends sip-tester \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY services/sipp-runner/requirements.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY services/sipp-runner/run_scenario.py run_scenario.py
+
+ENTRYPOINT ["python", "/sipp/run_scenario.py"]

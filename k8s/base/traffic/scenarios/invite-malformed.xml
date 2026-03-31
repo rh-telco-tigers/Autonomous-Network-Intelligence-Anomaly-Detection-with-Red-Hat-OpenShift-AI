@@ -18,5 +18,5 @@
     ]]>
   </send>
 
-  <recv response="4[0-9][0-9]" optional="true" />
+  <recv response="400" optional="true" />
 </scenario>

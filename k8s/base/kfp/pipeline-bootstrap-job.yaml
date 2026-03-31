@@ -62,7 +62,7 @@ spec:
               value: ims-anomaly-platform-demo
             - name: PIPELINE_PARAMETERS_JSON
               value: |
-                {"dataset_version":"synthetic-v1","baseline_version":"baseline-v1","automl_version":"candidate-v1","automl_engine":"autogluon"}
+                {"dataset_version":"live-sipp-v1","baseline_version":"baseline-v1","automl_version":"candidate-v1","automl_engine":"autogluon"}
           command:
             - /bin/bash
             - -lc

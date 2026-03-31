@@ -1,5 +1,6 @@
 """Compile-time independent KFP pipeline uploader for the IMS demo."""
 
+import hashlib
 import json
 import os
 import time
@@ -18,7 +19,7 @@ DEFAULT_KFP_HOST_TEMPLATE = "https://ds-pipeline-{dspa}.{namespace}.svc.cluster.
 DEFAULT_SERVICE_CA_CERT = "/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
 DEFAULT_SA_TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 DEFAULT_PIPELINE_PARAMETERS = {
-    "dataset_version": "synthetic-v1",
+    "dataset_version": "live-sipp-v1",
     "baseline_version": "baseline-v1",
     "automl_version": "candidate-v1",
     "automl_engine": "autogluon",
@@ -62,6 +63,10 @@ def _find_by_display_name(items: list[Any] | None, expected: str) -> Any | None:
     return None
 
 
+def _package_digest(package_path: str) -> str:
+    return hashlib.sha256(Path(package_path).read_bytes()).hexdigest()[:12]
+
+
 def wait_for_client(host: str, namespace: str, timeout_seconds: int = 600) -> Client:
     deadline = time.time() + timeout_seconds
     last_error: Exception | None = None
@@ -97,6 +102,21 @@ def ensure_pipeline(client: Client, package_path: str, pipeline_name: str, names
             pipeline_name=pipeline_name,
             namespace=namespace,
         )
+        return
+
+    pipeline_id = getattr(existing, "pipeline_id", None)
+    if not pipeline_id:
+        return
+
+    version_name = os.getenv("PIPELINE_VERSION_NAME", f"{pipeline_name}-{_package_digest(package_path)}")
+    existing_versions = getattr(client.list_pipeline_versions(pipeline_id=pipeline_id, page_size=100), "pipeline_versions", None)
+    if _find_by_display_name(existing_versions, version_name) is not None:
+        return
+    client.upload_pipeline_version(
+        pipeline_package_path=package_path,
+        pipeline_version_name=version_name,
+        pipeline_id=pipeline_id,
+    )
 
 
 def ensure_experiment(client: Client, experiment_name: str, namespace: str) -> Any:

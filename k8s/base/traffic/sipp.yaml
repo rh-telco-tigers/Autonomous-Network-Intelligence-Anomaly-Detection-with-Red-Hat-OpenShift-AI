@@ -16,27 +16,48 @@ spec:
       template:
         spec:
           restartPolicy: Never
-          dnsPolicy: ClusterFirst
-          schedulerName: default-scheduler
-          securityContext: {}
-          terminationGracePeriodSeconds: 30
           containers:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
-              workingDir: /tmp
-              resources: {}
-              terminationMessagePath: /dev/termination-log
-              terminationMessagePolicy: File
-              command:
-                - /bin/sh
-                - -c
               args:
-                - >
-                  sipp ims-pcscf.ims-demo-lab.svc.cluster.local:5060
-                  -sf /scenarios/register-normal.xml
-                  -m 1
-                  -r 1
+                - --target-host
+                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - --target-port
+                - "5060"
+                - --scenario-file
+                - /scenarios/register-normal.xml
+                - --scenario-name
+                - normal
+                - --call-limit
+                - "1"
+                - --rate
+                - "1"
+                - --dataset-version
+                - live-sipp-v1
+              env:
+                - name: DATASET_STORE_ENDPOINT
+                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                - name: DATASET_STORE_BUCKET
+                  value: ims-models
+                - name: DATASET_STORE_PREFIX
+                  value: pipelines/ims-demo-lab/datasets
+                - name: DATASET_STORE_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: DATASET_STORE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
               volumeMounts:
                 - name: scenarios
                   mountPath: /scenarios
@@ -52,8 +73,8 @@ metadata:
   name: sipp-registration-storm
   namespace: ims-demo-lab
 spec:
-  schedule: "*/30 * * * *"
-  suspend: true
+  schedule: "5,35 * * * *"
+  suspend: false
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
@@ -64,27 +85,48 @@ spec:
       template:
         spec:
           restartPolicy: Never
-          dnsPolicy: ClusterFirst
-          schedulerName: default-scheduler
-          securityContext: {}
-          terminationGracePeriodSeconds: 30
           containers:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
-              workingDir: /tmp
-              resources: {}
-              terminationMessagePath: /dev/termination-log
-              terminationMessagePolicy: File
-              command:
-                - /bin/sh
-                - -c
               args:
-                - >
-                  sipp ims-pcscf.ims-demo-lab.svc.cluster.local:5060
-                  -sf /scenarios/register-storm.xml
-                  -m 400
-                  -r 20
+                - --target-host
+                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - --target-port
+                - "5060"
+                - --scenario-file
+                - /scenarios/register-storm.xml
+                - --scenario-name
+                - registration_storm
+                - --call-limit
+                - "400"
+                - --rate
+                - "20"
+                - --dataset-version
+                - live-sipp-v1
+              env:
+                - name: DATASET_STORE_ENDPOINT
+                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                - name: DATASET_STORE_BUCKET
+                  value: ims-models
+                - name: DATASET_STORE_PREFIX
+                  value: pipelines/ims-demo-lab/datasets
+                - name: DATASET_STORE_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: DATASET_STORE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
               volumeMounts:
                 - name: scenarios
                   mountPath: /scenarios
@@ -100,8 +142,8 @@ metadata:
   name: sipp-malformed-invite
   namespace: ims-demo-lab
 spec:
-  schedule: "*/30 * * * *"
-  suspend: true
+  schedule: "15,45 * * * *"
+  suspend: false
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
@@ -112,27 +154,48 @@ spec:
       template:
         spec:
           restartPolicy: Never
-          dnsPolicy: ClusterFirst
-          schedulerName: default-scheduler
-          securityContext: {}
-          terminationGracePeriodSeconds: 30
           containers:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
-              workingDir: /tmp
-              resources: {}
-              terminationMessagePath: /dev/termination-log
-              terminationMessagePolicy: File
-              command:
-                - /bin/sh
-                - -c
               args:
-                - >
-                  sipp ims-pcscf.ims-demo-lab.svc.cluster.local:5060
-                  -sf /scenarios/invite-malformed.xml
-                  -m 80
-                  -r 8
+                - --target-host
+                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - --target-port
+                - "5060"
+                - --scenario-file
+                - /scenarios/invite-malformed.xml
+                - --scenario-name
+                - malformed_invite
+                - --call-limit
+                - "24"
+                - --rate
+                - "4"
+                - --dataset-version
+                - live-sipp-v1
+              env:
+                - name: DATASET_STORE_ENDPOINT
+                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                - name: DATASET_STORE_BUCKET
+                  value: ims-models
+                - name: DATASET_STORE_PREFIX
+                  value: pipelines/ims-demo-lab/datasets
+                - name: DATASET_STORE_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: DATASET_STORE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
               volumeMounts:
                 - name: scenarios
                   mountPath: /scenarios

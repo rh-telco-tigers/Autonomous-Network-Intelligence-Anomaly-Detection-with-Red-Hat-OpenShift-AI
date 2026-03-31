@@ -4,7 +4,7 @@
 #    automl_engine: str [Default: 'autogluon']
 #    automl_version: str [Default: 'candidate-v1']
 #    baseline_version: str [Default: 'baseline-v1']
-#    dataset_version: str [Default: 'synthetic-v1']
+#    dataset_version: str [Default: 'live-sipp-v1']
 components:
   comp-deploy-model:
     executorLabel: exec-deploy-model
@@ -491,7 +491,7 @@ root:
         isOptional: true
         parameterType: STRING
       dataset_version:
-        defaultValue: synthetic-v1
+        defaultValue: live-sipp-v1
         isOptional: true
         parameterType: STRING
 schemaVersion: 2.1.0

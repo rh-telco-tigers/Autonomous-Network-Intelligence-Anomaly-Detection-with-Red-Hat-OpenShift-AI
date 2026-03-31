@@ -1,6 +1,6 @@
 # Training Assets
 
-`train_and_register.py` generates synthetic IMS feature windows, evaluates baseline and candidate models, writes model artifacts plus registry metadata into `ai/models/artifacts` and `ai/registry`, and uploads the selected predictive artifacts into the demo MinIO bucket by default.
+`train_and_register.py` now prefers real IMS feature windows captured from SIPp traffic runs and stored in MinIO under the dataset prefix. If the live dataset is missing or too small, it falls back to synthetic bootstrap data so the KFP pipeline still completes, evaluates baseline and candidate models, writes model artifacts plus registry metadata, and uploads the selected predictive artifacts into the demo MinIO bucket by default.
 
 The candidate path is AutoGluon-based. The trainer image installs AutoGluon by default, and the training workflow is expected to fail fast if AutoGluon is unavailable rather than silently degrading to a different candidate model.
 

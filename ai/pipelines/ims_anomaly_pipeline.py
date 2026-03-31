@@ -239,7 +239,7 @@ def deploy_model(
 
 @dsl.pipeline(name="ims-anomaly-platform-train-and-register")
 def ims_anomaly_pipeline(
-    dataset_version: str = "synthetic-v1",
+    dataset_version: str = "live-sipp-v1",
     baseline_version: str = "baseline-v1",
     automl_version: str = "candidate-v1",
     automl_engine: str = "autogluon",

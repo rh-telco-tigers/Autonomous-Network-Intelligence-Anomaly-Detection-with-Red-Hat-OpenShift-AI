@@ -132,8 +132,13 @@ incident:
 feature_window:
   window_id: string
   start_time: timestamp
+  end_time: timestamp
   duration: 30s
   node_id: string
+  source: string
+  scenario_name: string
+  label: 0_or_1
+  anomaly_type: string
   features: map<string, float>
   schema_version: string
 ```
@@ -192,7 +197,7 @@ Each entity has a clear producer and system of record.
 
 - Generate nominal traffic patterns
 - Inject abnormal and degraded scenarios
-- Produce labeled synthetic datasets for model evaluation
+- Produce labeled feature windows from real SIPp-driven IMS traffic
 
 #### Scenario Types
 
@@ -210,7 +215,8 @@ Each entity has a clear producer and system of record.
 {
   "scenario": "registration_storm",
   "timestamp": "...",
-  "expected_label": "anomaly"
+  "expected_label": "anomaly",
+  "dataset_version": "live-sipp-v1"
 }
 ```
 
@@ -220,8 +226,8 @@ Each entity has a clear producer and system of record.
 
 ```text
 IMS (OpenIMSs)
-  -> SIP signaling events
-  -> aggregated into feature windows
+  -> SIP signaling events from SIPp scenarios
+  -> captured as labeled feature windows
   -> stored as dataset version X
   -> consumed by KFP pipelines
   -> produces model version Y
@@ -229,6 +235,13 @@ IMS (OpenIMSs)
   -> generates incidents
   -> consumed by RCA service
 ```
+
+The demo implementation target is:
+
+- SIPp CronJobs generate real traffic against OpenIMSs
+- the scenario runner emits labeled feature windows into MinIO
+- KFP `ingest-data` reads stored feature windows first
+- synthetic data remains only as a bootstrap fallback when the live dataset is empty or undersized
 
 #### 4.3.1 Feature Window Model
 
@@ -711,22 +724,23 @@ IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI/
 
 1. Deploy the OpenIMSs lab
 2. Start baseline SIP traffic through SIPp
-3. Inject a fault scenario such as a registration storm
-4. Generate feature windows from the resulting traffic
-5. Call `/score` and detect the anomaly
-6. Create an Incident object
-7. Trigger the RCA service
-8. Retrieve supporting context from Milvus
-9. Generate structured RCA output through vLLM
-10. Display the anomaly, evidence, and recommendation in the UI
-11. Route the incident to Slack or an approval workflow
-12. Optionally execute a remediation action through Ansible
+3. Persist labeled feature windows from the SIPp/OpenIMS run into MinIO
+4. Inject a fault scenario such as a registration storm
+5. Generate feature windows from the resulting traffic
+6. Call `/score` and detect the anomaly
+7. Create an Incident object
+8. Trigger the RCA service
+9. Retrieve supporting context from Milvus
+10. Generate structured RCA output through vLLM
+11. Display the anomaly, evidence, and recommendation in the UI
+12. Route the incident to Slack or an approval workflow
+13. Optionally execute a remediation action through Ansible
 
 ## 14. Acceptance Criteria
 
 ### Phase 1
 
-- anomaly detection identifies synthetic fault scenarios
+- anomaly detection identifies real SIPp-driven fault scenarios
 - pipeline runs successfully end to end
 - selected model is registered and deployed
 

@@ -4,6 +4,9 @@ import os
 import random
 import shutil
 import tempfile
+import time
+import uuid
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean, pstdev
@@ -28,6 +31,9 @@ FEATURES = [
     "payload_variance",
 ]
 FEATURE_SCHEMA_VERSION = "feature_schema_v1"
+DEFAULT_DATASET_VERSION = "live-sipp-v1"
+DEFAULT_MIN_REAL_WINDOWS = 9
+DEFAULT_MAX_REAL_WINDOWS = 200
 TRITON_MODEL_NAME = "ims-predictive"
 TRITON_MODEL_VERSION = "1"
 PROMOTION_GATE = {
@@ -237,6 +243,84 @@ def _eval_split_path(workspace_root: Path, dataset_version: str) -> Path:
     return workspace_root / "data" / "labeled" / f"{dataset_version}-eval.json"
 
 
+def _live_feature_window_prefix(dataset_version: str) -> str:
+    return f"datasets/{dataset_version}/feature-windows"
+
+
+def _coerce_float(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _normalize_anomaly_type(raw_value: Any, label: int) -> str:
+    candidate = str(raw_value or "").strip()
+    if not candidate:
+        return "normal" if label == 0 else "unknown"
+    if candidate == "malformed_invite":
+        return "malformed_sip"
+    return candidate
+
+
+def _normalize_live_window(window: Dict[str, Any], dataset_version: str, index: int) -> Dict[str, Any]:
+    features = window.get("features") or {}
+    labels = window.get("labels") if isinstance(window.get("labels"), dict) else {}
+    label = int(window.get("label", 1 if labels.get("anomaly") else 0))
+    anomaly_type = _normalize_anomaly_type(
+        window.get("anomaly_type") or labels.get("anomaly_type"),
+        label,
+    )
+    return {
+        "window_id": str(window.get("window_id") or f"{dataset_version}-{index}"),
+        "schema_version": str(window.get("schema_version") or FEATURE_SCHEMA_VERSION),
+        "features": {feature: _coerce_float(features.get(feature, 0.0)) for feature in FEATURES},
+        "label": label,
+        "anomaly_type": anomaly_type,
+    }
+
+
+def _load_live_feature_windows(dataset_version: str, workspace_root: str) -> List[Dict[str, Any]]:
+    max_windows = max(int(os.getenv("IMS_MAX_REAL_WINDOWS", str(DEFAULT_MAX_REAL_WINDOWS))), 1)
+    windows: List[Dict[str, Any]] = []
+
+    try:
+        if _data_store_mode() == "s3":
+            bucket = _dataset_store_bucket()
+            prefix = _dataset_object_key(_live_feature_window_prefix(dataset_version)).rstrip("/") + "/"
+            paginator = _dataset_s3_client().get_paginator("list_objects_v2")
+            discovered: List[Tuple[str, str]] = []
+            for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+                for item in page.get("Contents", []):
+                    key = item["Key"]
+                    if key.endswith(".json"):
+                        discovered.append((str(item.get("LastModified", "")), key))
+            for _, key in sorted(discovered)[-max_windows:]:
+                payload = _read_json_from_s3(_s3_uri(bucket, key))
+                if isinstance(payload, dict):
+                    windows.append(payload)
+                elif isinstance(payload, list):
+                    windows.extend(window for window in payload if isinstance(window, dict))
+        else:
+            local_dir = _workspace_root(workspace_root) / "data" / "feature-windows" / dataset_version
+            if local_dir.exists():
+                for path in sorted(local_dir.glob("*.json"))[-max_windows:]:
+                    payload = json.loads(path.read_text())
+                    if isinstance(payload, dict):
+                        windows.append(payload)
+                    elif isinstance(payload, list):
+                        windows.extend(window for window in payload if isinstance(window, dict))
+    except Exception:
+        return []
+
+    normalized = [
+        _normalize_live_window(window, dataset_version=dataset_version, index=index)
+        for index, window in enumerate(windows)
+        if isinstance(window, dict) and isinstance(window.get("features"), dict)
+    ]
+    return normalized
+
+
 TRITON_MODEL_TEMPLATE = """import json
 from pathlib import Path
 
@@ -366,26 +450,62 @@ def generate_dataset(size_per_class: int = 120) -> List[Dict[str, Any]]:
 
 
 def split_dataset(records: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    cutoff = int(len(records) * 0.7)
-    return records[:cutoff], records[cutoff:]
+    grouped: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for record in records:
+        grouped[str(record.get("anomaly_type", "unknown"))].append(record)
+
+    train_records: List[Dict[str, Any]] = []
+    eval_records: List[Dict[str, Any]] = []
+    for group_records in grouped.values():
+        shuffled = list(group_records)
+        random.shuffle(shuffled)
+        if len(shuffled) <= 1:
+            train_records.extend(shuffled)
+            continue
+        cutoff = min(max(int(len(shuffled) * 0.7), 1), len(shuffled) - 1)
+        train_records.extend(shuffled[:cutoff])
+        eval_records.extend(shuffled[cutoff:])
+
+    random.shuffle(train_records)
+    random.shuffle(eval_records)
+    return train_records, eval_records
 
 
 def ingest_dataset(dataset_version: str, workspace_root: str, size_per_class: int = 120) -> Dict[str, Any]:
-    records = generate_dataset(size_per_class=size_per_class)
     workspace = _workspace_root(workspace_root)
-    records_path = _write_json_reference(
-        records,
-        f"datasets/{dataset_version}/raw/records.json",
-        _raw_dataset_path(workspace, dataset_version),
-    )
+    live_windows = _load_live_feature_windows(dataset_version, workspace_root)
+    min_live_windows = max(int(os.getenv("IMS_MIN_REAL_WINDOWS", str(DEFAULT_MIN_REAL_WINDOWS))), 1)
+    live_labels = {window["label"] for window in live_windows}
+
+    if len(live_windows) >= min_live_windows and live_labels == {0, 1}:
+        records_path = _write_json_reference(
+            live_windows,
+            f"datasets/{dataset_version}/features/{dataset_version}-{FEATURE_SCHEMA_VERSION}.json",
+            _feature_dataset_path(workspace, dataset_version),
+        )
+        return {
+            "dataset_version": dataset_version,
+            "dataset_path": records_path,
+            "dataset_kind": "feature_windows",
+            "record_count": len(live_windows),
+            "feature_schema_version": FEATURE_SCHEMA_VERSION,
+            "created_at": _now(),
+            "source": "openims-sipp-lab",
+            "labels": sorted({record["anomaly_type"] for record in live_windows}),
+        }
+
+    records = generate_dataset(size_per_class=size_per_class)
+    records_path = _write_json_reference(records, f"datasets/{dataset_version}/raw/records.json", _raw_dataset_path(workspace, dataset_version))
     manifest = {
         "dataset_version": dataset_version,
         "dataset_path": records_path,
+        "dataset_kind": "raw_records",
         "record_count": len(records),
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "created_at": _now(),
         "source": "synthetic-ims-lab",
         "labels": sorted({record["anomaly_type"] for record in records}),
+        "live_record_count": len(live_windows),
     }
     return manifest
 
@@ -395,16 +515,20 @@ def materialize_feature_windows(dataset_manifest_path: str, workspace_root: str)
     records = _json_load(dataset_manifest["dataset_path"])
     workspace = _workspace_root(workspace_root)
     windows = []
-    for index, record in enumerate(records):
-        windows.append(
-            {
-                "window_id": f"{dataset_manifest['dataset_version']}-{index}",
-                "schema_version": FEATURE_SCHEMA_VERSION,
-                "features": record["features"],
-                "label": record["label"],
-                "anomaly_type": record["anomaly_type"],
-            }
-        )
+    if dataset_manifest.get("dataset_kind") == "feature_windows":
+        for index, window in enumerate(records):
+            windows.append(_normalize_live_window(window, dataset_version=dataset_manifest["dataset_version"], index=index))
+    else:
+        for index, record in enumerate(records):
+            windows.append(
+                {
+                    "window_id": f"{dataset_manifest['dataset_version']}-{index}",
+                    "schema_version": FEATURE_SCHEMA_VERSION,
+                    "features": record["features"],
+                    "label": record["label"],
+                    "anomaly_type": record["anomaly_type"],
+                }
+            )
 
     features_path = _write_json_reference(
         windows,
@@ -511,10 +635,25 @@ def train_autogluon_candidate(
     from autogluon.tabular import TabularPredictor
 
     workspace = _workspace_root(workspace_root)
-    predictor_dir = workspace / "models" / "autogluon" / version
-    predictor_dir.parent.mkdir(parents=True, exist_ok=True)
-    if predictor_dir.exists():
-        shutil.rmtree(predictor_dir)
+    # AutoGluon setup_outputdir uses makedirs(..., exist_ok=False): path must not exist.
+    # Clear any leftover dir from retries / shared workspace before TabularPredictor.
+    ag_root = workspace / "models" / "autogluon" / version
+    ag_root.mkdir(parents=True, exist_ok=True)
+    predictor_dir: Path | None = None
+    for _ in range(8):
+        candidate = ag_root / uuid.uuid4().hex
+        if candidate.exists():
+            shutil.rmtree(candidate, ignore_errors=True)
+        if not candidate.exists():
+            predictor_dir = candidate
+            break
+        time.sleep(0.05)
+    if predictor_dir is None:
+        raise RuntimeError("Could not allocate an empty AutoGluon output directory")
+    preset = os.environ.get("IMS_AUTOGLUON_PRESET", "medium_quality").strip() or "medium_quality"
+    time_limit = int(os.environ.get("IMS_AUTOGLUON_TIME_LIMIT", "180"))
+    for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        os.environ.setdefault(k, "1")
     rows = []
     for record in train_records:
         row = {feature: float(record["features"][feature]) for feature in FEATURES}
@@ -523,12 +662,8 @@ def train_autogluon_candidate(
     train_frame = pd.DataFrame(rows)
     predictor = TabularPredictor(label="label", path=str(predictor_dir), problem_type="binary").fit(
         train_data=train_frame,
-        presets="medium_quality",
-        hyperparameters={
-            "KNN": {},
-            "RF": {},
-            "XT": {},
-        },
+        presets=preset,
+        time_limit=time_limit,
         verbosity=0,
     )
     leaderboard = predictor.leaderboard(train_frame, silent=True).to_dict("records")
@@ -741,7 +876,7 @@ def select_best_model(evaluation: Dict[str, Any]) -> Dict[str, Any]:
         "baseline": baseline,
         "candidate": candidate,
         "selected_model_version": selected["version"],
-        "selected_model_type": selected["artifact"]["model_type"],
+        "selected_model_type": selected["model_type"],
         "selected_artifact_path": selected["artifact_path"],
         "selection_reason": reason,
         "selected_training_mode": "weakly_supervised",
@@ -1007,10 +1142,12 @@ def full_run(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--step", default="full-run")
-    parser.add_argument("--dataset-version", default="synthetic-v1")
-    parser.add_argument("--workspace-root", default="ai")
-    parser.add_argument("--artifact-dir", default="ai/models/artifacts")
-    parser.add_argument("--registry-path", default="ai/registry/model_registry.json")
+    parser.add_argument("--dataset-version", default=DEFAULT_DATASET_VERSION)
+    # Must match ims_anomaly_pipeline.WORKSPACE_ROOT. Default "ai" breaks KFP: that path is
+    # root-owned image content; OpenShift runs as random UID and cannot mkdir under ai/.
+    parser.add_argument("--workspace-root", default="/tmp/ims-pipeline")
+    parser.add_argument("--artifact-dir", default="/tmp/ims-pipeline/models/artifacts")
+    parser.add_argument("--registry-path", default="/tmp/ims-pipeline/registry/model_registry.json")
     parser.add_argument("--baseline-version", default="baseline-v1")
     parser.add_argument("--candidate-version", default="candidate-v1")
     parser.add_argument("--automl-engine", default="autogluon")
@@ -1117,13 +1254,13 @@ def main() -> None:
             "baseline": {
                 "version": baseline_manifest["version"],
                 "artifact_path": baseline_manifest["artifact_path"],
-                "artifact": baseline_artifact,
+                "model_type": baseline_artifact["model_type"],
                 "metrics": baseline_metrics,
             },
             "candidate": {
                 "version": candidate_manifest["version"],
                 "artifact_path": candidate_manifest["artifact_path"],
-                "artifact": candidate_artifact,
+                "model_type": candidate_artifact["model_type"],
                 "metrics": candidate_metrics,
             },
             "promotion_gate": {
@@ -1167,10 +1304,10 @@ def main() -> None:
         serving_model = train_serving_model(train_records)
         serving_metrics = evaluate_serving_model(eval_records, serving_model)
 
-        baseline_artifact = selection["baseline"]["artifact"]
-        candidate_artifact = selection["candidate"]["artifact"]
         baseline_artifact_path = selection["baseline"]["artifact_path"]
         candidate_artifact_path = selection["candidate"]["artifact_path"]
+        baseline_artifact = _json_load(baseline_artifact_path)
+        candidate_artifact = _json_load(candidate_artifact_path)
         selected_version = selection["selected_model_version"]
 
         registry = build_registry(
@@ -1203,7 +1340,17 @@ def main() -> None:
         registry_path.write_text(json.dumps(registry, indent=2))
 
         target = Path(args.output) if args.output else registry_path
-        if target != registry_path:
+        if args.output:
+            if _data_store_mode() == "s3":
+                registry_uri = _write_json_reference(
+                    registry,
+                    "registry/pipeline_model_registry.json",
+                    registry_path,
+                )
+            else:
+                registry_uri = str(registry_path.resolve())
+            _json_dump(target, {"registry_uri": registry_uri})
+        elif target != registry_path:
             _json_dump(target, registry)
         print(target.read_text())
         return
@@ -1211,7 +1358,11 @@ def main() -> None:
     if args.step == "deploy-model":
         if not args.registry_path:
             raise ValueError("--registry-path is required for deploy-model")
-        registry = _json_load(args.registry_path)
+        raw_registry = _json_load(args.registry_path)
+        if isinstance(raw_registry, dict) and "registry_uri" in raw_registry:
+            registry = _json_load(raw_registry["registry_uri"])
+        else:
+            registry = raw_registry
         staging_root = Path(tempfile.mkdtemp(prefix="ims-deploy-stage-"))
         selected_artifact_path = _download_file_reference(
             registry["selected_artifact_path"],
