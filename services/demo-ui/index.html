@@ -8,12 +8,14 @@
       :root {
         --bg: #f3efe6;
         --ink: #15263a;
-        --muted: #59697b;
-        --panel: rgba(255, 255, 255, 0.86);
+        --muted: #66778a;
+        --panel: rgba(255, 255, 255, 0.88);
         --accent: #bc512f;
-        --accent-soft: #ffd9c5;
+        --accent-soft: #ffe0d2;
         --line: rgba(21, 38, 58, 0.12);
         --ok: #1f6d43;
+        --warn: #b55f00;
+        --bad: #b42318;
       }
       * { box-sizing: border-box; }
       body {
@@ -21,24 +23,30 @@
         font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
         color: var(--ink);
         background:
-          radial-gradient(circle at top right, rgba(188, 81, 47, 0.2), transparent 28%),
-          radial-gradient(circle at bottom left, rgba(43, 98, 138, 0.18), transparent 32%),
+          radial-gradient(circle at top right, rgba(188, 81, 47, 0.18), transparent 28%),
+          radial-gradient(circle at bottom left, rgba(43, 98, 138, 0.14), transparent 32%),
           var(--bg);
       }
       main {
-        width: min(1220px, calc(100vw - 32px));
+        width: min(1280px, calc(100vw - 32px));
         margin: 0 auto;
         padding: 28px 0 44px;
       }
-      .hero, .grid {
+      .hero,
+      .metric-grid,
+      .content-grid {
         display: grid;
-        gap: 20px;
+        gap: 18px;
       }
       .hero {
-        grid-template-columns: 1.3fr 1fr;
-        margin-bottom: 20px;
+        grid-template-columns: 1.4fr 1fr;
+        margin-bottom: 18px;
       }
-      .grid {
+      .metric-grid {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        margin-bottom: 18px;
+      }
+      .content-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }
       .panel {
@@ -47,50 +55,38 @@
         border-radius: 24px;
         padding: 22px;
         backdrop-filter: blur(14px);
-        box-shadow: 0 18px 45px rgba(21, 38, 58, 0.08);
+        box-shadow: 0 16px 38px rgba(21, 38, 58, 0.08);
       }
       h1, h2, h3, p { margin-top: 0; }
       h1 {
         font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
-        font-size: clamp(2.5rem, 4vw, 4.4rem);
-        line-height: 0.92;
-        margin-bottom: 14px;
+        font-size: clamp(2.4rem, 4vw, 4.1rem);
+        line-height: 0.94;
+        margin-bottom: 10px;
       }
       h2 {
         font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
-        font-size: 1.2rem;
+        font-size: 1.12rem;
+        margin-bottom: 14px;
       }
       .eyebrow {
         letter-spacing: 0.16em;
         text-transform: uppercase;
-        font-size: 0.78rem;
+        font-size: 0.75rem;
         color: var(--muted);
       }
-      .metric-strip {
-        display: flex;
-        gap: 18px;
-        flex-wrap: wrap;
-        margin-top: 24px;
+      .subtle {
+        color: var(--muted);
       }
-      .metric {
-        border: 1px solid var(--line);
-        border-radius: 18px;
-        padding: 14px 16px;
-        min-width: 160px;
-        background: rgba(255, 255, 255, 0.68);
-      }
-      .metric strong {
-        display: block;
-        font-size: 1.8rem;
-        font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
-      }
-      .token-row, .scenario-buttons, .action-row {
+      .hero-actions,
+      .scenario-buttons,
+      .action-row {
         display: flex;
         flex-wrap: wrap;
         gap: 10px;
       }
-      .token-row {
-        margin-top: 16px;
+      .hero-actions {
+        margin-top: 18px;
       }
       input {
         border: 1px solid var(--line);
@@ -98,7 +94,7 @@
         padding: 12px 14px;
         font: inherit;
         min-width: 220px;
-        background: rgba(255, 255, 255, 0.78);
+        background: rgba(255, 255, 255, 0.8);
       }
       button {
         border: 0;
@@ -109,22 +105,81 @@
         font: inherit;
         cursor: pointer;
       }
-      button.alt {
-        background: var(--accent);
-      }
+      button.alt { background: var(--accent); }
       button.soft {
         background: white;
         color: var(--ink);
         border: 1px solid var(--line);
       }
-      pre {
-        white-space: pre-wrap;
-        word-break: break-word;
-        background: rgba(21, 38, 58, 0.04);
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+      .metric {
+        min-height: 132px;
+      }
+      .metric-value {
+        display: block;
+        font-size: 2rem;
+        font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+        margin: 10px 0 6px;
+      }
+      .status-bar {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 18px;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 12px;
+        border-radius: 999px;
+        font-size: 0.84rem;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid var(--line);
+      }
+      .pill.good {
+        background: rgba(31, 109, 67, 0.1);
+        color: var(--ok);
+      }
+      .pill.warn {
+        background: rgba(181, 95, 0, 0.1);
+        color: var(--warn);
+      }
+      .pill.bad {
+        background: rgba(180, 35, 24, 0.1);
+        color: var(--bad);
+      }
+      .stack {
+        display: grid;
+        gap: 12px;
+      }
+      .card {
         border: 1px solid var(--line);
         border-radius: 18px;
-        padding: 16px;
-        min-height: 180px;
+        padding: 14px 16px;
+        background: rgba(255, 255, 255, 0.68);
+      }
+      .label {
+        display: block;
+        font-size: 0.78rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 5px;
+      }
+      .kv {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .kv .card {
+        padding: 12px 14px;
+      }
+      .mono {
+        font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
         font-size: 0.92rem;
       }
       .list {
@@ -135,23 +190,44 @@
         gap: 10px;
       }
       .list li {
-        padding: 12px 14px;
+        padding: 13px 14px;
         border-radius: 16px;
-        background: rgba(255, 255, 255, 0.62);
+        background: rgba(255, 255, 255, 0.68);
         border: 1px solid var(--line);
       }
-      .pill {
-        display: inline-block;
-        padding: 6px 10px;
-        border-radius: 999px;
-        background: var(--accent-soft);
-        color: var(--ink);
-        font-size: 0.82rem;
-        margin-right: 8px;
+      .list strong {
+        display: block;
+        margin-bottom: 4px;
       }
-      .ok { color: var(--ok); }
+      .empty {
+        border: 1px dashed var(--line);
+        border-radius: 18px;
+        padding: 16px;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.5);
+      }
+      .code {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: rgba(21, 38, 58, 0.04);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 16px;
+        min-height: 120px;
+        font-size: 0.9rem;
+      }
+      @media (max-width: 1120px) {
+        .metric-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
       @media (max-width: 960px) {
-        .hero, .grid {
+        .hero,
+        .content-grid,
+        .metric-grid {
+          grid-template-columns: 1fr;
+        }
+        .kv {
           grid-template-columns: 1fr;
         }
       }
@@ -161,85 +237,117 @@
     <main>
       <section class="hero">
         <article class="panel">
-          <p class="eyebrow">Customer Demo Console</p>
-          <h1>Traceable IMS anomaly detection with approval-aware RCA</h1>
-          <p>
-            This console now follows the actual platform flow: feature windows, predictive scoring,
-            incident persistence, retrieval-backed RCA, and operator actions for Slack, Jira, and
-            automation approval.
+          <p class="eyebrow">Live Demo Console</p>
+          <h1>IMS anomaly operations driven by current cluster state</h1>
+          <p class="subtle">
+            This screen is rendered from the running services, control-plane database, RCA payloads,
+            audit history, and deployed model registry. Scenario buttons drive new live events into
+            the same system shown below.
           </p>
-          <div class="token-row">
+          <div class="hero-actions">
             <input id="api-token" value="demo-token" placeholder="API token" />
-            <button class="soft" onclick="refreshControlPlane()">Refresh incidents</button>
+            <button class="soft" onclick="refreshDashboard()">Refresh now</button>
+            <button class="soft" onclick="toggleAutoRefresh()" id="auto-refresh-button">Auto refresh: on</button>
           </div>
-          <div class="metric-strip">
-            <div class="metric">
-              <span class="eyebrow">Current Score</span>
-              <strong id="score">0.00</strong>
-            </div>
-            <div class="metric">
-              <span class="eyebrow">Status</span>
-              <strong id="status">Idle</strong>
-            </div>
-            <div class="metric">
-              <span class="eyebrow">Deployed Model</span>
-              <strong id="model-version">unknown</strong>
-            </div>
+          <div class="status-bar">
+            <span class="pill" id="last-refresh-pill">Last refresh: waiting</span>
+            <span class="pill" id="active-incident-pill">Active incident: none</span>
+            <span class="pill" id="latest-event-pill">Latest audit event: none</span>
           </div>
         </article>
-        <article class="panel">
-          <h2>What the customer should see</h2>
-          <ul class="list">
-            <li>Predictive detection and generative RCA are separate control paths.</li>
-            <li>Every incident can be traced to a model version and feature window.</li>
-            <li>Operator actions are explicit approval steps, not silent automation.</li>
-          </ul>
-        </article>
-      </section>
 
-      <section class="grid">
         <article class="panel">
-          <h2>Scenarios</h2>
+          <h2>Scenario Controls</h2>
           <div class="scenario-buttons">
             <button onclick="runScenario('normal')">Normal</button>
             <button class="alt" onclick="runScenario('registration_storm')">Registration Storm</button>
             <button class="alt" onclick="runScenario('malformed_invite')">Malformed INVITE</button>
           </div>
-          <p class="ok" id="incident-pointer">Run a scenario to create or update an incident.</p>
+          <p class="subtle" id="scenario-status" style="margin-top: 14px;">No scenario executed in this browser session.</p>
           <div class="action-row">
-            <button class="soft" onclick="approveIncident('scale_scscf')">Approve S-CSCF Scale</button>
-            <button class="soft" onclick="approveIncident('rate_limit_pcscf')">Approve P-CSCF Rate Limit</button>
-            <button class="soft" onclick="approveIncident('quarantine_imsi')">Approve IMSI Quarantine</button>
+            <button class="soft action-button" onclick="approveIncident('scale_scscf')">Approve S-CSCF Scale</button>
+            <button class="soft action-button" onclick="approveIncident('rate_limit_pcscf')">Approve P-CSCF Rate Limit</button>
+            <button class="soft action-button" onclick="approveIncident('quarantine_imsi')">Approve IMSI Quarantine</button>
           </div>
           <div class="action-row" style="margin-top: 10px;">
-            <button class="soft" onclick="notifySlack()">Send to Slack</button>
-            <button class="soft" onclick="notifyJira()">Open Jira</button>
+            <button class="soft action-button" onclick="notifySlack()">Send to Slack</button>
+            <button class="soft action-button" onclick="notifyJira()">Open Jira</button>
           </div>
         </article>
+      </section>
 
+      <section class="metric-grid">
+        <article class="panel metric">
+          <span class="eyebrow">Services Healthy</span>
+          <strong class="metric-value" id="metric-services">0/0</strong>
+          <span class="subtle" id="metric-services-detail">Awaiting health checks</span>
+        </article>
+        <article class="panel metric">
+          <span class="eyebrow">Incidents Recorded</span>
+          <strong class="metric-value" id="metric-incidents">0</strong>
+          <span class="subtle" id="metric-incidents-detail">No incident history yet</span>
+        </article>
+        <article class="panel metric">
+          <span class="eyebrow">Open Incidents</span>
+          <strong class="metric-value" id="metric-open">0</strong>
+          <span class="subtle" id="metric-open-detail">No active anomalies</span>
+        </article>
+        <article class="panel metric">
+          <span class="eyebrow">Latest Score</span>
+          <strong class="metric-value" id="metric-score">0.00</strong>
+          <span class="subtle" id="metric-score-detail">No anomaly scored yet</span>
+        </article>
+        <article class="panel metric">
+          <span class="eyebrow">Deployed Model</span>
+          <strong class="metric-value" id="metric-model">unknown</strong>
+          <span class="subtle" id="metric-model-detail">Registry not loaded yet</span>
+        </article>
+      </section>
+
+      <section class="content-grid">
         <article class="panel">
-          <h2>Feature Window</h2>
-          <pre id="feature-window">{}</pre>
+          <h2>Service Health</h2>
+          <div id="service-health" class="stack"></div>
         </article>
 
         <article class="panel">
-          <h2>RCA Output</h2>
-          <pre id="rca-output">{}</pre>
+          <h2>Latest Incident</h2>
+          <div id="latest-incident"></div>
         </article>
 
         <article class="panel">
-          <h2>Incidents</h2>
-          <pre id="incidents">[]</pre>
+          <h2>Latest Feature Snapshot</h2>
+          <div id="feature-snapshot"></div>
         </article>
 
         <article class="panel">
-          <h2>Audit Log</h2>
-          <pre id="audit-log">[]</pre>
+          <h2>RCA Summary</h2>
+          <div id="rca-panel"></div>
         </article>
 
         <article class="panel">
-          <h2>Models</h2>
-          <pre id="models">{"deployed_model_version": null}</pre>
+          <h2>Recent Incidents</h2>
+          <div id="incidents-panel"></div>
+        </article>
+
+        <article class="panel">
+          <h2>Audit Activity</h2>
+          <div id="audit-panel"></div>
+        </article>
+
+        <article class="panel">
+          <h2>Model Registry</h2>
+          <div id="models-panel"></div>
+        </article>
+
+        <article class="panel">
+          <h2>Live Payload</h2>
+          <div class="code mono" id="payload-panel">{}</div>
+        </article>
+
+        <article class="panel">
+          <h2>Actions</h2>
+          <div id="action-summary"></div>
         </article>
       </section>
     </main>
@@ -249,7 +357,39 @@
       const anomalyService = window.location.origin.replace("demo-ui", "anomaly-service");
       const rcaService = window.location.origin.replace("demo-ui", "rca-service");
       const controlPlaneService = window.location.origin.replace("demo-ui", "control-plane");
-      let activeIncidentId = null;
+      const persistedWindowKey = "ims-demo-last-feature-window";
+
+      const serviceCatalog = [
+        { name: "Feature Gateway", url: `${featureService}/healthz` },
+        { name: "Anomaly Service", url: `${anomalyService}/healthz` },
+        { name: "RCA Service", url: `${rcaService}/healthz` },
+        { name: "Control Plane", url: `${controlPlaneService}/healthz` }
+      ];
+
+      const state = {
+        activeIncidentId: null,
+        lastFeatureWindow: readStoredWindow(),
+        autoRefresh: true,
+        refreshTimer: null
+      };
+
+      function readStoredWindow() {
+        try {
+          const raw = window.localStorage.getItem(persistedWindowKey);
+          return raw ? JSON.parse(raw) : null;
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function storeWindow(featureWindow) {
+        state.lastFeatureWindow = featureWindow;
+        try {
+          window.localStorage.setItem(persistedWindowKey, JSON.stringify(featureWindow));
+        } catch (error) {
+          // Best effort only.
+        }
+      }
 
       function authHeaders() {
         const token = document.getElementById("api-token").value.trim();
@@ -265,68 +405,361 @@
         return payload;
       }
 
-      async function runScenario(scenario) {
-        const featureWindow = await fetchJson(`${featureService}/sample-window/${scenario}`);
-        document.getElementById("feature-window").textContent = JSON.stringify(featureWindow, null, 2);
-
-        const anomaly = await fetchJson(`${anomalyService}/score`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({
-            features: featureWindow.features,
-            feature_window_id: featureWindow.window_id,
-            project: "ims-demo"
-          })
+      async function fetchServiceHealth() {
+        const checks = await Promise.allSettled(serviceCatalog.map((service) => fetchJson(service.url)));
+        return checks.map((result, index) => {
+          const service = serviceCatalog[index];
+          if (result.status === "fulfilled") {
+            return { name: service.name, ok: true, payload: result.value };
+          }
+          return { name: service.name, ok: false, error: String(result.reason) };
         });
+      }
 
-        document.getElementById("score").textContent = Number(anomaly.anomaly_score).toFixed(2);
-        document.getElementById("status").textContent = anomaly.is_anomaly ? "Anomaly" : "Nominal";
-        document.getElementById("model-version").textContent = anomaly.model_version;
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll("\"", "&quot;")
+          .replaceAll("'", "&#39;");
+      }
 
-        if (!anomaly.is_anomaly) {
-          document.getElementById("incident-pointer").textContent = "No incident created for nominal traffic.";
-          document.getElementById("rca-output").textContent = JSON.stringify({ message: "RCA not triggered." }, null, 2);
-          await refreshControlPlane();
+      function formatTime(value) {
+        if (!value) return "unknown";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return date.toLocaleString();
+      }
+
+      function formatAction(action) {
+        if (!action) return "none";
+        return action.replaceAll("_", " ");
+      }
+
+      function setText(id, value) {
+        document.getElementById(id).textContent = value;
+      }
+
+      function setHtml(id, value) {
+        document.getElementById(id).innerHTML = value;
+      }
+
+      function renderServiceHealth(health) {
+        const healthy = health.filter((service) => service.ok).length;
+        setText("metric-services", `${healthy}/${health.length}`);
+        setText("metric-services-detail", healthy === health.length ? "All live services responding" : "One or more services need attention");
+
+        const markup = health.map((service) => {
+          const badgeClass = service.ok ? "good" : "bad";
+          const status = service.ok ? "healthy" : "unreachable";
+          const detail = service.ok
+            ? escapeHtml(JSON.stringify(service.payload))
+            : escapeHtml(service.error || "request failed");
+          return `
+            <div class="card">
+              <span class="label">${escapeHtml(service.name)}</span>
+              <span class="pill ${badgeClass}">${status}</span>
+              <div class="mono subtle" style="margin-top: 10px;">${detail}</div>
+            </div>
+          `;
+        }).join("");
+
+        setHtml("service-health", markup);
+      }
+
+      function renderLatestIncident(latestIncident) {
+        if (!latestIncident) {
+          setHtml("latest-incident", `<div class="empty">No incidents recorded yet. Use a scenario button to generate a live feature window and score it.</div>`);
+          setHtml("action-summary", `<div class="empty">No incident selected. Approval and notification actions are disabled until an anomaly is recorded.</div>`);
+          updateActionButtons(false);
           return;
         }
 
-        activeIncidentId = anomaly.incident_id;
-        document.getElementById("incident-pointer").textContent = `Active incident: ${activeIncidentId}`;
+        updateActionButtons(true);
+        const rcaStatus = latestIncident.rca_payload ? "attached" : "pending";
+        const recommendation = latestIncident.recommendation || "No remediation recommendation attached yet.";
+        setHtml(
+          "latest-incident",
+          `
+            <div class="stack">
+              <div class="card">
+                <span class="label">Incident ID</span>
+                <div class="mono">${escapeHtml(latestIncident.id)}</div>
+              </div>
+              <div class="kv">
+                <div class="card"><span class="label">Type</span><strong>${escapeHtml(latestIncident.anomaly_type)}</strong></div>
+                <div class="card"><span class="label">Score</span><strong>${Number(latestIncident.anomaly_score || 0).toFixed(2)}</strong></div>
+                <div class="card"><span class="label">Status</span><strong>${escapeHtml(latestIncident.status || "open")}</strong></div>
+                <div class="card"><span class="label">RCA</span><strong>${escapeHtml(rcaStatus)}</strong></div>
+              </div>
+              <div class="card">
+                <span class="label">Recommendation</span>
+                <div>${escapeHtml(recommendation)}</div>
+              </div>
+              <div class="subtle">Created ${escapeHtml(formatTime(latestIncident.created_at))}</div>
+            </div>
+          `
+        );
 
-        const rca = await fetchJson(`${rcaService}/rca`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({
-            incident_id: anomaly.incident_id,
-            context: {
-              anomaly_type: anomaly.anomaly_type,
-              feature_window_id: featureWindow.window_id,
-              model_version: anomaly.model_version
-            }
-          })
-        });
-        document.getElementById("rca-output").textContent = JSON.stringify(rca, null, 2);
-        await refreshControlPlane();
+        setHtml(
+          "action-summary",
+          `
+            <div class="stack">
+              <div class="card">
+                <span class="label">Selected Incident</span>
+                <div class="mono">${escapeHtml(latestIncident.id)}</div>
+              </div>
+              <div class="card">
+                <span class="label">Feature Window</span>
+                <div>${escapeHtml(latestIncident.feature_window_id || "not recorded")}</div>
+              </div>
+              <div class="card">
+                <span class="label">Model Version</span>
+                <div>${escapeHtml(latestIncident.model_version || "unknown")}</div>
+              </div>
+            </div>
+          `
+        );
       }
 
-      async function refreshControlPlane() {
+      function renderFeatureSnapshot(latestIncident) {
+        const snapshot = latestIncident?.feature_snapshot || state.lastFeatureWindow?.features;
+        const windowId = latestIncident?.feature_window_id || state.lastFeatureWindow?.window_id;
+        if (!snapshot || Object.keys(snapshot).length === 0) {
+          setHtml("feature-snapshot", `<div class="empty">No feature snapshot available yet.</div>`);
+          return;
+        }
+
+        const entries = Object.entries(snapshot)
+          .filter((entry) => typeof entry[1] !== "object")
+          .slice(0, 10)
+          .map(([key, value]) => `<li><strong>${escapeHtml(key)}</strong><span class="subtle">${escapeHtml(String(value))}</span></li>`)
+          .join("");
+
+        setHtml(
+          "feature-snapshot",
+          `
+            <div class="stack">
+              <div class="card">
+                <span class="label">Feature Window</span>
+                <div class="mono">${escapeHtml(windowId || "browser session only")}</div>
+              </div>
+              <ul class="list">${entries}</ul>
+            </div>
+          `
+        );
+      }
+
+      function renderRca(latestIncident) {
+        const rca = latestIncident?.rca_payload;
+        if (!rca) {
+          setHtml("rca-panel", `<div class="empty">No RCA payload attached to the latest incident yet.</div>`);
+          return;
+        }
+
+        const evidence = (rca.evidence || []).map((item) => {
+          return `<li><strong>${escapeHtml(item.type || "evidence")}</strong>${escapeHtml(item.reference || "n/a")} · weight ${escapeHtml(String(item.weight ?? "n/a"))}</li>`;
+        }).join("");
+
+        setHtml(
+          "rca-panel",
+          `
+            <div class="stack">
+              <div class="card">
+                <span class="label">Root Cause</span>
+                <div>${escapeHtml(rca.root_cause || "unknown")}</div>
+              </div>
+              <div class="kv">
+                <div class="card"><span class="label">Confidence</span><strong>${escapeHtml(String(rca.confidence ?? "n/a"))}</strong></div>
+                <div class="card"><span class="label">Evidence Sources</span><strong>${escapeHtml(String((rca.evidence || []).length))}</strong></div>
+              </div>
+              <div class="card">
+                <span class="label">Recommendation</span>
+                <div>${escapeHtml(rca.recommendation || "none")}</div>
+              </div>
+              <ul class="list">${evidence}</ul>
+            </div>
+          `
+        );
+      }
+
+      function renderIncidents(incidents) {
+        if (!incidents.length) {
+          setHtml("incidents-panel", `<div class="empty">No incidents recorded in the control plane.</div>`);
+          return;
+        }
+
+        const markup = incidents.slice(0, 6).map((incident) => {
+          const score = Number(incident.anomaly_score || 0).toFixed(2);
+          return `
+            <li>
+              <strong>${escapeHtml(incident.anomaly_type)}</strong>
+              <div class="subtle">${escapeHtml(formatTime(incident.created_at))}</div>
+              <div class="mono">${escapeHtml(incident.id)}</div>
+              <div>score ${escapeHtml(score)} · model ${escapeHtml(incident.model_version || "unknown")} · status ${escapeHtml(incident.status || "open")}</div>
+            </li>
+          `;
+        }).join("");
+
+        setHtml("incidents-panel", `<ul class="list">${markup}</ul>`);
+      }
+
+      function renderAudit(audit) {
+        if (!audit.length) {
+          setHtml("audit-panel", `<div class="empty">No audit events recorded yet.</div>`);
+          return;
+        }
+
+        const markup = audit.slice(0, 8).map((event) => {
+          const payload = event.payload || {};
+          const payloadSummary = payload.action || payload.status || payload.root_cause || payload.model_version || "";
+          return `
+            <li>
+              <strong>${escapeHtml(event.event_type)}</strong>
+              <div class="subtle">${escapeHtml(formatTime(event.created_at))}</div>
+              <div>actor ${escapeHtml(event.actor || "unknown")}${event.incident_id ? ` · incident ${escapeHtml(event.incident_id)}` : ""}</div>
+              <div class="subtle">${escapeHtml(String(payloadSummary))}</div>
+            </li>
+          `;
+        }).join("");
+
+        setHtml("audit-panel", `<ul class="list">${markup}</ul>`);
+      }
+
+      function renderModels(models) {
+        const candidates = models.models || [];
+        const header = `
+          <div class="card">
+            <span class="label">Deployed Model</span>
+            <strong>${escapeHtml(models.deployed_model_version || "unknown")}</strong>
+            <div class="subtle">feature schema ${escapeHtml(models.feature_schema_version || "unknown")} · dataset ${escapeHtml(models.dataset_version || "unknown")}</div>
+          </div>
+        `;
+
+        const items = candidates.map((model) => {
+          const metrics = model.metrics || {};
+          return `
+            <li>
+              <strong>${escapeHtml(model.version)}</strong>
+              <div>${escapeHtml(model.kind || "model")} · precision ${escapeHtml(String(metrics.precision ?? "n/a"))} · recall ${escapeHtml(String(metrics.recall ?? "n/a"))}</div>
+              <div class="subtle">f1 ${escapeHtml(String(metrics.f1 ?? "n/a"))} · stability ${escapeHtml(String(metrics.stability_score ?? "n/a"))}</div>
+            </li>
+          `;
+        }).join("");
+
+        setHtml("models-panel", `${header}<ul class="list" style="margin-top: 12px;">${items}</ul>`);
+      }
+
+      function renderPayload(latestIncident, latestAudit) {
+        const payload = latestIncident
+          ? {
+              incident: latestIncident,
+              latest_audit: latestAudit || null
+            }
+          : {
+              last_feature_window: state.lastFeatureWindow,
+              latest_audit: latestAudit || null
+            };
+        setText("payload-panel", JSON.stringify(payload, null, 2));
+      }
+
+      function updateSummary(health, incidents, audit, models) {
+        const latestIncident = incidents[0] || null;
+        const latestAudit = audit[0] || null;
+        const openIncidents = incidents.filter((incident) => incident.status !== "resolved").length;
+
+        state.activeIncidentId = latestIncident ? latestIncident.id : null;
+        setText("metric-incidents", String(incidents.length));
+        setText("metric-incidents-detail", latestIncident ? `Latest ${latestIncident.anomaly_type}` : "No incident history yet");
+        setText("metric-open", String(openIncidents));
+        setText("metric-open-detail", openIncidents ? `${openIncidents} incident(s) require review` : "No active anomalies");
+        setText("metric-score", latestIncident ? Number(latestIncident.anomaly_score || 0).toFixed(2) : "0.00");
+        setText("metric-score-detail", latestIncident ? `Latest incident ${latestIncident.id.slice(0, 8)}` : "No anomaly scored yet");
+        setText("metric-model", models.deployed_model_version || "unknown");
+        setText("metric-model-detail", `${(models.models || []).length} model candidate(s) in registry`);
+
+        setText("last-refresh-pill", `Last refresh: ${formatTime(new Date().toISOString())}`);
+        setText("active-incident-pill", `Active incident: ${latestIncident ? latestIncident.id : "none"}`);
+        setText("latest-event-pill", `Latest audit event: ${latestAudit ? latestAudit.event_type : "none"}`);
+
+        renderLatestIncident(latestIncident);
+        renderFeatureSnapshot(latestIncident);
+        renderRca(latestIncident);
+        renderIncidents(incidents);
+        renderAudit(audit);
+        renderModels(models);
+        renderPayload(latestIncident, latestAudit);
+      }
+
+      function updateActionButtons(enabled) {
+        document.querySelectorAll(".action-button").forEach((button) => {
+          button.disabled = !enabled;
+        });
+      }
+
+      async function refreshDashboard() {
         try {
-          const [incidents, audit, models] = await Promise.all([
+          const [health, incidents, audit, models] = await Promise.all([
+            fetchServiceHealth(),
             fetchJson(`${controlPlaneService}/incidents`),
             fetchJson(`${controlPlaneService}/audit`),
             fetchJson(`${controlPlaneService}/models`)
           ]);
-          document.getElementById("incidents").textContent = JSON.stringify(incidents, null, 2);
-          document.getElementById("audit-log").textContent = JSON.stringify(audit, null, 2);
-          document.getElementById("models").textContent = JSON.stringify(models, null, 2);
+          renderServiceHealth(health);
+          updateSummary(health, incidents, audit, models);
         } catch (error) {
-          document.getElementById("incidents").textContent = JSON.stringify({ error: String(error) }, null, 2);
+          setHtml("incidents-panel", `<div class="empty">Dashboard refresh failed: ${escapeHtml(String(error))}</div>`);
+        }
+      }
+
+      async function runScenario(scenario) {
+        try {
+          setText("scenario-status", `Running ${scenario} through feature generation, scoring, and RCA.`);
+
+          const featureWindow = await fetchJson(`${featureService}/sample-window/${scenario}`);
+          storeWindow(featureWindow);
+
+          const anomaly = await fetchJson(`${anomalyService}/score`, {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({
+              features: featureWindow.features,
+              feature_window_id: featureWindow.window_id,
+              project: "ims-demo"
+            })
+          });
+
+          if (!anomaly.is_anomaly) {
+            setText("scenario-status", `Scenario ${scenario} produced nominal traffic. No incident was created.`);
+            await refreshDashboard();
+            return;
+          }
+
+          state.activeIncidentId = anomaly.incident_id;
+          const rca = await fetchJson(`${rcaService}/rca`, {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({
+              incident_id: anomaly.incident_id,
+              context: {
+                anomaly_type: anomaly.anomaly_type,
+                feature_window_id: featureWindow.window_id,
+                model_version: anomaly.model_version
+              }
+            })
+          });
+
+          setText("scenario-status", `Scenario ${scenario} created incident ${anomaly.incident_id} and attached RCA confidence ${rca.confidence}.`);
+          await refreshDashboard();
+        } catch (error) {
+          setText("scenario-status", `Scenario execution failed: ${String(error)}`);
         }
       }
 
       async function approveIncident(action) {
-        if (!activeIncidentId) return;
-        await fetchJson(`${controlPlaneService}/incidents/${activeIncidentId}/approve`, {
+        if (!state.activeIncidentId) return;
+        await fetchJson(`${controlPlaneService}/incidents/${state.activeIncidentId}/approve`, {
           method: "POST",
           headers: authHeaders(),
           body: JSON.stringify({
@@ -336,28 +769,44 @@
             execute: false
           })
         });
-        await refreshControlPlane();
+        setText("scenario-status", `Approval recorded for ${formatAction(action)} on incident ${state.activeIncidentId}.`);
+        await refreshDashboard();
       }
 
       async function notifySlack() {
-        if (!activeIncidentId) return;
-        await fetchJson(`${controlPlaneService}/incidents/${activeIncidentId}/notify/slack`, {
+        if (!state.activeIncidentId) return;
+        await fetchJson(`${controlPlaneService}/incidents/${state.activeIncidentId}/notify/slack`, {
           method: "POST",
           headers: authHeaders()
         });
-        await refreshControlPlane();
+        setText("scenario-status", `Slack notification recorded for incident ${state.activeIncidentId}.`);
+        await refreshDashboard();
       }
 
       async function notifyJira() {
-        if (!activeIncidentId) return;
-        await fetchJson(`${controlPlaneService}/incidents/${activeIncidentId}/notify/jira`, {
+        if (!state.activeIncidentId) return;
+        await fetchJson(`${controlPlaneService}/incidents/${state.activeIncidentId}/notify/jira`, {
           method: "POST",
           headers: authHeaders()
         });
-        await refreshControlPlane();
+        setText("scenario-status", `Jira notification recorded for incident ${state.activeIncidentId}.`);
+        await refreshDashboard();
       }
 
-      refreshControlPlane();
+      function toggleAutoRefresh() {
+        state.autoRefresh = !state.autoRefresh;
+        document.getElementById("auto-refresh-button").textContent = `Auto refresh: ${state.autoRefresh ? "on" : "off"}`;
+        if (state.autoRefresh) {
+          state.refreshTimer = window.setInterval(refreshDashboard, 15000);
+        } else if (state.refreshTimer) {
+          window.clearInterval(state.refreshTimer);
+          state.refreshTimer = null;
+        }
+      }
+
+      updateActionButtons(false);
+      refreshDashboard();
+      state.refreshTimer = window.setInterval(refreshDashboard, 15000);
     </script>
   </body>
 </html>
