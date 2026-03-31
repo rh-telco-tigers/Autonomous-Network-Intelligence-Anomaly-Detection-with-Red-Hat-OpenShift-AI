@@ -16,7 +16,7 @@ The pipeline step contract now matches the engineering spec:
 - `register-model`
 - `deploy-model`
 
-`select-best` records the model chosen by the evaluation gate. `register-model` writes the registry and serving artifact metadata. `deploy-model` uploads the selected assets and registry document into MinIO.
+`select-best` records the model chosen by the evaluation gate. `register-model` writes the registry and serving artifact metadata. `deploy-model` uploads the selected assets, registry document, and Triton model repository into MinIO.
 
 ## Default MinIO upload target
 

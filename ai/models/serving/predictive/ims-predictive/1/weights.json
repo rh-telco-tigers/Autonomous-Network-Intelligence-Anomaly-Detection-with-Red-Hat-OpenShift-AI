@@ -1,0 +1,51 @@
+{
+  "model_type": "triton_python_logistic_regression",
+  "source_model_version": "candidate-v1",
+  "feature_schema_version": "feature_schema_v1",
+  "feature_names": [
+    "register_rate",
+    "invite_rate",
+    "bye_rate",
+    "error_4xx_ratio",
+    "error_5xx_ratio",
+    "latency_p95",
+    "retransmission_count",
+    "inter_arrival_mean",
+    "payload_variance"
+  ],
+  "scaler_mean": [
+    1.9504257625,
+    0.6920178703,
+    0.1240688553,
+    0.1532263573,
+    0.0712561904,
+    211.8163483757,
+    8.2302143203,
+    4.5404368727,
+    28.20171723
+  ],
+  "scaler_scale": [
+    2.1195420942,
+    0.9269105381,
+    0.0450211404,
+    0.2496059418,
+    0.106137634,
+    176.4910492786,
+    9.4097013211,
+    2.5024298634,
+    19.3674821273
+  ],
+  "coefficients": [
+    1.5301323175,
+    1.0902120746,
+    -0.0276886471,
+    1.3914887701,
+    1.1900262342,
+    2.1694464092,
+    1.334577017,
+    -0.6473652358,
+    1.0866567983
+  ],
+  "intercept": 3.5678863624,
+  "threshold": 0.6
+}

@@ -9,24 +9,28 @@ secrets:
 apiVersion: serving.kserve.io/v1alpha1
 kind: ServingRuntime
 metadata:
-  name: predictive-sklearn-runtime
+  name: nvidia-triton-runtime
   namespace: ims-demo-lab
 spec:
   annotations:
-    openshift.io/display-name: Predictive Sklearn Runtime
+    openshift.io/display-name: NVIDIA Triton Runtime
   supportedModelFormats:
-    - name: sklearn
-      version: "1"
+    - name: triton
+      version: "2"
       autoSelect: true
   protocolVersions:
     - v2
   containers:
     - name: kserve-container
-      image: docker.io/kserve/sklearnserver:v0.14.1
+      image: nvcr.io/nvidia/tritonserver:24.08-py3
+      command:
+        - tritonserver
       args:
-        - --model_name={{.Name}}
-        - --model_dir=/mnt/models
+        - --model-repository=/mnt/models
+        - --allow-http=true
         - --http_port=8080
+        - --grpc-port=9000
+        - --metrics-port=8002
       ports:
         - containerPort: 8080
           protocol: TCP
@@ -44,16 +48,17 @@ spec:
     minReplicas: 1
     maxReplicas: 1
     model:
-      runtime: predictive-sklearn-runtime
+      runtime: nvidia-triton-runtime
       modelFormat:
-        name: sklearn
+        name: triton
+      protocolVersion: v2
       storageUri: s3://ims-models/predictive/
       resources:
         requests:
           cpu: 100m
-          memory: 512Mi
-        limits:
           memory: 1Gi
+        limits:
+          memory: 2Gi
 ---
 apiVersion: v1
 kind: Service

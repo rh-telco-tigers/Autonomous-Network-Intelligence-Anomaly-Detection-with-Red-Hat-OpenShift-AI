@@ -35,7 +35,10 @@ def _default_registry() -> Dict[str, Any]:
             "min_stability_score": 0.85,
             "status": "unknown",
         },
-        "serving_artifact": "models/serving/predictive/model.joblib",
+        "serving_artifact": "models/serving/predictive/ims-predictive/1/weights.json",
+        "serving_repository": "models/serving/predictive",
+        "serving_runtime": "nvidia-triton-runtime",
+        "serving_model_name": "ims-predictive",
         "promotion_history": [],
         "models": [],
     }
@@ -149,7 +152,7 @@ def promote_model(version: str, actor: str, stage: str = "prod") -> Dict[str, An
         (
             entry.get("version")
             for entry in registry.get("models", [])
-            if entry.get("kind") == "sklearn_logistic_regression"
+            if entry.get("kind") in {"sklearn_logistic_regression", "triton_python_logistic_regression"}
         ),
         None,
     )

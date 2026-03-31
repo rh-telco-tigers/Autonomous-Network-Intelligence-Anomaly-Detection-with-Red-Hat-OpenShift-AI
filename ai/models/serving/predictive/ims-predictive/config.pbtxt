@@ -1,0 +1,28 @@
+name: "ims-predictive"
+backend: "python"
+max_batch_size: 16
+input [
+  {
+    name: "predict"
+    data_type: TYPE_FP32
+    dims: [9]
+  }
+]
+output [
+  {
+    name: "anomaly_score"
+    data_type: TYPE_FP32
+    dims: [1]
+  }
+]
+instance_group [
+  {
+    kind: KIND_CPU
+    count: 1
+  }
+]
+version_policy: {
+  specific {
+    versions: [1]
+  }
+}

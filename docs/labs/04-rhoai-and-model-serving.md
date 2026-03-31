@@ -8,7 +8,7 @@ Enable the OpenShift AI control plane and prepare predictive and generative infe
 
 - OpenShift AI operator via Argo CD managed OLM subscription
 - Kubeflow pipeline source in `ai/pipelines`
-- predictive KServe runtime and inference service in `ims-demo-lab`
+- predictive NVIDIA Triton `ServingRuntime` and `InferenceService` in `ims-demo-lab`
 - shared cluster vLLM endpoint consumed through the in-namespace `ims-generative-proxy` service
 - Milvus for vector-backed retrieval
 - Attu as the Milvus UI
@@ -22,7 +22,7 @@ Enable the OpenShift AI control plane and prepare predictive and generative infe
 4. Apply `k8s/base/serving`.
 5. Build and push the platform services and deploy `k8s/base/platform`.
 6. Apply `k8s/base/observability` to scrape service metrics.
-7. Build the trainer image and run the training pipeline; it uploads predictive artifacts into MinIO automatically under `s3://ims-models/predictive/`.
+7. Build the trainer image and run the training pipeline; it uploads a Triton model repository into MinIO automatically under `s3://ims-models/predictive/`.
 8. Verify the `milvus-bootstrap` job has loaded the runbooks into Milvus.
 9. Open the Attu route:
 
@@ -43,5 +43,5 @@ Access notes:
 - the in-namespace `ims-generative-proxy` resolves to the shared vLLM endpoint
 - demo MinIO object storage is running with `minioadmin` / `minioadmin`
 - Attu is reachable from its OpenShift route and shows the `ims_runbooks` collection
-- the predictive model is uploaded as `model.joblib` into MinIO and served by KServe
+- the predictive model is uploaded in Triton repository layout into MinIO and served by KServe with the NVIDIA Triton runtime
 - incidents persist through the control-plane service

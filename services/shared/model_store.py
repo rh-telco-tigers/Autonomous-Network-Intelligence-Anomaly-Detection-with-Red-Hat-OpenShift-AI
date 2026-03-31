@@ -1,4 +1,5 @@
 import json
+import math
 import os
 from pathlib import Path
 from typing import Dict, Tuple
@@ -55,7 +56,7 @@ def current_model_status() -> Dict[str, object]:
         "deployed_model_version": deployed,
         "predictive_endpoint": endpoint or None,
         "artifact_present": bool(artifact_path and artifact_path.exists()),
-        "scoring_modes": ["remote-kserve", "local-artifact"] if endpoint else ["local-artifact"],
+        "scoring_modes": ["remote-kserve-triton", "local-artifact"] if endpoint else ["local-artifact"],
     }
 
 
@@ -116,6 +117,9 @@ def score_features_detailed(features: Dict[str, object]) -> Dict[str, object]:
     scoring_mode = "remote-kserve"
     if remote_score is not None:
         score = remote_score
+    elif metadata.get("kind") == "triton_python_logistic_regression":
+        score = _score_triton_export(features, artifact)
+        scoring_mode = "triton-artifact"
     elif metadata.get("kind") == "sklearn_logistic_regression":
         score = _score_serving_model(features, artifact)
         scoring_mode = "local-artifact"
@@ -167,7 +171,12 @@ def _remote_score(features: Dict[str, object], threshold: float) -> float | None
             return None
         output = outputs[0]
         raw = output.get("data", [0.0])
-        value = float(raw[0] if isinstance(raw, list) else raw)
+        value = raw[0] if isinstance(raw, list) else raw
+        while isinstance(value, list):
+            if not value:
+                return None
+            value = value[0]
+        value = float(value)
         datatype = str(output.get("datatype", "")).upper()
         if datatype.startswith("INT") or datatype.startswith("UINT"):
             return 1.0 if value >= 1.0 else 0.0
@@ -180,6 +189,19 @@ def _load_artifact(artifact_path: Path, kind: str) -> Dict[str, object] | object
     if kind == "sklearn_logistic_regression" or artifact_path.suffix == ".joblib":
         return joblib_load(artifact_path)
     return json.loads(artifact_path.read_text())
+
+
+def _score_triton_export(features: Dict[str, object], artifact: Dict[str, object]) -> float:
+    values = [float(features.get(feature, 0.0)) for feature in NUMERIC_FEATURES]
+    means = [float(value) for value in artifact["scaler_mean"]]
+    scales = [max(float(value), 1e-6) for value in artifact["scaler_scale"]]
+    coefficients = [float(value) for value in artifact["coefficients"]]
+    intercept = float(artifact["intercept"])
+
+    logit = intercept
+    for value, mean, scale, coefficient in zip(values, means, scales, coefficients):
+        logit += ((value - mean) / scale) * coefficient
+    return 1.0 / (1.0 + math.exp(-logit))
 
 
 def _score_baseline(features: Dict[str, object], artifact: Dict[str, object]) -> float:

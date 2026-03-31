@@ -10,7 +10,6 @@ from typing import Any, Callable, Dict, List, Tuple
 
 import boto3
 from botocore.config import Config
-from joblib import dump
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -28,6 +27,8 @@ FEATURES = [
     "payload_variance",
 ]
 FEATURE_SCHEMA_VERSION = "feature_schema_v1"
+TRITON_MODEL_NAME = "ims-predictive"
+TRITON_MODEL_VERSION = "1"
 PROMOTION_GATE = {
     "min_precision": 0.8,
     "max_false_positive_rate": 0.2,
@@ -68,6 +69,69 @@ def _train_split_path(workspace_root: Path, dataset_version: str) -> Path:
 
 def _eval_split_path(workspace_root: Path, dataset_version: str) -> Path:
     return workspace_root / "data" / "labeled" / f"{dataset_version}-eval.json"
+
+
+TRITON_MODEL_TEMPLATE = """import json
+from pathlib import Path
+
+import numpy as np
+import triton_python_backend_utils as pb_utils
+
+
+class TritonPythonModel:
+    def initialize(self, args):
+        version_dir = Path(args["model_repository"]) / args["model_name"] / args["model_version"]
+        weights = json.loads((version_dir / "weights.json").read_text())
+        self.mean = np.asarray(weights["scaler_mean"], dtype=np.float32)
+        self.scale = np.asarray(weights["scaler_scale"], dtype=np.float32)
+        self.coefficients = np.asarray(weights["coefficients"], dtype=np.float32)
+        self.intercept = float(weights["intercept"])
+
+    def execute(self, requests):
+        responses = []
+        safe_scale = np.where(self.scale == 0, 1.0, self.scale)
+        for request in requests:
+            values = pb_utils.get_input_tensor_by_name(request, "predict").as_numpy().astype(np.float32)
+            if values.ndim == 1:
+                values = values.reshape(1, -1)
+            normalized = (values - self.mean) / safe_scale
+            logits = normalized @ self.coefficients + self.intercept
+            probabilities = 1.0 / (1.0 + np.exp(-logits))
+            output = pb_utils.Tensor("anomaly_score", probabilities.astype(np.float32).reshape(-1, 1))
+            responses.append(pb_utils.InferenceResponse(output_tensors=[output]))
+        return responses
+"""
+
+
+TRITON_CONFIG_TEMPLATE = """name: "{model_name}"
+backend: "python"
+max_batch_size: 16
+input [
+  {{
+    name: "predict"
+    data_type: TYPE_FP32
+    dims: [{feature_count}]
+  }}
+]
+output [
+  {{
+    name: "anomaly_score"
+    data_type: TYPE_FP32
+    dims: [1]
+  }}
+]
+instance_group [
+  {{
+    kind: KIND_CPU
+    count: 1
+  }}
+]
+version_policy: {{
+  specific {{
+    versions: [{model_version}]
+  }}
+}}
+"""
 
 
 def normal_sample() -> Dict[str, float]:
@@ -378,6 +442,51 @@ def train_serving_model(train_records: List[Dict[str, Any]]) -> Pipeline:
     return model
 
 
+def export_triton_repository(serving_root: Path, model: Pipeline, source_model_version: str) -> Dict[str, Path]:
+    legacy_artifact = serving_root / "model.joblib"
+    if legacy_artifact.exists():
+        legacy_artifact.unlink()
+    repository_root = serving_root / TRITON_MODEL_NAME
+    if repository_root.exists():
+        shutil.rmtree(repository_root)
+
+    version_root = repository_root / TRITON_MODEL_VERSION
+    version_root.mkdir(parents=True, exist_ok=True)
+
+    scaler = model.named_steps["scaler"]
+    classifier = model.named_steps["classifier"]
+    weights_path = version_root / "weights.json"
+    _json_dump(
+        weights_path,
+        {
+            "model_type": "triton_python_logistic_regression",
+            "source_model_version": source_model_version,
+            "feature_schema_version": FEATURE_SCHEMA_VERSION,
+            "feature_names": FEATURES,
+            "scaler_mean": [round(float(value), 10) for value in scaler.mean_.tolist()],
+            "scaler_scale": [round(float(value), 10) for value in scaler.scale_.tolist()],
+            "coefficients": [round(float(value), 10) for value in classifier.coef_[0].tolist()],
+            "intercept": round(float(classifier.intercept_[0]), 10),
+            "threshold": 0.6,
+        },
+    )
+    (version_root / "model.py").write_text(TRITON_MODEL_TEMPLATE)
+    (repository_root / "config.pbtxt").write_text(
+        TRITON_CONFIG_TEMPLATE.format(
+            model_name=TRITON_MODEL_NAME,
+            feature_count=len(FEATURES),
+            model_version=TRITON_MODEL_VERSION,
+        )
+    )
+    return {
+        "repository_root": repository_root,
+        "version_root": version_root,
+        "weights_path": weights_path,
+        "model_script_path": version_root / "model.py",
+        "config_path": repository_root / "config.pbtxt",
+    }
+
+
 def evaluate_serving_model(records: List[Dict[str, Any]], model: Pipeline) -> Dict[str, Any]:
     features, labels = vectorize(records)
     probabilities = model.predict_proba(features)[:, 1]
@@ -498,7 +607,10 @@ def build_registry(
                 "promoted_at": _now(),
             }
         ],
-        "serving_artifact": "models/serving/predictive/model.joblib",
+        "serving_artifact": f"models/serving/predictive/{TRITON_MODEL_NAME}/{TRITON_MODEL_VERSION}/weights.json",
+        "serving_repository": "models/serving/predictive",
+        "serving_runtime": "nvidia-triton-runtime",
+        "serving_model_name": TRITON_MODEL_NAME,
         "models": [
             {
                 "version": baseline_version,
@@ -524,8 +636,10 @@ def build_registry(
             },
             {
                 "version": deployed_runtime_version,
-                "kind": "sklearn_logistic_regression",
-                "artifact": "models/serving/predictive/model.joblib",
+                "kind": "triton_python_logistic_regression",
+                "artifact": f"models/serving/predictive/{TRITON_MODEL_NAME}/{TRITON_MODEL_VERSION}/weights.json",
+                "serving_repository": "models/serving/predictive",
+                "triton_model_name": TRITON_MODEL_NAME,
                 "dataset_version": dataset_version,
                 "feature_schema_version": FEATURE_SCHEMA_VERSION,
                 "training_mode": "weakly_supervised",
@@ -543,7 +657,7 @@ def upload_to_minio(
     selected_artifact_path: Path,
     baseline_artifact_path: Path,
     candidate_artifact_path: Path,
-    serving_artifact_path: Path,
+    serving_repository_root: Path,
 ) -> Dict[str, Any]:
     endpoint = os.getenv("MINIO_ENDPOINT", "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000")
     access_key = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
@@ -570,11 +684,17 @@ def upload_to_minio(
         (baseline_artifact_path, f"{predictive_prefix}/{baseline_artifact_path.name}"),
         (candidate_artifact_path, f"{predictive_prefix}/{candidate_artifact_path.name}"),
         (selected_artifact_path, f"{predictive_prefix}/model.json"),
-        (serving_artifact_path, f"{predictive_prefix}/model.joblib"),
         (registry_path, registry_key),
     ]
     for source_path, object_key in uploads:
         client.upload_file(str(source_path), bucket, object_key)
+
+    for file_path in serving_repository_root.rglob("*"):
+        if not file_path.is_file():
+            continue
+        relative_path = file_path.relative_to(serving_repository_root)
+        object_key = f"{predictive_prefix}/{relative_path.as_posix()}"
+        client.upload_file(str(file_path), bucket, object_key)
 
     registry["minio_upload"] = {
         "bucket": bucket,
@@ -582,7 +702,8 @@ def upload_to_minio(
         "predictive_prefix": predictive_prefix,
         "registry_key": registry_key,
         "selected_model_key": f"{predictive_prefix}/model.json",
-        "serving_model_key": f"{predictive_prefix}/model.joblib",
+        "serving_repository_prefix": predictive_prefix,
+        "serving_model_key": f"{predictive_prefix}/{TRITON_MODEL_NAME}/{TRITON_MODEL_VERSION}/weights.json",
     }
     registry_path.write_text(json.dumps(registry, indent=2))
     client.upload_file(str(registry_path), bucket, registry_key)
@@ -626,9 +747,7 @@ def full_run(
 
     serving_dir = artifact_dir_path.parent / "serving" / "predictive"
     serving_dir.mkdir(parents=True, exist_ok=True)
-    serving_artifact_path = serving_dir / "model.joblib"
     serving_model = train_serving_model(train_records)
-    dump(serving_model, serving_artifact_path)
     serving_metrics = evaluate_serving_model(eval_records, serving_model)
 
     evaluation_manifest = {
@@ -651,6 +770,8 @@ def full_run(
     }
     selection = select_best_model(evaluation_manifest)
     selected_version = selection["selected_model_version"]
+    selected_artifact_path = baseline_artifact_path if selected_version == baseline_version else candidate_artifact_path
+    triton_export = export_triton_repository(serving_dir, serving_model, selected_version)
 
     registry = build_registry(
         dataset_version=dataset_version,
@@ -663,11 +784,15 @@ def full_run(
         serving_metrics=serving_metrics,
         selected_version=selected_version,
     )
+    registry["serving_artifact_path"] = str(triton_export["weights_path"])
+    registry["serving_repository_path"] = str(serving_dir)
+    registry["selected_artifact_path"] = str(selected_artifact_path)
+    registry["baseline_artifact_path"] = str(baseline_artifact_path)
+    registry["candidate_artifact_path"] = str(candidate_artifact_path)
     registry_path_obj = Path(registry_path)
     registry_path_obj.parent.mkdir(parents=True, exist_ok=True)
     registry_path_obj.write_text(json.dumps(registry, indent=2))
 
-    selected_artifact_path = baseline_artifact_path if selected_version == baseline_version else candidate_artifact_path
     if not skip_minio_upload:
         upload_to_minio(
             registry=registry,
@@ -675,7 +800,7 @@ def full_run(
             selected_artifact_path=selected_artifact_path,
             baseline_artifact_path=baseline_artifact_path,
             candidate_artifact_path=candidate_artifact_path,
-            serving_artifact_path=serving_artifact_path,
+            serving_repository_root=serving_dir,
         )
     return registry
 
@@ -837,9 +962,7 @@ def main() -> None:
 
         serving_dir = Path(args.artifact_dir).parent / "serving" / "predictive"
         serving_dir.mkdir(parents=True, exist_ok=True)
-        serving_artifact_path = serving_dir / "model.joblib"
         serving_model = train_serving_model(train_records)
-        dump(serving_model, serving_artifact_path)
         serving_metrics = evaluate_serving_model(eval_records, serving_model)
 
         baseline_artifact = selection["baseline"]["artifact"]
@@ -859,10 +982,12 @@ def main() -> None:
             serving_metrics=serving_metrics,
             selected_version=selected_version,
         )
+        triton_export = export_triton_repository(serving_dir, serving_model, selected_version)
         registry_path = Path(args.registry_path)
         registry_path.parent.mkdir(parents=True, exist_ok=True)
         registry_path.write_text(json.dumps(registry, indent=2))
-        registry["serving_artifact_path"] = str(serving_artifact_path)
+        registry["serving_artifact_path"] = str(triton_export["weights_path"])
+        registry["serving_repository_path"] = str(serving_dir)
         registry["selected_artifact_path"] = str(
             baseline_artifact_path if selected_version == selection["baseline"]["version"] else candidate_artifact_path
         )
@@ -883,7 +1008,7 @@ def main() -> None:
         selected_artifact_path = Path(registry["selected_artifact_path"])
         baseline_artifact_path = Path(registry["baseline_artifact_path"])
         candidate_artifact_path = Path(registry["candidate_artifact_path"])
-        serving_artifact_path = Path(registry["serving_artifact_path"])
+        serving_repository_path = Path(registry.get("serving_repository_path", Path(args.artifact_dir).parent / "serving" / "predictive"))
         registry_path = Path(args.registry_path)
 
         if not args.skip_minio_upload:
@@ -893,7 +1018,7 @@ def main() -> None:
                 selected_artifact_path=selected_artifact_path,
                 baseline_artifact_path=baseline_artifact_path,
                 candidate_artifact_path=candidate_artifact_path,
-                serving_artifact_path=serving_artifact_path,
+                serving_repository_root=serving_repository_path,
             )
         target = Path(args.output) if args.output else registry_path
         if target != registry_path:

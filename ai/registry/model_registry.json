@@ -36,7 +36,7 @@
       "promoted_at": "2026-03-31T02:09:14.320979+00:00"
     }
   ],
-  "serving_artifact": "models/serving/predictive/model.joblib",
+  "serving_artifact": "models/serving/predictive/ims-predictive/1/weights.json",
   "models": [
     {
       "version": "baseline-v1",
@@ -76,8 +76,8 @@
     },
     {
       "version": "predictive-serving-v1",
-      "kind": "sklearn_logistic_regression",
-      "artifact": "models/serving/predictive/model.joblib",
+      "kind": "triton_python_logistic_regression",
+      "artifact": "models/serving/predictive/ims-predictive/1/weights.json",
       "dataset_version": "synthetic-v1",
       "feature_schema_version": "feature_schema_v1",
       "training_mode": "weakly_supervised",
@@ -90,7 +90,12 @@
         "false_positive_rate": 0.0,
         "latency_p95_ms": 18,
         "stability_score": 0.95
-      }
+      },
+      "serving_repository": "models/serving/predictive",
+      "triton_model_name": "ims-predictive"
     }
-  ]
+  ],
+  "serving_repository": "models/serving/predictive",
+  "serving_runtime": "nvidia-triton-runtime",
+  "serving_model_name": "ims-predictive"
 }
