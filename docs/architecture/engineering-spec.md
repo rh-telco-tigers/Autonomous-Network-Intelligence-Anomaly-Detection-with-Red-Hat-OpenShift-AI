@@ -670,10 +670,12 @@ The demo environment publishes a small set of known access points and credential
 | Component | Access Pattern | Credentials |
 | --- | --- | --- |
 | Demo Console UI | OpenShift route for `demo-ui` | none |
-| API services | OpenShift routes for `feature-gateway`, `anomaly-service`, `control-plane`, and `rca-service` | shared demo API key |
+| API services | OpenShift routes for `feature-gateway`, `anomaly-service`, `control-plane`, and `rca-service` | `demo-token` (admin), `demo-operator-token` (operator), `demo-viewer-token` (viewer) |
 | MinIO console | OpenShift route for `model-storage-minio-console` | `minioadmin` / `minioadmin` |
 | Milvus UI (Attu) | OpenShift route for `milvus-attu` | no separate UI username or password in this demo |
 | Gitea | OpenShift route for `gitea-gitea` | `gitadmin` / `GiteaAdmin123!` |
+| Slack and Jira actions | control-plane demo relay when external endpoints are not configured | no additional credentials in demo relay mode |
+| Automation approvals | control-plane approval endpoint with simulated execution by default | `demo-token` |
 
 ## 15. Positioning
 

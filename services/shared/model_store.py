@@ -3,7 +3,10 @@ import os
 from pathlib import Path
 from typing import Dict, Tuple
 
+from joblib import load as joblib_load
 import requests
+
+from shared.model_registry import load_registry as load_registry_document
 
 
 NUMERIC_FEATURES = [
@@ -19,6 +22,10 @@ NUMERIC_FEATURES = [
 ]
 
 
+class ModelUnavailableError(RuntimeError):
+    pass
+
+
 def _registry_path() -> Path:
     return Path(os.getenv("MODEL_REGISTRY_PATH", "/app/ai/registry/model_registry.json"))
 
@@ -27,7 +34,29 @@ def load_registry() -> Dict[str, object] | None:
     path = _registry_path()
     if not path.exists():
         return None
-    return json.loads(path.read_text())
+    return load_registry_document()
+
+
+def current_model_status() -> Dict[str, object]:
+    registry = load_registry()
+    endpoint = os.getenv("PREDICTIVE_ENDPOINT", "").rstrip("/")
+    deployed = registry.get("deployed_model_version") if registry else None
+    artifact_path = None
+    if registry and deployed:
+        for model in registry.get("models", []):
+            if model.get("version") == deployed:
+                artifact = Path(model["artifact"])
+                if not artifact.is_absolute():
+                    artifact = _registry_path().parent.parent / artifact
+                artifact_path = artifact
+                break
+    return {
+        "registry_loaded": bool(registry and registry.get("models")),
+        "deployed_model_version": deployed,
+        "predictive_endpoint": endpoint or None,
+        "artifact_present": bool(artifact_path and artifact_path.exists()),
+        "scoring_modes": ["remote-kserve", "local-artifact"] if endpoint else ["local-artifact"],
+    }
 
 
 def load_deployed_model() -> Dict[str, object] | None:
@@ -40,7 +69,7 @@ def load_deployed_model() -> Dict[str, object] | None:
             artifact_path = Path(model["artifact"])
             if not artifact_path.is_absolute():
                 artifact_path = _registry_path().parent.parent / artifact_path
-            artifact = json.loads(artifact_path.read_text())
+            artifact = _load_artifact(artifact_path, str(model.get("kind", "")))
             return {
                 "metadata": model,
                 "artifact": artifact,
@@ -65,27 +94,52 @@ def classify_anomaly_type(features: Dict[str, object]) -> str:
 
 
 def score_features(features: Dict[str, object]) -> Tuple[float, bool, str, str]:
-    deployed = load_deployed_model()
-    remote_score = _remote_score(features)
-    if remote_score and deployed:
-        anomaly_type = classify_anomaly_type(features)
-        return remote_score[0], remote_score[1], anomaly_type, deployed["metadata"]["version"]
+    result = score_features_detailed(features)
+    return (
+        float(result["anomaly_score"]),
+        bool(result["is_anomaly"]),
+        str(result["anomaly_type"]),
+        str(result["model_version"]),
+    )
 
+
+def score_features_detailed(features: Dict[str, object]) -> Dict[str, object]:
+    deployed = load_deployed_model()
     if not deployed:
-        return _heuristic_score(features)
+        raise ModelUnavailableError("No deployed model is registered for anomaly scoring")
 
     artifact = deployed["artifact"]
     metadata = deployed["metadata"]
-    model_type = artifact.get("model_type")
-    if model_type == "baseline_threshold":
+    threshold = float(metadata.get("threshold", artifact.get("threshold", 0.6) if isinstance(artifact, dict) else 0.6))
+    model_type = artifact.get("model_type") if isinstance(artifact, dict) else None
+    remote_score = _remote_score(features, threshold)
+    scoring_mode = "remote-kserve"
+    if remote_score is not None:
+        score = remote_score
+    elif metadata.get("kind") == "sklearn_logistic_regression":
+        score = _score_serving_model(features, artifact)
+        scoring_mode = "local-artifact"
+    elif model_type == "baseline_threshold":
         score = _score_baseline(features, artifact)
+        scoring_mode = "baseline-artifact"
+    elif model_type == "autogluon_tabular":
+        score = _score_autogluon(features, artifact)
+        scoring_mode = "autogluon-artifact"
     else:
         score = _score_weighted(features, artifact)
+        scoring_mode = "weighted-artifact"
     anomaly_type = classify_anomaly_type(features)
-    return round(score, 2), score >= float(artifact.get("threshold", 0.6)), anomaly_type, metadata["version"]
+    rounded = round(score, 2)
+    return {
+        "anomaly_score": rounded,
+        "is_anomaly": rounded >= threshold,
+        "anomaly_type": anomaly_type,
+        "model_version": metadata["version"],
+        "scoring_mode": scoring_mode,
+    }
 
 
-def _remote_score(features: Dict[str, object]) -> Tuple[float, bool] | None:
+def _remote_score(features: Dict[str, object], threshold: float) -> float | None:
     endpoint = os.getenv("PREDICTIVE_ENDPOINT", "").rstrip("/")
     model_name = os.getenv("PREDICTIVE_MODEL_NAME", "ims-predictive")
     if not endpoint:
@@ -111,11 +165,21 @@ def _remote_score(features: Dict[str, object]) -> Tuple[float, bool] | None:
         outputs = response.json().get("outputs", [])
         if not outputs:
             return None
-        raw = outputs[0].get("data", [0.0])
-        score = float(raw[0] if isinstance(raw, list) else raw)
-        return round(score, 2), score >= 0.6
+        output = outputs[0]
+        raw = output.get("data", [0.0])
+        value = float(raw[0] if isinstance(raw, list) else raw)
+        datatype = str(output.get("datatype", "")).upper()
+        if datatype.startswith("INT") or datatype.startswith("UINT"):
+            return 1.0 if value >= 1.0 else 0.0
+        return value
     except Exception:
         return None
+
+
+def _load_artifact(artifact_path: Path, kind: str) -> Dict[str, object] | object:
+    if kind == "sklearn_logistic_regression" or artifact_path.suffix == ".joblib":
+        return joblib_load(artifact_path)
+    return json.loads(artifact_path.read_text())
 
 
 def _score_baseline(features: Dict[str, object], artifact: Dict[str, object]) -> float:
@@ -151,25 +215,25 @@ def _score_weighted(features: Dict[str, object], artifact: Dict[str, object]) ->
     return min(weighted_sum / max(weight_total, 0.001), 0.99)
 
 
-def _heuristic_score(features: Dict[str, object]) -> Tuple[float, bool, str, str]:
-    register_rate = float(features.get("register_rate", 0.0))
-    error_4xx_ratio = float(features.get("error_4xx_ratio", 0.0))
-    error_5xx_ratio = float(features.get("error_5xx_ratio", 0.0))
-    latency_p95 = float(features.get("latency_p95", 0.0))
-    retransmission_count = float(features.get("retransmission_count", 0.0))
+def _score_autogluon(features: Dict[str, object], artifact: Dict[str, object]) -> float:
+    predictor_path = artifact.get("predictor_path")
+    if not predictor_path:
+        raise RuntimeError("AutoGluon predictor_path is missing from the artifact")
 
-    score = 0.0
-    if register_rate > 3.0:
-        score += 0.35
-    if error_4xx_ratio > 0.2:
-        score += 0.25
-    if error_5xx_ratio > 0.1:
-        score += 0.25
-    if latency_p95 > 250:
-        score += 0.15
-    if retransmission_count > 5:
-        score += 0.2
+    import pandas as pd
+    from autogluon.tabular import TabularPredictor
 
-    anomaly_type = classify_anomaly_type(features)
-    score = min(score, 0.99)
-    return round(score, 2), score >= 0.6, anomaly_type, "heuristic-fallback"
+    predictor = TabularPredictor.load(predictor_path)
+    frame = pd.DataFrame([{feature: float(features.get(feature, 0.0)) for feature in NUMERIC_FEATURES}])
+    probabilities = predictor.predict_proba(frame, as_multiclass=True)
+    if 1 in probabilities.columns:
+        return float(probabilities[1].iloc[0])
+    return float(probabilities.iloc[0].max())
+
+
+def _score_serving_model(features: Dict[str, object], model: object) -> float:
+    if not hasattr(model, "predict_proba"):
+        raise ModelUnavailableError("Serving artifact does not expose predict_proba")
+    feature_vector = [[float(features.get(feature, 0.0)) for feature in NUMERIC_FEATURES]]
+    probabilities = model.predict_proba(feature_vector)
+    return float(probabilities[0][1])

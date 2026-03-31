@@ -30,6 +30,11 @@ This repo is meant to support a guided platform demo:
 
 - Gitea user: `gitadmin`
 - Gitea password: `GiteaAdmin123!`
+- API admin token: `demo-token`
+- API operator token: `demo-operator-token`
+- API viewer token: `demo-viewer-token`
+- Slack and Jira actions: simulated through the control-plane demo relay unless live credentials are configured
+- Automation approvals: simulate execution by default; switch to `AUTOMATION_MODE=execute` for live Ansible runs
 - MinIO console user: `minioadmin`
 - MinIO console password: `minioadmin`
 - Milvus UI: Attu on the `milvus-attu` route

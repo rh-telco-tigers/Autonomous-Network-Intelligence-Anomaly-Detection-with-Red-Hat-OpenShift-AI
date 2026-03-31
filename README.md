@@ -59,6 +59,14 @@ Demo credentials for Gitea:
 - user: `gitadmin`
 - password: `GiteaAdmin123!`
 
+Demo API tokens for the platform services:
+
+- `demo-token` for admin, operator, and automation flows
+- `demo-operator-token` for operator-only access
+- `demo-viewer-token` for read-limited browser testing
+- Slack and Jira actions default to an in-platform demo relay if live credentials are not supplied
+- remediation approvals default to simulated execution unless `AUTOMATION_MODE=execute`
+
 5. Bootstrap Argo CD and the operator subscriptions:
 
 ```sh

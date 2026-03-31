@@ -16,6 +16,57 @@ REQUEST_LATENCY = Histogram(
     ["service", "method", "path"],
 )
 
+INCIDENT_COUNT = Counter(
+    "ims_demo_incidents_total",
+    "Incidents created in the demo control plane",
+    ["project", "anomaly_type", "status"],
+)
+
+RCA_CONFIDENCE = Histogram(
+    "ims_demo_rca_confidence",
+    "Confidence distribution for generated RCA responses",
+    ["project", "generation_mode"],
+    buckets=(0.0, 0.25, 0.5, 0.75, 0.9, 1.0),
+)
+
+AUTOMATION_ACTIONS = Counter(
+    "ims_demo_automation_actions_total",
+    "Automation approvals and executions observed in the demo control plane",
+    ["action", "status"],
+)
+
+INTEGRATION_EVENTS = Counter(
+    "ims_demo_integration_events_total",
+    "Slack and Jira integration events emitted by the demo platform",
+    ["integration", "status"],
+)
+
+MODEL_PROMOTIONS = Counter(
+    "ims_demo_model_promotions_total",
+    "Model promotion operations recorded by the demo model registry",
+    ["stage", "status"],
+)
+
+
+def record_incident(project: str, anomaly_type: str, status: str) -> None:
+    INCIDENT_COUNT.labels(project, anomaly_type, status).inc()
+
+
+def record_rca(project: str, generation_mode: str, confidence: float) -> None:
+    RCA_CONFIDENCE.labels(project, generation_mode).observe(confidence)
+
+
+def record_automation(action: str, status: str) -> None:
+    AUTOMATION_ACTIONS.labels(action, status).inc()
+
+
+def record_integration(integration: str, status: str) -> None:
+    INTEGRATION_EVENTS.labels(integration, status).inc()
+
+
+def record_model_promotion(stage: str, status: str) -> None:
+    MODEL_PROMOTIONS.labels(stage, status).inc()
+
 
 def install_metrics(app: FastAPI, service_name: str) -> None:
     @app.middleware("http")
@@ -32,4 +83,3 @@ def install_metrics(app: FastAPI, service_name: str) -> None:
     @app.get("/metrics", include_in_schema=False)
     def metrics():
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-

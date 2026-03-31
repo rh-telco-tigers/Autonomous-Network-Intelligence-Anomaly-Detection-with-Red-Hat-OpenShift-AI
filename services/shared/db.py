@@ -116,9 +116,15 @@ def get_incident(incident_id: str) -> Dict[str, Any] | None:
     return _deserialize_incident(row) if row else None
 
 
-def list_incidents() -> List[Dict[str, Any]]:
+def list_incidents(project: str | None = None) -> List[Dict[str, Any]]:
     with closing(_connect()) as connection:
-        rows = connection.execute("SELECT * FROM incidents ORDER BY created_at DESC").fetchall()
+        if project:
+            rows = connection.execute(
+                "SELECT * FROM incidents WHERE project = ? ORDER BY created_at DESC",
+                (project,),
+            ).fetchall()
+        else:
+            rows = connection.execute("SELECT * FROM incidents ORDER BY created_at DESC").fetchall()
     return [_deserialize_incident(row) for row in rows]
 
 
@@ -133,6 +139,24 @@ def attach_rca(incident_id: str, rca_payload: Dict[str, Any]) -> Dict[str, Any] 
             (
                 json.dumps(rca_payload),
                 rca_payload.get("recommendation"),
+                _now(),
+                incident_id,
+            ),
+        )
+        connection.commit()
+    return get_incident(incident_id)
+
+
+def update_incident_status(incident_id: str, status: str) -> Dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        connection.execute(
+            """
+            UPDATE incidents
+            SET status = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                status,
                 _now(),
                 incident_id,
             ),
@@ -207,9 +231,22 @@ def list_audit_events(limit: int = 100) -> List[Dict[str, Any]]:
     return [dict(row) | {"payload": json.loads(row["payload"] or "{}")} for row in rows]
 
 
+def list_approvals(limit: int = 100) -> List[Dict[str, Any]]:
+    with closing(_connect()) as connection:
+        rows = connection.execute(
+            "SELECT * FROM approvals ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    results = []
+    for row in rows:
+        record = dict(row)
+        record["execute"] = bool(record["execute"])
+        results.append(record)
+    return results
+
+
 def _deserialize_incident(row: sqlite3.Row) -> Dict[str, Any]:
     record = dict(row)
     record["feature_snapshot"] = json.loads(record["feature_snapshot"] or "{}")
     record["rca_payload"] = json.loads(record["rca_payload"] or "{}") if record["rca_payload"] else None
     return record
-

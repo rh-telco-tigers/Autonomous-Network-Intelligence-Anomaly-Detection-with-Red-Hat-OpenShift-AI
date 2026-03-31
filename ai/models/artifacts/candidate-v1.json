@@ -1,54 +1,70 @@
 {
-  "model_type": "weighted_rule_model",
-  "threshold": 0.56,
+  "model_type": "autogluon_tabular",
+  "threshold": 0.6,
   "feature_schema_version": "feature_schema_v1",
-  "weights": {
-    "register_rate": 0.007898,
-    "invite_rate": 0.002272,
-    "bye_rate": 3.8e-05,
-    "error_4xx_ratio": 0.000637,
-    "error_5xx_ratio": 0.000304,
-    "latency_p95": 0.892269,
-    "retransmission_count": 0.035994,
-    "inter_arrival_mean": 3.8e-05,
-    "payload_variance": 0.06055
-  },
-  "bounds": {
-    "register_rate": {
-      "min": 0.10095052969576082,
-      "max": 6.922529963321058
+  "automl_engine": "autogluon",
+  "predictor_path": "ai/models/autogluon/candidate-v1",
+  "best_model": "WeightedEnsemble_L2",
+  "leaderboard": [
+    {
+      "model": "KNeighbors",
+      "score_test": 1.0,
+      "score_val": 1.0,
+      "eval_metric": "accuracy",
+      "pred_time_test": 0.017096996307373047,
+      "pred_time_val": 0.11868906021118164,
+      "fit_time": 0.013519287109375,
+      "pred_time_test_marginal": 0.017096996307373047,
+      "pred_time_val_marginal": 0.11868906021118164,
+      "fit_time_marginal": 0.013519287109375,
+      "stack_level": 1,
+      "can_infer": true,
+      "fit_order": 1
     },
-    "invite_rate": {
-      "min": 0.1005769091611317,
-      "max": 3.46013799440668
+    {
+      "model": "WeightedEnsemble_L2",
+      "score_test": 1.0,
+      "score_val": 1.0,
+      "eval_metric": "accuracy",
+      "pred_time_test": 0.019430875778198242,
+      "pred_time_val": 0.11906909942626953,
+      "fit_time": 0.03308534622192383,
+      "pred_time_test_marginal": 0.0023338794708251953,
+      "pred_time_val_marginal": 0.0003800392150878906,
+      "fit_time_marginal": 0.019566059112548828,
+      "stack_level": 2,
+      "can_infer": true,
+      "fit_order": 4
     },
-    "bye_rate": {
-      "min": 0.05014576365635407,
-      "max": 0.19923399762059424
+    {
+      "model": "RandomForest",
+      "score_test": 1.0,
+      "score_val": 1.0,
+      "eval_metric": "accuracy",
+      "pred_time_test": 0.06153082847595215,
+      "pred_time_val": 0.03388404846191406,
+      "fit_time": 0.6601519584655762,
+      "pred_time_test_marginal": 0.06153082847595215,
+      "pred_time_val_marginal": 0.03388404846191406,
+      "fit_time_marginal": 0.6601519584655762,
+      "stack_level": 1,
+      "can_infer": true,
+      "fit_order": 2
     },
-    "error_4xx_ratio": {
-      "min": 0.00023007188003930647,
-      "max": 0.8439119147962519
-    },
-    "error_5xx_ratio": {
-      "min": 5.3901047324622646e-05,
-      "max": 0.3480377222713136
-    },
-    "latency_p95": {
-      "min": 18.18748501784403,
-      "max": 637.5169798136969
-    },
-    "retransmission_count": {
-      "min": 0.010501939640812141,
-      "max": 34.74092533819977
-    },
-    "inter_arrival_mean": {
-      "min": 0.2193173365588627,
-      "max": 7.984497236830077
-    },
-    "payload_variance": {
-      "min": 8.0606782729006,
-      "max": 88.30175751882445
+    {
+      "model": "ExtraTrees",
+      "score_test": 1.0,
+      "score_val": 1.0,
+      "eval_metric": "accuracy",
+      "pred_time_test": 0.06695723533630371,
+      "pred_time_val": 0.03802895545959473,
+      "fit_time": 0.5183861255645752,
+      "pred_time_test_marginal": 0.06695723533630371,
+      "pred_time_val_marginal": 0.03802895545959473,
+      "fit_time_marginal": 0.5183861255645752,
+      "stack_level": 1,
+      "can_infer": true,
+      "fit_order": 3
     }
-  }
+  ]
 }

@@ -6,6 +6,24 @@ metadata:
 type: Opaque
 stringData:
   API_KEY: demo-token
+  API_KEYS_JSON: |
+    {
+      "demo-token": {
+        "subject": "demo-admin",
+        "projects": ["ims-demo"],
+        "roles": ["admin", "operator", "automation"]
+      },
+      "demo-operator-token": {
+        "subject": "demo-operator",
+        "projects": ["ims-demo"],
+        "roles": ["operator"]
+      },
+      "demo-viewer-token": {
+        "subject": "demo-viewer",
+        "projects": ["ims-demo"],
+        "roles": ["viewer"]
+      }
+    }
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -49,10 +67,19 @@ spec:
                 secretKeyRef:
                   name: demo-api-auth
                   key: API_KEY
+            - name: API_KEYS_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: demo-api-auth
+                  key: API_KEYS_JSON
             - name: CONTROL_PLANE_DB_PATH
               value: /data/control-plane.db
             - name: ENABLE_AUTOMATION
               value: "false"
+            - name: AUTOMATION_MODE
+              value: simulate
+            - name: DEMO_INTEGRATIONS_ENABLED
+              value: "true"
           volumeMounts:
             - name: data
               mountPath: /data
@@ -203,12 +230,17 @@ spec:
                 secretKeyRef:
                   name: demo-api-auth
                   key: API_KEY
+            - name: API_KEYS_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: demo-api-auth
+                  key: API_KEYS_JSON
             - name: CONTROL_PLANE_URL
               value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
             - name: MODEL_REGISTRY_PATH
               value: /app/ai/registry/model_registry.json
             - name: PREDICTIVE_ENDPOINT
-              value: http://ims-predictive-predictor.ims-demo-lab.svc.cluster.local
+              value: http://ims-predictive-predictor.ims-demo-lab.svc.cluster.local:8080
             - name: PREDICTIVE_MODEL_NAME
               value: ims-predictive
           readinessProbe:
@@ -282,6 +314,11 @@ spec:
                 secretKeyRef:
                   name: demo-api-auth
                   key: API_KEY
+            - name: API_KEYS_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: demo-api-auth
+                  key: API_KEYS_JSON
             - name: CONTROL_PLANE_URL
               value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
             - name: MILVUS_URI

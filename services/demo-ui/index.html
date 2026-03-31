@@ -561,6 +561,9 @@
         const evidence = (rca.evidence || []).map((item) => {
           return `<li><strong>${escapeHtml(item.type || "evidence")}</strong>${escapeHtml(item.reference || "n/a")} · weight ${escapeHtml(String(item.weight ?? "n/a"))}</li>`;
         }).join("");
+        const retrievedDocs = (rca.retrieved_documents || []).map((item) => {
+          return `<li><strong>${escapeHtml(item.reference || item.title || "retrieved-doc")}</strong>${escapeHtml(item.title || "")} · score ${escapeHtml(String(item.score ?? "n/a"))}</li>`;
+        }).join("");
 
         setHtml(
           "rca-panel",
@@ -579,6 +582,7 @@
                 <div>${escapeHtml(rca.recommendation || "none")}</div>
               </div>
               <ul class="list">${evidence}</ul>
+              ${retrievedDocs ? `<div><span class="label">Retrieved Context</span><ul class="list">${retrievedDocs}</ul></div>` : ""}
             </div>
           `
         );
@@ -633,7 +637,7 @@
           <div class="card">
             <span class="label">Deployed Model</span>
             <strong>${escapeHtml(models.deployed_model_version || "unknown")}</strong>
-            <div class="subtle">feature schema ${escapeHtml(models.feature_schema_version || "unknown")} · dataset ${escapeHtml(models.dataset_version || "unknown")}</div>
+            <div class="subtle">selected ${escapeHtml(models.selected_model_version || models.deployment_source_model_version || "unknown")} · feature schema ${escapeHtml(models.feature_schema_version || "unknown")} · dataset ${escapeHtml(models.dataset_version || "unknown")}</div>
           </div>
         `;
 
@@ -702,9 +706,9 @@
         try {
           const [health, incidents, audit, models] = await Promise.all([
             fetchServiceHealth(),
-            fetchJson(`${controlPlaneService}/incidents`),
-            fetchJson(`${controlPlaneService}/audit`),
-            fetchJson(`${controlPlaneService}/models`)
+            fetchJson(`${controlPlaneService}/incidents`, { headers: authHeaders() }),
+            fetchJson(`${controlPlaneService}/audit`, { headers: authHeaders() }),
+            fetchJson(`${controlPlaneService}/models`, { headers: authHeaders() })
           ]);
           renderServiceHealth(health);
           updateSummary(health, incidents, audit, models);
@@ -759,37 +763,37 @@
 
       async function approveIncident(action) {
         if (!state.activeIncidentId) return;
-        await fetchJson(`${controlPlaneService}/incidents/${state.activeIncidentId}/approve`, {
+        const result = await fetchJson(`${controlPlaneService}/incidents/${state.activeIncidentId}/approve`, {
           method: "POST",
           headers: authHeaders(),
           body: JSON.stringify({
             action,
             approved_by: "demo-operator",
             notes: "Approved during customer demo",
-            execute: false
+            execute: true
           })
         });
-        setText("scenario-status", `Approval recorded for ${formatAction(action)} on incident ${state.activeIncidentId}.`);
+        setText("scenario-status", `${formatAction(action)} for incident ${state.activeIncidentId} returned ${result.status}.`);
         await refreshDashboard();
       }
 
       async function notifySlack() {
         if (!state.activeIncidentId) return;
-        await fetchJson(`${controlPlaneService}/incidents/${state.activeIncidentId}/notify/slack`, {
+        const result = await fetchJson(`${controlPlaneService}/incidents/${state.activeIncidentId}/notify/slack`, {
           method: "POST",
           headers: authHeaders()
         });
-        setText("scenario-status", `Slack notification recorded for incident ${state.activeIncidentId}.`);
+        setText("scenario-status", `Slack action for incident ${state.activeIncidentId} returned ${result.status}.`);
         await refreshDashboard();
       }
 
       async function notifyJira() {
         if (!state.activeIncidentId) return;
-        await fetchJson(`${controlPlaneService}/incidents/${state.activeIncidentId}/notify/jira`, {
+        const result = await fetchJson(`${controlPlaneService}/incidents/${state.activeIncidentId}/notify/jira`, {
           method: "POST",
           headers: authHeaders()
         });
-        setText("scenario-status", `Jira notification recorded for incident ${state.activeIncidentId}.`);
+        setText("scenario-status", `Jira action for incident ${state.activeIncidentId} returned ${result.status}.`);
         await refreshDashboard();
       }
 
