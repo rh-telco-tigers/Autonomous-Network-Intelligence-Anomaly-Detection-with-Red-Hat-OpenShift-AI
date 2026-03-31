@@ -1,0 +1,47 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: nvidia-triton-runtime-template
+  namespace: redhat-ods-applications
+  annotations:
+    opendatahub.io/apiProtocol: REST
+    opendatahub.io/model-type: '["predictive"]'
+    opendatahub.io/modelServingSupport: '["single"]'
+  labels:
+    opendatahub.io/dashboard: "true"
+objects:
+  - apiVersion: serving.kserve.io/v1alpha1
+    kind: ServingRuntime
+    metadata:
+      name: nvidia-triton-runtime
+      annotations:
+        opendatahub.io/apiProtocol: REST
+        opendatahub.io/runtime-version: 24.08-py3
+        opendatahub.io/serving-runtime-scope: global
+        opendatahub.io/template-display-name: NVIDIA Triton Runtime
+        opendatahub.io/template-name: nvidia-triton-runtime-template
+        openshift.io/display-name: NVIDIA Triton Runtime
+      labels:
+        opendatahub.io/dashboard: "true"
+    spec:
+      supportedModelFormats:
+        - name: triton
+          version: "2"
+          autoSelect: true
+      protocolVersions:
+        - v2
+      multiModel: false
+      containers:
+        - name: kserve-container
+          image: nvcr.io/nvidia/tritonserver:24.08-py3
+          command:
+            - tritonserver
+          args:
+            - --model-repository=/mnt/models
+            - --allow-http=true
+            - --http-port=8080
+            - --grpc-port=9000
+            - --metrics-port=8002
+          ports:
+            - containerPort: 8080
+              protocol: TCP

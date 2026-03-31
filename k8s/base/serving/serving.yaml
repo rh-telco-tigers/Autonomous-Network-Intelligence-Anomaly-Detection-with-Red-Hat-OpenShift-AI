@@ -4,7 +4,7 @@ metadata:
   name: model-storage-sa
   namespace: ims-demo-lab
 secrets:
-  - name: model-storage-credentials
+  - name: aws-connection-minio
 ---
 apiVersion: serving.kserve.io/v1alpha1
 kind: ServingRuntime
@@ -12,6 +12,11 @@ metadata:
   name: nvidia-triton-runtime
   namespace: ims-demo-lab
   annotations:
+    opendatahub.io/apiProtocol: REST
+    opendatahub.io/runtime-version: 24.08-py3
+    opendatahub.io/serving-runtime-scope: global
+    opendatahub.io/template-display-name: NVIDIA Triton Runtime
+    opendatahub.io/template-name: nvidia-triton-runtime-template
     openshift.io/display-name: NVIDIA Triton Runtime
   labels:
     opendatahub.io/dashboard: "true"
@@ -22,6 +27,7 @@ spec:
       autoSelect: true
   protocolVersions:
     - v2
+  multiModel: false
   containers:
     - name: kserve-container
       image: nvcr.io/nvidia/tritonserver:24.08-py3
@@ -45,6 +51,8 @@ metadata:
   labels:
     opendatahub.io/dashboard: "true"
   annotations:
+    opendatahub.io/connections: aws-connection-minio
+    opendatahub.io/model-type: predictive
     openshift.io/display-name: ims-predictive
     serving.kserve.io/deploymentMode: RawDeployment
 spec:
