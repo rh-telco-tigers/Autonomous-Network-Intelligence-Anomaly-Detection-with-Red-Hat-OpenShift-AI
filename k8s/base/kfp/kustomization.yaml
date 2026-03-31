@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ims-demo-lab
+configMapGenerator:
+  - name: ims-kfp-assets
+    files:
+      - ims_anomaly_pipeline.yaml=assets/ims_anomaly_pipeline.yaml
+      - publish_pipeline.py=assets/publish_pipeline.py
+generatorOptions:
+  disableNameSuffixHash: true
+resources:
+  - dspa.yaml
+  - pipeline-bootstrap-job.yaml

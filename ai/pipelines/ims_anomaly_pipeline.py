@@ -37,7 +37,7 @@ def ingest_data(
 @dsl.container_component
 def feature_engineering(
     dataset_version: str,
-    dataset_manifest: dsl.InputPath(str),
+    dataset_manifest: str,
     output_manifest: dsl.OutputPath(str),
     workspace_root: str = WORKSPACE_ROOT,
 ):
@@ -62,7 +62,7 @@ def feature_engineering(
 @dsl.container_component
 def label_generation(
     dataset_version: str,
-    feature_manifest: dsl.InputPath(str),
+    feature_manifest: str,
     output_manifest: dsl.OutputPath(str),
     workspace_root: str = WORKSPACE_ROOT,
 ):
@@ -87,7 +87,7 @@ def label_generation(
 @dsl.container_component
 def train_baseline(
     baseline_version: str,
-    label_manifest: dsl.InputPath(str),
+    label_manifest: str,
     output_manifest: dsl.OutputPath(str),
     artifact_dir: str = ARTIFACT_DIR,
 ):
@@ -112,7 +112,7 @@ def train_baseline(
 @dsl.container_component
 def train_autogluon(
     candidate_version: str,
-    label_manifest: dsl.InputPath(str),
+    label_manifest: str,
     output_manifest: dsl.OutputPath(str),
     workspace_root: str = WORKSPACE_ROOT,
     artifact_dir: str = ARTIFACT_DIR,
@@ -143,9 +143,9 @@ def train_autogluon(
 @dsl.container_component
 def evaluate_models(
     dataset_version: str,
-    label_manifest: dsl.InputPath(str),
-    baseline_manifest: dsl.InputPath(str),
-    candidate_manifest: dsl.InputPath(str),
+    label_manifest: str,
+    baseline_manifest: str,
+    candidate_manifest: str,
     output_manifest: dsl.OutputPath(str),
 ):
     return dsl.ContainerSpec(
@@ -171,7 +171,7 @@ def evaluate_models(
 @dsl.container_component
 def select_best(
     dataset_version: str,
-    evaluation_manifest: dsl.InputPath(str),
+    evaluation_manifest: str,
     output_manifest: dsl.OutputPath(str),
 ):
     return dsl.ContainerSpec(
@@ -192,8 +192,8 @@ def select_best(
 
 @dsl.container_component
 def register_model(
-    label_manifest: dsl.InputPath(str),
-    selection_manifest: dsl.InputPath(str),
+    label_manifest: str,
+    selection_manifest: str,
     output_manifest: dsl.OutputPath(str),
     artifact_dir: str = ARTIFACT_DIR,
     registry_path: str = REGISTRY_PATH,
@@ -220,7 +220,7 @@ def register_model(
 
 @dsl.container_component
 def deploy_model(
-    registry_manifest: dsl.InputPath(str),
+    registry_manifest: str,
     output_manifest: dsl.OutputPath(str),
 ):
     return dsl.ContainerSpec(

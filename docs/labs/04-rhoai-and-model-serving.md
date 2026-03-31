@@ -8,6 +8,7 @@ Enable the OpenShift AI control plane and prepare predictive and generative infe
 
 - OpenShift AI operator via Argo CD managed OLM subscription
 - Kubeflow pipeline source in `ai/pipelines`
+- namespace-scoped `DataSciencePipelinesApplication` in `ims-demo-lab`
 - predictive NVIDIA Triton `ServingRuntime` and `InferenceService` in `ims-demo-lab`
 - shared cluster vLLM endpoint consumed through the in-namespace `ims-generative-proxy` service
 - Milvus for vector-backed retrieval
@@ -19,12 +20,14 @@ Enable the OpenShift AI control plane and prepare predictive and generative infe
 1. Sync the `ims-demo-operators` Argo CD application from `deploy/gitops/operators`.
 2. Verify the OpenShift AI subscription in `redhat-ods-operator` has reached `AtLatestKnown`.
 3. Apply `k8s/base/milvus`.
-4. Apply `k8s/base/serving`.
-5. Build and push the platform services and deploy `k8s/base/platform`.
-6. Apply `k8s/base/observability` to scrape service metrics.
-7. Build the trainer image and run the training pipeline; it uploads a Triton model repository into MinIO automatically under `s3://ims-models/predictive/`.
-8. Verify the `milvus-bootstrap` job has loaded the runbooks into Milvus.
-9. Open the Attu route:
+4. Apply `k8s/base/kfp` to create the demo namespace DSPA.
+5. Apply `k8s/base/serving`.
+6. Build and push the platform services and deploy `k8s/base/platform`.
+7. Apply `k8s/base/observability` to scrape service metrics.
+8. Build the trainer image and run the training pipeline; it uploads a Triton model repository into MinIO automatically under `s3://ims-models/predictive/`.
+9. Verify the `ims-kfp-bootstrap` job has registered the compiled pipeline and created the `ims-anomaly-platform-demo` run.
+10. Verify the `milvus-bootstrap` job has loaded the runbooks into Milvus.
+11. Open the Attu route:
 
 ```sh
 oc get route milvus-attu -n ims-demo-lab -o jsonpath='{.spec.host}{"\n"}'
@@ -38,7 +41,8 @@ Access notes:
 ## Validation targets
 
 - the OpenShift AI subscription resolves successfully in `redhat-ods-operator`
-- model registry and pipelines are enabled if the cluster's OpenShift AI defaults instantiate them
+- the namespace DSPA named `dspa` reaches `Ready`
+- the compiled pipeline is visible in the Kubeflow Pipelines UI and a demo run exists
 - the predictive `InferenceService` resolves in `ims-demo-lab`
 - the in-namespace `ims-generative-proxy` resolves to the shared vLLM endpoint
 - demo MinIO object storage is running with `minioadmin` / `minioadmin`

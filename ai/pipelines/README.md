@@ -5,8 +5,9 @@ This directory contains source for the predictive training workflow expected to 
 ## Included asset
 
 - `ims_anomaly_pipeline.py`: Kubeflow pipeline source for ingestion, feature engineering, baseline training, AutoML candidate generation, evaluation, registration, and deployment handoff
+- `generated/ims_anomaly_pipeline.yaml`: compiled KFP package tracked for GitOps-driven registration
+- `publish_pipeline.py`: in-cluster bootstrap client that registers the pipeline and creates the demo run
 
 ## Usage
 
-Package or upload the pipeline from a workbench image that has `kfp` available, then bind the produced model artifact locations to the KServe inference services defined under `k8s/base/serving`.
-
+`k8s/base/kfp` deploys the namespace-scoped `DataSciencePipelinesApplication` and a bootstrap Job that uploads `generated/ims_anomaly_pipeline.yaml` into the local DSPA and creates the `ims-anomaly-platform-demo` run.

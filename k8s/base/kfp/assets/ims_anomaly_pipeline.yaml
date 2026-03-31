@@ -1,0 +1,498 @@
+# PIPELINE DEFINITION
+# Name: ims-anomaly-platform-train-and-register
+# Inputs:
+#    automl_engine: str [Default: 'autogluon']
+#    automl_version: str [Default: 'candidate-v1']
+#    baseline_version: str [Default: 'baseline-v1']
+#    dataset_version: str [Default: 'synthetic-v1']
+components:
+  comp-deploy-model:
+    executorLabel: exec-deploy-model
+    inputDefinitions:
+      parameters:
+        registry_manifest:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-evaluate-models:
+    executorLabel: exec-evaluate-models
+    inputDefinitions:
+      parameters:
+        baseline_manifest:
+          parameterType: STRING
+        candidate_manifest:
+          parameterType: STRING
+        dataset_version:
+          parameterType: STRING
+        label_manifest:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-feature-engineering:
+    executorLabel: exec-feature-engineering
+    inputDefinitions:
+      parameters:
+        dataset_manifest:
+          parameterType: STRING
+        dataset_version:
+          parameterType: STRING
+        workspace_root:
+          defaultValue: ai
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-ingest-data:
+    executorLabel: exec-ingest-data
+    inputDefinitions:
+      parameters:
+        dataset_version:
+          parameterType: STRING
+        size_per_class:
+          defaultValue: 120.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+        workspace_root:
+          defaultValue: ai
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-label-generation:
+    executorLabel: exec-label-generation
+    inputDefinitions:
+      parameters:
+        dataset_version:
+          parameterType: STRING
+        feature_manifest:
+          parameterType: STRING
+        workspace_root:
+          defaultValue: ai
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-register-model:
+    executorLabel: exec-register-model
+    inputDefinitions:
+      parameters:
+        artifact_dir:
+          defaultValue: ai/models/artifacts
+          isOptional: true
+          parameterType: STRING
+        label_manifest:
+          parameterType: STRING
+        registry_path:
+          defaultValue: ai/registry/model_registry.json
+          isOptional: true
+          parameterType: STRING
+        selection_manifest:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-select-best:
+    executorLabel: exec-select-best
+    inputDefinitions:
+      parameters:
+        dataset_version:
+          parameterType: STRING
+        evaluation_manifest:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-train-autogluon:
+    executorLabel: exec-train-autogluon
+    inputDefinitions:
+      parameters:
+        artifact_dir:
+          defaultValue: ai/models/artifacts
+          isOptional: true
+          parameterType: STRING
+        automl_engine:
+          defaultValue: autogluon
+          isOptional: true
+          parameterType: STRING
+        candidate_version:
+          parameterType: STRING
+        label_manifest:
+          parameterType: STRING
+        workspace_root:
+          defaultValue: ai
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-train-baseline:
+    executorLabel: exec-train-baseline
+    inputDefinitions:
+      parameters:
+        artifact_dir:
+          defaultValue: ai/models/artifacts
+          isOptional: true
+          parameterType: STRING
+        baseline_version:
+          parameterType: STRING
+        label_manifest:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-deploy-model:
+      container:
+        args:
+        - --step
+        - deploy-model
+        - --registry-path
+        - '{{$.inputs.parameters[''registry_manifest'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/train_and_register.py
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest
+    exec-evaluate-models:
+      container:
+        args:
+        - --step
+        - evaluate
+        - --dataset-version
+        - '{{$.inputs.parameters[''dataset_version'']}}'
+        - --label-manifest
+        - '{{$.inputs.parameters[''label_manifest'']}}'
+        - --baseline-manifest
+        - '{{$.inputs.parameters[''baseline_manifest'']}}'
+        - --candidate-manifest
+        - '{{$.inputs.parameters[''candidate_manifest'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/train_and_register.py
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest
+    exec-feature-engineering:
+      container:
+        args:
+        - --step
+        - feature-engineering
+        - --dataset-version
+        - '{{$.inputs.parameters[''dataset_version'']}}'
+        - --dataset-manifest
+        - '{{$.inputs.parameters[''dataset_manifest'']}}'
+        - --workspace-root
+        - '{{$.inputs.parameters[''workspace_root'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/train_and_register.py
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest
+    exec-ingest-data:
+      container:
+        args:
+        - --step
+        - ingest-data
+        - --dataset-version
+        - '{{$.inputs.parameters[''dataset_version'']}}'
+        - --workspace-root
+        - '{{$.inputs.parameters[''workspace_root'']}}'
+        - --size-per-class
+        - '{{$.inputs.parameters[''size_per_class'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/train_and_register.py
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest
+    exec-label-generation:
+      container:
+        args:
+        - --step
+        - label-generation
+        - --dataset-version
+        - '{{$.inputs.parameters[''dataset_version'']}}'
+        - --feature-manifest
+        - '{{$.inputs.parameters[''feature_manifest'']}}'
+        - --workspace-root
+        - '{{$.inputs.parameters[''workspace_root'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/train_and_register.py
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest
+    exec-register-model:
+      container:
+        args:
+        - --step
+        - register-model
+        - --label-manifest
+        - '{{$.inputs.parameters[''label_manifest'']}}'
+        - --selection-manifest
+        - '{{$.inputs.parameters[''selection_manifest'']}}'
+        - --artifact-dir
+        - '{{$.inputs.parameters[''artifact_dir'']}}'
+        - --registry-path
+        - '{{$.inputs.parameters[''registry_path'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/train_and_register.py
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest
+    exec-select-best:
+      container:
+        args:
+        - --step
+        - select-best
+        - --dataset-version
+        - '{{$.inputs.parameters[''dataset_version'']}}'
+        - --evaluation-manifest
+        - '{{$.inputs.parameters[''evaluation_manifest'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/train_and_register.py
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest
+    exec-train-autogluon:
+      container:
+        args:
+        - --step
+        - train-automl
+        - --candidate-version
+        - '{{$.inputs.parameters[''candidate_version'']}}'
+        - --label-manifest
+        - '{{$.inputs.parameters[''label_manifest'']}}'
+        - --workspace-root
+        - '{{$.inputs.parameters[''workspace_root'']}}'
+        - --artifact-dir
+        - '{{$.inputs.parameters[''artifact_dir'']}}'
+        - --automl-engine
+        - '{{$.inputs.parameters[''automl_engine'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/train_and_register.py
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest
+    exec-train-baseline:
+      container:
+        args:
+        - --step
+        - train-baseline
+        - --baseline-version
+        - '{{$.inputs.parameters[''baseline_version'']}}'
+        - --label-manifest
+        - '{{$.inputs.parameters[''label_manifest'']}}'
+        - --artifact-dir
+        - '{{$.inputs.parameters[''artifact_dir'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/train_and_register.py
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest
+pipelineInfo:
+  name: ims-anomaly-platform-train-and-register
+root:
+  dag:
+    tasks:
+      deploy-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-deploy-model
+        dependentTasks:
+        - register-model
+        inputs:
+          parameters:
+            registry_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: register-model
+        taskInfo:
+          name: deploy-model
+      evaluate-models:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-evaluate-models
+        dependentTasks:
+        - label-generation
+        - train-autogluon
+        - train-baseline
+        inputs:
+          parameters:
+            baseline_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: train-baseline
+            candidate_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: train-autogluon
+            dataset_version:
+              componentInputParameter: dataset_version
+            label_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: label-generation
+        taskInfo:
+          name: evaluate-models
+      feature-engineering:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-feature-engineering
+        dependentTasks:
+        - ingest-data
+        inputs:
+          parameters:
+            dataset_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: ingest-data
+            dataset_version:
+              componentInputParameter: dataset_version
+        taskInfo:
+          name: feature-engineering
+      ingest-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-ingest-data
+        inputs:
+          parameters:
+            dataset_version:
+              componentInputParameter: dataset_version
+        taskInfo:
+          name: ingest-data
+      label-generation:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-label-generation
+        dependentTasks:
+        - feature-engineering
+        inputs:
+          parameters:
+            dataset_version:
+              componentInputParameter: dataset_version
+            feature_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: feature-engineering
+        taskInfo:
+          name: label-generation
+      register-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-register-model
+        dependentTasks:
+        - label-generation
+        - select-best
+        inputs:
+          parameters:
+            label_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: label-generation
+            selection_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: select-best
+        taskInfo:
+          name: register-model
+      select-best:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-select-best
+        dependentTasks:
+        - evaluate-models
+        inputs:
+          parameters:
+            dataset_version:
+              componentInputParameter: dataset_version
+            evaluation_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: evaluate-models
+        taskInfo:
+          name: select-best
+      train-autogluon:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-autogluon
+        dependentTasks:
+        - label-generation
+        inputs:
+          parameters:
+            automl_engine:
+              componentInputParameter: automl_engine
+            candidate_version:
+              componentInputParameter: automl_version
+            label_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: label-generation
+        taskInfo:
+          name: train-autogluon
+      train-baseline:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-baseline
+        dependentTasks:
+        - label-generation
+        inputs:
+          parameters:
+            baseline_version:
+              componentInputParameter: baseline_version
+            label_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: label-generation
+        taskInfo:
+          name: train-baseline
+  inputDefinitions:
+    parameters:
+      automl_engine:
+        defaultValue: autogluon
+        isOptional: true
+        parameterType: STRING
+      automl_version:
+        defaultValue: candidate-v1
+        isOptional: true
+        parameterType: STRING
+      baseline_version:
+        defaultValue: baseline-v1
+        isOptional: true
+        parameterType: STRING
+      dataset_version:
+        defaultValue: synthetic-v1
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.8.0

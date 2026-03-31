@@ -1,0 +1,162 @@
+"""Compile-time independent KFP pipeline uploader for the IMS demo."""
+
+import json
+import os
+import time
+from pathlib import Path
+from typing import Any
+
+from kfp import Client
+
+
+DEFAULT_DSPA_NAME = "dspa"
+DEFAULT_PIPELINE_NAME = "ims-anomaly-platform-train-and-register"
+DEFAULT_EXPERIMENT_NAME = "ims-demo"
+DEFAULT_RUN_NAME = "ims-anomaly-platform-demo"
+DEFAULT_PACKAGE_PATH = "/opt/kfp/ims_anomaly_pipeline.yaml"
+DEFAULT_KFP_HOST_TEMPLATE = "https://ds-pipeline-{dspa}.{namespace}.svc.cluster.local:8443"
+DEFAULT_SERVICE_CA_CERT = "/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
+DEFAULT_PIPELINE_PARAMETERS = {
+    "dataset_version": "synthetic-v1",
+    "baseline_version": "baseline-v1",
+    "automl_version": "candidate-v1",
+    "automl_engine": "autogluon",
+}
+
+
+def _env(name: str, default: str | None = None) -> str:
+    value = os.getenv(name, default)
+    if value is None:
+        raise ValueError(f"Missing required environment variable {name}")
+    return value
+
+
+def _namespace() -> str:
+    if os.getenv("POD_NAMESPACE"):
+        return os.environ["POD_NAMESPACE"]
+    return Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read_text().strip()
+
+
+def _load_pipeline_parameters() -> dict[str, Any]:
+    raw = os.getenv("PIPELINE_PARAMETERS_JSON", "").strip()
+    if not raw:
+        return dict(DEFAULT_PIPELINE_PARAMETERS)
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError("PIPELINE_PARAMETERS_JSON must be a JSON object")
+    return parsed
+
+
+def discover_kfp_host(namespace: str, dspa_name: str) -> str:
+    explicit = os.getenv("KFP_HOST", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    return DEFAULT_KFP_HOST_TEMPLATE.format(dspa=dspa_name, namespace=namespace)
+
+
+def _find_by_display_name(items: list[Any] | None, expected: str) -> Any | None:
+    for item in items or []:
+        if getattr(item, "display_name", None) == expected:
+            return item
+    return None
+
+
+def wait_for_client(host: str, namespace: str, timeout_seconds: int = 600) -> Client:
+    deadline = time.time() + timeout_seconds
+    last_error: Exception | None = None
+    ssl_ca_cert = os.getenv("KFP_SSL_CA_CERT", DEFAULT_SERVICE_CA_CERT)
+    if ssl_ca_cert and not Path(ssl_ca_cert).exists():
+        ssl_ca_cert = None
+    while time.time() < deadline:
+        try:
+            client = Client(host=host, ssl_ca_cert=ssl_ca_cert, verify_ssl=bool(ssl_ca_cert))
+            client.list_pipelines(page_size=1, namespace=namespace)
+            return client
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            time.sleep(10)
+    raise RuntimeError(f"KFP API at {host} did not become ready in time") from last_error
+
+
+def ensure_pipeline(client: Client, package_path: str, pipeline_name: str, namespace: str) -> None:
+    existing = _find_by_display_name(
+        getattr(client.list_pipelines(page_size=100, namespace=namespace), "pipelines", None),
+        pipeline_name,
+    )
+    if existing is None:
+        client.upload_pipeline(
+            pipeline_package_path=package_path,
+            pipeline_name=pipeline_name,
+            namespace=namespace,
+        )
+
+
+def ensure_experiment(client: Client, experiment_name: str, namespace: str) -> Any:
+    existing = _find_by_display_name(
+        getattr(client.list_experiments(page_size=100, namespace=namespace), "experiments", None),
+        experiment_name,
+    )
+    if existing is not None:
+        return existing
+    return client.create_experiment(name=experiment_name, namespace=namespace)
+
+
+def ensure_demo_run(
+    client: Client,
+    package_path: str,
+    experiment: Any,
+    experiment_name: str,
+    namespace: str,
+    run_name: str,
+    parameters: dict[str, Any],
+    service_account: str | None,
+) -> None:
+    runs = getattr(
+        client.list_runs(page_size=100, experiment_id=experiment.experiment_id, namespace=namespace),
+        "runs",
+        None,
+    )
+    existing = _find_by_display_name(runs, run_name)
+    if existing is not None and getattr(existing, "state", "") in {"RUNNING", "SUCCEEDED"}:
+        return
+
+    client.create_run_from_pipeline_package(
+        pipeline_file=package_path,
+        arguments=parameters,
+        run_name=run_name,
+        experiment_name=experiment_name,
+        namespace=namespace,
+        service_account=service_account,
+        enable_caching=False,
+    )
+
+
+def main() -> None:
+    namespace = _namespace()
+    dspa_name = os.getenv("DSPA_NAME", DEFAULT_DSPA_NAME)
+    package_path = _env("PIPELINE_PACKAGE_PATH", DEFAULT_PACKAGE_PATH)
+    pipeline_name = os.getenv("PIPELINE_NAME", DEFAULT_PIPELINE_NAME)
+    experiment_name = os.getenv("EXPERIMENT_NAME", DEFAULT_EXPERIMENT_NAME)
+    run_name = os.getenv("RUN_NAME", DEFAULT_RUN_NAME)
+    service_account = os.getenv("PIPELINE_SERVICE_ACCOUNT", "").strip() or None
+    parameters = _load_pipeline_parameters()
+
+    host = discover_kfp_host(namespace, dspa_name)
+    client = wait_for_client(host=host, namespace=namespace)
+    ensure_pipeline(client, package_path=package_path, pipeline_name=pipeline_name, namespace=namespace)
+    experiment = ensure_experiment(client, experiment_name=experiment_name, namespace=namespace)
+    ensure_demo_run(
+        client,
+        package_path=package_path,
+        experiment=experiment,
+        experiment_name=experiment_name,
+        namespace=namespace,
+        run_name=run_name,
+        parameters=parameters,
+        service_account=service_account,
+    )
+    print(json.dumps({"host": host, "experiment": experiment_name, "run_name": run_name}, indent=2))
+
+
+if __name__ == "__main__":
+    main()

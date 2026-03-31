@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dspa-object-storage
+  namespace: ims-demo-lab
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+type: Opaque
+stringData:
+  accesskey: minioadmin
+  secretkey: minioadmin
+---
+apiVersion: datasciencepipelinesapplications.opendatahub.io/v1
+kind: DataSciencePipelinesApplication
+metadata:
+  name: dspa
+  namespace: ims-demo-lab
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  dspVersion: v2
+  apiServer:
+    enableSamplePipeline: false
+    pipelineStore: kubernetes
+  objectStorage:
+    externalStorage:
+      scheme: http
+      host: model-storage-minio.ims-demo-lab.svc.cluster.local
+      port: "9000"
+      bucket: ims-models
+      basePath: pipelines/ims-demo-lab
+      secure: false
+      s3CredentialsSecret:
+        secretName: dspa-object-storage
+        accessKey: accesskey
+        secretKey: secretkey
+  database:
+    mariaDB:
+      pvcSize: 10Gi

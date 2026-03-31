@@ -12,6 +12,7 @@ base/
   traffic/      SIPp scenario runners
   platform/     feature, anomaly, RCA, and UI services
   milvus/       vector database stack
+  kfp/          OpenShift AI DSPA and Kubeflow pipeline bootstrap
   serving/      KServe runtimes and inference services
   pipelines/    Tekton pipelines and PipelineRuns
 overlays/

@@ -10,5 +10,6 @@ resources:
   - platform
   - observability
   - rhoai
+  - kfp
   - serving
   - pipelines
