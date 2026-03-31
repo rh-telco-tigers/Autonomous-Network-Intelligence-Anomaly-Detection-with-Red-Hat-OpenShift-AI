@@ -2,78 +2,86 @@
 
 ## Objective
 
-Enable OpenShift AI, train a model from captured IMS feature windows, register the selected model, and expose it through model serving.
+Run the training pipeline in OpenShift AI, verify that it uses the captured dataset from Lab 03, and confirm that the selected model is available for serving.
 
-## Why This Lab Matters
+## Before You Begin
 
-This lab connects the traffic story from Lab 03 to the AI story.
+- Complete Lab 03 and confirm that `live-sipp-v1` feature windows exist in MinIO.
+- Make sure the OpenShift AI operator is installed.
+- Make sure you can access the `ims-demo-lab` namespace with `oc`.
 
-By the end of this lab, you are not just showing that the platform can run a pipeline. You are showing that:
+## What This Lab Uses
 
-- real SIPp-driven IMS traffic was captured
-- the captured traffic was converted into labeled feature windows
-- Kubeflow Pipelines trained on those windows
-- the winning model was registered and deployed for scoring
-
-That is much easier for an end user to understand than a generic "we ran AutoML in a notebook" explanation.
-
-## Main Components
-
-- OpenShift AI operator
 - `DataSciencePipelinesApplication` named `dspa`
-- Kubeflow pipeline source in `ai/pipelines`
+- KFP assets from `k8s/base/kfp`
 - trainer image from `ai/training`
-- MinIO bucket `ims-models`
-- predictive Triton `ServingRuntime` and `InferenceService`
-- shared vLLM endpoint exposed through `ims-generative-proxy`
-- Milvus plus Attu for RCA retrieval visibility
+- model storage in MinIO bucket `ims-models`
+- predictive serving resources in `k8s/base/serving`
 
-## Simple End-User Data Flow
+## Run The Lab
 
-Use this explanation when presenting:
+1. Verify the OpenShift AI subscription is ready:
 
-1. Lab 03 creates labeled feature windows from real SIP traffic.
-2. Those feature windows are stored in MinIO under dataset version `live-sipp-v1`.
-3. The KFP pipeline reads those windows first.
-4. The pipeline trains a baseline model and an AutoGluon candidate.
-5. The evaluation gate selects the better model.
-6. The selected model is written to the registry and deployed for serving.
+```sh
+oc get csv -n redhat-ods-operator
+```
 
-If the live dataset is temporarily missing, the pipeline can still fall back to synthetic bootstrap data. That fallback keeps the platform resilient, but the preferred demo path is the real-traffic dataset.
+2. Apply the AI and serving resources:
 
-## Step-By-Step Walkthrough
+```sh
+oc apply -k k8s/base/kfp
+oc apply -k k8s/base/serving
+oc apply -k k8s/base/milvus
+```
 
-1. Sync the `ims-demo-operators` Argo CD application from `deploy/gitops/operators`.
-2. Verify the OpenShift AI subscription in `redhat-ods-operator` has reached `AtLatestKnown`.
-3. Apply `k8s/base/milvus`.
-4. Apply `k8s/base/kfp` to create the demo namespace DSPA.
-5. Apply `k8s/base/serving`.
-6. Build and push the platform services and deploy `k8s/base/platform`.
-7. Apply `k8s/base/observability` to scrape service metrics.
-8. Confirm the live dataset exists in MinIO before training. The expected dataset version is `live-sipp-v1`.
-9. Build the trainer image and run the pipeline. The preferred training input is the SIPp-captured feature-window dataset from MinIO. The pipeline only falls back to synthetic bootstrap data if that live dataset is unavailable or too small.
-10. Verify the `ims-kfp-bootstrap` job has registered the compiled pipeline and created a run.
-11. Verify the `milvus-bootstrap` job has loaded the runbooks into Milvus.
-12. Open the Attu route:
+3. Verify that the DSPA is ready:
+
+```sh
+oc get dspa -n ims-demo-lab
+```
+
+4. Confirm that the live dataset exists before starting training. The expected dataset version is `live-sipp-v1`.
+5. Start the pipeline bootstrap job or verify that it has already created a run:
+
+```sh
+oc get job -n ims-demo-lab | rg 'ims-kfp-bootstrap'
+```
+
+6. Watch the workflow progress:
+
+```sh
+oc get workflow -n ims-demo-lab
+```
+
+7. When the workflow completes, inspect the `ingest-data` step logs. The expected source is `openims-sipp-lab`, and the expected dataset kind is `feature_windows`.
+8. Verify that the model-serving resources are ready:
+
+```sh
+oc get inferenceservice,servingruntime -n ims-demo-lab
+```
+
+9. Open the Attu route if you also want to confirm the retrieval data store is present:
 
 ```sh
 oc get route milvus-attu -n ims-demo-lab -o jsonpath='{.spec.host}{"\n"}'
 ```
 
-## What To Show The Audience
+## Expected Result
 
-- OpenShift AI is managing the pipeline and serving resources, not an ad hoc notebook session.
-- The pipeline input is a named dataset version in MinIO.
-- The selected model is tied to a feature schema version and dataset version.
-- The predictive model is served through the cluster-native serving stack.
-- The generative RCA path remains separate from the predictive anomaly detector.
+After this lab:
 
-## Suggested Validation Commands
+- the DSPA `dspa` is ready
+- the training pipeline completes successfully
+- the pipeline reads `live-sipp-v1` feature windows when they are available
+- the selected model is written to the registry
+- the predictive serving resources are available in `ims-demo-lab`
 
-Check the DSPA:
+## Useful Checks
+
+Check recent workflows:
 
 ```sh
-oc get dspa -n ims-demo-lab
+oc get workflow -n ims-demo-lab --sort-by=.metadata.creationTimestamp
 ```
 
 Check the serving resources:
@@ -82,29 +90,18 @@ Check the serving resources:
 oc get inferenceservice,servingruntime -n ims-demo-lab
 ```
 
-Check the pipeline bootstrap job:
+Check the MinIO-backed registry output:
 
 ```sh
-oc get job -n ims-demo-lab | rg 'ims-kfp-bootstrap'
+oc logs job/ims-kfp-bootstrap -n ims-demo-lab
 ```
 
-## Access Notes
+## If The Pipeline Does Not Use The Live Dataset
 
-- Attu does not require a separate UI username or password in this demo deployment.
-- MinIO console uses `minioadmin` / `minioadmin`.
+The pipeline prefers the `live-sipp-v1` dataset, but it can fall back to bootstrap data if the live dataset is missing or too small. If you want to test the real-traffic path, make sure Lab 03 has already produced feature-window objects in MinIO before starting the run.
 
-## What Success Looks Like
+## Quick Troubleshooting
 
-- the OpenShift AI subscription resolves successfully in `redhat-ods-operator`
-- the DSPA named `dspa` reaches `Ready`
-- the compiled pipeline is visible in Kubeflow Pipelines and a run exists
-- SIPp-derived feature windows are present in MinIO before the training run
-- the predictive `InferenceService` resolves in `ims-demo-lab`
-- the in-namespace `ims-generative-proxy` resolves to the shared vLLM endpoint
-- Attu is reachable and shows the `ims_runbooks` collection
-- the predictive model is uploaded in Triton repository layout into MinIO and served by KServe
-- incidents persist through the control-plane service
-
-## Key Message For The Audience
-
-This lab proves that the AI portion of the platform is grounded in observable telecom behavior. The model is not trained in isolation. It is trained from the same kind of feature windows that the live system will later score.
+- If the DSPA is not ready, check the OpenShift AI operator status first.
+- If the workflow fails, inspect the failed pod logs before rerunning.
+- If model serving is not ready, check `oc describe inferenceservice -n ims-demo-lab`.
