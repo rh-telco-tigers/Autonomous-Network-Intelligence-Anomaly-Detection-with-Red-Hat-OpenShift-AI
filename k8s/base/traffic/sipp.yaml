@@ -22,7 +22,7 @@ spec:
           terminationGracePeriodSeconds: 30
           containers:
             - name: sipp
-              image: sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
               workingDir: /tmp
               resources: {}
@@ -35,8 +35,8 @@ spec:
                 - >
                   sipp ims-pcscf.ims-demo-lab.svc.cluster.local:5060
                   -sf /scenarios/register-normal.xml
-                  -m 50
-                  -r 2
+                  -m 1
+                  -r 1
               volumeMounts:
                 - name: scenarios
                   mountPath: /scenarios
@@ -70,7 +70,7 @@ spec:
           terminationGracePeriodSeconds: 30
           containers:
             - name: sipp
-              image: sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
               workingDir: /tmp
               resources: {}
@@ -118,7 +118,7 @@ spec:
           terminationGracePeriodSeconds: 30
           containers:
             - name: sipp
-              image: sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
               workingDir: /tmp
               resources: {}

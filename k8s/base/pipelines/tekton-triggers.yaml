@@ -53,7 +53,7 @@ metadata:
   namespace: ims-demo-lab
 spec:
   lookupPolicy:
-    local: false
+    local: true
 ---
 apiVersion: image.openshift.io/v1
 kind: ImageStream
