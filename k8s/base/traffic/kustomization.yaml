@@ -10,6 +10,7 @@ configMapGenerator:
       - scenarios/register-authentication-failure.xml
       - scenarios/register-failure.xml
       - scenarios/invite-routing-error.xml
+      - scenarios/invite-busy-destination.xml
       - scenarios/invite-call-setup-timeout.xml
       - scenarios/bye-call-drop.xml
       - scenarios/options-server-error.xml

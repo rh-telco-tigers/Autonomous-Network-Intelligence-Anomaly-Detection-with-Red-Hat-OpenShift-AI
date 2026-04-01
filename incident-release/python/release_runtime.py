@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import zipfile
 from datetime import datetime, timezone
 from io import BytesIO
@@ -67,9 +68,11 @@ NON_AUTHORITATIVE_FEATURE_SOURCES = {
     "scenario-fallback",
     "synthetic",
 }
+NORMAL_ANOMALY_TYPE = "normal_operation"
 
 LABEL_NORMALIZATION = {
-    "normal": "normal",
+    "normal": NORMAL_ANOMALY_TYPE,
+    "normal_operation": NORMAL_ANOMALY_TYPE,
     "registration_storm": "registration_storm",
     "registration_failure": "registration_failure",
     "authentication_failure": "authentication_failure",
@@ -77,6 +80,7 @@ LABEL_NORMALIZATION = {
     "malformed_invite": "malformed_sip",
     "malformed_sip": "malformed_sip",
     "routing_error": "routing_error",
+    "busy_destination": "busy_destination",
     "call_setup_timeout": "call_setup_timeout",
     "call_drop_mid_session": "call_drop_mid_session",
     "server_internal_error": "server_internal_error",
@@ -104,6 +108,11 @@ PUBLIC_FIELD_MAPPING = [
         "rule": "only allowlisted numeric features published",
     },
     {
+        "internal_field": "scenario overlap hints",
+        "public_field": "contributing_conditions",
+        "rule": "published as JSON metadata and never used as numeric model features",
+    },
+    {
         "internal_field": "raw RCA payload",
         "public_field": "redacted RCA summary columns",
         "rule": "free text redacted before publication",
@@ -123,6 +132,7 @@ INCIDENT_HISTORY_COLUMNS = [
     "status",
     "anomaly_type",
     "source_anomaly_type",
+    "contributing_conditions",
     "anomaly_score",
     "model_version",
     "feature_window_public_id",
@@ -159,6 +169,7 @@ TRAINING_EXAMPLE_BASE_COLUMNS = [
     "scenario_name",
     "source_anomaly_type",
     "anomaly_type",
+    "contributing_conditions",
     "label",
     "label_confidence",
     "linkage_status",
@@ -271,7 +282,13 @@ def _dataset_s3_client():
         endpoint_url=_dataset_store_endpoint(),
         aws_access_key_id=_dataset_store_access_key(),
         aws_secret_access_key=_dataset_store_secret_key(),
-        config=Config(signature_version="s3v4"),
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+            connect_timeout=5,
+            read_timeout=60,
+            retries={"max_attempts": 10, "mode": "standard"},
+        ),
         region_name=os.getenv("AWS_REGION", "us-east-1"),
     )
 
@@ -287,6 +304,25 @@ def _parse_s3_uri(uri: str) -> tuple[str, str]:
     stripped = uri.removeprefix("s3://")
     bucket, _, key = stripped.partition("/")
     return bucket, key
+
+
+def _s3_retry_attempts() -> int:
+    return max(int(os.getenv("DATASET_STORE_RETRY_ATTEMPTS", "5")), 1)
+
+
+def _run_s3_operation(operation):
+    last_error: Exception | None = None
+    for attempt in range(1, _s3_retry_attempts() + 1):
+        try:
+            return operation()
+        except (BotoCoreError, ClientError) as exc:
+            last_error = exc
+            if attempt >= _s3_retry_attempts():
+                break
+            time.sleep(min(2**attempt, 10))
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("S3 operation failed without raising an exception")
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -580,7 +616,7 @@ def _build_release_artifact_kafka_events(final_manifest: dict[str, Any]) -> list
 
 def _read_bytes_from_s3(uri: str) -> bytes:
     bucket, key = _parse_s3_uri(uri)
-    response = _dataset_s3_client().get_object(Bucket=bucket, Key=key)
+    response = _run_s3_operation(lambda: _dataset_s3_client().get_object(Bucket=bucket, Key=key))
     return response["Body"].read()
 
 
@@ -595,10 +631,32 @@ def _read_parquet_reference(reference: str | Path) -> pd.DataFrame:
     return pd.read_parquet(ref)
 
 
+def _content_type_for(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        return "text/csv"
+    if suffix == ".json":
+        return "application/json"
+    if suffix == ".parquet":
+        return "application/octet-stream"
+    if suffix == ".zip":
+        return "application/zip"
+    if suffix == ".md":
+        return "text/markdown"
+    return "application/octet-stream"
+
+
 def _upload_file_to_s3(path: Path, prefix: str) -> str:
     bucket = _dataset_store_bucket()
     key = f"{prefix.rstrip('/')}/{path.name}"
-    _dataset_s3_client().upload_file(str(path), bucket, key)
+    _run_s3_operation(
+        lambda: _dataset_s3_client().put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=path.read_bytes(),
+            ContentType=_content_type_for(path),
+        )
+    )
     return _s3_uri(bucket, key)
 
 
@@ -674,6 +732,114 @@ def _canonical_anomaly_type(payload: dict[str, Any]) -> str:
         default="normal",
     )
     return LABEL_NORMALIZATION.get(raw, raw)
+
+
+def _is_normal_anomaly_type(anomaly_type: str) -> bool:
+    return anomaly_type == NORMAL_ANOMALY_TYPE
+
+
+def _normalize_condition_name(value: object) -> str:
+    text = re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower())
+    return text.strip("_")
+
+
+def _append_condition(conditions: list[str], value: object) -> None:
+    normalized = _normalize_condition_name(value)
+    if normalized and normalized not in conditions:
+        conditions.append(normalized)
+
+
+def _normalize_condition_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        if text.startswith("["):
+            try:
+                return _normalize_condition_list(json.loads(text))
+            except json.JSONDecodeError:
+                pass
+        return _normalize_condition_list(re.split(r"[|,]", text))
+    if isinstance(value, (list, tuple, set)):
+        conditions: list[str] = []
+        for item in value:
+            _append_condition(conditions, item)
+        return conditions
+    return []
+
+
+def _derive_contributing_conditions(
+    *,
+    anomaly_type: str,
+    feature_values: dict[str, float | None],
+    payload: dict[str, Any] | None = None,
+) -> list[str]:
+    data = payload or {}
+    labels = data.get("labels") if isinstance(data.get("labels"), dict) else {}
+    feature_snapshot = data.get("feature_snapshot") if isinstance(data.get("feature_snapshot"), dict) else {}
+    sipp_summary = data.get("sipp_summary") if isinstance(data.get("sipp_summary"), dict) else {}
+
+    conditions: list[str] = []
+    for candidate in (
+        data.get("contributing_conditions"),
+        labels.get("contributing_conditions"),
+        feature_snapshot.get("contributing_conditions"),
+    ):
+        for item in _normalize_condition_list(candidate):
+            _append_condition(conditions, item)
+
+    if _is_normal_anomaly_type(anomaly_type):
+        return conditions
+
+    error_4xx_ratio = float(feature_values.get("error_4xx_ratio") or 0.0)
+    error_5xx_ratio = float(feature_values.get("error_5xx_ratio") or 0.0)
+    latency_p95 = float(feature_values.get("latency_p95") or 0.0)
+    payload_variance = float(feature_values.get("payload_variance") or 0.0)
+    register_rate = float(feature_values.get("register_rate") or 0.0)
+    retransmissions = float(feature_values.get("retransmission_count") or 0.0)
+    response_codes = [int(code) for code in sipp_summary.get("response_codes", []) if str(code).isdigit()]
+    auth_challenge_count = int(sipp_summary.get("auth_challenge_count") or 0)
+
+    scenario_defaults = {
+        "registration_storm": ["traffic_surge", "retry_spike"],
+        "registration_failure": ["registration_reject", "auth_challenge_loop"],
+        "authentication_failure": ["auth_challenge_loop", "retry_spike"],
+        "malformed_sip": ["payload_anomaly", "4xx_burst"],
+        "routing_error": ["route_unreachable", "4xx_burst"],
+        "busy_destination": ["destination_busy", "retry_spike"],
+        "call_setup_timeout": ["session_setup_delay", "latency_high", "retry_spike"],
+        "call_drop_mid_session": ["session_drop", "retry_spike"],
+        "server_internal_error": ["dependency_instability", "5xx_burst"],
+        "network_degradation": ["latency_high", "retry_spike", "packet_loss_suspected"],
+        "retransmission_spike": ["retry_spike", "packet_loss_suspected"],
+    }
+    for item in scenario_defaults.get(anomaly_type, []):
+        _append_condition(conditions, item)
+
+    if error_4xx_ratio >= 0.35:
+        _append_condition(conditions, "4xx_burst")
+    if error_5xx_ratio >= 0.35:
+        _append_condition(conditions, "5xx_burst")
+    if latency_p95 >= 250.0:
+        _append_condition(conditions, "latency_high")
+    if retransmissions >= 1.0:
+        _append_condition(conditions, "retry_spike")
+    if auth_challenge_count > 0 or 401 in response_codes:
+        _append_condition(conditions, "auth_challenge_loop")
+    if payload_variance >= 50.0:
+        _append_condition(conditions, "payload_anomaly")
+    if register_rate >= 5.0:
+        _append_condition(conditions, "traffic_surge")
+    if 404 in response_codes or 483 in response_codes:
+        _append_condition(conditions, "route_unreachable")
+    if 408 in response_codes or 480 in response_codes:
+        _append_condition(conditions, "session_setup_delay")
+    if 486 in response_codes:
+        _append_condition(conditions, "destination_busy")
+    if any(code >= 500 for code in response_codes):
+        _append_condition(conditions, "dependency_instability")
+
+    return conditions
 
 
 def _normalized_scenario_family(payload: dict[str, Any], fallback: str = "incident_backfill") -> str:
@@ -979,11 +1145,7 @@ def _quality_scorecard(
         else 0
     )
     anomaly_type_count = int(len(anomaly_type_counts))
-    normal_ratio = (
-        float((training_df["anomaly_type"] == "normal").sum() / max(len(training_df), 1))
-        if not training_df.empty
-        else 0.0
-    )
+    normal_ratio = float((training_df["anomaly_type"] == NORMAL_ANOMALY_TYPE).sum() / max(len(training_df), 1)) if not training_df.empty else 0.0
     eligible_ratio = (
         float((training_df["training_eligibility_status"] == "eligible").sum() / max(len(training_df), 1))
         if not training_df.empty
@@ -1233,7 +1395,7 @@ def _dataset_card(
     normalized_labels: list[str],
 ) -> str:
     previous_release = drift.get("previous_release_reference") or "none"
-    normalized_labels_text = ", ".join(f"`{label}`" for label in normalized_labels) if normalized_labels else "`normal`"
+    normalized_labels_text = ", ".join(f"`{label}`" for label in normalized_labels) if normalized_labels else f"`{NORMAL_ANOMALY_TYPE}`"
     return (
         f"# IMS Incident Release Dataset\n\n"
         f"## Origin\n\n"
@@ -1502,7 +1664,7 @@ def normalize_release(
             "schema_version": str(window.get("schema_version") or FEATURE_SCHEMA_VERSION),
             "scenario_name": str(window.get("scenario_name") or window.get("anomaly_type") or "normal"),
             "anomaly_type": _canonical_anomaly_type(window),
-            "label": int(window.get("label", 0 if _canonical_anomaly_type(window) == "normal" else 1)),
+            "label": int(window.get("label", 0 if _canonical_anomaly_type(window) == NORMAL_ANOMALY_TYPE else 1)),
             "label_confidence": float(window.get("label_confidence", 0.95)),
             "window_start": str(window.get("window_start") or ""),
             "window_end": str(window.get("window_end") or ""),
@@ -1535,8 +1697,13 @@ def normalize_release(
                     "schema_version": str(snapshot.get("feature_schema_version", FEATURE_SCHEMA_VERSION)),
                     "scenario_name": source_anomaly_type,
                     "anomaly_type": anomaly_type,
-                    "label": 0 if anomaly_type == "normal" else 1,
+                    "label": 0 if anomaly_type == NORMAL_ANOMALY_TYPE else 1,
                     "label_confidence": 0.9,
+                    "contributing_conditions": _derive_contributing_conditions(
+                        anomaly_type=anomaly_type,
+                        feature_values=snapshot_features,
+                        payload=incident,
+                    ),
                     "window_start": str(incident.get("created_at") or ""),
                     "window_end": str(incident.get("updated_at") or incident.get("created_at") or ""),
                     "captured_at": str(incident.get("updated_at") or incident.get("created_at") or ""),
@@ -1580,6 +1747,13 @@ def normalize_release(
         incident_public_id = _public_id("inc", release_version, incident_id)
         feature_window_public_id = _public_id("win", release_version, feature_window_id) if feature_window_id else None
         feature_values = _flatten_numeric_features(matched_window or incident.get("feature_snapshot"))
+        contributing_conditions = json.dumps(
+            _derive_contributing_conditions(
+                anomaly_type=anomaly_type,
+                feature_values=feature_values,
+                payload=matched_window or incident,
+            )
+        )
         rca_payload = incident.get("rca_payload") if isinstance(incident.get("rca_payload"), dict) else {}
         model_version = str(
             incident.get("model_version")
@@ -1650,6 +1824,7 @@ def normalize_release(
                 "status": str(incident.get("status") or "open"),
                 "anomaly_type": anomaly_type,
                 "source_anomaly_type": str(incident.get("anomaly_type") or source_anomaly_type),
+                "contributing_conditions": contributing_conditions,
                 "anomaly_score": _safe_float(incident.get("anomaly_score")),
                 "model_version": model_version,
                 "feature_window_public_id": feature_window_public_id,
@@ -1690,7 +1865,8 @@ def normalize_release(
                     "scenario_name": scenario_family,
                     "source_anomaly_type": str(incident.get("anomaly_type") or source_anomaly_type),
                     "anomaly_type": anomaly_type,
-                    "label": 0 if anomaly_type == "normal" else 1,
+                    "contributing_conditions": contributing_conditions,
+                    "label": 0 if anomaly_type == NORMAL_ANOMALY_TYPE else 1,
                     "label_confidence": 0.5,
                     "linkage_status": linkage_status,
                     "training_eligibility_status": training_status,
@@ -1728,6 +1904,13 @@ def normalize_release(
             length=24,
         )
         feature_values = _flatten_numeric_features(window)
+        contributing_conditions = json.dumps(
+            _derive_contributing_conditions(
+                anomaly_type=anomaly_type,
+                feature_values=feature_values,
+                payload=window,
+            )
+        )
         linkage_status = _window_linkage_status(window)
         training_records.append(
             {
@@ -1744,7 +1927,8 @@ def normalize_release(
                 "scenario_name": str(window.get("scenario_name") or scenario_family),
                 "source_anomaly_type": str(window.get("anomaly_type") or source_anomaly_type),
                 "anomaly_type": anomaly_type,
-                "label": int(window.get("label", 0 if anomaly_type == "normal" else 1)),
+                "contributing_conditions": contributing_conditions,
+                "label": int(window.get("label", 0 if anomaly_type == NORMAL_ANOMALY_TYPE else 1)),
                 "label_confidence": float(window.get("label_confidence", 0.95)),
                 "linkage_status": linkage_status,
                 "training_eligibility_status": _training_status(linkage_status, feature_values, anomaly_type),

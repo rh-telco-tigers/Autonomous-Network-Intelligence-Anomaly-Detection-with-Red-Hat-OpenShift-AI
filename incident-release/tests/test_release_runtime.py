@@ -95,6 +95,11 @@ class ReleaseRuntimeTests(unittest.TestCase):
 
         for index, (window_id, anomaly_type, features) in enumerate(feature_sets, start=1):
             incident_id = f"incident-{index}"
+            contributing_conditions = {
+                "registration_storm": ["traffic_surge", "retry_spike"],
+                "malformed_invite": ["payload_anomaly", "4xx_burst"],
+                "service_degradation": ["latency_high", "dependency_instability"],
+            }.get(anomaly_type, [])
             incidents.append(
                 {
                     "id": incident_id,
@@ -104,7 +109,11 @@ class ReleaseRuntimeTests(unittest.TestCase):
                     "anomaly_type": anomaly_type,
                     "model_version": "predictive-v1",
                     "feature_window_id": window_id,
-                    "feature_snapshot": {"feature_window_id": window_id, **features},
+                    "feature_snapshot": {
+                        "feature_window_id": window_id,
+                        "contributing_conditions": contributing_conditions,
+                        **features,
+                    },
                     "rca_payload": {
                         "root_cause": f"https://demo.example/ims-demo-lab/{incident_id}",
                         "confidence": 0.87,
@@ -151,6 +160,7 @@ class ReleaseRuntimeTests(unittest.TestCase):
                             "anomaly_type": anomaly_type,
                             "label": 0 if anomaly_type == "normal" else 1,
                             "label_confidence": 0.95,
+                            "contributing_conditions": contributing_conditions,
                             "schema_version": release_runtime.FEATURE_SCHEMA_VERSION,
                             "features": features,
                         },
@@ -321,6 +331,12 @@ class ReleaseRuntimeTests(unittest.TestCase):
             self.assertEqual(len(balanced_df), 10)
             self.assertTrue((balanced_df["training_eligibility_status"] == "eligible").all())
             self.assertNotIn("reconstructed_from_incident_snapshot", set(training_df["linkage_status"]))
+            self.assertIn("normal_operation", set(training_df["anomaly_type"]))
+            storm_conditions = json.loads(
+                training_df.loc[training_df["scenario_name"] == "registration_storm", "contributing_conditions"].iloc[0]
+            )
+            self.assertIn("traffic_surge", storm_conditions)
+            self.assertIn("retry_spike", storm_conditions)
             self.assertTrue((incident_df["rca_root_cause_redacted"].fillna("").str.contains("ims-demo-lab")).sum() == 0)
             eligible_ids = set(training_df.loc[training_df["training_eligibility_status"] == "eligible", "record_public_id"])
             split_ids = {item["record_public_id"] for item in split_manifest}

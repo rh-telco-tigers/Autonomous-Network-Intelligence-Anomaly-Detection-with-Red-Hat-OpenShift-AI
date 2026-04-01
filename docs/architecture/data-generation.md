@@ -493,12 +493,13 @@ The release pipeline must normalize labels from the current platform taxonomy.
 
 At minimum, the normalized taxonomy must support current observed values such as:
 
-- `normal`
+- `normal_operation`
 - `registration_storm`
 - `registration_failure`
 - `authentication_failure`
 - `malformed_sip`
 - `routing_error`
+- `busy_destination`
 - `call_setup_timeout`
 - `call_drop_mid_session`
 - `server_internal_error`
@@ -509,6 +510,7 @@ Rules:
 
 - preserve the original label in `source_anomaly_type`
 - publish the normalized label in `anomaly_type`
+- publish `contributing_conditions` as JSON metadata for overlapping or supporting causes
 - ship a `label_dictionary.csv` with all mappings
 - version the mapping with `label_taxonomy_version`
 - never expose generation-only helper fields as model features

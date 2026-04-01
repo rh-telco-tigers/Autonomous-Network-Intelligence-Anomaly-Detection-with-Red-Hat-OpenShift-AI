@@ -28,7 +28,7 @@ spec:
                 - --scenario-file
                 - /scenarios/register-normal.xml
                 - --scenario-name
-                - normal
+                - normal_operation
                 - --transport
                 - udp
                 - --call-limit

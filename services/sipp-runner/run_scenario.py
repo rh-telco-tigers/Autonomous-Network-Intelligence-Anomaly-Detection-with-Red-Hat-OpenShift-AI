@@ -45,18 +45,35 @@ SHORTMSG_CALL_ID_INDEX = 4
 SHORTMSG_CSEQ_INDEX = 5
 SHORTMSG_SUMMARY_INDEX = 6
 PAYLOAD_RE = re.compile(r"UDP message (?:sent \((\d+) bytes\)|received \[(\d+)\] bytes)")
+NORMAL_ANOMALY_TYPE = "normal_operation"
 SCENARIO_ANOMALY_TYPES = {
-    "normal": "normal",
+    "normal": NORMAL_ANOMALY_TYPE,
+    "normal_operation": NORMAL_ANOMALY_TYPE,
     "registration_storm": "registration_storm",
     "registration_failure": "registration_failure",
     "authentication_failure": "authentication_failure",
     "malformed_invite": "malformed_sip",
     "routing_error": "routing_error",
+    "busy_destination": "busy_destination",
     "call_setup_timeout": "call_setup_timeout",
     "call_drop_mid_session": "call_drop_mid_session",
     "server_internal_error": "server_internal_error",
     "network_degradation": "network_degradation",
     "retransmission_spike": "retransmission_spike",
+}
+SCENARIO_BASE_CONDITIONS = {
+    NORMAL_ANOMALY_TYPE: [],
+    "registration_storm": ["traffic_surge", "retry_spike"],
+    "registration_failure": ["registration_reject", "auth_challenge_loop"],
+    "authentication_failure": ["auth_challenge_loop", "retry_spike"],
+    "malformed_sip": ["payload_anomaly", "4xx_burst"],
+    "routing_error": ["route_unreachable", "4xx_burst"],
+    "busy_destination": ["destination_busy", "retry_spike"],
+    "call_setup_timeout": ["session_setup_delay", "latency_high", "retry_spike"],
+    "call_drop_mid_session": ["session_drop", "retry_spike"],
+    "server_internal_error": ["dependency_instability", "5xx_burst"],
+    "network_degradation": ["latency_high", "retry_spike", "packet_loss_suspected"],
+    "retransmission_spike": ["retry_spike", "packet_loss_suspected"],
 }
 
 
@@ -167,11 +184,14 @@ def _emit_control_plane_incident(window: dict[str, Any]) -> dict[str, Any] | Non
         "incident_id": str(uuid.uuid4()),
         "project": os.getenv("CONTROL_PLANE_PROJECT", "ims-demo").strip() or "ims-demo",
         "anomaly_score": float(os.getenv("CONTROL_PLANE_INCIDENT_SCORE", "0.99" if int(window.get("label", 0)) else "0.05")),
-        "anomaly_type": str(window.get("anomaly_type") or "normal"),
+        "anomaly_type": str(window.get("anomaly_type") or NORMAL_ANOMALY_TYPE),
         "model_version": os.getenv("CONTROL_PLANE_INCIDENT_MODEL_VERSION", "sipp-scenario-labeler-v1").strip()
         or "sipp-scenario-labeler-v1",
         "feature_window_id": str(window.get("window_id") or ""),
-        "feature_snapshot": dict(window.get("features") or {}),
+        "feature_snapshot": {
+            **dict(window.get("features") or {}),
+            "contributing_conditions": list(window.get("contributing_conditions") or []),
+        },
         "created_at": str(window.get("captured_at") or _now()),
         "status": os.getenv("CONTROL_PLANE_INCIDENT_STATUS", "resolved").strip() or "resolved",
     }
@@ -202,6 +222,68 @@ def _percentile(values: list[float], percentile: float) -> float:
 def _scenario_anomaly_type(scenario_name: str) -> str:
     normalized_name = str(scenario_name or "").strip()
     return SCENARIO_ANOMALY_TYPES.get(normalized_name, normalized_name or "unknown")
+
+
+def _normalize_condition_name(value: object) -> str:
+    text = re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower())
+    return text.strip("_")
+
+
+def _append_condition(conditions: list[str], value: object) -> None:
+    normalized = _normalize_condition_name(value)
+    if normalized and normalized not in conditions:
+        conditions.append(normalized)
+
+
+def _is_normal_anomaly_type(anomaly_type: str) -> bool:
+    return anomaly_type == NORMAL_ANOMALY_TYPE
+
+
+def _derive_contributing_conditions(
+    *,
+    anomaly_type: str,
+    features: dict[str, float],
+    response_codes: list[int],
+    auth_challenge_count: int,
+    retransmissions: float,
+) -> list[str]:
+    conditions: list[str] = []
+    for value in SCENARIO_BASE_CONDITIONS.get(anomaly_type, []):
+        _append_condition(conditions, value)
+
+    if _is_normal_anomaly_type(anomaly_type):
+        return conditions
+
+    error_4xx_ratio = float(features.get("error_4xx_ratio", 0.0) or 0.0)
+    error_5xx_ratio = float(features.get("error_5xx_ratio", 0.0) or 0.0)
+    latency_p95 = float(features.get("latency_p95", 0.0) or 0.0)
+    payload_variance = float(features.get("payload_variance", 0.0) or 0.0)
+    register_rate = float(features.get("register_rate", 0.0) or 0.0)
+
+    if error_4xx_ratio >= 0.35:
+        _append_condition(conditions, "4xx_burst")
+    if error_5xx_ratio >= 0.35:
+        _append_condition(conditions, "5xx_burst")
+    if latency_p95 >= 250.0:
+        _append_condition(conditions, "latency_high")
+    if retransmissions >= 1.0:
+        _append_condition(conditions, "retry_spike")
+    if auth_challenge_count > 0 or 401 in response_codes:
+        _append_condition(conditions, "auth_challenge_loop")
+    if payload_variance >= 50.0:
+        _append_condition(conditions, "payload_anomaly")
+    if register_rate >= 5.0:
+        _append_condition(conditions, "traffic_surge")
+    if 404 in response_codes or 483 in response_codes:
+        _append_condition(conditions, "route_unreachable")
+    if 408 in response_codes or 480 in response_codes:
+        _append_condition(conditions, "session_setup_delay")
+    if 486 in response_codes:
+        _append_condition(conditions, "destination_busy")
+    if any(code >= 500 for code in response_codes):
+        _append_condition(conditions, "dependency_instability")
+
+    return conditions
 
 
 def _cseq_method(cseq: str) -> str:
@@ -339,6 +421,14 @@ def _build_feature_window(args: argparse.Namespace, trace_dir: Path, sipp_result
         "inter_arrival_mean": round(parsed["inter_arrival_mean"], 4),
         "payload_variance": round(payload_variance, 3),
     }
+    contributing_conditions = _derive_contributing_conditions(
+        anomaly_type=anomaly_type,
+        features=features,
+        response_codes=list(parsed["response_codes"]),
+        auth_challenge_count=int(parsed["auth_challenge_count"]),
+        retransmissions=retransmissions,
+    )
+    is_normal = _is_normal_anomaly_type(anomaly_type)
 
     return {
         "window_id": window_id,
@@ -349,13 +439,15 @@ def _build_feature_window(args: argparse.Namespace, trace_dir: Path, sipp_result
         "schema_version": FEATURE_SCHEMA_VERSION,
         "dataset_version": args.dataset_version,
         "scenario_name": scenario_name,
-        "label": 0 if scenario_name == "normal" else 1,
+        "label": 0 if is_normal else 1,
         "anomaly_type": anomaly_type,
         "label_confidence": 0.95,
+        "contributing_conditions": contributing_conditions,
         "features": features,
         "labels": {
-            "anomaly": scenario_name != "normal",
-            "anomaly_type": None if scenario_name == "normal" else anomaly_type,
+            "anomaly": not is_normal,
+            "anomaly_type": None if is_normal else anomaly_type,
+            "contributing_conditions": contributing_conditions,
         },
         "sipp_summary": {
             "target": f"{args.target_host}:{args.target_port}",
