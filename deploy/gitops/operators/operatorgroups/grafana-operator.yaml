@@ -1,0 +1,9 @@
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: grafana-operator-og
+  namespace: grafana-operator
+spec:
+  targetNamespaces:
+    - grafana-operator
+    - ims-demo-lab

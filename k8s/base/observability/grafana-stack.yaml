@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grafana-reader
+  namespace: ims-demo-lab
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grafana-reader-token
+  namespace: ims-demo-lab
+  annotations:
+    kubernetes.io/service-account.name: grafana-reader
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ims-demo-grafana-cluster-monitoring-view
+subjects:
+  - kind: ServiceAccount
+    name: grafana-reader
+    namespace: ims-demo-lab
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-monitoring-view
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: grafana
+  namespace: ims-demo-lab
+  labels:
+    dashboards: ims-demo
+spec:
+  config:
+    log:
+      mode: console
+    security:
+      admin_user: admin
+      admin_password: ims-demo-grafana
+    "auth.anonymous":
+      enabled: "true"
+      org_role: Viewer
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: grafana
+  namespace: ims-demo-lab
+spec:
+  to:
+    kind: Service
+    name: grafana-service
+    weight: 100
+  port:
+    targetPort: grafana
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: ims-demo-prometheus
+  namespace: ims-demo-lab
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: ims-demo
+  valuesFrom:
+    - targetPath: secureJsonData.httpHeaderValue1
+      valueFrom:
+        secretKeyRef:
+          name: grafana-reader-token
+          key: token
+  datasource:
+    name: ims-demo-prometheus
+    type: prometheus
+    access: proxy
+    url: https://thanos-querier.openshift-monitoring.svc.cluster.local:9091
+    isDefault: true
+    jsonData:
+      tlsSkipVerify: true
+      timeInterval: 30s
+      httpHeaderName1: Authorization
+    secureJsonData:
+      httpHeaderValue1: Bearer ${token}

@@ -23,7 +23,14 @@ from shared.db import (
     update_incident_status,
 )
 from shared.integrations import create_jira_issue, integration_status, send_slack_notification
-from shared.metrics import install_metrics, record_automation, record_incident, record_integration, record_model_promotion
+from shared.metrics import (
+    install_metrics,
+    record_automation,
+    record_incident,
+    record_integration,
+    record_model_promotion,
+    set_active_incidents,
+)
 from shared.model_registry import get_model, list_datasets, list_feature_schemas, load_registry, promote_model
 from shared.security import AuthContext, ensure_project_access, ensure_role, outbound_headers, require_api_key
 
@@ -661,6 +668,63 @@ def _scenario_execution_from_audit(event: Dict[str, object], project: str) -> Di
     }
 
 
+def _active_incident_summary(open_incidents: List[Dict[str, object]]) -> Dict[str, List[Dict[str, object]]]:
+    categories: Dict[str, Dict[str, object]] = {}
+    model_versions: Dict[str, Dict[str, object]] = {}
+    for incident in open_incidents:
+        anomaly_type = str(incident.get("anomaly_type") or "unknown")
+        model_version = str(incident.get("model_version") or "unknown")
+
+        category = categories.setdefault(
+            anomaly_type,
+            {
+                "anomaly_type": anomaly_type,
+                "label": _titleize(anomaly_type),
+                "count": 0,
+                "model_versions": set(),
+            },
+        )
+        category["count"] = int(category["count"]) + 1
+        category["model_versions"].add(model_version)
+
+        model = model_versions.setdefault(
+            model_version,
+            {
+                "model_version": model_version,
+                "count": 0,
+                "anomaly_types": set(),
+            },
+        )
+        model["count"] = int(model["count"]) + 1
+        model["anomaly_types"].add(anomaly_type)
+
+    category_items = [
+        {
+            "anomaly_type": str(item["anomaly_type"]),
+            "label": str(item["label"]),
+            "count": int(item["count"]),
+            "model_versions": sorted(str(version) for version in item["model_versions"]),
+        }
+        for item in categories.values()
+    ]
+    category_items.sort(key=lambda item: (-int(item["count"]), str(item["anomaly_type"])))
+
+    model_items = [
+        {
+            "model_version": str(item["model_version"]),
+            "count": int(item["count"]),
+            "anomaly_types": sorted(str(anomaly_type) for anomaly_type in item["anomaly_types"]),
+        }
+        for item in model_versions.values()
+    ]
+    model_items.sort(key=lambda item: (-int(item["count"]), str(item["model_version"])))
+
+    return {
+        "categories": category_items,
+        "models": model_items,
+    }
+
+
 def _build_console_state(project: str) -> Dict[str, object]:
     incidents = list_incidents(project=project)
     audit_events = list_audit_events(limit=100)
@@ -675,6 +739,8 @@ def _build_console_state(project: str) -> Dict[str, object]:
         if latest_scenario:
             break
     open_incidents = [incident for incident in enriched_incidents if str(incident.get("status", "open")) == "open"]
+    active_summary = _active_incident_summary(open_incidents)
+    set_active_incidents(open_incidents)
     healthy_services = sum(1 for service in services if bool(service.get("ok")))
     active_scenario = (
         str(latest_scenario.get("scenario"))
@@ -705,8 +771,11 @@ def _build_console_state(project: str) -> Dict[str, object]:
         },
         "summary": {
             "incident_count": len(enriched_incidents),
+            "active_incident_count": len(open_incidents),
             "open_incidents": len(open_incidents),
-            "critical_incidents": sum(1 for incident in enriched_incidents if incident.get("severity") == "Critical"),
+            "critical_incidents": sum(1 for incident in open_incidents if incident.get("severity") == "Critical"),
+            "active_incident_categories": active_summary["categories"],
+            "active_incidents_by_model": active_summary["models"],
             "latest_score": _coerce_float(latest_incident.get("anomaly_score")) if latest_incident else 0.0,
             "healthy_services": healthy_services,
             "service_count": len(services),
@@ -741,6 +810,7 @@ def post_incident(payload: IncidentCreate, auth: AuthContext | None = Depends(re
     incident = create_incident(payload.model_dump())
     record_audit("incident_created", "anomaly-service", incident, incident_id=incident["id"])
     record_incident(incident["project"], incident["anomaly_type"], incident["status"])
+    set_active_incidents(list_incidents(project=incident["project"]))
     return incident
 
 
@@ -802,6 +872,7 @@ def approve_incident(incident_id: str, payload: ApprovalRequest, auth: AuthConte
     )
     next_status = "resolved" if status in {"executed", "simulated"} else "acknowledged" if status in {"approved", "pending_execution"} else "open"
     update_incident_status(incident_id, next_status)
+    set_active_incidents(list_incidents(project=incident["project"]))
     record_audit("incident_approved", payload.approved_by, payload.model_dump(), incident_id=incident_id)
     record_automation(payload.action, status)
     return approval

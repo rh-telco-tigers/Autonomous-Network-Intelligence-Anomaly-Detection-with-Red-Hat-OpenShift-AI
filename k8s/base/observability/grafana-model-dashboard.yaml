@@ -1,0 +1,352 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: ims-predictive-model
+  namespace: ims-demo-lab
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: ims-demo
+  json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "-- Grafana --"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 0,
+            "y": 0
+          },
+          "id": 1,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name"
+          },
+          "targets": [
+            {
+              "expr": "sum(ims_demo_active_incidents{project=\"ims-demo\"}) by (anomaly_type)",
+              "legendFormat": "{{anomaly_type}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Active Incidents By Predictive Category",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "-- Grafana --"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 6,
+            "y": 0
+          },
+          "id": 2,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name"
+          },
+          "targets": [
+            {
+              "expr": "sum(ims_demo_active_incidents{project=\"ims-demo\"}) by (model_version)",
+              "legendFormat": "{{model_version}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Active Incidents By Model Version",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "-- Grafana --"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 12,
+            "y": 0
+          },
+          "id": 3,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name"
+          },
+          "targets": [
+            {
+              "expr": "sum(increase(nv_inference_count{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m]))",
+              "legendFormat": "requests",
+              "refId": "A"
+            }
+          ],
+          "title": "Predictive Requests (5m)",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "-- Grafana --"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 18,
+            "y": 0
+          },
+          "id": 4,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name"
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(nv_inference_request_duration_us{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])), 0.001) / 1000",
+              "legendFormat": "avg latency",
+              "refId": "A"
+            }
+          ],
+          "title": "Average Request Latency (ms)",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "-- Grafana --"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 7
+          },
+          "id": 5,
+          "targets": [
+            {
+              "expr": "sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m]))",
+              "legendFormat": "inference rate",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(nv_inference_request_success{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m]))",
+              "legendFormat": "success rate",
+              "refId": "B"
+            }
+          ],
+          "title": "Predictive Throughput",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "-- Grafana --"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 7
+          },
+          "id": 6,
+          "targets": [
+            {
+              "expr": "sum(rate(nv_inference_queue_duration_us{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])), 0.001) / 1000",
+              "legendFormat": "queue",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(nv_inference_compute_input_duration_us{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])), 0.001) / 1000",
+              "legendFormat": "input",
+              "refId": "B"
+            },
+            {
+              "expr": "sum(rate(nv_inference_compute_infer_duration_us{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])), 0.001) / 1000",
+              "legendFormat": "infer",
+              "refId": "C"
+            },
+            {
+              "expr": "sum(rate(nv_inference_compute_output_duration_us{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])), 0.001) / 1000",
+              "legendFormat": "output",
+              "refId": "D"
+            }
+          ],
+          "title": "Triton Stage Latency Breakdown (ms)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "-- Grafana --"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 15
+          },
+          "id": 7,
+          "targets": [
+            {
+              "expr": "sum(increase(ims_demo_incidents_total{project=\"ims-demo\"}[1h])) by (anomaly_type)",
+              "legendFormat": "{{anomaly_type}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Incidents Created By Anomaly Type (1h)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "-- Grafana --"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 15
+          },
+          "id": 8,
+          "targets": [
+            {
+              "expr": "max(up{job=\"ims-demo-lab/ims-predictive-metrics\"})",
+              "legendFormat": "predictive service",
+              "refId": "A"
+            },
+            {
+              "expr": "max(up{job=\"anomaly-service\",namespace=\"ims-demo-lab\"})",
+              "legendFormat": "anomaly service",
+              "refId": "B"
+            },
+            {
+              "expr": "max(up{job=\"control-plane\",namespace=\"ims-demo-lab\"})",
+              "legendFormat": "control plane",
+              "refId": "C"
+            }
+          ],
+          "title": "Key Service Health",
+          "type": "timeseries"
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": [
+        "ims-demo",
+        "predictive-model",
+        "triton"
+      ],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "timezone": "browser",
+      "title": "IMS Predictive Model",
+      "uid": "ims-predictive-model",
+      "version": 1,
+      "weekStart": ""
+    }

@@ -2,11 +2,13 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - namespaces/namespaces.yaml
+  - operatorgroups/grafana-operator.yaml
   - operatorgroups/redhat-ods-operator.yaml
   - operatorgroups/openshift-nfd.yaml
   - operatorgroups/nvidia-gpu-operator.yaml
   - operatorgroups/openshift-serverless.yaml
   - operatorgroups/ansible-automation-platform.yaml
+  - subscriptions/grafana-operator.yaml
   - subscriptions/rhoai.yaml
   - subscriptions/nfd.yaml
   - subscriptions/gpu-operator.yaml

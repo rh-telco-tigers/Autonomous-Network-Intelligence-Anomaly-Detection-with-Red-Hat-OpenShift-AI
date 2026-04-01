@@ -24,3 +24,8 @@ metadata:
   labels:
     openshift.io/cluster-monitoring: "true"
   name: aap
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grafana-operator

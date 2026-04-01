@@ -1,7 +1,9 @@
 import time
+from collections import Counter as CollectionCounter
+from typing import Iterable, Mapping
 
 from fastapi import FastAPI, Response, Request
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
 
 REQUEST_COUNT = Counter(
@@ -20,6 +22,12 @@ INCIDENT_COUNT = Counter(
     "ims_demo_incidents_total",
     "Incidents created in the demo control plane",
     ["project", "anomaly_type", "status"],
+)
+
+ACTIVE_INCIDENTS = Gauge(
+    "ims_demo_active_incidents",
+    "Current active incidents grouped by predictive model output and model version",
+    ["project", "anomaly_type", "model_version"],
 )
 
 RCA_CONFIDENCE = Histogram(
@@ -50,6 +58,21 @@ MODEL_PROMOTIONS = Counter(
 
 def record_incident(project: str, anomaly_type: str, status: str) -> None:
     INCIDENT_COUNT.labels(project, anomaly_type, status).inc()
+
+
+def set_active_incidents(incidents: Iterable[Mapping[str, object]]) -> None:
+    ACTIVE_INCIDENTS.clear()
+    counts = CollectionCounter(
+        (
+            str(incident.get("project") or "ims-demo"),
+            str(incident.get("anomaly_type") or "unknown"),
+            str(incident.get("model_version") or "unknown"),
+        )
+        for incident in incidents
+        if str(incident.get("status") or "open") == "open"
+    )
+    for (project, anomaly_type, model_version), count in counts.items():
+        ACTIVE_INCIDENTS.labels(project, anomaly_type, model_version).set(count)
 
 
 def record_rca(project: str, generation_mode: str, confidence: float) -> None:

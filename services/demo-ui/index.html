@@ -310,8 +310,11 @@
         },
         summary: {
           incident_count: 0,
+          active_incident_count: 0,
           open_incidents: 0,
           critical_incidents: 0,
+          active_incident_categories: [],
+          active_incidents_by_model: [],
           latest_score: 0,
           healthy_services: 0,
           service_count: 0
@@ -331,6 +334,12 @@
     function autoRefreshSeconds() {
       const seconds = Math.floor(toNumber(consoleState().cluster.auto_refresh_seconds, 5));
       return seconds > 0 ? seconds : 5;
+    }
+
+    function grafanaBaseUrl() {
+      return window.location.origin.includes("demo-ui")
+        ? window.location.origin.replace("demo-ui", "grafana")
+        : "";
     }
 
     function ensureSelectedIncident() {
@@ -659,6 +668,23 @@
       const latencySeries = metricSeries(incidents, "latency_p95");
       const reqPerMinute = formatCount((preview.stats.requests_per_second || 0) * 60);
       const scenarioStatus = latestScenarioStatus();
+      const activeCount = toNumber(summary.active_incident_count, summary.open_incidents || 0);
+      const activeCategories = Array.isArray(summary.active_incident_categories) ? summary.active_incident_categories : [];
+      const activeModels = Array.isArray(summary.active_incidents_by_model) ? summary.active_incidents_by_model : [];
+      const categoryBadges = activeCategories.length
+        ? activeCategories.map((entry) => `
+            <span class="rounded-full border border-rose-400/20 bg-rose-500/10 px-2.5 py-1 text-xs text-rose-200">
+              ${escapeHtml(titleize(entry.anomaly_type || "unknown"))} · ${formatCount(entry.count || 0)}
+            </span>
+          `).join("")
+        : `<span class="text-xs text-slate-500">No active predictive categories.</span>`;
+      const modelBadges = activeModels.length
+        ? activeModels.map((entry) => `
+            <span class="rounded-full border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-slate-300">
+              ${escapeHtml(entry.model_version || "unknown")} · ${formatCount(entry.count || 0)}
+            </span>
+          `).join("")
+        : "";
       const timeline = selected
         ? selected.timeline || []
         : (current.audit || []).slice(0, 3).map((event) => ({
@@ -672,10 +698,12 @@
           <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
             <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Active incidents</div>
             <div class="mt-4 flex items-end justify-between">
-              <div class="text-4xl font-semibold">${formatCount(summary.incident_count || 0)}</div>
+              <div class="text-4xl font-semibold">${formatCount(activeCount)}</div>
               <div class="text-sm text-rose-300">${formatCount(summary.critical_incidents || 0)} critical</div>
             </div>
-            <div class="mt-4 h-2 rounded-full bg-slate-800"><div class="h-2 rounded-full bg-rose-400" style="width:${Math.min(100, ((summary.open_incidents || 0) * 20) || 4)}%"></div></div>
+            <div class="mt-4 h-2 rounded-full bg-slate-800"><div class="h-2 rounded-full bg-rose-400" style="width:${Math.min(100, (activeCount * 20) || 4)}%"></div></div>
+            <div class="mt-4 flex flex-wrap gap-2">${categoryBadges}</div>
+            ${modelBadges ? `<div class="mt-3 flex flex-wrap gap-2">${modelBadges}</div>` : ""}
           </div>
           <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
             <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Anomaly score</div>
@@ -1138,10 +1166,12 @@
       const models = registry.models || [];
       const deployedVersion = registry.deployed_model_version || "unknown";
       const candidate = models.find((model) => model.version && model.version !== deployedVersion) || null;
+      const grafanaUrl = grafanaBaseUrl();
+      const grafanaDashboardUrl = grafanaUrl ? `${grafanaUrl}/d/ims-predictive-model/ims-predictive-model` : "";
 
       document.getElementById("models").innerHTML = `
         <div class="space-y-4">
-          <div class="grid gap-4 md:grid-cols-3">
+          <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
               <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Deployed model</div>
               <div class="mt-3 text-2xl font-semibold">${escapeHtml(deployedVersion)}</div>
@@ -1153,6 +1183,14 @@
             <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
               <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Feature schema</div>
               <div class="mt-3 text-2xl font-semibold">${escapeHtml(registry.feature_schema_version || "feature_schema_v1")}</div>
+            </div>
+            <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Model dashboard</div>
+              <div class="mt-3 text-2xl font-semibold">Grafana</div>
+              <div class="mt-3 text-sm text-slate-400">Open predictive inference throughput, latency, active incidents, and service health panels.</div>
+              ${grafanaDashboardUrl
+                ? `<a href="${escapeHtml(grafanaDashboardUrl)}" target="_blank" rel="noreferrer" class="mt-4 inline-flex rounded-2xl bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950">Open model dashboard</a>`
+                : `<div class="mt-4 text-sm text-slate-500">Grafana route unavailable.</div>`}
             </div>
           </div>
 
