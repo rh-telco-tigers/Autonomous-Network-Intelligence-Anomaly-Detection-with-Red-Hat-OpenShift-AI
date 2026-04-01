@@ -1,6 +1,10 @@
 SHELL := /bin/zsh
 
+INCIDENT_RELEASE_NAMESPACE ?= ims-demo-lab
+INCIDENT_RELEASE_DATASET_VERSION ?=
+INCIDENT_RELEASE_DEFAULT_DATASET_PREFIX ?= backfill-sipp-100k
 INCIDENT_RELEASE_BACKFILL_PATH := k8s/manual/traffic-backfill-100k
+INCIDENT_RELEASE_BACKFILL_RENDERER := $(INCIDENT_RELEASE_BACKFILL_PATH)/render_jobs.py
 PIPELINE_NAMESPACE ?= ims-demo-lab
 PIPELINE_NAME ?= ims-demo-container-build
 PIPELINE_SERVICE_ACCOUNT ?= pipeline
@@ -127,9 +131,21 @@ trigger-anomaly-platform-pipeline: ## Start a fresh KFP ims-anomaly-platform-tra
 	  '            name: $(KFP_ANOMALY_CONFIGMAP)' \
 	| oc create -f -
 
-trigger-incident-release: ## Start the manual 100k incident-release backfill jobs
-	oc apply -k $(INCIDENT_RELEASE_BACKFILL_PATH)
+trigger-incident-release: ## Start a fresh manual 100k backfill dataset
+	@dataset_version="$${INCIDENT_RELEASE_DATASET_VERSION:-$(INCIDENT_RELEASE_DEFAULT_DATASET_PREFIX)-$$(date +%Y%m%d-%H%M%S)}"; \
+	printf "Creating manual backfill jobs for dataset %s in %s\n" "$$dataset_version" "$(INCIDENT_RELEASE_NAMESPACE)"; \
+	kustomize build "$(INCIDENT_RELEASE_BACKFILL_PATH)" \
+	  | python3 "$(INCIDENT_RELEASE_BACKFILL_RENDERER)" --dataset-version "$$dataset_version" \
+	  | oc create -f -; \
+	printf "Watch jobs: oc get jobs -n %s -l app.kubernetes.io/part-of=sipp-backfill-100k,ims.redhat.com/backfill-dataset-version=%s\n" "$(INCIDENT_RELEASE_NAMESPACE)" "$$dataset_version"; \
+	printf "Watch pods: oc get pods -n %s -l app.kubernetes.io/part-of=sipp-backfill-100k,ims.redhat.com/backfill-dataset-version=%s\n" "$(INCIDENT_RELEASE_NAMESPACE)" "$$dataset_version"; \
+	printf "Stop run: make stop-incident-release INCIDENT_RELEASE_DATASET_VERSION=%s\n" "$$dataset_version"
 
-stop-incident-release: ## Stop and delete the manual 100k incident-release backfill jobs
-	oc delete -k $(INCIDENT_RELEASE_BACKFILL_PATH) --ignore-not-found
+stop-incident-release: ## Stop and delete one backfill dataset version
+	@[ -n "$(INCIDENT_RELEASE_DATASET_VERSION)" ] || { \
+	  printf "Set INCIDENT_RELEASE_DATASET_VERSION, for example: make stop-incident-release INCIDENT_RELEASE_DATASET_VERSION=%s-20260401-120000\n" "$(INCIDENT_RELEASE_DEFAULT_DATASET_PREFIX)"; \
+	  exit 1; \
+	}
+	@printf "Deleting manual backfill jobs for dataset %s in %s\n" "$(INCIDENT_RELEASE_DATASET_VERSION)" "$(INCIDENT_RELEASE_NAMESPACE)"
+	oc delete jobs -n "$(INCIDENT_RELEASE_NAMESPACE)" -l "app.kubernetes.io/part-of=sipp-backfill-100k,ims.redhat.com/backfill-dataset-version=$(INCIDENT_RELEASE_DATASET_VERSION)" --ignore-not-found
 

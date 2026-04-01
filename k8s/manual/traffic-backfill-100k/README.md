@@ -4,7 +4,7 @@ This kustomization is intentionally manual-only. It is not referenced by the dem
 
 ## What it does
 
-- writes feature windows into the separate dataset version `backfill-sipp-100k-v1`
+- writes feature windows into a caller-selected dataset version
 - reuses the existing IMS target path `ims-pcscf.ims-demo-lab.svc.cluster.local:5060`
 - disables control-plane incident emission so the demo UI and incident history are not flooded
 - distributes the 100k target across the current scenario taxonomy using one-shot `Job` resources
@@ -15,22 +15,32 @@ This kustomization is intentionally manual-only. It is not referenced by the dem
 make trigger-incident-release
 ```
 
+By default the target picks a timestamped dataset version such as `backfill-sipp-100k-20260401-141500` and prints it after creating the Jobs.
+
+To keep multiple datasets separate, pass an explicit version:
+
+```sh
+make trigger-incident-release INCIDENT_RELEASE_DATASET_VERSION=backfill-sipp-100k-v2
+```
+
 ## Watch
 
 ```sh
-oc get jobs -n ims-demo-lab -l app.kubernetes.io/part-of=sipp-backfill-100k
-oc get pods -n ims-demo-lab -l app.kubernetes.io/part-of=sipp-backfill-100k
+oc get jobs -n ims-demo-lab -l app.kubernetes.io/part-of=sipp-backfill-100k,ims.redhat.com/backfill-dataset-version=<dataset-version>
+oc get pods -n ims-demo-lab -l app.kubernetes.io/part-of=sipp-backfill-100k,ims.redhat.com/backfill-dataset-version=<dataset-version>
 ```
 
 To estimate progress in object storage:
 
-- count objects under `pipelines/ims-demo-lab/datasets/datasets/backfill-sipp-100k-v1/feature-windows/` with your preferred S3 or MinIO client
+- count objects under `pipelines/ims-demo-lab/datasets/datasets/<dataset-version>/feature-windows/` with your preferred S3 or MinIO client
 
 ## Stop Early
 
 ```sh
-make stop-incident-release
+make stop-incident-release INCIDENT_RELEASE_DATASET_VERSION=<dataset-version>
 ```
+
+Each trigger creates a fresh set of Jobs. If you reuse the same dataset version, the new run appends more feature-window objects under the same S3 prefix. Use a new dataset version when you want a separate dataset.
 
 ## Tune
 
