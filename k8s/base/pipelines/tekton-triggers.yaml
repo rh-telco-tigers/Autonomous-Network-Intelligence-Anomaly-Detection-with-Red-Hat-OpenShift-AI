@@ -109,6 +109,15 @@ spec:
   lookupPolicy:
     local: false
 ---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: ims-incident-release
+  namespace: ims-demo-lab
+spec:
+  lookupPolicy:
+    local: false
+---
 apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerBinding
 metadata:

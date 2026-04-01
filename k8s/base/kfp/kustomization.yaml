@@ -6,8 +6,13 @@ configMapGenerator:
     files:
       - ims_anomaly_pipeline.yaml=assets/ims_anomaly_pipeline.yaml
       - publish_pipeline.py=assets/publish_pipeline.py
+  - name: ims-incident-release-kfp-assets
+    files:
+      - ims_incident_release_pipeline.yaml=assets/ims_incident_release_pipeline.yaml
+      - publish_incident_release_pipeline.py=assets/publish_incident_release_pipeline.py
 generatorOptions:
   disableNameSuffixHash: true
 resources:
   - dspa.yaml
   - pipeline-bootstrap-job.yaml
+  - incident-release-bootstrap-job.yaml

@@ -1,0 +1,10 @@
+FROM python:3.11-slim
+
+WORKDIR /workspace
+
+COPY incident-release/requirements.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY incident-release incident-release
+
+CMD ["python", "incident-release/python/release_cli.py", "--help"]

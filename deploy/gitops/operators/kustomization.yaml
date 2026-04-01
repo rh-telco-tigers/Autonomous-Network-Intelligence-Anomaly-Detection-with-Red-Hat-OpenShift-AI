@@ -17,3 +17,4 @@ resources:
   - subscriptions/serverless.yaml
   - subscriptions/authorino.yaml
   - subscriptions/ansible-automation-platform.yaml
+  - subscriptions/amq-streams.yaml

@@ -1,0 +1,26 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: incident-release-direct
+  namespace: ims-demo-lab
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: ims-incident-release:latest
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 2Gi
+  runPolicy: Serial
+  source:
+    binary: {}
+    type: Binary
+  strategy:
+    dockerStrategy:
+      dockerfilePath: incident-release/Containerfile
+    type: Docker
+  successfulBuildsHistoryLimit: 5
+  failedBuildsHistoryLimit: 5

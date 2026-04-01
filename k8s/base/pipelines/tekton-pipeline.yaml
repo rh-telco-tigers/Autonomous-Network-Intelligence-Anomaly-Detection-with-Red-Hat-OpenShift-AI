@@ -131,3 +131,18 @@ spec:
       workspaces:
         - name: source
           workspace: source
+    - name: build-ims-incident-release
+      runAfter:
+        - build-ims-ai-trainer
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-incident-release:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: incident-release/Containerfile
+      workspaces:
+        - name: source
+          workspace: source

@@ -5,6 +5,7 @@ resources:
   - builds
   - ims
   - traffic
+  - kafka
   - milvus
   - minio
   - platform
