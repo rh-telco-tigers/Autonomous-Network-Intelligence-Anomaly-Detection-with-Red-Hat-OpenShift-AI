@@ -4,11 +4,21 @@ metadata:
   name: nvidia-triton-runtime-template
   namespace: redhat-ods-applications
   annotations:
+    description: NVIDIA Triton Inference Server for predictive model serving.
     opendatahub.io/apiProtocol: REST
     opendatahub.io/model-type: '["predictive"]'
     opendatahub.io/modelServingSupport: '["single"]'
+    openshift.io/display-name: NVIDIA Triton Runtime
+    openshift.io/provider-display-name: Red Hat, Inc.
+    tags: rhods,rhoai,kserve,servingruntime,triton
+    template.openshift.io/long-description: This template defines resources needed to deploy a Triton ServingRuntime with KServe in Red Hat OpenShift AI.
   labels:
+    app: odh-dashboard
+    app.kubernetes.io/part-of: odh-model-controller
+    app.opendatahub.io/odh-model-controller: "true"
     opendatahub.io/dashboard: "true"
+    opendatahub.io/ootb: "true"
+    platform.opendatahub.io/part-of: modelcontroller
 objects:
   - apiVersion: serving.kserve.io/v1alpha1
     kind: ServingRuntime
@@ -24,6 +34,11 @@ objects:
       labels:
         opendatahub.io/dashboard: "true"
     spec:
+      annotations:
+        monitoring.opendatahub.io/scrape: "true"
+        opendatahub.io/kserve-runtime: triton
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8002"
       supportedModelFormats:
         - name: triton
           version: "2"
@@ -44,4 +59,7 @@ objects:
             - --metrics-port=8002
           ports:
             - containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 8002
               protocol: TCP

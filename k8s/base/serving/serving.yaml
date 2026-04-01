@@ -13,6 +13,7 @@ metadata:
   namespace: ims-demo-lab
   annotations:
     opendatahub.io/apiProtocol: REST
+    opendatahub.io/recommended-accelerators: '[]'
     opendatahub.io/runtime-version: 24.08-py3
     opendatahub.io/serving-runtime-scope: global
     opendatahub.io/template-display-name: NVIDIA Triton Runtime
@@ -21,6 +22,11 @@ metadata:
   labels:
     opendatahub.io/dashboard: "true"
 spec:
+  annotations:
+    monitoring.opendatahub.io/scrape: "true"
+    opendatahub.io/kserve-runtime: triton
+    prometheus.io/path: /metrics
+    prometheus.io/port: "8002"
   supportedModelFormats:
     - name: triton
       version: "2"
@@ -42,6 +48,9 @@ spec:
       ports:
         - containerPort: 8080
           protocol: TCP
+        - name: metrics
+          containerPort: 8002
+          protocol: TCP
 ---
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
@@ -55,6 +64,7 @@ metadata:
     opendatahub.io/model-type: predictive
     openshift.io/display-name: ims-predictive
     serving.kserve.io/deploymentMode: RawDeployment
+    serving.kserve.io/enable-prometheus-scraping: "true"
 spec:
   predictor:
     serviceAccountName: model-storage-sa
@@ -85,3 +95,22 @@ spec:
     - name: http
       port: 8080
       targetPort: 8080
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: ims-predictive-metrics
+  namespace: ims-demo-lab
+  labels:
+    monitoring.opendatahub.io/scrape: "true"
+spec:
+  namespaceSelector:
+    matchNames:
+      - ims-demo-lab
+  selector:
+    matchLabels:
+      serving.kserve.io/inferenceservice: ims-predictive
+  podMetricsEndpoints:
+    - path: /metrics
+      targetPort: 8002
+      interval: 30s
