@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - namespaces/namespaces.yaml
+  - configs/image-registry.yaml
   - operatorgroups/grafana-operator.yaml
   - operatorgroups/redhat-ods-operator.yaml
   - operatorgroups/openshift-nfd.yaml

@@ -1,0 +1,13 @@
+apiVersion: imageregistry.operator.openshift.io/v1
+kind: Config
+metadata:
+  name: cluster
+  annotations:
+    argocd.argoproj.io/sync-options: ServerSideApply=true
+spec:
+  # Keep the internal registry enabled and expose the default route.
+  # Backing storage details remain cluster-managed and environment-specific.
+  managementState: Managed
+  defaultRoute: true
+  storage:
+    managementState: Managed
