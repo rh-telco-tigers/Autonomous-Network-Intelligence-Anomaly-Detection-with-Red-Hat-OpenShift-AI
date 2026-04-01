@@ -61,6 +61,7 @@ metadata:
     opendatahub.io/dashboard: "true"
   annotations:
     opendatahub.io/connections: aws-connection-minio
+    opendatahub.io/connection-path: predictive/
     opendatahub.io/model-type: predictive
     openshift.io/display-name: ims-predictive
     serving.kserve.io/deploymentMode: RawDeployment
@@ -75,7 +76,6 @@ spec:
       modelFormat:
         name: triton
       protocolVersion: v2
-      storageUri: s3://ims-models/predictive/
       resources:
         requests:
           cpu: 100m
