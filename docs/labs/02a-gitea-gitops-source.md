@@ -62,7 +62,7 @@ http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-wi
 - That webhook does not become active until the demo overlay applies the Tekton trigger resources from `k8s/base/pipelines`.
 - The first push in this lab seeds the in-cluster GitOps source for Argo CD, but it does not build images yet.
 - After Argo CD has synced the `ims-demo-platform` application for `k8s/overlays/demo`, a later push to `main` triggers the Tekton build automatically.
-- If you need the first image build without adding another commit, start a `PipelineRun` manually for `ims-demo-container-build`.
+- If you need the first image build without adding another commit, run `make trigger-build-pipeline` to start a `PipelineRun` for `ims-demo-container-build`.
 
 ## Why this flow exists
 

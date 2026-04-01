@@ -36,7 +36,7 @@ make kustomize-demo
 7. Do not expect the first repo push above to build images yet. The Tekton `EventListener` is created later by the demo overlay in Lab 03, so the first push only seeds the in-cluster GitOps source.
 8. In Lab 03, after Argo CD has synced the `ims-demo-platform` application for `k8s/overlays/demo`, trigger the first image population into the internal registry by either:
    - pushing a new commit to `main` in the in-cluster Gitea repository, which starts the Tekton pipeline automatically
-   - or creating a `PipelineRun` manually for `ims-demo-container-build`
+   - or running `make trigger-build-pipeline` to create a `PipelineRun` for `ims-demo-container-build`
 9. If you skip that first image build, workloads that reference `image-registry.openshift-image-registry.svc:5000/...:latest` can remain in `ImagePullBackOff`.
 10. Review the demo API token secret and service monitors created under `k8s/base/platform` and `k8s/base/observability`.
 

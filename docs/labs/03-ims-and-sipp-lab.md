@@ -45,32 +45,7 @@ If you have changed the manifests, push the updated repo state to the in-cluster
 2. Trigger the first demo image build if the internal registry has not been populated yet. Subsequent pushes to `main` in the in-cluster Gitea repo will trigger this automatically, but the first build is often easiest to start manually:
 
 ```sh
-cat <<'EOF' | oc create -f -
-apiVersion: tekton.dev/v1
-kind: PipelineRun
-metadata:
-  generateName: ims-demo-build-
-  namespace: ims-demo-lab
-spec:
-  pipelineRef:
-    name: ims-demo-container-build
-  params:
-    - name: git-url
-      value: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    - name: git-revision
-      value: main
-  taskRunTemplate:
-    serviceAccountName: pipeline
-  workspaces:
-    - name: source
-      volumeClaimTemplate:
-        spec:
-          accessModes:
-            - ReadWriteOnce
-          resources:
-            requests:
-              storage: 1Gi
-EOF
+make trigger-build-pipeline
 ```
 
 3. Watch the Tekton run until the images are available in the internal registry:

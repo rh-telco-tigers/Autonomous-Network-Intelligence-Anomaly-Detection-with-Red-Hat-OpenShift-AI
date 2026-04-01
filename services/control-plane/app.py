@@ -1041,22 +1041,29 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
     )
 
     rca_payload: Dict[str, object] | None = None
+    rca_error: Dict[str, object] | None = None
     incident: Dict[str, object] | None = None
     if incident_id:
-        rca_payload = _request_json(
-            "POST",
-            f"{RCA_SERVICE_URL}/rca",
-            {
-                "incident_id": incident_id,
-                "context": {
-                    "project": payload.project,
-                    "scenario_name": payload.scenario,
-                    "anomaly_type": score.get("anomaly_type"),
-                    "feature_window_id": feature_window.get("window_id"),
-                    "features": features,
+        try:
+            rca_payload = _request_json(
+                "POST",
+                f"{RCA_SERVICE_URL}/rca",
+                {
+                    "incident_id": incident_id,
+                    "context": {
+                        "project": payload.project,
+                        "scenario_name": payload.scenario,
+                        "anomaly_type": score.get("anomaly_type"),
+                        "feature_window_id": feature_window.get("window_id"),
+                        "features": features,
+                    },
                 },
-            },
-        )
+            )
+        except HTTPException as exc:
+            rca_error = {
+                "status_code": exc.status_code,
+                "detail": exc.detail,
+            }
         incident = get_incident(incident_id)
 
     state = _build_console_state(payload.project)
@@ -1069,6 +1076,7 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
         "feature_window": feature_window,
         "score": score,
         "rca": rca_payload,
+        "rca_error": rca_error,
         "incident": enriched_incident,
         "state": state,
     }
