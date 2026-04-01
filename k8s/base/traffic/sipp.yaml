@@ -54,6 +54,20 @@ spec:
                     secretKeyRef:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
+                - name: CONTROL_PLANE_URL
+                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                - name: CONTROL_PLANE_API_KEY
+                  value: demo-token
+                - name: CONTROL_PLANE_PROJECT
+                  value: ims-demo
+                - name: CONTROL_PLANE_INCIDENT_STATUS
+                  value: resolved
+                - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
+                  value: sipp-scenario-labeler-v1
+                - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+                  value: "true"
+                - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
               resources:
                 requests:
                   cpu: 50m
@@ -125,6 +139,20 @@ spec:
                     secretKeyRef:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
+                - name: CONTROL_PLANE_URL
+                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                - name: CONTROL_PLANE_API_KEY
+                  value: demo-token
+                - name: CONTROL_PLANE_PROJECT
+                  value: ims-demo
+                - name: CONTROL_PLANE_INCIDENT_STATUS
+                  value: resolved
+                - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
+                  value: sipp-scenario-labeler-v1
+                - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+                  value: "true"
+                - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
               resources:
                 requests:
                   cpu: 50m
@@ -196,6 +224,18 @@ spec:
                     secretKeyRef:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
+                - name: CONTROL_PLANE_URL
+                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                - name: CONTROL_PLANE_API_KEY
+                  value: demo-token
+                - name: CONTROL_PLANE_PROJECT
+                  value: ims-demo
+                - name: CONTROL_PLANE_INCIDENT_STATUS
+                  value: resolved
+                - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
+                  value: sipp-scenario-labeler-v1
+                - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+                  value: "true"
               resources:
                 requests:
                   cpu: 50m

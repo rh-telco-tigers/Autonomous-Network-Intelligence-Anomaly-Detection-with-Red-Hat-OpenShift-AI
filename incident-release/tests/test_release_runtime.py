@@ -315,11 +315,12 @@ class ReleaseRuntimeTests(unittest.TestCase):
             balanced_df = pd.read_parquet(manifest["artifacts"]["training_examples_balanced_parquet"])
             incident_df = pd.read_parquet(manifest["artifacts"]["incident_history_parquet"])
             split_manifest = json.loads(Path(manifest["artifacts"]["split_manifest_json"]).read_text())
+            quality_report = json.loads(Path(manifest["artifacts"]["quality_report"]).read_text())
 
             self.assertEqual(validation["validation_results"]["status"], "passed")
             self.assertEqual(len(balanced_df), 10)
             self.assertTrue((balanced_df["training_eligibility_status"] == "eligible").all())
-            self.assertIn("reconstructed_from_incident_snapshot", set(training_df["linkage_status"]))
+            self.assertNotIn("reconstructed_from_incident_snapshot", set(training_df["linkage_status"]))
             self.assertTrue((incident_df["rca_root_cause_redacted"].fillna("").str.contains("ims-demo-lab")).sum() == 0)
             eligible_ids = set(training_df.loc[training_df["training_eligibility_status"] == "eligible", "record_public_id"])
             split_ids = {item["record_public_id"] for item in split_manifest}
@@ -327,6 +328,44 @@ class ReleaseRuntimeTests(unittest.TestCase):
             self.assertTrue(Path(manifest["artifacts"]["dataset_card_md"]).exists())
             self.assertTrue(Path(manifest["artifacts"]["schema_json"]).exists())
             self.assertTrue(Path(manifest["artifacts"]["label_dictionary_csv"]).exists())
+            self.assertIn("quality_scorecard", quality_report)
+            self.assertEqual(quality_report["quality_scorecard"]["metrics"]["authoritative_window_count"], 4)
+            self.assertEqual(quality_report["filtered_non_authoritative_incident_row_count"], 1)
+            self.assertIn("minimum_authoritative_window_ratio", quality_report["quality_scorecard"]["checks"])
+
+    def test_validate_release_allows_advisory_quality_mode_for_drafts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            snapshot_manifest_path = Path(self._build_snapshot(root))
+            snapshot_manifest = json.loads(snapshot_manifest_path.read_text())
+            snapshot_manifest["feature_windows"] = []
+            snapshot_manifest["counts"]["feature_window_objects"] = 0
+            snapshot_manifest_path.write_text(json.dumps(snapshot_manifest, indent=2))
+
+            with patch.dict(
+                os.environ,
+                {
+                    "RELEASE_INCLUDE_NON_AUTHORITATIVE": "true",
+                    "RELEASE_QUALITY_ENFORCEMENT": "advisory",
+                },
+                clear=False,
+            ):
+                manifest = release_runtime.normalize_release(
+                    snapshot_manifest_ref=str(snapshot_manifest_path),
+                    workspace_root=str(root),
+                    public_record_target=0,
+                )
+                validation = release_runtime.validate_release(normalized_manifest_ref=json.dumps(manifest))
+
+            self.assertEqual(validation["validation_results"]["status"], "passed")
+            self.assertEqual(validation["validation_results"]["quality_enforcement_mode"], "advisory")
+            self.assertTrue(validation["validation_results"]["warnings"])
+            self.assertTrue(
+                any("Join coverage is below the blocking threshold" in warning for warning in validation["validation_results"]["warnings"])
+            )
+            self.assertTrue(
+                any("Quality gate advisory:" in warning for warning in validation["validation_results"]["warnings"])
+            )
 
     def test_publish_release_packages_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

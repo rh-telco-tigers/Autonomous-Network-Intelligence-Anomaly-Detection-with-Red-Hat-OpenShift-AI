@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from release_runtime import normalize_release, publish_release, snapshot_sources, validate_release
@@ -34,6 +35,11 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _configure_validation_mode(release_mode: str) -> None:
+    normalized_mode = (release_mode or "").strip().lower()
+    os.environ["RELEASE_QUALITY_ENFORCEMENT"] = "advisory" if normalized_mode.startswith("draft") else "strict"
+
+
 def main() -> None:
     args = parse_args()
     release_version = args.release_version or f"{args.source_dataset_version}-draft"
@@ -53,6 +59,7 @@ def main() -> None:
             workspace_root=args.workspace_root,
             public_record_target=args.public_record_target,
         )
+        _configure_validation_mode(args.release_mode)
         validation_manifest = validate_release(normalized_manifest_ref=json.dumps(normalized_manifest))
         payload = publish_release(
             validation_manifest_ref=json.dumps(validation_manifest),
@@ -90,6 +97,7 @@ def main() -> None:
     if args.step == "validate-release":
         if not args.normalized_manifest:
             raise ValueError("--normalized-manifest is required for validate-release")
+        _configure_validation_mode(args.release_mode)
         payload = validate_release(normalized_manifest_ref=args.normalized_manifest)
         _write_output(args.output, payload, f"{release_version}-validation-manifest.json")
         return

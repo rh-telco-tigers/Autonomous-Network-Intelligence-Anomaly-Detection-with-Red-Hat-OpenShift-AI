@@ -453,6 +453,7 @@ Every training row must have both a linkage status and an eligibility status.
 Allowed values:
 
 - `linked_feature_window`
+- `linked_non_authoritative_window`
 - `reconstructed_from_incident_snapshot`
 - `no_feature_data`
 
@@ -466,6 +467,8 @@ Rules:
 - free-text RCA content must never be used to reconstruct model features
 - reconstructed rows must not be treated as equivalent to linked feature windows
 - for this workflow, `reconstructed_from_incident_snapshot` rows are always assigned `training_eligibility_status = ineligible_missing_features`
+- rows linked only to non-authoritative sources such as `control_plane_snapshot` or `scenario-fallback` must be marked `linked_non_authoritative_window`
+- `linked_non_authoritative_window` rows must never be promoted to `training_eligibility_status = eligible`
 - reconstructed rows may remain in `ims_training_examples.parquet` for auditability, but they must never appear in split manifests or balanced training export
 
 ### 11.3 `training_eligibility_status`
@@ -474,6 +477,7 @@ Allowed values:
 
 - `eligible`
 - `ineligible_missing_features`
+- `ineligible_non_authoritative_window`
 - `ineligible_ambiguous_label`
 
 Rules:
@@ -491,7 +495,15 @@ At minimum, the normalized taxonomy must support current observed values such as
 
 - `normal`
 - `registration_storm`
+- `registration_failure`
+- `authentication_failure`
 - `malformed_sip`
+- `routing_error`
+- `call_setup_timeout`
+- `call_drop_mid_session`
+- `server_internal_error`
+- `network_degradation`
+- `retransmission_spike`
 
 Rules:
 
@@ -810,6 +822,7 @@ Training release gates:
 - only `eligible` rows may appear in split manifests
 - eligibility coverage report must be included in `quality_report.json`
 - feature-window linkage coverage must be reported
+- authoritative versus non-authoritative window ratio must be reported
 - publication policy decides whether low linkage coverage blocks release; the threshold must be explicit in the manifest
 
 ### 19.1 Drift and Consistency Checks

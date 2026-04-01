@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<scenario name="register-failure">
+  <send retrans="500">
+    <![CDATA[
+
+      REGISTER sip:[service] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: <sip:demo-user@ims-demo-lab.svc.cluster.local>;tag=[pid]-[call_number]
+      To: <sip:demo-user@ims-demo-lab.svc.cluster.local>
+      Call-ID: [call_id]
+      CSeq: 1 REGISTER
+      Contact: <sip:demo-user@[local_ip]:[local_port]>
+      Max-Forwards: 70
+      Expires: 120
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <recv response="401" auth="true" />
+
+  <send retrans="500">
+    <![CDATA[
+
+      REGISTER sip:[service] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: <sip:demo-user@ims-demo-lab.svc.cluster.local>;tag=[pid]-[call_number]
+      To: <sip:demo-user@ims-demo-lab.svc.cluster.local>
+      Call-ID: [call_id]
+      CSeq: 2 REGISTER
+      Contact: <sip:demo-user>
+      [authentication username=demo-user password=demo-password]
+      Max-Forwards: 70
+      Expires: 120
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <recv response="400" optional="true" />
+  <recv response="403" optional="true" />
+  <recv response="404" optional="true" />
+</scenario>

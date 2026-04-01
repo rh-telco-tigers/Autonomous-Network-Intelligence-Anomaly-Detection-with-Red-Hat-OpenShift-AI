@@ -179,6 +179,7 @@ def ims_incident_release_pipeline(
         source_snapshot_id=source_snapshot_id,
     )
     run_task.set_env_variable("CONTROL_PLANE_API_KEY", "demo-token")
+    run_task.set_env_variable("DATASET_STORE_PREFIX", "pipelines/ims-demo-lab/datasets")
     run_task.set_env_variable("KAFKA_ENABLED", "true")
     run_task.set_env_variable(
         "KAFKA_BOOTSTRAP_SERVERS",

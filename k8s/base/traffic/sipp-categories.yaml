@@ -1,0 +1,679 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sipp-authentication-failure
+  namespace: ims-demo-lab
+spec:
+  schedule: "2 * * * *"
+  suspend: false
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 300
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sipp
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              imagePullPolicy: Always
+              args:
+                - --target-host
+                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - --target-port
+                - "5060"
+                - --scenario-file
+                - /scenarios/register-authentication-failure.xml
+                - --scenario-name
+                - authentication_failure
+                - --transport
+                - udp
+                - --call-limit
+                - "24"
+                - --rate
+                - "4"
+                - --dataset-version
+                - live-sipp-v1
+              env:
+                - name: DATASET_STORE_ENDPOINT
+                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                - name: DATASET_STORE_BUCKET
+                  value: ims-models
+                - name: DATASET_STORE_PREFIX
+                  value: pipelines/ims-demo-lab/datasets
+                - name: DATASET_STORE_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: DATASET_STORE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: CONTROL_PLANE_URL
+                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                - name: CONTROL_PLANE_API_KEY
+                  value: demo-token
+                - name: CONTROL_PLANE_PROJECT
+                  value: ims-demo
+                - name: CONTROL_PLANE_INCIDENT_STATUS
+                  value: resolved
+                - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
+                  value: sipp-scenario-labeler-v1
+                - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+                  value: "true"
+                - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
+              volumeMounts:
+                - name: scenarios
+                  mountPath: /scenarios
+          volumes:
+            - name: scenarios
+              configMap:
+                name: sipp-scenarios
+                defaultMode: 420
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sipp-registration-failure
+  namespace: ims-demo-lab
+spec:
+  schedule: "7 * * * *"
+  suspend: false
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 300
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sipp
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              imagePullPolicy: Always
+              args:
+                - --target-host
+                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - --target-port
+                - "5060"
+                - --scenario-file
+                - /scenarios/register-failure.xml
+                - --scenario-name
+                - registration_failure
+                - --transport
+                - udp
+                - --call-limit
+                - "24"
+                - --rate
+                - "4"
+                - --dataset-version
+                - live-sipp-v1
+              env:
+                - name: DATASET_STORE_ENDPOINT
+                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                - name: DATASET_STORE_BUCKET
+                  value: ims-models
+                - name: DATASET_STORE_PREFIX
+                  value: pipelines/ims-demo-lab/datasets
+                - name: DATASET_STORE_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: DATASET_STORE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: CONTROL_PLANE_URL
+                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                - name: CONTROL_PLANE_API_KEY
+                  value: demo-token
+                - name: CONTROL_PLANE_PROJECT
+                  value: ims-demo
+                - name: CONTROL_PLANE_INCIDENT_STATUS
+                  value: resolved
+                - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
+                  value: sipp-scenario-labeler-v1
+                - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+                  value: "true"
+                - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
+              volumeMounts:
+                - name: scenarios
+                  mountPath: /scenarios
+          volumes:
+            - name: scenarios
+              configMap:
+                name: sipp-scenarios
+                defaultMode: 420
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sipp-routing-error
+  namespace: ims-demo-lab
+spec:
+  schedule: "12 * * * *"
+  suspend: false
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 300
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sipp
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              imagePullPolicy: Always
+              args:
+                - --target-host
+                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - --target-port
+                - "5060"
+                - --scenario-file
+                - /scenarios/invite-routing-error.xml
+                - --scenario-name
+                - routing_error
+                - --transport
+                - udp
+                - --call-limit
+                - "18"
+                - --rate
+                - "3"
+                - --dataset-version
+                - live-sipp-v1
+              env:
+                - name: DATASET_STORE_ENDPOINT
+                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                - name: DATASET_STORE_BUCKET
+                  value: ims-models
+                - name: DATASET_STORE_PREFIX
+                  value: pipelines/ims-demo-lab/datasets
+                - name: DATASET_STORE_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: DATASET_STORE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: CONTROL_PLANE_URL
+                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                - name: CONTROL_PLANE_API_KEY
+                  value: demo-token
+                - name: CONTROL_PLANE_PROJECT
+                  value: ims-demo
+                - name: CONTROL_PLANE_INCIDENT_STATUS
+                  value: resolved
+                - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
+                  value: sipp-scenario-labeler-v1
+                - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+                  value: "true"
+                - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
+              volumeMounts:
+                - name: scenarios
+                  mountPath: /scenarios
+          volumes:
+            - name: scenarios
+              configMap:
+                name: sipp-scenarios
+                defaultMode: 420
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sipp-call-setup-timeout
+  namespace: ims-demo-lab
+spec:
+  schedule: "17 * * * *"
+  suspend: false
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 300
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sipp
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              imagePullPolicy: Always
+              args:
+                - --target-host
+                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - --target-port
+                - "5060"
+                - --scenario-file
+                - /scenarios/invite-call-setup-timeout.xml
+                - --scenario-name
+                - call_setup_timeout
+                - --transport
+                - udp
+                - --call-limit
+                - "12"
+                - --rate
+                - "3"
+                - --dataset-version
+                - live-sipp-v1
+              env:
+                - name: DATASET_STORE_ENDPOINT
+                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                - name: DATASET_STORE_BUCKET
+                  value: ims-models
+                - name: DATASET_STORE_PREFIX
+                  value: pipelines/ims-demo-lab/datasets
+                - name: DATASET_STORE_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: DATASET_STORE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: CONTROL_PLANE_URL
+                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                - name: CONTROL_PLANE_API_KEY
+                  value: demo-token
+                - name: CONTROL_PLANE_PROJECT
+                  value: ims-demo
+                - name: CONTROL_PLANE_INCIDENT_STATUS
+                  value: resolved
+                - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
+                  value: sipp-scenario-labeler-v1
+                - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+                  value: "true"
+                - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
+              volumeMounts:
+                - name: scenarios
+                  mountPath: /scenarios
+          volumes:
+            - name: scenarios
+              configMap:
+                name: sipp-scenarios
+                defaultMode: 420
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sipp-call-drop-mid-session
+  namespace: ims-demo-lab
+spec:
+  schedule: "22 * * * *"
+  suspend: false
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 300
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sipp
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              imagePullPolicy: Always
+              args:
+                - --target-host
+                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - --target-port
+                - "5060"
+                - --scenario-file
+                - /scenarios/bye-call-drop.xml
+                - --scenario-name
+                - call_drop_mid_session
+                - --transport
+                - udp
+                - --call-limit
+                - "20"
+                - --rate
+                - "4"
+                - --dataset-version
+                - live-sipp-v1
+              env:
+                - name: DATASET_STORE_ENDPOINT
+                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                - name: DATASET_STORE_BUCKET
+                  value: ims-models
+                - name: DATASET_STORE_PREFIX
+                  value: pipelines/ims-demo-lab/datasets
+                - name: DATASET_STORE_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: DATASET_STORE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: CONTROL_PLANE_URL
+                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                - name: CONTROL_PLANE_API_KEY
+                  value: demo-token
+                - name: CONTROL_PLANE_PROJECT
+                  value: ims-demo
+                - name: CONTROL_PLANE_INCIDENT_STATUS
+                  value: resolved
+                - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
+                  value: sipp-scenario-labeler-v1
+                - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+                  value: "true"
+                - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
+              volumeMounts:
+                - name: scenarios
+                  mountPath: /scenarios
+          volumes:
+            - name: scenarios
+              configMap:
+                name: sipp-scenarios
+                defaultMode: 420
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sipp-server-internal-error
+  namespace: ims-demo-lab
+spec:
+  schedule: "27 * * * *"
+  suspend: false
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 300
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sipp
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              imagePullPolicy: Always
+              args:
+                - --target-host
+                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - --target-port
+                - "5060"
+                - --scenario-file
+                - /scenarios/options-server-error.xml
+                - --scenario-name
+                - server_internal_error
+                - --transport
+                - udp
+                - --call-limit
+                - "16"
+                - --rate
+                - "4"
+                - --dataset-version
+                - live-sipp-v1
+              env:
+                - name: DATASET_STORE_ENDPOINT
+                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                - name: DATASET_STORE_BUCKET
+                  value: ims-models
+                - name: DATASET_STORE_PREFIX
+                  value: pipelines/ims-demo-lab/datasets
+                - name: DATASET_STORE_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: DATASET_STORE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: CONTROL_PLANE_URL
+                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                - name: CONTROL_PLANE_API_KEY
+                  value: demo-token
+                - name: CONTROL_PLANE_PROJECT
+                  value: ims-demo
+                - name: CONTROL_PLANE_INCIDENT_STATUS
+                  value: resolved
+                - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
+                  value: sipp-scenario-labeler-v1
+                - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+                  value: "true"
+                - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
+              volumeMounts:
+                - name: scenarios
+                  mountPath: /scenarios
+          volumes:
+            - name: scenarios
+              configMap:
+                name: sipp-scenarios
+                defaultMode: 420
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sipp-network-degradation
+  namespace: ims-demo-lab
+spec:
+  schedule: "42 * * * *"
+  suspend: false
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 300
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sipp
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              imagePullPolicy: Always
+              args:
+                - --target-host
+                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - --target-port
+                - "5060"
+                - --scenario-file
+                - /scenarios/register-network-degradation.xml
+                - --scenario-name
+                - network_degradation
+                - --transport
+                - udp
+                - --call-limit
+                - "8"
+                - --rate
+                - "2"
+                - --dataset-version
+                - live-sipp-v1
+              env:
+                - name: DATASET_STORE_ENDPOINT
+                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                - name: DATASET_STORE_BUCKET
+                  value: ims-models
+                - name: DATASET_STORE_PREFIX
+                  value: pipelines/ims-demo-lab/datasets
+                - name: DATASET_STORE_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: DATASET_STORE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: CONTROL_PLANE_URL
+                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                - name: CONTROL_PLANE_API_KEY
+                  value: demo-token
+                - name: CONTROL_PLANE_PROJECT
+                  value: ims-demo
+                - name: CONTROL_PLANE_INCIDENT_STATUS
+                  value: resolved
+                - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
+                  value: sipp-scenario-labeler-v1
+                - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+                  value: "true"
+                - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
+              volumeMounts:
+                - name: scenarios
+                  mountPath: /scenarios
+          volumes:
+            - name: scenarios
+              configMap:
+                name: sipp-scenarios
+                defaultMode: 420
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sipp-retransmission-spike
+  namespace: ims-demo-lab
+spec:
+  schedule: "52 * * * *"
+  suspend: false
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 300
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sipp
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              imagePullPolicy: Always
+              args:
+                - --target-host
+                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - --target-port
+                - "5060"
+                - --scenario-file
+                - /scenarios/invite-retransmission-spike.xml
+                - --scenario-name
+                - retransmission_spike
+                - --transport
+                - udp
+                - --call-limit
+                - "14"
+                - --rate
+                - "3"
+                - --dataset-version
+                - live-sipp-v1
+              env:
+                - name: DATASET_STORE_ENDPOINT
+                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                - name: DATASET_STORE_BUCKET
+                  value: ims-models
+                - name: DATASET_STORE_PREFIX
+                  value: pipelines/ims-demo-lab/datasets
+                - name: DATASET_STORE_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: DATASET_STORE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-storage-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: CONTROL_PLANE_URL
+                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                - name: CONTROL_PLANE_API_KEY
+                  value: demo-token
+                - name: CONTROL_PLANE_PROJECT
+                  value: ims-demo
+                - name: CONTROL_PLANE_INCIDENT_STATUS
+                  value: resolved
+                - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
+                  value: sipp-scenario-labeler-v1
+                - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+                  value: "true"
+                - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
+              volumeMounts:
+                - name: scenarios
+                  mountPath: /scenarios
+          volumes:
+            - name: scenarios
+              configMap:
+                name: sipp-scenarios
+                defaultMode: 420

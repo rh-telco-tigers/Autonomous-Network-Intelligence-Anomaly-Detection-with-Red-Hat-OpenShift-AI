@@ -76,6 +76,8 @@ metadata:
   namespace: ims-demo-lab
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: model-storage-minio
@@ -118,18 +120,23 @@ spec:
               port: 9000
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           livenessProbe:
             httpGet:
               path: /minio/health/live
               port: 9000
             initialDelaySeconds: 20
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
+              cpu: 250m
               memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
 ---
 apiVersion: batch/v1
 kind: Job

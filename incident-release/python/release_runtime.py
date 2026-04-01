@@ -20,6 +20,7 @@ from control_plane_export import export_control_plane_history
 
 DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000"
 DEFAULT_DATASET_STORE_BUCKET = "ims-models"
+DEFAULT_DATASET_STORE_PREFIX = "pipelines/ims-demo-lab/datasets"
 DEFAULT_RELEASE_PREFIX = "incident-release/releases"
 DEFAULT_PUBLIC_RECORD_TARGET = 10_000
 DEFAULT_KAFKA_BOOTSTRAP_SERVERS = "ims-release-kafka-kafka-bootstrap.ims-demo-lab.svc.cluster.local:9092"
@@ -27,6 +28,18 @@ DEFAULT_KAFKA_INCIDENTS_TOPIC = "ims-incidents-bronze"
 DEFAULT_KAFKA_FEATURE_WINDOWS_TOPIC = "ims-feature-windows-bronze"
 DEFAULT_KAFKA_RELEASE_ARTIFACTS_TOPIC = "ims-release-artifacts"
 DEFAULT_KAFKA_MAX_EVENT_BYTES = 900_000
+DEFAULT_WARNING_MIN_UNIQUE_FEATURE_WINDOWS = 100_000
+DEFAULT_WARNING_MIN_ANOMALY_TYPES = 10
+DEFAULT_WARNING_MIN_NORMAL_RATIO = 0.40
+DEFAULT_WARNING_MAX_NORMAL_RATIO = 0.60
+DEFAULT_WARNING_MAX_ELIGIBLE_RATIO = 0.95
+DEFAULT_WARNING_MIN_AUTHORITATIVE_WINDOW_RATIO = 0.95
+DEFAULT_WARNING_MAX_NON_AUTHORITATIVE_TRAINING_RATIO = 0.10
+DEFAULT_BLOCKING_MIN_UNIQUE_FEATURE_WINDOWS = 1
+DEFAULT_BLOCKING_MIN_ANOMALY_TYPES = 3
+DEFAULT_BLOCKING_MIN_AUTHORITATIVE_WINDOW_RATIO = 0.50
+DEFAULT_BLOCKING_MAX_NON_AUTHORITATIVE_TRAINING_RATIO = 0.50
+DEFAULT_BLOCKING_MIN_NONZERO_VARIANCE_FEATURES = 3
 
 FEATURE_SCHEMA_VERSION = "feature_schema_v1"
 LABEL_TAXONOMY_VERSION = "label_taxonomy_v1"
@@ -49,12 +62,26 @@ NUMERIC_FEATURES = [
     "payload_variance",
 ]
 
+NON_AUTHORITATIVE_FEATURE_SOURCES = {
+    "control_plane_snapshot",
+    "scenario-fallback",
+    "synthetic",
+}
+
 LABEL_NORMALIZATION = {
     "normal": "normal",
     "registration_storm": "registration_storm",
+    "registration_failure": "registration_failure",
+    "authentication_failure": "authentication_failure",
     "register_storm": "registration_storm",
     "malformed_invite": "malformed_sip",
     "malformed_sip": "malformed_sip",
+    "routing_error": "routing_error",
+    "call_setup_timeout": "call_setup_timeout",
+    "call_drop_mid_session": "call_drop_mid_session",
+    "server_internal_error": "server_internal_error",
+    "network_degradation": "network_degradation",
+    "retransmission_spike": "retransmission_spike",
     "service_degradation": "service_degradation",
     "hss_latency": "service_degradation",
     "hss_overload": "service_degradation",
@@ -220,6 +247,16 @@ def _dataset_store_bucket() -> str:
     return os.getenv("DATASET_STORE_BUCKET", os.getenv("MINIO_BUCKET", DEFAULT_DATASET_STORE_BUCKET))
 
 
+def _dataset_store_prefix() -> str:
+    return os.getenv("DATASET_STORE_PREFIX", DEFAULT_DATASET_STORE_PREFIX).strip("/")
+
+
+def _dataset_object_key(relative_path: str) -> str:
+    prefix = _dataset_store_prefix()
+    normalized = relative_path.strip("/")
+    return f"{prefix}/{normalized}" if prefix else normalized
+
+
 def _dataset_store_access_key() -> str:
     return os.getenv("DATASET_STORE_ACCESS_KEY", os.getenv("MINIO_ACCESS_KEY", "minioadmin"))
 
@@ -257,6 +294,10 @@ def _env_flag(name: str, default: bool = False) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _include_non_authoritative_release_rows() -> bool:
+    return _env_flag("RELEASE_INCLUDE_NON_AUTHORITATIVE", False)
 
 
 def _kafka_enabled() -> bool:
@@ -569,6 +610,25 @@ def _list_s3_objects(prefix: str) -> list[dict[str, Any]]:
     return objects
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return int(raw.strip())
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return float(raw.strip())
+
+
+def _release_quality_enforcement_mode() -> str:
+    mode = os.getenv("RELEASE_QUALITY_ENFORCEMENT", "strict").strip().lower()
+    return mode if mode in {"strict", "advisory"} else "strict"
+
+
 def _object_exists_s3(key: str) -> bool:
     try:
         _dataset_s3_client().head_object(Bucket=_dataset_store_bucket(), Key=key)
@@ -649,7 +709,7 @@ def _choose_window(current: dict[str, Any], candidate: dict[str, Any]) -> dict[s
 
 def _list_feature_window_objects(dataset_version: str) -> list[str]:
     bucket = _dataset_store_bucket()
-    prefix = f"datasets/{dataset_version}/feature-windows/"
+    prefix = _dataset_object_key(f"datasets/{dataset_version}/feature-windows/").rstrip("/") + "/"
     paginator = _dataset_s3_client().get_paginator("list_objects_v2")
     keys: list[str] = []
     try:
@@ -673,6 +733,22 @@ def _window_records(payload: Any) -> list[dict[str, Any]]:
 
 def _feature_window_id(window: dict[str, Any], fallback: str) -> str:
     return str(window.get("window_id") or fallback)
+
+
+def _feature_source(window: dict[str, Any] | None) -> str:
+    if not isinstance(window, dict):
+        return "missing"
+    return str(window.get("feature_source") or "unspecified")
+
+
+def _is_authoritative_feature_window(window: dict[str, Any] | None) -> bool:
+    return isinstance(window, dict) and _feature_source(window) not in NON_AUTHORITATIVE_FEATURE_SOURCES
+
+
+def _window_linkage_status(window: dict[str, Any] | None) -> str:
+    if _is_authoritative_feature_window(window):
+        return "linked_feature_window"
+    return "linked_non_authoritative_window"
 
 
 def _window_features(window: dict[str, Any]) -> dict[str, Any]:
@@ -743,7 +819,7 @@ def _split_assignment(split_group_id: str) -> str:
 
 def _incident_linkage_status(incident: dict[str, Any], matched_window: dict[str, Any] | None) -> str:
     if matched_window is not None:
-        return "linked_feature_window"
+        return _window_linkage_status(matched_window)
     feature_snapshot = incident.get("feature_snapshot")
     if isinstance(feature_snapshot, dict) and any(value is not None for value in _extract_numeric_features(feature_snapshot).values()):
         return "reconstructed_from_incident_snapshot"
@@ -751,10 +827,14 @@ def _incident_linkage_status(incident: dict[str, Any], matched_window: dict[str,
 
 
 def _incident_training_status(matched_window: dict[str, Any] | None) -> str:
-    return "eligible" if matched_window is not None else "ineligible_missing_features"
+    if matched_window is None:
+        return "ineligible_missing_features"
+    return "eligible" if _is_authoritative_feature_window(matched_window) else "ineligible_non_authoritative_window"
 
 
 def _training_status(linkage_status: str, feature_values: dict[str, float | None], anomaly_type: str) -> str:
+    if linkage_status == "linked_non_authoritative_window":
+        return "ineligible_non_authoritative_window"
     if linkage_status == "reconstructed_from_incident_snapshot":
         return "ineligible_missing_features"
     if not any(value is not None for value in feature_values.values()):
@@ -814,6 +894,214 @@ def _feature_summary(frame: pd.DataFrame) -> dict[str, dict[str, float | None]]:
             "max": round(float(series.max()), 6),
         }
     return summary
+
+
+def _feature_variability(frame: pd.DataFrame) -> dict[str, dict[str, float | int | None]]:
+    variability: dict[str, dict[str, float | int | None]] = {}
+    for feature in NUMERIC_FEATURES:
+        if feature not in frame.columns:
+            continue
+        series = pd.to_numeric(frame[feature], errors="coerce")
+        non_null = series.dropna()
+        if non_null.empty:
+            variability[feature] = {
+                "std": None,
+                "unique_values": 0,
+                "non_null_ratio": 0.0,
+            }
+            continue
+        variability[feature] = {
+            "std": round(float(non_null.std(ddof=0)), 6),
+            "unique_values": int(non_null.nunique()),
+            "non_null_ratio": round(float(non_null.notna().sum() / max(len(series), 1)), 6),
+        }
+    return variability
+
+
+def _quality_check(
+    *,
+    name: str,
+    actual: float | int,
+    description: str,
+    warning_min: float | int | None = None,
+    warning_max: float | int | None = None,
+    blocking_min: float | int | None = None,
+    blocking_max: float | int | None = None,
+) -> dict[str, Any]:
+    status = "pass"
+    message = None
+    if blocking_min is not None and actual < blocking_min:
+        status = "blocking"
+        message = f"{name}={actual} is below the blocking minimum {blocking_min}"
+    elif blocking_max is not None and actual > blocking_max:
+        status = "blocking"
+        message = f"{name}={actual} is above the blocking maximum {blocking_max}"
+    elif warning_min is not None and actual < warning_min:
+        status = "warning"
+        message = f"{name}={actual} is below the warning target {warning_min}"
+    elif warning_max is not None and actual > warning_max:
+        status = "warning"
+        message = f"{name}={actual} is above the warning target {warning_max}"
+    return {
+        "description": description,
+        "actual": actual,
+        "warning_min": warning_min,
+        "warning_max": warning_max,
+        "blocking_min": blocking_min,
+        "blocking_max": blocking_max,
+        "status": status,
+        "message": message,
+    }
+
+
+def _quality_scorecard(
+    *,
+    incident_df: pd.DataFrame,
+    training_df: pd.DataFrame,
+    windows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    anomaly_type_counts = training_df["anomaly_type"].value_counts().sort_index().to_dict() if not training_df.empty else {}
+    scenario_family_counts = (
+        training_df["normalized_scenario_family"].value_counts().sort_index().to_dict()
+        if not training_df.empty
+        else {}
+    )
+    incident_status_counts = incident_df["status"].value_counts().sort_index().to_dict() if not incident_df.empty else {}
+    linkage_counts = training_df["linkage_status"].value_counts().sort_index().to_dict() if not training_df.empty else {}
+    window_source_counts: dict[str, int] = {}
+    for window in windows:
+        source = _feature_source(window)
+        window_source_counts[source] = window_source_counts.get(source, 0) + 1
+
+    unique_feature_window_count = (
+        int(training_df["feature_window_public_id"].dropna().nunique())
+        if "feature_window_public_id" in training_df.columns and not training_df.empty
+        else 0
+    )
+    anomaly_type_count = int(len(anomaly_type_counts))
+    normal_ratio = (
+        float((training_df["anomaly_type"] == "normal").sum() / max(len(training_df), 1))
+        if not training_df.empty
+        else 0.0
+    )
+    eligible_ratio = (
+        float((training_df["training_eligibility_status"] == "eligible").sum() / max(len(training_df), 1))
+        if not training_df.empty
+        else 0.0
+    )
+    authoritative_window_count = sum(1 for window in windows if _is_authoritative_feature_window(window))
+    authoritative_window_ratio = authoritative_window_count / max(len(windows), 1) if windows else 0.0
+    non_authoritative_training_rows = int(
+        (training_df["linkage_status"] != "linked_feature_window").sum()
+    ) if not training_df.empty else 0
+    non_authoritative_training_ratio = (
+        non_authoritative_training_rows / max(len(training_df), 1) if not training_df.empty else 0.0
+    )
+    variability = _feature_variability(training_df)
+    nonzero_variance_features = sum(
+        1
+        for feature in variability.values()
+        if feature.get("std") not in (None, 0.0) and int(feature.get("unique_values") or 0) > 1
+    )
+    missing_feature_ratio = {
+        feature: round(float(pd.to_numeric(training_df[feature], errors="coerce").isna().mean()), 6)
+        for feature in NUMERIC_FEATURES
+        if feature in training_df.columns
+    } if not training_df.empty else {}
+
+    checks = {
+        "minimum_unique_feature_windows": _quality_check(
+            name="minimum_unique_feature_windows",
+            actual=unique_feature_window_count,
+            description="Release should contain enough distinct feature windows to represent real traffic variation.",
+            warning_min=_env_int("QUALITY_WARNING_MIN_UNIQUE_FEATURE_WINDOWS", DEFAULT_WARNING_MIN_UNIQUE_FEATURE_WINDOWS),
+            blocking_min=_env_int("QUALITY_BLOCKING_MIN_UNIQUE_FEATURE_WINDOWS", DEFAULT_BLOCKING_MIN_UNIQUE_FEATURE_WINDOWS),
+        ),
+        "minimum_anomaly_types": _quality_check(
+            name="minimum_anomaly_types",
+            actual=anomaly_type_count,
+            description="Release should cover multiple incident categories rather than only a narrow demo subset.",
+            warning_min=_env_int("QUALITY_WARNING_MIN_ANOMALY_TYPES", DEFAULT_WARNING_MIN_ANOMALY_TYPES),
+            blocking_min=_env_int("QUALITY_BLOCKING_MIN_ANOMALY_TYPES", DEFAULT_BLOCKING_MIN_ANOMALY_TYPES),
+        ),
+        "normal_ratio_band": _quality_check(
+            name="normal_ratio",
+            actual=round(normal_ratio, 6),
+            description="Real corpora should keep a meaningful normal baseline instead of only anomalous cases.",
+            warning_min=_env_float("QUALITY_WARNING_MIN_NORMAL_RATIO", DEFAULT_WARNING_MIN_NORMAL_RATIO),
+            warning_max=_env_float("QUALITY_WARNING_MAX_NORMAL_RATIO", DEFAULT_WARNING_MAX_NORMAL_RATIO),
+        ),
+        "maximum_eligible_ratio": _quality_check(
+            name="eligible_ratio",
+            actual=round(eligible_ratio, 6),
+            description="A corpus that is too clean can hide the incomplete and ambiguous rows seen in real operations.",
+            warning_max=_env_float("QUALITY_WARNING_MAX_ELIGIBLE_RATIO", DEFAULT_WARNING_MAX_ELIGIBLE_RATIO),
+        ),
+        "minimum_authoritative_window_ratio": _quality_check(
+            name="authoritative_window_ratio",
+            actual=round(authoritative_window_ratio, 6),
+            description="Most feature windows should come from authoritative persisted traffic captures, not reconstructed snapshots.",
+            warning_min=_env_float(
+                "QUALITY_WARNING_MIN_AUTHORITATIVE_WINDOW_RATIO",
+                DEFAULT_WARNING_MIN_AUTHORITATIVE_WINDOW_RATIO,
+            ),
+            blocking_min=_env_float(
+                "QUALITY_BLOCKING_MIN_AUTHORITATIVE_WINDOW_RATIO",
+                DEFAULT_BLOCKING_MIN_AUTHORITATIVE_WINDOW_RATIO,
+            ),
+        ),
+        "maximum_non_authoritative_training_ratio": _quality_check(
+            name="non_authoritative_training_ratio",
+            actual=round(non_authoritative_training_ratio, 6),
+            description="Training rows should be dominated by authoritative feature windows rather than reconstructed or fallback sources.",
+            warning_max=_env_float(
+                "QUALITY_WARNING_MAX_NON_AUTHORITATIVE_TRAINING_RATIO",
+                DEFAULT_WARNING_MAX_NON_AUTHORITATIVE_TRAINING_RATIO,
+            ),
+            blocking_max=_env_float(
+                "QUALITY_BLOCKING_MAX_NON_AUTHORITATIVE_TRAINING_RATIO",
+                DEFAULT_BLOCKING_MAX_NON_AUTHORITATIVE_TRAINING_RATIO,
+            ),
+        ),
+        "minimum_nonzero_variance_features": _quality_check(
+            name="minimum_nonzero_variance_features",
+            actual=nonzero_variance_features,
+            description="Feature columns should show real variation across the corpus instead of collapsing to repeated values.",
+            warning_min=len(NUMERIC_FEATURES),
+            blocking_min=_env_int(
+                "QUALITY_BLOCKING_MIN_NONZERO_VARIANCE_FEATURES",
+                DEFAULT_BLOCKING_MIN_NONZERO_VARIANCE_FEATURES,
+            ),
+        ),
+    }
+    score_lookup = {"pass": 1.0, "warning": 0.5, "blocking": 0.0}
+    quality_score = round(
+        100.0 * sum(score_lookup[check["status"]] for check in checks.values()) / max(len(checks), 1),
+        2,
+    )
+
+    return {
+        "quality_score": quality_score,
+        "metrics": {
+            "unique_feature_window_count": unique_feature_window_count,
+            "anomaly_type_count": anomaly_type_count,
+            "anomaly_type_counts": anomaly_type_counts,
+            "scenario_family_counts": scenario_family_counts,
+            "incident_status_counts": incident_status_counts,
+            "linkage_counts": linkage_counts,
+            "window_source_counts": window_source_counts,
+            "authoritative_window_count": authoritative_window_count,
+            "authoritative_window_ratio": round(authoritative_window_ratio, 6),
+            "eligible_ratio": round(eligible_ratio, 6),
+            "normal_ratio": round(normal_ratio, 6),
+            "non_authoritative_training_rows": non_authoritative_training_rows,
+            "non_authoritative_training_ratio": round(non_authoritative_training_ratio, 6),
+            "nonzero_variance_features": nonzero_variance_features,
+            "feature_missingness": missing_feature_ratio,
+            "feature_variability": variability,
+        },
+        "checks": checks,
+    }
 
 
 def _distribution_delta(current: pd.Series, previous: pd.Series) -> dict[str, dict[str, float]]:
@@ -942,8 +1230,10 @@ def _dataset_card(
     counts: dict[str, int],
     join_coverage: dict[str, Any],
     drift: dict[str, Any],
+    normalized_labels: list[str],
 ) -> str:
     previous_release = drift.get("previous_release_reference") or "none"
+    normalized_labels_text = ", ".join(f"`{label}`" for label in normalized_labels) if normalized_labels else "`normal`"
     return (
         f"# IMS Incident Release Dataset\n\n"
         f"## Origin\n\n"
@@ -959,7 +1249,7 @@ def _dataset_card(
         f"- internal routes, namespaces, tokens, and object-store paths are not published\n\n"
         f"## Label taxonomy\n\n"
         f"- taxonomy version: `{LABEL_TAXONOMY_VERSION}`\n"
-        f"- normalized labels include `normal`, `registration_storm`, `malformed_sip`, and `service_degradation`\n\n"
+        f"- normalized labels include {normalized_labels_text}\n\n"
         f"## Linkage and eligibility\n\n"
         f"- join coverage status: `{join_coverage['status']}`\n"
         f"- incident_to_feature_window_ratio: `{join_coverage['incident_to_feature_window_ratio']}`\n"
@@ -1079,7 +1369,8 @@ def snapshot_sources(
     rca_path = _json_dump(bronze_root / "control-plane" / "rca-enrichment.json", rca_enrichment)
 
     feature_windows: list[dict[str, Any]] = []
-    prefix = f"datasets/{source_dataset_version}/feature-windows/"
+    relative_prefix = f"datasets/{source_dataset_version}/feature-windows/"
+    prefix = _dataset_object_key(relative_prefix).rstrip("/") + "/"
     for key in _list_feature_window_objects(source_dataset_version):
         payload = _read_json_from_s3(_s3_uri(_dataset_store_bucket(), key))
         relative_key = key.removeprefix(prefix)
@@ -1135,6 +1426,7 @@ def snapshot_sources(
             "rca_enrichment_path": rca_path,
             "feature_windows_dir": str(feature_root),
         },
+        "feature_window_source_prefix": prefix,
         "counts": {
             "incidents": len(incidents),
             "approvals": len(approvals),
@@ -1219,55 +1511,47 @@ def normalize_release(
         }
         windows.append(normalized)
 
+    include_non_authoritative_rows = _include_non_authoritative_release_rows()
     existing_window_ids = {str(window["window_id"]) for window in windows}
     control_plane_snapshot_windows_added = 0
-    for incident in incidents:
-        feature_window_id = str(incident.get("feature_window_id") or "")
-        snapshot_features = _flatten_numeric_features(incident.get("feature_snapshot") if isinstance(incident.get("feature_snapshot"), dict) else None)
-        if (
-            not feature_window_id
-            or feature_window_id in existing_window_ids
-            or not any(value is not None for value in snapshot_features.values())
-        ):
-            continue
-        source_anomaly_type = _slug(incident.get("anomaly_type") or "normal")
-        anomaly_type = LABEL_NORMALIZATION.get(source_anomaly_type, source_anomaly_type)
-        windows.append(
-            {
-                "window_id": feature_window_id,
-                "dataset_version": source_dataset_version,
-                "schema_version": str(snapshot.get("feature_schema_version", FEATURE_SCHEMA_VERSION)),
-                "scenario_name": source_anomaly_type,
-                "anomaly_type": anomaly_type,
-                "label": 0 if anomaly_type == "normal" else 1,
-                "label_confidence": 0.9,
-                "window_start": str(incident.get("created_at") or ""),
-                "window_end": str(incident.get("updated_at") or incident.get("created_at") or ""),
-                "captured_at": str(incident.get("updated_at") or incident.get("created_at") or ""),
-                "features": {feature: value for feature, value in snapshot_features.items() if value is not None},
-                "model_version": str(incident.get("model_version") or "unknown"),
-                "feature_source": "control_plane_snapshot",
-            }
-        )
-        existing_window_ids.add(feature_window_id)
-        control_plane_snapshot_windows_added += 1
+    if include_non_authoritative_rows:
+        for incident in incidents:
+            feature_window_id = str(incident.get("feature_window_id") or "")
+            snapshot_features = _flatten_numeric_features(
+                incident.get("feature_snapshot") if isinstance(incident.get("feature_snapshot"), dict) else None
+            )
+            if (
+                not feature_window_id
+                or feature_window_id in existing_window_ids
+                or not any(value is not None for value in snapshot_features.values())
+            ):
+                continue
+            source_anomaly_type = _slug(incident.get("anomaly_type") or "normal")
+            anomaly_type = LABEL_NORMALIZATION.get(source_anomaly_type, source_anomaly_type)
+            windows.append(
+                {
+                    "window_id": feature_window_id,
+                    "dataset_version": source_dataset_version,
+                    "schema_version": str(snapshot.get("feature_schema_version", FEATURE_SCHEMA_VERSION)),
+                    "scenario_name": source_anomaly_type,
+                    "anomaly_type": anomaly_type,
+                    "label": 0 if anomaly_type == "normal" else 1,
+                    "label_confidence": 0.9,
+                    "window_start": str(incident.get("created_at") or ""),
+                    "window_end": str(incident.get("updated_at") or incident.get("created_at") or ""),
+                    "captured_at": str(incident.get("updated_at") or incident.get("created_at") or ""),
+                    "features": {feature: value for feature, value in snapshot_features.items() if value is not None},
+                    "model_version": str(incident.get("model_version") or "unknown"),
+                    "feature_source": "control_plane_snapshot",
+                }
+            )
+            existing_window_ids.add(feature_window_id)
+            control_plane_snapshot_windows_added += 1
     windows.sort(key=lambda item: (str(item["window_id"]), str(item["captured_at"]), str(item["window_end"])))
 
     windows_by_id = {str(window["window_id"]): window for window in windows}
-    incidents_by_window_id: dict[str, list[dict[str, Any]]] = {}
-    for incident in incidents:
-        feature_window_id = str(
-            incident.get("feature_window_id")
-            or (incident.get("feature_snapshot") or {}).get("feature_window_id")
-            or ""
-        )
-        if feature_window_id:
-            incidents_by_window_id.setdefault(feature_window_id, []).append(incident)
-
-    incident_records: list[dict[str, Any]] = []
-    training_records: list[dict[str, Any]] = []
-    id_mapping: list[dict[str, str]] = []
-
+    incident_contexts: list[dict[str, Any]] = []
+    filtered_non_authoritative_incident_row_count = 0
     for incident in sorted(incidents, key=lambda item: (str(item.get("created_at") or ""), str(item.get("id") or ""))):
         incident_id = str(incident.get("id") or "")
         source_anomaly_type = _slug(incident.get("anomaly_type") or "unknown")
@@ -1279,6 +1563,9 @@ def normalize_release(
         )
         matched_window = windows_by_id.get(feature_window_id)
         linkage_status = _incident_linkage_status(incident, matched_window)
+        if not include_non_authoritative_rows and linkage_status != "linked_feature_window":
+            filtered_non_authoritative_incident_row_count += 1
+            continue
         scenario_family = (
             _normalized_scenario_family(matched_window, fallback=source_anomaly_type)
             if matched_window is not None
@@ -1299,6 +1586,50 @@ def normalize_release(
             or (matched_window or {}).get("model_version")
             or "unknown"
         )
+        incident_contexts.append(
+            {
+                "incident": incident,
+                "incident_id": incident_id,
+                "source_anomaly_type": source_anomaly_type,
+                "anomaly_type": anomaly_type,
+                "feature_window_id": feature_window_id,
+                "matched_window": matched_window,
+                "linkage_status": linkage_status,
+                "scenario_family": scenario_family,
+                "split_group_id": split_group_id,
+                "incident_public_id": incident_public_id,
+                "feature_window_public_id": feature_window_public_id,
+                "feature_values": feature_values,
+                "rca_payload": rca_payload,
+                "model_version": model_version,
+            }
+        )
+
+    incidents_by_window_id: dict[str, list[dict[str, Any]]] = {}
+    for context in incident_contexts:
+        feature_window_id = str(context["feature_window_id"] or "")
+        if feature_window_id:
+            incidents_by_window_id.setdefault(feature_window_id, []).append(context["incident"])
+
+    incident_records: list[dict[str, Any]] = []
+    training_records: list[dict[str, Any]] = []
+    id_mapping: list[dict[str, str]] = []
+
+    for context in incident_contexts:
+        incident = context["incident"]
+        incident_id = context["incident_id"]
+        source_anomaly_type = context["source_anomaly_type"]
+        anomaly_type = context["anomaly_type"]
+        feature_window_id = context["feature_window_id"]
+        matched_window = context["matched_window"]
+        linkage_status = context["linkage_status"]
+        scenario_family = context["scenario_family"]
+        split_group_id = context["split_group_id"]
+        incident_public_id = context["incident_public_id"]
+        feature_window_public_id = context["feature_window_public_id"]
+        feature_values = context["feature_values"]
+        rca_payload = context["rca_payload"]
+        model_version = context["model_version"]
 
         id_mapping.append({"kind": "incident", "source_id": incident_id, "public_id": incident_public_id})
         if feature_window_id:
@@ -1397,7 +1728,7 @@ def normalize_release(
             length=24,
         )
         feature_values = _flatten_numeric_features(window)
-        linkage_status = "linked_feature_window"
+        linkage_status = _window_linkage_status(window)
         training_records.append(
             {
                 "record_public_id": _public_id("rec", release_version, feature_window_id),
@@ -1511,6 +1842,7 @@ def normalize_release(
             "status": join_coverage_status,
         },
         drift={"previous_release_reference": os.getenv("PREVIOUS_RELEASE_VERSION", "").strip() or None},
+        normalized_labels=sorted(label_dictionary_df["anomaly_type"].dropna().unique().tolist()),
     )
 
     quality_report = {
@@ -1525,8 +1857,15 @@ def normalize_release(
         "incident_to_feature_window_ratio": round(incident_to_feature_window_ratio, 4),
         "join_coverage_status": join_coverage_status,
         "eligibility_counts": eligibility_counts,
+        "filtered_non_authoritative_incident_row_count": filtered_non_authoritative_incident_row_count,
         "duplicate_window_conflicts": duplicate_window_conflicts,
         "control_plane_snapshot_windows_added": control_plane_snapshot_windows_added,
+        "feature_window_source_prefix": snapshot.get("feature_window_source_prefix"),
+        "quality_scorecard": _quality_scorecard(
+            incident_df=incident_df,
+            training_df=training_df,
+            windows=windows,
+        ),
         "validation_results": {},
     }
 
@@ -1608,6 +1947,8 @@ def validate_release(*, normalized_manifest_ref: str) -> dict[str, Any]:
     balanced_df = _read_parquet_reference(manifest["artifacts"]["training_examples_balanced_parquet"])
     split_manifest = _load_json_payload(manifest["artifacts"]["split_manifest_json"])
     quality_report = _load_json_reference(manifest["artifacts"]["quality_report"])
+    quality_enforcement_mode = _release_quality_enforcement_mode()
+    advisory_quality_mode = quality_enforcement_mode == "advisory"
 
     validation_errors: list[str] = []
     validation_warnings: list[str] = []
@@ -1656,7 +1997,9 @@ def validate_release(*, normalized_manifest_ref: str) -> dict[str, Any]:
 
     join_coverage_status = str(quality_report.get("join_coverage_status") or "unknown")
     override_reason = os.getenv("JOIN_COVERAGE_OVERRIDE_REASON", "").strip()
-    if join_coverage_status == "blocking" and not override_reason:
+    if join_coverage_status == "blocking" and advisory_quality_mode:
+        validation_warnings.append("Join coverage is below the blocking threshold; advisory quality mode is active")
+    elif join_coverage_status == "blocking" and not override_reason:
         validation_errors.append("Join coverage is below the blocking threshold")
     elif join_coverage_status == "blocking" and override_reason:
         validation_warnings.append("Join coverage override applied")
@@ -1670,6 +2013,18 @@ def validate_release(*, normalized_manifest_ref: str) -> dict[str, Any]:
     if not (balanced_df["training_eligibility_status"] == "eligible").all() if not balanced_df.empty else False:
         validation_errors.append("Balanced training export contains ineligible rows")
 
+    quality_scorecard = quality_report.get("quality_scorecard") if isinstance(quality_report.get("quality_scorecard"), dict) else {}
+    quality_checks = quality_scorecard.get("checks") if isinstance(quality_scorecard.get("checks"), dict) else {}
+    for name, check in quality_checks.items():
+        status = str(check.get("status") or "pass")
+        message = str(check.get("message") or name)
+        if status == "blocking" and advisory_quality_mode:
+            validation_warnings.append(f"Quality gate advisory: {message}")
+        elif status == "blocking":
+            validation_errors.append(f"Quality gate failed: {message}")
+        elif status == "warning":
+            validation_warnings.append(f"Quality gate warning: {message}")
+
     status = "failed" if validation_errors else "passed"
     validation_results = {
         "status": status,
@@ -1679,6 +2034,7 @@ def validate_release(*, normalized_manifest_ref: str) -> dict[str, Any]:
         "training_rows": int(len(training_df)),
         "eligible_training_rows": int((training_df["training_eligibility_status"] == "eligible").sum()) if not training_df.empty else 0,
         "balanced_training_rows": int(len(balanced_df)),
+        "quality_enforcement_mode": quality_enforcement_mode,
         "join_coverage_override_reason": override_reason or None,
     }
 

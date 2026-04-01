@@ -24,6 +24,10 @@ This first implementation focuses on the release path only. It does not train or
 
 The logical stages remain separate in `python/release_runtime.py`, but the DSPA/KFP package executes them in a single container step so the release workspace remains local for the full snapshot, normalize, validate, and publish flow.
 
+The runtime reads the same MinIO feature-window prefix used by `services/sipp-runner` and `ai/training/train_and_register.py`, so the release corpus is anchored to persisted SIPp/OpenIMS traffic instead of a separate dummy-data path.
+
+If control-plane incidents contain only reconstructed `feature_snapshot` data, those rows are retained for auditability but remain ineligible for balanced training export. `quality_report.json` now includes a quality scorecard with authoritative-window ratio, category coverage, normal-case ratio, eligibility ratio, and feature-variance checks so releases can show how close they are to a production-grade real-data corpus.
+
 Current public outputs include:
 
 - `ims_incident_history.parquet`

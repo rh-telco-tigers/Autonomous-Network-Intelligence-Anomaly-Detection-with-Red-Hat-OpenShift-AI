@@ -7,7 +7,16 @@ configMapGenerator:
       - scenarios/register-normal.xml
       - scenarios/register-storm.xml
       - scenarios/invite-malformed.xml
+      - scenarios/register-authentication-failure.xml
+      - scenarios/register-failure.xml
+      - scenarios/invite-routing-error.xml
+      - scenarios/invite-call-setup-timeout.xml
+      - scenarios/bye-call-drop.xml
+      - scenarios/options-server-error.xml
+      - scenarios/register-network-degradation.xml
+      - scenarios/invite-retransmission-spike.xml
 generatorOptions:
   disableNameSuffixHash: true
 resources:
   - sipp.yaml
+  - sipp-categories.yaml

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<scenario name="invite-routing-error">
+  <send retrans="300">
+    <![CDATA[
+
+      INVITE sip:routing-user@ims-demo-lab.svc.cluster.local SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: <sip:routing-caller-[call_number]@[local_ip]>;tag=[call_number]
+      To: <sip:routing-user@ims-demo-lab.svc.cluster.local>
+      Call-ID: [call_id]
+      CSeq: 1 INVITE
+      Contact: <sip:routing-caller-[call_number]@[local_ip]:[local_port]>
+      Max-Forwards: 0
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <pause milliseconds="2000" />
+</scenario>

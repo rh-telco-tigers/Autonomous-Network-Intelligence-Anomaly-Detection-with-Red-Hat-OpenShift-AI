@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,7 +14,9 @@ from statistics import mean
 from typing import Any
 
 import boto3
+import requests
 from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
 
 
 FEATURE_SCHEMA_VERSION = "feature_schema_v1"
@@ -21,6 +24,7 @@ DEFAULT_DATASET_VERSION = "live-sipp-v1"
 DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000"
 DEFAULT_DATASET_STORE_BUCKET = "ims-models"
 DEFAULT_DATASET_STORE_PREFIX = "pipelines/ims-demo-lab/datasets"
+DEFAULT_CONTROL_PLANE_URL = "http://control-plane.ims-demo-lab.svc.cluster.local:8080"
 NUMERIC_FEATURES = [
     "register_rate",
     "invite_rate",
@@ -41,6 +45,19 @@ SHORTMSG_CALL_ID_INDEX = 4
 SHORTMSG_CSEQ_INDEX = 5
 SHORTMSG_SUMMARY_INDEX = 6
 PAYLOAD_RE = re.compile(r"UDP message (?:sent \((\d+) bytes\)|received \[(\d+)\] bytes)")
+SCENARIO_ANOMALY_TYPES = {
+    "normal": "normal",
+    "registration_storm": "registration_storm",
+    "registration_failure": "registration_failure",
+    "authentication_failure": "authentication_failure",
+    "malformed_invite": "malformed_sip",
+    "routing_error": "routing_error",
+    "call_setup_timeout": "call_setup_timeout",
+    "call_drop_mid_session": "call_drop_mid_session",
+    "server_internal_error": "server_internal_error",
+    "network_degradation": "network_degradation",
+    "retransmission_spike": "retransmission_spike",
+}
 
 
 def _now() -> str:
@@ -84,17 +101,89 @@ def _dataset_s3_client():
         aws_access_key_id=_dataset_store_access_key(),
         aws_secret_access_key=_dataset_store_secret_key(),
         region_name="us-east-1",
-        config=Config(s3={"addressing_style": "path"}),
+        config=Config(
+            s3={"addressing_style": "path"},
+            connect_timeout=5,
+            read_timeout=30,
+            retries={"max_attempts": 5, "mode": "standard"},
+        ),
     )
+
+
+def _s3_retry_attempts() -> int:
+    return max(int(os.getenv("DATASET_STORE_RETRY_ATTEMPTS", "5")), 1)
+
+
+def _run_s3_operation(operation):
+    last_error: Exception | None = None
+    for attempt in range(1, _s3_retry_attempts() + 1):
+        try:
+            return operation()
+        except (BotoCoreError, ClientError) as exc:
+            last_error = exc
+            if attempt == _s3_retry_attempts():
+                break
+            time.sleep(min(float(attempt), 5.0))
+    if last_error is not None:
+        raise last_error
 
 
 def _ensure_dataset_bucket() -> None:
     client = _dataset_s3_client()
     bucket = _dataset_store_bucket()
     try:
-        client.head_bucket(Bucket=bucket)
-    except Exception:
-        client.create_bucket(Bucket=bucket)
+        _run_s3_operation(lambda: client.head_bucket(Bucket=bucket))
+    except ClientError as exc:
+        error_code = str((exc.response.get("Error") or {}).get("Code") or "")
+        if error_code not in {"404", "NoSuchBucket", "NotFound"}:
+            raise
+        _run_s3_operation(lambda: client.create_bucket(Bucket=bucket))
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _control_plane_headers() -> dict[str, str]:
+    api_key = os.getenv("CONTROL_PLANE_API_KEY", os.getenv("API_KEY", "")).strip()
+    return {"x-api-key": api_key} if api_key else {}
+
+
+def _control_plane_url(path: str) -> str:
+    base_url = os.getenv("CONTROL_PLANE_URL", DEFAULT_CONTROL_PLANE_URL).rstrip("/")
+    return f"{base_url}/{path.lstrip('/')}"
+
+
+def _emit_control_plane_incident(window: dict[str, Any]) -> dict[str, Any] | None:
+    if not _env_flag("SIPP_EMIT_CONTROL_PLANE_INCIDENT", False):
+        return None
+    if int(window.get("label", 0)) == 0 and not _env_flag("SIPP_EMIT_NORMAL_INCIDENT", False):
+        return None
+
+    payload = {
+        "incident_id": str(uuid.uuid4()),
+        "project": os.getenv("CONTROL_PLANE_PROJECT", "ims-demo").strip() or "ims-demo",
+        "anomaly_score": float(os.getenv("CONTROL_PLANE_INCIDENT_SCORE", "0.99" if int(window.get("label", 0)) else "0.05")),
+        "anomaly_type": str(window.get("anomaly_type") or "normal"),
+        "model_version": os.getenv("CONTROL_PLANE_INCIDENT_MODEL_VERSION", "sipp-scenario-labeler-v1").strip()
+        or "sipp-scenario-labeler-v1",
+        "feature_window_id": str(window.get("window_id") or ""),
+        "feature_snapshot": dict(window.get("features") or {}),
+        "created_at": str(window.get("captured_at") or _now()),
+        "status": os.getenv("CONTROL_PLANE_INCIDENT_STATUS", "resolved").strip() or "resolved",
+    }
+    timeout_seconds = max(float(os.getenv("CONTROL_PLANE_TIMEOUT_SECONDS", "15")), 1.0)
+    response = requests.post(
+        _control_plane_url("/incidents"),
+        json=payload,
+        headers=_control_plane_headers(),
+        timeout=timeout_seconds,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def _percentile(values: list[float], percentile: float) -> float:
@@ -111,11 +200,8 @@ def _percentile(values: list[float], percentile: float) -> float:
 
 
 def _scenario_anomaly_type(scenario_name: str) -> str:
-    if scenario_name == "normal":
-        return "normal"
-    if scenario_name == "malformed_invite":
-        return "malformed_sip"
-    return scenario_name
+    normalized_name = str(scenario_name or "").strip()
+    return SCENARIO_ANOMALY_TYPES.get(normalized_name, normalized_name or "unknown")
 
 
 def _cseq_method(cseq: str) -> str:
@@ -295,11 +381,13 @@ def _upload_window(window: dict[str, Any]) -> str:
         f"{window['scenario_name']}/{window['window_id']}.json"
     )
     key = _dataset_object_key(relative_path)
-    _dataset_s3_client().put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=json.dumps(window, indent=2).encode("utf-8"),
-        ContentType="application/json",
+    _run_s3_operation(
+        lambda: _dataset_s3_client().put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=json.dumps(window, indent=2).encode("utf-8"),
+            ContentType="application/json",
+        )
     )
     return _s3_uri(bucket, key)
 
@@ -353,7 +441,13 @@ def main() -> None:
         window = _build_feature_window(args, trace_dir, sipp_result)
         window["sipp_summary"]["status"] = "completed" if sipp_result.returncode == 0 else "completed-with-sipp-errors"
         window_uri = _upload_window(window)
-        print(json.dumps({"window_uri": window_uri, "window": window}, indent=2))
+        incident = None
+        try:
+            incident = _emit_control_plane_incident(window)
+        except requests.RequestException:
+            if _env_flag("CONTROL_PLANE_INCIDENT_REQUIRED", False):
+                raise
+        print(json.dumps({"window_uri": window_uri, "window": window, "incident": incident}, indent=2))
     finally:
         shutil.rmtree(trace_dir, ignore_errors=True)
 
