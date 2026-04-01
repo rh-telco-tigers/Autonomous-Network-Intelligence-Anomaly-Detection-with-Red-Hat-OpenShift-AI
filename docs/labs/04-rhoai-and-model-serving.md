@@ -9,6 +9,7 @@ Run the training pipeline in OpenShift AI, verify that it uses the captured data
 - Complete Lab 03 and confirm that `live-sipp-v1` feature windows exist in MinIO.
 - Make sure the OpenShift AI operator is installed.
 - Make sure you can access the `ims-demo-lab` namespace with `oc`.
+- Make sure the Tekton image build from Lab 03 has already populated the internal registry tags used by the trainer and serving components.
 
 ## What This Lab Uses
 
@@ -104,4 +105,5 @@ The pipeline prefers the `live-sipp-v1` dataset, but it can fall back to bootstr
 
 - If the DSPA is not ready, check the OpenShift AI operator status first.
 - If the workflow fails, inspect the failed pod logs before rerunning.
+- If a training or serving pod is stuck in `ImagePullBackOff`, confirm that Lab 03 finished building the demo images into `image-registry.openshift-image-registry.svc:5000/ims-demo-lab`.
 - If model serving is not ready, check `oc describe inferenceservice -n ims-demo-lab`.
