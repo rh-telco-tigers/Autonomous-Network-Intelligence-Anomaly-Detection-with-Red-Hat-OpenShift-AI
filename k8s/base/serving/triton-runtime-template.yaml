@@ -4,6 +4,7 @@ metadata:
   name: nvidia-triton-runtime-template
   namespace: redhat-ods-applications
   annotations:
+    argocd.argoproj.io/sync-wave: "0"
     description: NVIDIA Triton Inference Server for predictive model serving.
     opendatahub.io/apiProtocol: REST
     opendatahub.io/model-type: '["predictive"]'
