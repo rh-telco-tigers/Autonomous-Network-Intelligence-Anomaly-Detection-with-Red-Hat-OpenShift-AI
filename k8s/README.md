@@ -15,6 +15,8 @@ base/
   kfp/          OpenShift AI DSPA and Kubeflow pipeline bootstrap
   serving/      KServe runtimes and inference services
   pipelines/    Tekton pipelines and PipelineRuns
+manual/
+  traffic-backfill-100k/ on-demand SIPp backfill jobs outside the demo overlay
 overlays/
   demo/         opinionated demo deployment bundle
 ```

@@ -484,6 +484,13 @@ def _upload_window(window: dict[str, Any]) -> str:
     return _s3_uri(bucket, key)
 
 
+def _positive_repeat_count(value: int) -> int:
+    count = int(value)
+    if count < 1:
+        raise ValueError("--repeat-count must be at least 1")
+    return count
+
+
 def _run_sipp(args: argparse.Namespace, trace_dir: Path) -> subprocess.CompletedProcess[str]:
     command = [
         "sipp",
@@ -512,21 +519,7 @@ def _run_sipp(args: argparse.Namespace, trace_dir: Path) -> subprocess.Completed
     )
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--target-host", required=True)
-    parser.add_argument("--target-port", type=int, default=5060)
-    parser.add_argument("--scenario-file", required=True)
-    parser.add_argument("--scenario-name", required=True)
-    parser.add_argument("--call-limit", type=int, required=True)
-    parser.add_argument("--rate", type=int, required=True)
-    parser.add_argument("--transport", choices=sorted(SIPP_TRANSPORT_MAP.keys()), default="udp")
-    parser.add_argument("--dataset-version", default=os.getenv("DATASET_VERSION", DEFAULT_DATASET_VERSION))
-    return parser.parse_args()
-
-
-def main() -> None:
-    args = parse_args()
+def _run_once(args: argparse.Namespace) -> dict[str, Any]:
     trace_dir = Path(tempfile.mkdtemp(prefix="ims-sipp-trace-"))
     try:
         sipp_result = _run_sipp(args, trace_dir)
@@ -539,9 +532,74 @@ def main() -> None:
         except requests.RequestException:
             if _env_flag("CONTROL_PLANE_INCIDENT_REQUIRED", False):
                 raise
-        print(json.dumps({"window_uri": window_uri, "window": window, "incident": incident}, indent=2))
+        return {"window_uri": window_uri, "window": window, "incident": incident}
     finally:
         shutil.rmtree(trace_dir, ignore_errors=True)
+
+
+def _progress_payload(args: argparse.Namespace, completed_runs: int, total_runs: int) -> dict[str, Any]:
+    return {
+        "dataset_version": args.dataset_version,
+        "scenario_name": args.scenario_name,
+        "completed_runs": completed_runs,
+        "total_runs": total_runs,
+    }
+
+
+def _bulk_summary(args: argparse.Namespace, results: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "dataset_version": args.dataset_version,
+        "scenario_name": args.scenario_name,
+        "repeat_count": len(results),
+        "windows_created": len(results),
+        "control_plane_incidents_emitted": sum(1 for result in results if result.get("incident")),
+        "completed_with_sipp_errors": sum(
+            1
+            for result in results
+            if int(((result.get("window") or {}).get("sipp_summary") or {}).get("return_code", 0) or 0) != 0
+        ),
+        "first_window_uri": results[0].get("window_uri") if results else None,
+        "last_window_uri": results[-1].get("window_uri") if results else None,
+    }
+
+
+def _run_repeated(args: argparse.Namespace) -> dict[str, Any]:
+    repeat_count = _positive_repeat_count(args.repeat_count)
+    if repeat_count == 1:
+        return _run_once(args)
+
+    progress_every = max(int(args.progress_every), 0)
+    repeat_sleep_seconds = max(float(args.repeat_sleep_seconds), 0.0)
+    results: list[dict[str, Any]] = []
+    for iteration in range(repeat_count):
+        results.append(_run_once(args))
+        completed_runs = iteration + 1
+        if progress_every and completed_runs < repeat_count and completed_runs % progress_every == 0:
+            print(json.dumps(_progress_payload(args, completed_runs, repeat_count)))
+        if repeat_sleep_seconds and completed_runs < repeat_count:
+            time.sleep(repeat_sleep_seconds)
+    return _bulk_summary(args, results)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--target-host", required=True)
+    parser.add_argument("--target-port", type=int, default=5060)
+    parser.add_argument("--scenario-file", required=True)
+    parser.add_argument("--scenario-name", required=True)
+    parser.add_argument("--call-limit", type=int, required=True)
+    parser.add_argument("--rate", type=int, required=True)
+    parser.add_argument("--transport", choices=sorted(SIPP_TRANSPORT_MAP.keys()), default="udp")
+    parser.add_argument("--dataset-version", default=os.getenv("DATASET_VERSION", DEFAULT_DATASET_VERSION))
+    parser.add_argument("--repeat-count", type=int, default=1)
+    parser.add_argument("--repeat-sleep-seconds", type=float, default=0.0)
+    parser.add_argument("--progress-every", type=int, default=0)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    print(json.dumps(_run_repeated(args), indent=2))
 
 
 if __name__ == "__main__":

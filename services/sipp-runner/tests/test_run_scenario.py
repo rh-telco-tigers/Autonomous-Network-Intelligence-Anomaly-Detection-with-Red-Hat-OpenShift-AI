@@ -1,6 +1,8 @@
 import importlib.util
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "run_scenario.py"
@@ -69,6 +71,54 @@ class ScenarioAnomalyTypeTests(unittest.TestCase):
             ),
             [],
         )
+
+
+class BulkBackfillTests(unittest.TestCase):
+    def _args(self, **overrides):
+        values = {
+            "dataset_version": "backfill-sipp-100k-v1",
+            "scenario_name": "registration_failure",
+            "repeat_count": 3,
+            "repeat_sleep_seconds": 0.0,
+            "progress_every": 0,
+        }
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
+    def test_positive_repeat_count_rejects_zero(self) -> None:
+        with self.assertRaises(ValueError):
+            run_scenario._positive_repeat_count(0)
+
+    def test_run_repeated_returns_bulk_summary(self) -> None:
+        args = self._args(repeat_count=3)
+        results = [
+            {"window_uri": "s3://bucket/window-1.json", "window": {"sipp_summary": {"return_code": 0}}, "incident": None},
+            {"window_uri": "s3://bucket/window-2.json", "window": {"sipp_summary": {"return_code": 1}}, "incident": {"id": "inc-2"}},
+            {"window_uri": "s3://bucket/window-3.json", "window": {"sipp_summary": {"return_code": 0}}, "incident": {"id": "inc-3"}},
+        ]
+        with mock.patch.object(run_scenario, "_run_once", side_effect=results):
+            summary = run_scenario._run_repeated(args)
+
+        self.assertEqual(summary["dataset_version"], "backfill-sipp-100k-v1")
+        self.assertEqual(summary["scenario_name"], "registration_failure")
+        self.assertEqual(summary["repeat_count"], 3)
+        self.assertEqual(summary["windows_created"], 3)
+        self.assertEqual(summary["control_plane_incidents_emitted"], 2)
+        self.assertEqual(summary["completed_with_sipp_errors"], 1)
+        self.assertEqual(summary["first_window_uri"], "s3://bucket/window-1.json")
+        self.assertEqual(summary["last_window_uri"], "s3://bucket/window-3.json")
+
+    def test_run_repeated_sleeps_between_iterations(self) -> None:
+        args = self._args(repeat_count=3, repeat_sleep_seconds=0.5)
+        result = {"window_uri": "s3://bucket/window.json", "window": {"sipp_summary": {"return_code": 0}}, "incident": None}
+        with (
+            mock.patch.object(run_scenario, "_run_once", return_value=result),
+            mock.patch.object(run_scenario.time, "sleep") as sleep,
+        ):
+            run_scenario._run_repeated(args)
+
+        self.assertEqual(sleep.call_count, 2)
+        sleep.assert_has_calls([mock.call(0.5), mock.call(0.5)])
 
 
 if __name__ == "__main__":

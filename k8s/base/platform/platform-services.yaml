@@ -414,6 +414,9 @@ spec:
           image: demo-ui:latest
           ports:
             - containerPort: 8080
+          env:
+            - name: CONTROL_PLANE_PROXY_URL
+              value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
           resources:
             requests:
               cpu: 50m

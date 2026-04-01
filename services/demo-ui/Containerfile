@@ -3,7 +3,8 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY services/demo-ui/index.html /app/index.html
+COPY services/demo-ui/server.py /app/server.py
 
 EXPOSE 8080
 
-CMD ["python", "-m", "http.server", "8080", "--directory", "/app"]
+CMD ["python", "/app/server.py"]

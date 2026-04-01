@@ -1,0 +1,959 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sipp-backfill-normal-operation
+  annotations:
+    ims.redhat.com/target-windows: "45000"
+    ims.redhat.com/windows-per-completion: "100"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  parallelism: 1
+  completions: 450
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sipp-backfill-normal-operation
+        app.kubernetes.io/component: sipp-backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: sipp
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          imagePullPolicy: Always
+          args:
+            - --target-host
+            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - --target-port
+            - "5060"
+            - --scenario-file
+            - /scenarios/register-normal.xml
+            - --scenario-name
+            - normal_operation
+            - --transport
+            - udp
+            - --call-limit
+            - "1"
+            - --rate
+            - "1"
+            - --dataset-version
+            - backfill-sipp-100k-v1
+            - --repeat-count
+            - "100"
+            - --repeat-sleep-seconds
+            - "0.2"
+            - --progress-every
+            - "25"
+          env:
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ims-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ims-demo-lab/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: scenarios
+              mountPath: /scenarios
+      volumes:
+        - name: scenarios
+          configMap:
+            name: sipp-scenarios
+            defaultMode: 420
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sipp-backfill-registration-storm
+  annotations:
+    ims.redhat.com/target-windows: "10000"
+    ims.redhat.com/windows-per-completion: "100"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  parallelism: 1
+  completions: 100
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sipp-backfill-registration-storm
+        app.kubernetes.io/component: sipp-backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: sipp
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          imagePullPolicy: Always
+          args:
+            - --target-host
+            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - --target-port
+            - "5060"
+            - --scenario-file
+            - /scenarios/register-storm.xml
+            - --scenario-name
+            - registration_storm
+            - --transport
+            - udp
+            - --call-limit
+            - "400"
+            - --rate
+            - "20"
+            - --dataset-version
+            - backfill-sipp-100k-v1
+            - --repeat-count
+            - "100"
+            - --repeat-sleep-seconds
+            - "0.2"
+            - --progress-every
+            - "25"
+          env:
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ims-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ims-demo-lab/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: scenarios
+              mountPath: /scenarios
+      volumes:
+        - name: scenarios
+          configMap:
+            name: sipp-scenarios
+            defaultMode: 420
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sipp-backfill-malformed-invite
+  annotations:
+    ims.redhat.com/target-windows: "7000"
+    ims.redhat.com/windows-per-completion: "100"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  parallelism: 1
+  completions: 70
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sipp-backfill-malformed-invite
+        app.kubernetes.io/component: sipp-backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: sipp
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          imagePullPolicy: Always
+          args:
+            - --target-host
+            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - --target-port
+            - "5060"
+            - --scenario-file
+            - /scenarios/invite-malformed.xml
+            - --scenario-name
+            - malformed_invite
+            - --transport
+            - udp
+            - --call-limit
+            - "24"
+            - --rate
+            - "4"
+            - --dataset-version
+            - backfill-sipp-100k-v1
+            - --repeat-count
+            - "100"
+            - --repeat-sleep-seconds
+            - "0.2"
+            - --progress-every
+            - "25"
+          env:
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ims-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ims-demo-lab/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: scenarios
+              mountPath: /scenarios
+      volumes:
+        - name: scenarios
+          configMap:
+            name: sipp-scenarios
+            defaultMode: 420
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sipp-backfill-authentication-failure
+  annotations:
+    ims.redhat.com/target-windows: "7000"
+    ims.redhat.com/windows-per-completion: "100"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  parallelism: 1
+  completions: 70
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sipp-backfill-authentication-failure
+        app.kubernetes.io/component: sipp-backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: sipp
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          imagePullPolicy: Always
+          args:
+            - --target-host
+            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - --target-port
+            - "5060"
+            - --scenario-file
+            - /scenarios/register-authentication-failure.xml
+            - --scenario-name
+            - authentication_failure
+            - --transport
+            - udp
+            - --call-limit
+            - "24"
+            - --rate
+            - "4"
+            - --dataset-version
+            - backfill-sipp-100k-v1
+            - --repeat-count
+            - "100"
+            - --repeat-sleep-seconds
+            - "0.2"
+            - --progress-every
+            - "25"
+          env:
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ims-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ims-demo-lab/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: scenarios
+              mountPath: /scenarios
+      volumes:
+        - name: scenarios
+          configMap:
+            name: sipp-scenarios
+            defaultMode: 420
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sipp-backfill-registration-failure
+  annotations:
+    ims.redhat.com/target-windows: "7000"
+    ims.redhat.com/windows-per-completion: "100"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  parallelism: 1
+  completions: 70
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sipp-backfill-registration-failure
+        app.kubernetes.io/component: sipp-backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: sipp
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          imagePullPolicy: Always
+          args:
+            - --target-host
+            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - --target-port
+            - "5060"
+            - --scenario-file
+            - /scenarios/register-failure.xml
+            - --scenario-name
+            - registration_failure
+            - --transport
+            - udp
+            - --call-limit
+            - "24"
+            - --rate
+            - "4"
+            - --dataset-version
+            - backfill-sipp-100k-v1
+            - --repeat-count
+            - "100"
+            - --repeat-sleep-seconds
+            - "0.2"
+            - --progress-every
+            - "25"
+          env:
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ims-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ims-demo-lab/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: scenarios
+              mountPath: /scenarios
+      volumes:
+        - name: scenarios
+          configMap:
+            name: sipp-scenarios
+            defaultMode: 420
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sipp-backfill-routing-error
+  annotations:
+    ims.redhat.com/target-windows: "5000"
+    ims.redhat.com/windows-per-completion: "100"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  parallelism: 1
+  completions: 50
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sipp-backfill-routing-error
+        app.kubernetes.io/component: sipp-backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: sipp
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          imagePullPolicy: Always
+          args:
+            - --target-host
+            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - --target-port
+            - "5060"
+            - --scenario-file
+            - /scenarios/invite-routing-error.xml
+            - --scenario-name
+            - routing_error
+            - --transport
+            - udp
+            - --call-limit
+            - "18"
+            - --rate
+            - "3"
+            - --dataset-version
+            - backfill-sipp-100k-v1
+            - --repeat-count
+            - "100"
+            - --repeat-sleep-seconds
+            - "0.2"
+            - --progress-every
+            - "25"
+          env:
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ims-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ims-demo-lab/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: scenarios
+              mountPath: /scenarios
+      volumes:
+        - name: scenarios
+          configMap:
+            name: sipp-scenarios
+            defaultMode: 420
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sipp-backfill-busy-destination
+  annotations:
+    ims.redhat.com/target-windows: "4000"
+    ims.redhat.com/windows-per-completion: "100"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  parallelism: 1
+  completions: 40
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sipp-backfill-busy-destination
+        app.kubernetes.io/component: sipp-backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: sipp
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          imagePullPolicy: Always
+          args:
+            - --target-host
+            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - --target-port
+            - "5060"
+            - --scenario-file
+            - /scenarios/invite-busy-destination.xml
+            - --scenario-name
+            - busy_destination
+            - --transport
+            - udp
+            - --call-limit
+            - "12"
+            - --rate
+            - "3"
+            - --dataset-version
+            - backfill-sipp-100k-v1
+            - --repeat-count
+            - "100"
+            - --repeat-sleep-seconds
+            - "0.2"
+            - --progress-every
+            - "25"
+          env:
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ims-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ims-demo-lab/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: scenarios
+              mountPath: /scenarios
+      volumes:
+        - name: scenarios
+          configMap:
+            name: sipp-scenarios
+            defaultMode: 420
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sipp-backfill-call-setup-timeout
+  annotations:
+    ims.redhat.com/target-windows: "4000"
+    ims.redhat.com/windows-per-completion: "100"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  parallelism: 1
+  completions: 40
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sipp-backfill-call-setup-timeout
+        app.kubernetes.io/component: sipp-backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: sipp
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          imagePullPolicy: Always
+          args:
+            - --target-host
+            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - --target-port
+            - "5060"
+            - --scenario-file
+            - /scenarios/invite-call-setup-timeout.xml
+            - --scenario-name
+            - call_setup_timeout
+            - --transport
+            - udp
+            - --call-limit
+            - "12"
+            - --rate
+            - "3"
+            - --dataset-version
+            - backfill-sipp-100k-v1
+            - --repeat-count
+            - "100"
+            - --repeat-sleep-seconds
+            - "0.2"
+            - --progress-every
+            - "25"
+          env:
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ims-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ims-demo-lab/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: scenarios
+              mountPath: /scenarios
+      volumes:
+        - name: scenarios
+          configMap:
+            name: sipp-scenarios
+            defaultMode: 420
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sipp-backfill-call-drop-mid-session
+  annotations:
+    ims.redhat.com/target-windows: "4000"
+    ims.redhat.com/windows-per-completion: "100"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  parallelism: 1
+  completions: 40
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sipp-backfill-call-drop-mid-session
+        app.kubernetes.io/component: sipp-backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: sipp
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          imagePullPolicy: Always
+          args:
+            - --target-host
+            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - --target-port
+            - "5060"
+            - --scenario-file
+            - /scenarios/bye-call-drop.xml
+            - --scenario-name
+            - call_drop_mid_session
+            - --transport
+            - udp
+            - --call-limit
+            - "20"
+            - --rate
+            - "4"
+            - --dataset-version
+            - backfill-sipp-100k-v1
+            - --repeat-count
+            - "100"
+            - --repeat-sleep-seconds
+            - "0.2"
+            - --progress-every
+            - "25"
+          env:
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ims-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ims-demo-lab/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: scenarios
+              mountPath: /scenarios
+      volumes:
+        - name: scenarios
+          configMap:
+            name: sipp-scenarios
+            defaultMode: 420
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sipp-backfill-server-internal-error
+  annotations:
+    ims.redhat.com/target-windows: "3000"
+    ims.redhat.com/windows-per-completion: "100"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  parallelism: 1
+  completions: 30
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sipp-backfill-server-internal-error
+        app.kubernetes.io/component: sipp-backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: sipp
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          imagePullPolicy: Always
+          args:
+            - --target-host
+            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - --target-port
+            - "5060"
+            - --scenario-file
+            - /scenarios/options-server-error.xml
+            - --scenario-name
+            - server_internal_error
+            - --transport
+            - udp
+            - --call-limit
+            - "16"
+            - --rate
+            - "4"
+            - --dataset-version
+            - backfill-sipp-100k-v1
+            - --repeat-count
+            - "100"
+            - --repeat-sleep-seconds
+            - "0.2"
+            - --progress-every
+            - "25"
+          env:
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ims-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ims-demo-lab/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: scenarios
+              mountPath: /scenarios
+      volumes:
+        - name: scenarios
+          configMap:
+            name: sipp-scenarios
+            defaultMode: 420
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sipp-backfill-network-degradation
+  annotations:
+    ims.redhat.com/target-windows: "2000"
+    ims.redhat.com/windows-per-completion: "100"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  parallelism: 1
+  completions: 20
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sipp-backfill-network-degradation
+        app.kubernetes.io/component: sipp-backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: sipp
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          imagePullPolicy: Always
+          args:
+            - --target-host
+            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - --target-port
+            - "5060"
+            - --scenario-file
+            - /scenarios/register-network-degradation.xml
+            - --scenario-name
+            - network_degradation
+            - --transport
+            - udp
+            - --call-limit
+            - "8"
+            - --rate
+            - "2"
+            - --dataset-version
+            - backfill-sipp-100k-v1
+            - --repeat-count
+            - "100"
+            - --repeat-sleep-seconds
+            - "0.2"
+            - --progress-every
+            - "25"
+          env:
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ims-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ims-demo-lab/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: scenarios
+              mountPath: /scenarios
+      volumes:
+        - name: scenarios
+          configMap:
+            name: sipp-scenarios
+            defaultMode: 420
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sipp-backfill-retransmission-spike
+  annotations:
+    ims.redhat.com/target-windows: "2000"
+    ims.redhat.com/windows-per-completion: "100"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  parallelism: 1
+  completions: 20
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sipp-backfill-retransmission-spike
+        app.kubernetes.io/component: sipp-backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: sipp
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          imagePullPolicy: Always
+          args:
+            - --target-host
+            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - --target-port
+            - "5060"
+            - --scenario-file
+            - /scenarios/invite-retransmission-spike.xml
+            - --scenario-name
+            - retransmission_spike
+            - --transport
+            - udp
+            - --call-limit
+            - "14"
+            - --rate
+            - "3"
+            - --dataset-version
+            - backfill-sipp-100k-v1
+            - --repeat-count
+            - "100"
+            - --repeat-sleep-seconds
+            - "0.2"
+            - --progress-every
+            - "25"
+          env:
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ims-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ims-demo-lab/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: scenarios
+              mountPath: /scenarios
+      volumes:
+        - name: scenarios
+          configMap:
+            name: sipp-scenarios
+            defaultMode: 420
