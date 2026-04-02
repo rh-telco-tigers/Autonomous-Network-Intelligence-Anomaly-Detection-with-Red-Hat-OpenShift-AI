@@ -11,6 +11,7 @@ base/
   ims/          IMS lab workloads
   traffic/      SIPp scenario runners
   platform/     feature, anomaly, RCA, and UI services
+  feature-store/ cluster defaults for the Feature Store and Model Registry path
   milvus/       vector database stack
   kfp/          OpenShift AI DSPA and Kubeflow pipeline bootstrap
   serving/      KServe runtimes and inference services

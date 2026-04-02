@@ -92,6 +92,8 @@ spec:
               value: http://rca-service.ims-demo-lab.svc.cluster.local:8080
             - name: PREDICTIVE_SERVICE_URL
               value: http://ims-predictive-predictor.ims-demo-lab.svc.cluster.local:8080
+            - name: PREDICTIVE_FS_SERVICE_URL
+              value: http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080
           volumeMounts:
             - name: data
               mountPath: /data

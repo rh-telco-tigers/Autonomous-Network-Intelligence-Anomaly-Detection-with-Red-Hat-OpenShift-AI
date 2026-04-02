@@ -1,0 +1,85 @@
+apiVersion: feast.dev/v1
+kind: FeatureStore
+metadata:
+  name: ims-featurestore
+  namespace: ims-demo-lab
+  labels:
+    feature-store-ui: enabled
+  annotations:
+    argocd.argoproj.io/sync-wave: "40"
+spec:
+  feastProject: ims_anomaly_featurestore
+  feastProjectDir:
+    init:
+      template: local
+      minimal: true
+  services:
+    volumes:
+      - name: feature-repo
+        configMap:
+          name: ims-featurestore-repo
+    registry:
+      local:
+        server:
+          restAPI: true
+          env:
+            - name: IMS_FEATURESTORE_OFFLINE_SOURCE_PATH
+              value: s3://ims-models/pipelines/ims-demo-lab/datasets/feature-bundles/ims-feature-bundle-v1/feature_store/offline_source.parquet
+            - name: IMS_FEATURESTORE_LABEL_SOURCE_PATH
+              value: s3://ims-models/pipelines/ims-demo-lab/datasets/feature-bundles/ims-feature-bundle-v1/parquet/window_labels.parquet
+            - name: FEAST_S3_ENDPOINT_URL
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: AWS_S3_ENDPOINT
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: AWS_REGION
+              value: us-east-1
+          envFrom:
+            - secretRef:
+                name: model-storage-credentials
+          volumeMounts:
+            - name: feature-repo
+              mountPath: /feast-data/ims_anomaly_featurestore/feature_repo/entities.py
+              subPath: entities.py
+            - name: feature-repo
+              mountPath: /feast-data/ims_anomaly_featurestore/feature_repo/feature_views.py
+              subPath: feature_views.py
+            - name: feature-repo
+              mountPath: /feast-data/ims_anomaly_featurestore/feature_repo/feature_services.py
+              subPath: feature_services.py
+    onlineStore:
+      server:
+        env:
+          - name: IMS_FEATURESTORE_OFFLINE_SOURCE_PATH
+            value: s3://ims-models/pipelines/ims-demo-lab/datasets/feature-bundles/ims-feature-bundle-v1/feature_store/offline_source.parquet
+          - name: IMS_FEATURESTORE_LABEL_SOURCE_PATH
+            value: s3://ims-models/pipelines/ims-demo-lab/datasets/feature-bundles/ims-feature-bundle-v1/parquet/window_labels.parquet
+          - name: FEAST_S3_ENDPOINT_URL
+            value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          - name: AWS_S3_ENDPOINT
+            value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          - name: AWS_REGION
+            value: us-east-1
+        envFrom:
+          - secretRef:
+              name: model-storage-credentials
+        volumeMounts:
+          - name: feature-repo
+            mountPath: /feast-data/ims_anomaly_featurestore/feature_repo/entities.py
+            subPath: entities.py
+          - name: feature-repo
+            mountPath: /feast-data/ims_anomaly_featurestore/feature_repo/feature_views.py
+            subPath: feature_views.py
+          - name: feature-repo
+            mountPath: /feast-data/ims_anomaly_featurestore/feature_repo/feature_services.py
+            subPath: feature_services.py
+    ui:
+      volumeMounts:
+        - name: feature-repo
+          mountPath: /feast-data/ims_anomaly_featurestore/feature_repo/entities.py
+          subPath: entities.py
+        - name: feature-repo
+          mountPath: /feast-data/ims_anomaly_featurestore/feature_repo/feature_views.py
+          subPath: feature_views.py
+        - name: feature-repo
+          mountPath: /feast-data/ims_anomaly_featurestore/feature_repo/feature_services.py
+          subPath: feature_services.py

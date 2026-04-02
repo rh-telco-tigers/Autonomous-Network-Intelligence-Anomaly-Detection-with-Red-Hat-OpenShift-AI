@@ -1,0 +1,7 @@
+project: ims_anomaly_featurestore
+registry: data/registry.db
+provider: local
+entity_key_serialization_version: 3
+online_store:
+  type: sqlite
+  path: data/online_store.db

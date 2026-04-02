@@ -106,6 +106,10 @@ PREDICTIVE_SERVICE_URL = os.getenv(
     "PREDICTIVE_SERVICE_URL",
     "http://ims-predictive-predictor.ims-demo-lab.svc.cluster.local:8080",
 ).rstrip("/")
+PREDICTIVE_FS_SERVICE_URL = os.getenv(
+    "PREDICTIVE_FS_SERVICE_URL",
+    "http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080",
+).rstrip("/")
 
 
 @app.on_event("startup")
@@ -227,6 +231,8 @@ def _service_snapshot() -> List[Dict[str, object]]:
     ]
     if PREDICTIVE_SERVICE_URL:
         services.append(_probe_service("Predictive Service", PREDICTIVE_SERVICE_URL, path="/v2/health/ready"))
+    if PREDICTIVE_FS_SERVICE_URL:
+        services.append(_probe_service("Feature Store Predictive Service", PREDICTIVE_FS_SERVICE_URL, path="/v2/health/ready"))
     return services
 
 

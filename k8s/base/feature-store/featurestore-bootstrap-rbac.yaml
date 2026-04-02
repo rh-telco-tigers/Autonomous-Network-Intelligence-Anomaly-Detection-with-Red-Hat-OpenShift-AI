@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ims-featurestore-bootstrap
+  namespace: ims-demo-lab
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ims-featurestore-bootstrap-admin
+  namespace: ims-demo-lab
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+subjects:
+  - kind: ServiceAccount
+    name: ims-featurestore-bootstrap
+    namespace: ims-demo-lab

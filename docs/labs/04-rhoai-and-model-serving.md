@@ -2,7 +2,7 @@
 
 ## Objective
 
-Run the training pipeline in OpenShift AI, verify that it uses the captured dataset from Lab 03, and confirm that the selected model is available for serving.
+Run the training pipeline in OpenShift AI, verify that it uses the captured dataset from Lab 03, and confirm that the selected model is available for serving. The additive Feature Store path now publishes a bundle first and trains from that bundle without replacing the current `ims-predictive` service.
 
 ## Before You Begin
 
@@ -10,12 +10,13 @@ Run the training pipeline in OpenShift AI, verify that it uses the captured data
 - Make sure the OpenShift AI operator is installed.
 - Make sure you can access the `ims-demo-lab` namespace with `oc`.
 - Make sure the Tekton image build from Lab 03 has already populated the internal registry tags used by the trainer and serving components.
+- Do not create a Feature Store manually in the OpenShift AI UI. This repo now bootstraps `FeatureStore/ims-featurestore` automatically from GitOps and the lab manifests.
 
 ## What This Lab Uses
 
 - `DataSciencePipelinesApplication` named `dspa`
 - KFP assets from `k8s/base/kfp`
-- trainer image from `ai/training`
+- trainer images from `ai/training` and `ai/featurestore`
 - model storage in MinIO bucket `ims-models`
 - predictive serving resources in `k8s/base/serving`
 
@@ -27,25 +28,27 @@ Run the training pipeline in OpenShift AI, verify that it uses the captured data
 oc get csv -n redhat-ods-operator
 ```
 
-2. Apply the AI and serving resources:
+2. Apply the AI, Feature Store, and serving resources:
 
 ```sh
+oc apply -k k8s/base/feature-store
 oc apply -k k8s/base/kfp
 oc apply -k k8s/base/serving
 oc apply -k k8s/base/milvus
 ```
 
-3. Verify that the DSPA is ready:
+3. Verify that the DSPA and Feature Store are ready:
 
 ```sh
-oc get dspa -n ims-demo-lab
+oc get dspa,featurestore -n ims-demo-lab
 ```
 
 4. Confirm that the live dataset exists before starting training. The expected dataset version is `live-sipp-v1`.
-5. Start the pipeline bootstrap job or verify that it has already created a run:
+5. Start the bundle publish pipeline, then the feature-store training pipeline:
 
 ```sh
-oc get job -n ims-demo-lab | rg 'ims-kfp-bootstrap'
+make trigger-feature-bundle-pipeline
+make trigger-featurestore-pipeline
 ```
 
 6. Watch the workflow progress:
@@ -55,13 +58,20 @@ oc get workflow -n ims-demo-lab
 ```
 
 7. When the workflow completes, inspect the `ingest-data` step logs. The expected source is `openims-sipp-lab`, and the expected dataset kind is `feature_windows`.
-8. Verify that the model-serving resources are ready:
+8. Confirm that the OpenShift AI Feature Store UI shows `ims-featurestore`. If the page was already open, do a hard refresh first.
+9. Verify that both model-serving resources are ready:
 
 ```sh
 oc get inferenceservice,servingruntime -n ims-demo-lab
 ```
 
-9. Open the Attu route if you also want to confirm the retrieval data store is present:
+10. Run the side-by-side serving smoke check:
+
+```sh
+make smoke-check-featurestore-serving
+```
+
+11. Open the Attu route if you also want to confirm the retrieval data store is present:
 
 ```sh
 oc get route milvus-attu -n ims-demo-lab -o jsonpath='{.spec.host}{"\n"}'
@@ -72,10 +82,12 @@ oc get route milvus-attu -n ims-demo-lab -o jsonpath='{.spec.host}{"\n"}'
 After this lab:
 
 - the DSPA `dspa` is ready
-- the training pipeline completes successfully
+- the Feature Store instance `ims-featurestore` is ready and visible in the OpenShift AI UI
+- the bundle publish pipeline completes successfully
+- the feature-store training pipeline completes successfully
 - the pipeline reads `live-sipp-v1` feature windows when they are available
-- the selected model is written to the registry
-- the predictive serving resources are available in `ims-demo-lab`
+- the selected model is written to the model registry
+- both `ims-predictive` and `ims-predictive-fs` are available in `ims-demo-lab`
 
 ## Useful Checks
 
@@ -104,6 +116,7 @@ The pipeline prefers the `live-sipp-v1` dataset, but it can fall back to bootstr
 ## Quick Troubleshooting
 
 - If the DSPA is not ready, check the OpenShift AI operator status first.
+- If the Feature Store overview still shows an empty state, hard refresh the browser and confirm `oc get featurestore -n ims-demo-lab` shows `ims-featurestore` in `Ready`.
 - If the workflow fails, inspect the failed pod logs before rerunning.
 - If a training or serving pod is stuck in `ImagePullBackOff`, confirm that Lab 03 finished building the demo images into `image-registry.openshift-image-registry.svc:5000/ims-demo-lab`.
 - If model serving is not ready, check `oc describe inferenceservice -n ims-demo-lab`.

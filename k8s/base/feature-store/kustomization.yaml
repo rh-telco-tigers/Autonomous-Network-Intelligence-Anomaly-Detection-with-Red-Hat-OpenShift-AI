@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: ims-featurestore-repo
+    files:
+      - entities.py=assets/entities.py
+      - feature_views.py=assets/feature_views.py
+      - feature_services.py=assets/feature_services.py
+resources:
+  - featurestore-config.yaml
+  - featurestore-instance.yaml
+  - featurestore-bootstrap-rbac.yaml
+  - featurestore-bootstrap-job.yaml

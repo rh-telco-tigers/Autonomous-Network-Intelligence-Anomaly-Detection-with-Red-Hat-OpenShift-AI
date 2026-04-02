@@ -131,9 +131,24 @@ spec:
       workspaces:
         - name: source
           workspace: source
-    - name: build-ims-incident-release
+    - name: build-ims-ai-featurestore-trainer
       runAfter:
         - build-ims-ai-trainer
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: ai/featurestore/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-ims-incident-release
+      runAfter:
+        - build-ims-ai-featurestore-trainer
       taskRef:
         name: buildah-lite
       params:

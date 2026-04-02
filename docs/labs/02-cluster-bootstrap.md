@@ -39,6 +39,7 @@ make kustomize-demo
    - or running `make trigger-build-pipeline` to create a `PipelineRun` for `ims-demo-container-build`
 9. If you skip that first image build, workloads that reference `image-registry.openshift-image-registry.svc:5000/...:latest` can remain in `ImagePullBackOff`.
 10. Review the demo API token secret and service monitors created under `k8s/base/platform` and `k8s/base/observability`.
+11. Once the `ims-demo-platform` application has synced the repo-managed base resources, the OpenShift AI path also creates `FeatureStore/ims-featurestore` automatically. Do not use the OpenShift console to create a separate Feature Store by hand.
 
 ## Notes
 
@@ -48,6 +49,7 @@ make kustomize-demo
 - The GitOps bootstrap applies only standard Kubernetes and OLM resources; the bootstrap job waits for the GitOps CRDs before creating the Argo CD application.
 - After bootstrap, the `ims-demo-platform` Argo CD application owns `k8s/overlays/demo`; use Git pushes plus Argo reconciliation instead of `oc apply -k k8s/overlays/demo`.
 - The initial `git push` seeds GitOps state only. Tekton image builds begin only after the demo overlay has created the pipeline and trigger resources.
+- The Feature Store instance and its `feast apply` bootstrap job are part of the repo-managed manifests under `k8s/base/feature-store`, so they come up automatically with the rest of the platform sync.
 - Raw KServe deployment mode is used to keep the serving path simpler than a full serverless mesh install.
 - Demo model storage is provided by an in-cluster MinIO deployment with the default credentials `minioadmin` / `minioadmin`.
 - If GPU-backed generative serving is required, add the appropriate cluster node labeling and accelerator operator prerequisites before applying the vLLM workload.

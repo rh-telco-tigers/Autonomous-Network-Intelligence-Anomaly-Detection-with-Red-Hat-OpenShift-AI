@@ -20,6 +20,7 @@ Labs 03 to 05 are written as a connected story:
 ## Reference material
 
 - [Engineering specification](./architecture/engineering-spec.md)
+- [Feature store training path](./architecture/feature-store-training-path.md)
 
 ## Demo posture
 

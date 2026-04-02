@@ -1,0 +1,144 @@
+# PIPELINE DEFINITION
+# Name: ims-feature-bundle-publish
+# Inputs:
+#    bundle_version: str [Default: 'ims-feature-bundle-v1']
+#    project: str [Default: 'ims-demo']
+#    source_dataset_versions_json: str [Default: '["live-sipp-v1"]']
+components:
+  comp-build-bundle:
+    executorLabel: exec-build-bundle
+    inputDefinitions:
+      parameters:
+        bundle_version:
+          parameterType: STRING
+        project:
+          parameterType: STRING
+        source_dataset_versions_json:
+          parameterType: STRING
+        workspace_root:
+          defaultValue: /tmp/ims-featurestore
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-validate-bundle:
+    executorLabel: exec-validate-bundle
+    inputDefinitions:
+      parameters:
+        bundle_manifest_path:
+          parameterType: STRING
+        workspace_root:
+          defaultValue: /tmp/ims-featurestore
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-build-bundle:
+      container:
+        args:
+        - --step
+        - build-bundle
+        - --bundle-version
+        - '{{$.inputs.parameters[''bundle_version'']}}'
+        - --source-dataset-versions-json
+        - '{{$.inputs.parameters[''source_dataset_versions_json'']}}'
+        - --project
+        - '{{$.inputs.parameters[''project'']}}'
+        - --workspace-root
+        - '{{$.inputs.parameters[''workspace_root'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: CONTROL_PLANE_URL
+          value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+        - name: CONTROL_PLANE_API_KEY
+          value: demo-token
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ims-demo-lab/datasets
+        - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
+          value: 'true'
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+    exec-validate-bundle:
+      container:
+        args:
+        - --step
+        - validate-bundle
+        - --bundle-manifest
+        - '{{$.inputs.parameters[''bundle_manifest_path'']}}'
+        - --workspace-root
+        - '{{$.inputs.parameters[''workspace_root'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: CONTROL_PLANE_URL
+          value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+        - name: CONTROL_PLANE_API_KEY
+          value: demo-token
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ims-demo-lab/datasets
+        - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
+          value: 'true'
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+pipelineInfo:
+  name: ims-feature-bundle-publish
+root:
+  dag:
+    tasks:
+      build-bundle:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-build-bundle
+        inputs:
+          parameters:
+            bundle_version:
+              componentInputParameter: bundle_version
+            project:
+              componentInputParameter: project
+            source_dataset_versions_json:
+              componentInputParameter: source_dataset_versions_json
+        taskInfo:
+          name: build-bundle
+      validate-bundle:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-validate-bundle
+        dependentTasks:
+        - build-bundle
+        inputs:
+          parameters:
+            bundle_manifest_path:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: build-bundle
+        taskInfo:
+          name: validate-bundle
+  inputDefinitions:
+    parameters:
+      bundle_version:
+        defaultValue: ims-feature-bundle-v1
+        isOptional: true
+        parameterType: STRING
+      project:
+        defaultValue: ims-demo
+        isOptional: true
+        parameterType: STRING
+      source_dataset_versions_json:
+        defaultValue: '["live-sipp-v1"]'
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.8.0

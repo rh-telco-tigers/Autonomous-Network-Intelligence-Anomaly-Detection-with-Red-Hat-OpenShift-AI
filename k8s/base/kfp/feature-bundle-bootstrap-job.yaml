@@ -1,0 +1,65 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ims-feature-bundle-kfp-bootstrap
+  namespace: ims-demo-lab
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "42"
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: ims-feature-bundle-kfp-bootstrap
+    spec:
+      serviceAccountName: ims-kfp-bootstrap
+      restartPolicy: OnFailure
+      containers:
+        - name: publish-pipeline
+          image: registry.access.redhat.com/ubi9/python-311:latest
+          env:
+            - name: HOME
+              value: /tmp
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: DSPA_NAME
+              value: dspa
+            - name: PIPELINE_PACKAGE_PATH
+              value: /opt/kfp/ims_feature_bundle_pipeline.yaml
+            - name: PIPELINE_NAME
+              value: ims-feature-bundle-publish
+            - name: EXPERIMENT_NAME
+              value: ims-featurestore
+            - name: RUN_NAME
+              value: ims-feature-bundle-demo
+            - name: PIPELINE_PARAMETERS_JSON
+              value: |
+                {"bundle_version":"ims-feature-bundle-v1","source_dataset_versions_json":"[\"live-sipp-v1\"]","project":"ims-demo"}
+            - name: PIPELINE_SKIP_DEMO_RUN
+              value: "true"
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              python -m pip install --no-cache-dir --target /tmp/kfp-site kfp==2.8.0
+              export PYTHONPATH="/tmp/kfp-site:${PYTHONPATH}"
+              python /opt/kfp/publish_feature_bundle_pipeline.py
+          volumeMounts:
+            - name: kfp-assets
+              mountPath: /opt/kfp
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: kfp-assets
+          configMap:
+            name: ims-feature-bundle-kfp-assets

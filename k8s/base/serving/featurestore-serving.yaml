@@ -1,0 +1,49 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: ims-predictive-fs
+  namespace: ims-demo-lab
+  labels:
+    opendatahub.io/dashboard: "true"
+  annotations:
+    opendatahub.io/model-type: predictive-featurestore
+    openshift.io/display-name: ims-predictive-fs
+    serving.kserve.io/deploymentMode: RawDeployment
+    serving.kserve.io/enable-prometheus-scraping: "true"
+    ims.redhat.com/serving-alias: current
+spec:
+  predictor:
+    serviceAccountName: model-storage-sa
+    minReplicas: 1
+    maxReplicas: 1
+    model:
+      runtime: nvidia-triton-runtime
+      modelFormat:
+        name: triton
+      protocolVersion: v2
+      storageUri: s3://ims-models/predictive-featurestore/ims-predictive-fs/current/
+      resources:
+        requests:
+          cpu: 100m
+          memory: 1Gi
+        limits:
+          memory: 2Gi
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: ims-predictive-fs-metrics
+  namespace: ims-demo-lab
+  labels:
+    monitoring.opendatahub.io/scrape: "true"
+spec:
+  namespaceSelector:
+    matchNames:
+      - ims-demo-lab
+  selector:
+    matchLabels:
+      serving.kserve.io/inferenceservice: ims-predictive-fs
+  podMetricsEndpoints:
+    - path: /metrics
+      targetPort: 8002
+      interval: 30s

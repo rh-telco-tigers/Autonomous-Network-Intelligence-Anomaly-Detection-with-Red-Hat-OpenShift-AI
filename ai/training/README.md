@@ -2,6 +2,12 @@
 
 `train_and_register.py` now prefers real IMS feature windows captured from SIPp traffic runs and stored in MinIO under the dataset prefix. If the live dataset is missing or too small, it falls back to synthetic bootstrap data so the KFP pipeline still completes, evaluates baseline and candidate models, writes model artifacts plus registry metadata, and uploads the selected predictive artifacts into the demo MinIO bucket by default.
 
+The additive feature-store path lives alongside it:
+
+- `build_feature_bundle.py` snapshots persisted feature windows plus control-plane incident and RCA history into a bundle dataset with Parquet tables and a manifest contract
+- `featurestore_train.py` now supports `build-bundle`, `resolve-bundle`, `validate-bundle`, feature-store sync/retrieval, serving export, model-registry publication, and deployment-manifest generation
+- `serving_smoke_check.py` compares `ims-predictive` and `ims-predictive-fs` with shared sample vectors before cutover
+
 The candidate path is AutoGluon-based. The trainer image installs AutoGluon by default, and the training workflow is expected to fail fast if AutoGluon is unavailable rather than silently degrading to a different candidate model.
 
 The pipeline step contract now matches the engineering spec:
@@ -17,6 +23,8 @@ The pipeline step contract now matches the engineering spec:
 - `deploy-model`
 
 `select-best` records the model chosen by the evaluation gate. `register-model` writes the registry and serving artifact metadata. `deploy-model` uploads the selected assets, registry document, and Triton model repository into MinIO.
+
+For the feature-store path, the serving export writes both a versioned artifact URI and a stable `current/` alias consumed by `k8s/base/serving/featurestore-serving.yaml`.
 
 ## Default MinIO upload target
 

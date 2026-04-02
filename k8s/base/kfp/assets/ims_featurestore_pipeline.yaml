@@ -1,0 +1,971 @@
+# PIPELINE DEFINITION
+# Name: ims-featurestore-train-and-register
+# Inputs:
+#    automl_engine: str [Default: 'autogluon']
+#    baseline_version: str [Default: 'baseline-fs-v1']
+#    bundle_version: str [Default: 'ims-feature-bundle-v1']
+#    candidate_version: str [Default: 'candidate-fs-v1']
+#    feature_service_name: str [Default: 'ims_anomaly_scoring_v1']
+#    model_name: str [Default: 'ims-anomaly-featurestore']
+#    model_version_name: str [Default: 'ims-anomaly-featurestore-v1']
+#    serving_alias: str [Default: 'current']
+#    serving_model_name: str [Default: 'ims-predictive-fs']
+#    serving_prefix: str [Default: 'predictive-featurestore']
+#    serving_runtime_name: str [Default: 'nvidia-triton-runtime']
+components:
+  comp-evaluate-models:
+    executorLabel: exec-evaluate-models
+    inputDefinitions:
+      parameters:
+        baseline_manifest:
+          parameterType: STRING
+        candidate_manifest:
+          parameterType: STRING
+        training_manifest:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-export-serving-artifact:
+    executorLabel: exec-export-serving-artifact
+    inputDefinitions:
+      parameters:
+        artifact_dir:
+          defaultValue: /tmp/ims-featurestore/models/artifacts
+          isOptional: true
+          parameterType: STRING
+        selection_manifest:
+          parameterType: STRING
+        serving_alias:
+          defaultValue: current
+          isOptional: true
+          parameterType: STRING
+        serving_model_name:
+          defaultValue: ims-predictive-fs
+          isOptional: true
+          parameterType: STRING
+        serving_prefix:
+          defaultValue: predictive-featurestore
+          isOptional: true
+          parameterType: STRING
+        serving_runtime_name:
+          defaultValue: nvidia-triton-runtime
+          isOptional: true
+          parameterType: STRING
+        training_manifest:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-publish-deployment-manifest:
+    executorLabel: exec-publish-deployment-manifest
+    inputDefinitions:
+      parameters:
+        export_manifest:
+          parameterType: STRING
+        model_registry_manifest:
+          parameterType: STRING
+        service_account_name:
+          defaultValue: model-storage-sa
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-register-model-version:
+    executorLabel: exec-register-model-version
+    inputDefinitions:
+      parameters:
+        export_manifest:
+          parameterType: STRING
+        feature_service_name:
+          parameterType: STRING
+        model_name:
+          parameterType: STRING
+        model_version_name:
+          parameterType: STRING
+        pipeline_name:
+          defaultValue: ims-featurestore-train-and-register
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-resolve-bundle:
+    executorLabel: exec-resolve-bundle
+    inputDefinitions:
+      parameters:
+        bundle_version:
+          parameterType: STRING
+        workspace_root:
+          defaultValue: /tmp/ims-featurestore
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-retrieve-training-dataset:
+    executorLabel: exec-retrieve-training-dataset
+    inputDefinitions:
+      parameters:
+        bundle_manifest_path:
+          parameterType: STRING
+        feature_repo_path:
+          defaultValue: /workspace/ai/featurestore/feature_repo
+          isOptional: true
+          parameterType: STRING
+        feature_service_name:
+          parameterType: STRING
+        workspace_root:
+          defaultValue: /tmp/ims-featurestore
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-select-best:
+    executorLabel: exec-select-best
+    inputDefinitions:
+      parameters:
+        evaluation_manifest:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-sync-feature-store-definitions:
+    executorLabel: exec-sync-feature-store-definitions
+    inputDefinitions:
+      parameters:
+        bundle_manifest_path:
+          parameterType: STRING
+        feature_repo_path:
+          defaultValue: /workspace/ai/featurestore/feature_repo
+          isOptional: true
+          parameterType: STRING
+        workspace_root:
+          defaultValue: /tmp/ims-featurestore
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-train-automl:
+    executorLabel: exec-train-automl
+    inputDefinitions:
+      parameters:
+        artifact_dir:
+          defaultValue: /tmp/ims-featurestore/models/artifacts
+          isOptional: true
+          parameterType: STRING
+        automl_engine:
+          defaultValue: autogluon
+          isOptional: true
+          parameterType: STRING
+        candidate_version:
+          parameterType: STRING
+        training_manifest:
+          parameterType: STRING
+        workspace_root:
+          defaultValue: /tmp/ims-featurestore
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-train-baseline:
+    executorLabel: exec-train-baseline
+    inputDefinitions:
+      parameters:
+        artifact_dir:
+          defaultValue: /tmp/ims-featurestore/models/artifacts
+          isOptional: true
+          parameterType: STRING
+        baseline_version:
+          parameterType: STRING
+        training_manifest:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-validate-bundle:
+    executorLabel: exec-validate-bundle
+    inputDefinitions:
+      parameters:
+        bundle_manifest_path:
+          parameterType: STRING
+        workspace_root:
+          defaultValue: /tmp/ims-featurestore
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-evaluate-models:
+      container:
+        args:
+        - --step
+        - evaluate
+        - --training-manifest
+        - '{{$.inputs.parameters[''training_manifest'']}}'
+        - --baseline-manifest
+        - '{{$.inputs.parameters[''baseline_manifest'']}}'
+        - --candidate-manifest
+        - '{{$.inputs.parameters[''candidate_manifest'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ims-demo-lab/datasets
+        - name: IMS_FEATURESTORE_MODE
+          value: remote
+        - name: IMS_FEATURESTORE_PROJECT
+          value: ims_anomaly_featurestore
+        - name: IMS_FEATURESTORE_REGISTRY_PATH
+          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_CA_CERT_PATH
+          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        - name: IMS_FEATURESTORE_AUTH_TYPE
+          value: no_auth
+        - name: FEAST_S3_ENDPOINT_URL
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_S3_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_DEFAULT_REGION
+          value: us-east-1
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ACCESS_KEY_ID
+          value: minioadmin
+        - name: AWS_SECRET_ACCESS_KEY
+          value: minioadmin
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+    exec-export-serving-artifact:
+      container:
+        args:
+        - --step
+        - export-serving-artifact
+        - --training-manifest
+        - '{{$.inputs.parameters[''training_manifest'']}}'
+        - --selection-manifest
+        - '{{$.inputs.parameters[''selection_manifest'']}}'
+        - --artifact-dir
+        - '{{$.inputs.parameters[''artifact_dir'']}}'
+        - --serving-model-name
+        - '{{$.inputs.parameters[''serving_model_name'']}}'
+        - --serving-runtime-name
+        - '{{$.inputs.parameters[''serving_runtime_name'']}}'
+        - --serving-prefix
+        - '{{$.inputs.parameters[''serving_prefix'']}}'
+        - --serving-alias
+        - '{{$.inputs.parameters[''serving_alias'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ims-demo-lab/datasets
+        - name: IMS_FEATURESTORE_MODE
+          value: remote
+        - name: IMS_FEATURESTORE_PROJECT
+          value: ims_anomaly_featurestore
+        - name: IMS_FEATURESTORE_REGISTRY_PATH
+          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_CA_CERT_PATH
+          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        - name: IMS_FEATURESTORE_AUTH_TYPE
+          value: no_auth
+        - name: FEAST_S3_ENDPOINT_URL
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_S3_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_DEFAULT_REGION
+          value: us-east-1
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ACCESS_KEY_ID
+          value: minioadmin
+        - name: AWS_SECRET_ACCESS_KEY
+          value: minioadmin
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+    exec-publish-deployment-manifest:
+      container:
+        args:
+        - --step
+        - publish-deployment-manifest
+        - --export-manifest
+        - '{{$.inputs.parameters[''export_manifest'']}}'
+        - --model-registry-manifest
+        - '{{$.inputs.parameters[''model_registry_manifest'']}}'
+        - --service-account-name
+        - '{{$.inputs.parameters[''service_account_name'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ims-demo-lab/datasets
+        - name: IMS_FEATURESTORE_MODE
+          value: remote
+        - name: IMS_FEATURESTORE_PROJECT
+          value: ims_anomaly_featurestore
+        - name: IMS_FEATURESTORE_REGISTRY_PATH
+          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_CA_CERT_PATH
+          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        - name: IMS_FEATURESTORE_AUTH_TYPE
+          value: no_auth
+        - name: FEAST_S3_ENDPOINT_URL
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_S3_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_DEFAULT_REGION
+          value: us-east-1
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ACCESS_KEY_ID
+          value: minioadmin
+        - name: AWS_SECRET_ACCESS_KEY
+          value: minioadmin
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+    exec-register-model-version:
+      container:
+        args:
+        - --step
+        - register-model-version
+        - --export-manifest
+        - '{{$.inputs.parameters[''export_manifest'']}}'
+        - --feature-service-name
+        - '{{$.inputs.parameters[''feature_service_name'']}}'
+        - --model-name
+        - '{{$.inputs.parameters[''model_name'']}}'
+        - --model-version-name
+        - '{{$.inputs.parameters[''model_version_name'']}}'
+        - --pipeline-name
+        - '{{$.inputs.parameters[''pipeline_name'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ims-demo-lab/datasets
+        - name: IMS_FEATURESTORE_MODE
+          value: remote
+        - name: IMS_FEATURESTORE_PROJECT
+          value: ims_anomaly_featurestore
+        - name: IMS_FEATURESTORE_REGISTRY_PATH
+          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_CA_CERT_PATH
+          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        - name: IMS_FEATURESTORE_AUTH_TYPE
+          value: no_auth
+        - name: FEAST_S3_ENDPOINT_URL
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_S3_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_DEFAULT_REGION
+          value: us-east-1
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ACCESS_KEY_ID
+          value: minioadmin
+        - name: AWS_SECRET_ACCESS_KEY
+          value: minioadmin
+        - name: RHOAI_MODEL_REGISTRY_ENDPOINT
+          value: http://ims-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080
+        - name: RHOAI_MODEL_REGISTRY_REQUIRED
+          value: 'true'
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+    exec-resolve-bundle:
+      container:
+        args:
+        - --step
+        - resolve-bundle
+        - --bundle-version
+        - '{{$.inputs.parameters[''bundle_version'']}}'
+        - --workspace-root
+        - '{{$.inputs.parameters[''workspace_root'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ims-demo-lab/datasets
+        - name: IMS_FEATURESTORE_MODE
+          value: remote
+        - name: IMS_FEATURESTORE_PROJECT
+          value: ims_anomaly_featurestore
+        - name: IMS_FEATURESTORE_REGISTRY_PATH
+          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_CA_CERT_PATH
+          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        - name: IMS_FEATURESTORE_AUTH_TYPE
+          value: no_auth
+        - name: FEAST_S3_ENDPOINT_URL
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_S3_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_DEFAULT_REGION
+          value: us-east-1
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ACCESS_KEY_ID
+          value: minioadmin
+        - name: AWS_SECRET_ACCESS_KEY
+          value: minioadmin
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+    exec-retrieve-training-dataset:
+      container:
+        args:
+        - --step
+        - retrieve-training-dataset
+        - --bundle-manifest
+        - '{{$.inputs.parameters[''bundle_manifest_path'']}}'
+        - --feature-service-name
+        - '{{$.inputs.parameters[''feature_service_name'']}}'
+        - --feature-repo-path
+        - '{{$.inputs.parameters[''feature_repo_path'']}}'
+        - --workspace-root
+        - '{{$.inputs.parameters[''workspace_root'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ims-demo-lab/datasets
+        - name: IMS_FEATURESTORE_MODE
+          value: remote
+        - name: IMS_FEATURESTORE_PROJECT
+          value: ims_anomaly_featurestore
+        - name: IMS_FEATURESTORE_REGISTRY_PATH
+          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_CA_CERT_PATH
+          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        - name: IMS_FEATURESTORE_AUTH_TYPE
+          value: no_auth
+        - name: FEAST_S3_ENDPOINT_URL
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_S3_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_DEFAULT_REGION
+          value: us-east-1
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ACCESS_KEY_ID
+          value: minioadmin
+        - name: AWS_SECRET_ACCESS_KEY
+          value: minioadmin
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+    exec-select-best:
+      container:
+        args:
+        - --step
+        - select-best
+        - --evaluation-manifest
+        - '{{$.inputs.parameters[''evaluation_manifest'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ims-demo-lab/datasets
+        - name: IMS_FEATURESTORE_MODE
+          value: remote
+        - name: IMS_FEATURESTORE_PROJECT
+          value: ims_anomaly_featurestore
+        - name: IMS_FEATURESTORE_REGISTRY_PATH
+          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_CA_CERT_PATH
+          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        - name: IMS_FEATURESTORE_AUTH_TYPE
+          value: no_auth
+        - name: FEAST_S3_ENDPOINT_URL
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_S3_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_DEFAULT_REGION
+          value: us-east-1
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ACCESS_KEY_ID
+          value: minioadmin
+        - name: AWS_SECRET_ACCESS_KEY
+          value: minioadmin
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+    exec-sync-feature-store-definitions:
+      container:
+        args:
+        - --step
+        - sync-feature-store-definitions
+        - --bundle-manifest
+        - '{{$.inputs.parameters[''bundle_manifest_path'']}}'
+        - --workspace-root
+        - '{{$.inputs.parameters[''workspace_root'']}}'
+        - --feature-repo-path
+        - '{{$.inputs.parameters[''feature_repo_path'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ims-demo-lab/datasets
+        - name: IMS_FEATURESTORE_MODE
+          value: remote
+        - name: IMS_FEATURESTORE_PROJECT
+          value: ims_anomaly_featurestore
+        - name: IMS_FEATURESTORE_REGISTRY_PATH
+          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_CA_CERT_PATH
+          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        - name: IMS_FEATURESTORE_AUTH_TYPE
+          value: no_auth
+        - name: FEAST_S3_ENDPOINT_URL
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_S3_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_DEFAULT_REGION
+          value: us-east-1
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ACCESS_KEY_ID
+          value: minioadmin
+        - name: AWS_SECRET_ACCESS_KEY
+          value: minioadmin
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+    exec-train-automl:
+      container:
+        args:
+        - --step
+        - train-automl
+        - --training-manifest
+        - '{{$.inputs.parameters[''training_manifest'']}}'
+        - --candidate-version
+        - '{{$.inputs.parameters[''candidate_version'']}}'
+        - --workspace-root
+        - '{{$.inputs.parameters[''workspace_root'']}}'
+        - --artifact-dir
+        - '{{$.inputs.parameters[''artifact_dir'']}}'
+        - --automl-engine
+        - '{{$.inputs.parameters[''automl_engine'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ims-demo-lab/datasets
+        - name: IMS_FEATURESTORE_MODE
+          value: remote
+        - name: IMS_FEATURESTORE_PROJECT
+          value: ims_anomaly_featurestore
+        - name: IMS_FEATURESTORE_REGISTRY_PATH
+          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_CA_CERT_PATH
+          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        - name: IMS_FEATURESTORE_AUTH_TYPE
+          value: no_auth
+        - name: FEAST_S3_ENDPOINT_URL
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_S3_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_DEFAULT_REGION
+          value: us-east-1
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ACCESS_KEY_ID
+          value: minioadmin
+        - name: AWS_SECRET_ACCESS_KEY
+          value: minioadmin
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+    exec-train-baseline:
+      container:
+        args:
+        - --step
+        - train-baseline
+        - --training-manifest
+        - '{{$.inputs.parameters[''training_manifest'']}}'
+        - --baseline-version
+        - '{{$.inputs.parameters[''baseline_version'']}}'
+        - --artifact-dir
+        - '{{$.inputs.parameters[''artifact_dir'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ims-demo-lab/datasets
+        - name: IMS_FEATURESTORE_MODE
+          value: remote
+        - name: IMS_FEATURESTORE_PROJECT
+          value: ims_anomaly_featurestore
+        - name: IMS_FEATURESTORE_REGISTRY_PATH
+          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_CA_CERT_PATH
+          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        - name: IMS_FEATURESTORE_AUTH_TYPE
+          value: no_auth
+        - name: FEAST_S3_ENDPOINT_URL
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_S3_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_DEFAULT_REGION
+          value: us-east-1
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ACCESS_KEY_ID
+          value: minioadmin
+        - name: AWS_SECRET_ACCESS_KEY
+          value: minioadmin
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+    exec-validate-bundle:
+      container:
+        args:
+        - --step
+        - validate-bundle
+        - --bundle-manifest
+        - '{{$.inputs.parameters[''bundle_manifest_path'']}}'
+        - --workspace-root
+        - '{{$.inputs.parameters[''workspace_root'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ims-demo-lab/datasets
+        - name: IMS_FEATURESTORE_MODE
+          value: remote
+        - name: IMS_FEATURESTORE_PROJECT
+          value: ims_anomaly_featurestore
+        - name: IMS_FEATURESTORE_REGISTRY_PATH
+          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+        - name: IMS_FEATURESTORE_CA_CERT_PATH
+          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        - name: IMS_FEATURESTORE_AUTH_TYPE
+          value: no_auth
+        - name: FEAST_S3_ENDPOINT_URL
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_S3_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: AWS_DEFAULT_REGION
+          value: us-east-1
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ACCESS_KEY_ID
+          value: minioadmin
+        - name: AWS_SECRET_ACCESS_KEY
+          value: minioadmin
+        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+pipelineInfo:
+  name: ims-featurestore-train-and-register
+root:
+  dag:
+    tasks:
+      evaluate-models:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-evaluate-models
+        dependentTasks:
+        - retrieve-training-dataset
+        - train-automl
+        - train-baseline
+        inputs:
+          parameters:
+            baseline_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: train-baseline
+            candidate_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: train-automl
+            training_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: retrieve-training-dataset
+        taskInfo:
+          name: evaluate-models
+      export-serving-artifact:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-export-serving-artifact
+        dependentTasks:
+        - retrieve-training-dataset
+        - select-best
+        inputs:
+          parameters:
+            selection_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: select-best
+            serving_alias:
+              componentInputParameter: serving_alias
+            serving_model_name:
+              componentInputParameter: serving_model_name
+            serving_prefix:
+              componentInputParameter: serving_prefix
+            serving_runtime_name:
+              componentInputParameter: serving_runtime_name
+            training_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: retrieve-training-dataset
+        taskInfo:
+          name: export-serving-artifact
+      publish-deployment-manifest:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-publish-deployment-manifest
+        dependentTasks:
+        - export-serving-artifact
+        - register-model-version
+        inputs:
+          parameters:
+            export_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: export-serving-artifact
+            model_registry_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: register-model-version
+        taskInfo:
+          name: publish-deployment-manifest
+      register-model-version:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-register-model-version
+        dependentTasks:
+        - export-serving-artifact
+        inputs:
+          parameters:
+            export_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: export-serving-artifact
+            feature_service_name:
+              componentInputParameter: feature_service_name
+            model_name:
+              componentInputParameter: model_name
+            model_version_name:
+              componentInputParameter: model_version_name
+        taskInfo:
+          name: register-model-version
+      resolve-bundle:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-resolve-bundle
+        inputs:
+          parameters:
+            bundle_version:
+              componentInputParameter: bundle_version
+        taskInfo:
+          name: resolve-bundle
+      retrieve-training-dataset:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-retrieve-training-dataset
+        dependentTasks:
+        - resolve-bundle
+        - sync-feature-store-definitions
+        - validate-bundle
+        inputs:
+          parameters:
+            bundle_manifest_path:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: resolve-bundle
+            feature_service_name:
+              componentInputParameter: feature_service_name
+        taskInfo:
+          name: retrieve-training-dataset
+      select-best:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-select-best
+        dependentTasks:
+        - evaluate-models
+        inputs:
+          parameters:
+            evaluation_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: evaluate-models
+        taskInfo:
+          name: select-best
+      sync-feature-store-definitions:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-sync-feature-store-definitions
+        dependentTasks:
+        - resolve-bundle
+        inputs:
+          parameters:
+            bundle_manifest_path:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: resolve-bundle
+        taskInfo:
+          name: sync-feature-store-definitions
+      train-automl:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-automl
+        dependentTasks:
+        - retrieve-training-dataset
+        inputs:
+          parameters:
+            automl_engine:
+              componentInputParameter: automl_engine
+            candidate_version:
+              componentInputParameter: candidate_version
+            training_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: retrieve-training-dataset
+        taskInfo:
+          name: train-automl
+      train-baseline:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-baseline
+        dependentTasks:
+        - retrieve-training-dataset
+        inputs:
+          parameters:
+            baseline_version:
+              componentInputParameter: baseline_version
+            training_manifest:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: retrieve-training-dataset
+        taskInfo:
+          name: train-baseline
+      validate-bundle:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-validate-bundle
+        dependentTasks:
+        - resolve-bundle
+        inputs:
+          parameters:
+            bundle_manifest_path:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: resolve-bundle
+        taskInfo:
+          name: validate-bundle
+  inputDefinitions:
+    parameters:
+      automl_engine:
+        defaultValue: autogluon
+        isOptional: true
+        parameterType: STRING
+      baseline_version:
+        defaultValue: baseline-fs-v1
+        isOptional: true
+        parameterType: STRING
+      bundle_version:
+        defaultValue: ims-feature-bundle-v1
+        isOptional: true
+        parameterType: STRING
+      candidate_version:
+        defaultValue: candidate-fs-v1
+        isOptional: true
+        parameterType: STRING
+      feature_service_name:
+        defaultValue: ims_anomaly_scoring_v1
+        isOptional: true
+        parameterType: STRING
+      model_name:
+        defaultValue: ims-anomaly-featurestore
+        isOptional: true
+        parameterType: STRING
+      model_version_name:
+        defaultValue: ims-anomaly-featurestore-v1
+        isOptional: true
+        parameterType: STRING
+      serving_alias:
+        defaultValue: current
+        isOptional: true
+        parameterType: STRING
+      serving_model_name:
+        defaultValue: ims-predictive-fs
+        isOptional: true
+        parameterType: STRING
+      serving_prefix:
+        defaultValue: predictive-featurestore
+        isOptional: true
+        parameterType: STRING
+      serving_runtime_name:
+        defaultValue: nvidia-triton-runtime
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.8.0

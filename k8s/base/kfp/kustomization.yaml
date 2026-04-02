@@ -6,6 +6,14 @@ configMapGenerator:
     files:
       - ims_anomaly_pipeline.yaml=assets/ims_anomaly_pipeline.yaml
       - publish_pipeline.py=assets/publish_pipeline.py
+  - name: ims-feature-bundle-kfp-assets
+    files:
+      - ims_feature_bundle_pipeline.yaml=assets/ims_feature_bundle_pipeline.yaml
+      - publish_feature_bundle_pipeline.py=assets/publish_feature_bundle_pipeline.py
+  - name: ims-featurestore-kfp-assets
+    files:
+      - ims_featurestore_pipeline.yaml=assets/ims_featurestore_pipeline.yaml
+      - publish_featurestore_pipeline.py=assets/publish_featurestore_pipeline.py
   - name: ims-incident-release-kfp-assets
     files:
       - ims_incident_release_pipeline.yaml=assets/ims_incident_release_pipeline.yaml
@@ -15,4 +23,6 @@ generatorOptions:
 resources:
   - dspa.yaml
   - pipeline-bootstrap-job.yaml
+  - feature-bundle-bootstrap-job.yaml
+  - featurestore-bootstrap-job.yaml
   - incident-release-bootstrap-job.yaml

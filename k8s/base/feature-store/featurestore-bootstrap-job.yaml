@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ims-featurestore-bootstrap
+  namespace: ims-demo-lab
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "41"
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      serviceAccountName: ims-featurestore-bootstrap
+      containers:
+        - name: bootstrap
+          image: registry.redhat.io/openshift4/ose-cli@sha256:bc35a9fc663baf0d6493cc57e89e77a240a36c43cf38fb78d8e61d3b87cf5cc5
+          command:
+            - /bin/bash
+            - -ceu
+            - |
+              namespace="${POD_NAMESPACE:-ims-demo-lab}"
+              oc rollout status deploy/feast-ims-featurestore -n "${namespace}" --timeout=300s
+              oc exec deploy/feast-ims-featurestore -n "${namespace}" -c registry -- bash -lc 'feast apply'
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace

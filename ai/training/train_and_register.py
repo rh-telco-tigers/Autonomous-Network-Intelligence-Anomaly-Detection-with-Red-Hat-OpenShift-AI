@@ -45,6 +45,7 @@ PROMOTION_GATE = {
 DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000"
 DEFAULT_DATASET_STORE_BUCKET = "ims-models"
 DEFAULT_DATASET_STORE_PREFIX = "pipelines/ims-demo-lab/datasets"
+_AUTOGLUON_PREDICTOR_CACHE: Dict[str, Any] = {}
 
 
 def _now() -> str:
@@ -687,14 +688,17 @@ def score_autogluon(sample: Dict[str, float], artifact: Dict[str, Any]) -> float
     predictor_source = predictor_uri or predictor_path
     if not predictor_source:
         raise ValueError("AutoGluon artifact is missing predictor_path or predictor_uri")
-    if predictor_uri:
-        predictor_dir = _download_directory_reference(
-            predictor_source,
-            Path(tempfile.gettempdir()) / "ims-autogluon-cache" / artifact.get("best_model", "predictor"),
-        )
-    else:
-        predictor_dir = Path(predictor_source)
-    predictor = TabularPredictor.load(str(predictor_dir))
+    predictor = _AUTOGLUON_PREDICTOR_CACHE.get(predictor_source)
+    if predictor is None:
+        if predictor_uri:
+            predictor_dir = _download_directory_reference(
+                predictor_source,
+                Path(tempfile.gettempdir()) / "ims-autogluon-cache" / artifact.get("best_model", "predictor"),
+            )
+        else:
+            predictor_dir = Path(predictor_source)
+        predictor = TabularPredictor.load(str(predictor_dir))
+        _AUTOGLUON_PREDICTOR_CACHE[predictor_source] = predictor
     frame = pd.DataFrame([{feature: float(sample[feature]) for feature in FEATURES}])
     probabilities = predictor.predict_proba(frame, as_multiclass=True)
     if 1 in probabilities.columns:
