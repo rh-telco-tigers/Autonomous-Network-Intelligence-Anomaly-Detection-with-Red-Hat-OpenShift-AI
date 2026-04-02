@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: ims-feature-bundle-kfp-manual-
+  namespace: ims-demo-lab
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 1800
+  template:
+    metadata:
+      labels:
+        app: ims-feature-bundle-kfp-manual
+    spec:
+      serviceAccountName: ims-kfp-bootstrap
+      restartPolicy: OnFailure
+      containers:
+        - name: publish-pipeline
+          image: registry.access.redhat.com/ubi9/python-311:latest
+          env:
+            - name: HOME
+              value: /tmp
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              python -m pip install --no-cache-dir --target /tmp/kfp-site kfp==2.8.0
+              export PYTHONPATH="/tmp/kfp-site:${PYTHONPATH}"
+              python /opt/kfp/publish_feature_bundle_pipeline.py
+          volumeMounts:
+            - name: kfp-assets
+              mountPath: /opt/kfp
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: kfp-assets
+          configMap:
+            name: ims-feature-bundle-kfp-assets

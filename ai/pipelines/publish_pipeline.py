@@ -13,7 +13,7 @@ from kfp import Client
 DEFAULT_DSPA_NAME = "dspa"
 DEFAULT_PIPELINE_NAME = "ims-anomaly-platform-train-and-register"
 DEFAULT_EXPERIMENT_NAME = "ims-demo"
-DEFAULT_RUN_NAME = "ims-anomaly-platform-demo"
+DEFAULT_RUN_NAME_PREFIX = "ims-anomaly-platform-manual"
 DEFAULT_PACKAGE_PATH = "/opt/kfp/ims_anomaly_pipeline.yaml"
 DEFAULT_KFP_HOST_TEMPLATE = "https://ds-pipeline-{dspa}.{namespace}.svc.cluster.local:8443"
 DEFAULT_SERVICE_CA_CERT = "/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
@@ -47,6 +47,13 @@ def _load_pipeline_parameters() -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("PIPELINE_PARAMETERS_JSON must be a JSON object")
     return parsed
+
+
+def _run_name() -> str:
+    explicit = os.getenv("RUN_NAME", "").strip()
+    if explicit:
+        return explicit
+    return f"{DEFAULT_RUN_NAME_PREFIX}-{time.strftime('%Y%m%d-%H%M%S')}"
 
 
 def discover_kfp_host(namespace: str, dspa_name: str) -> str:
@@ -165,7 +172,7 @@ def main() -> None:
     package_path = _env("PIPELINE_PACKAGE_PATH", DEFAULT_PACKAGE_PATH)
     pipeline_name = os.getenv("PIPELINE_NAME", DEFAULT_PIPELINE_NAME)
     experiment_name = os.getenv("EXPERIMENT_NAME", DEFAULT_EXPERIMENT_NAME)
-    run_name = os.getenv("RUN_NAME", DEFAULT_RUN_NAME)
+    run_name = _run_name()
     service_account = os.getenv("PIPELINE_SERVICE_ACCOUNT", "").strip() or None
     parameters = _load_pipeline_parameters()
 
