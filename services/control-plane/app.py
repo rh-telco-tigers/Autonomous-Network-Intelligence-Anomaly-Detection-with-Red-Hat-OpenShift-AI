@@ -22,6 +22,16 @@ from shared.db import (
     record_audit,
     update_incident_status,
 )
+from shared.incident_taxonomy import (
+    NORMAL_ANOMALY_TYPE,
+    NORMAL_SCENARIO_NAME,
+    canonical_anomaly_type,
+    console_scenario_catalog,
+    console_scenario_names,
+    metric_weights,
+    normalize_scenario_name,
+    scenario_definition,
+)
 from shared.integrations import create_jira_issue, integration_status, send_slack_notification
 from shared.metrics import (
     install_metrics,
@@ -95,20 +105,17 @@ def _positive_int_from_env(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
-CONSOLE_SCENARIOS = {"normal", "registration_storm", "malformed_invite"}
+CONSOLE_SCENARIOS = set(console_scenario_names())
 CONSOLE_CLUSTER_NAME = os.getenv("CONSOLE_CLUSTER_NAME", "ims-demo-lab")
 CONSOLE_AUTO_REFRESH_SECONDS = _positive_int_from_env("CONSOLE_AUTO_REFRESH_SECONDS", 5)
 UPSTREAM_TIMEOUT_SECONDS = float(os.getenv("CONSOLE_UPSTREAM_TIMEOUT_SECONDS", "20"))
 FEATURE_GATEWAY_URL = os.getenv("FEATURE_GATEWAY_URL", "http://feature-gateway.ims-demo-lab.svc.cluster.local:8080").rstrip("/")
 ANOMALY_SERVICE_URL = os.getenv("ANOMALY_SERVICE_URL", "http://anomaly-service.ims-demo-lab.svc.cluster.local:8080").rstrip("/")
 RCA_SERVICE_URL = os.getenv("RCA_SERVICE_URL", "http://rca-service.ims-demo-lab.svc.cluster.local:8080").rstrip("/")
-PREDICTIVE_SERVICE_URL = os.getenv(
-    "PREDICTIVE_SERVICE_URL",
-    "http://ims-predictive-predictor.ims-demo-lab.svc.cluster.local:8080",
-).rstrip("/")
-PREDICTIVE_FS_SERVICE_URL = os.getenv(
-    "PREDICTIVE_FS_SERVICE_URL",
-    "http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080",
+PREDICTIVE_SERVICE_URL = (
+    os.getenv("PREDICTIVE_SERVICE_URL", "").strip()
+    or os.getenv("PREDICTIVE_FS_SERVICE_URL", "").strip()
+    or "http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080"
 ).rstrip("/")
 
 
@@ -231,8 +238,6 @@ def _service_snapshot() -> List[Dict[str, object]]:
     ]
     if PREDICTIVE_SERVICE_URL:
         services.append(_probe_service("Predictive Service", PREDICTIVE_SERVICE_URL, path="/v2/health/ready"))
-    if PREDICTIVE_FS_SERVICE_URL:
-        services.append(_probe_service("Feature Store Predictive Service", PREDICTIVE_FS_SERVICE_URL, path="/v2/health/ready"))
     return services
 
 
@@ -245,66 +250,124 @@ def _severity_from_score(score: float) -> Dict[str, str]:
 
 
 def _incident_subtitle(anomaly_type: str) -> str:
-    mapping = {
-        "registration_storm": "P-CSCF registration saturation causing retransmission amplification.",
-        "malformed_sip": "Malformed SIP payloads are failing validation on the ingress path.",
-        "malformed_invite": "Malformed INVITE payloads are failing validation on the ingress path.",
-        "service_degradation": "Service latency is degrading IMS control-plane responsiveness.",
-    }
-    return mapping.get(anomaly_type, "Unexpected IMS behavior detected by the predictive workflow.")
+    definition = scenario_definition(anomaly_type)
+    return str(definition.get("summary") or "Unexpected IMS behavior detected by the predictive workflow.")
 
 
 def _blast_radius(anomaly_type: str) -> str:
-    mapping = {
-        "registration_storm": "P-CSCF, S-CSCF, anomaly-service, feature-gateway",
-        "malformed_sip": "Ingress parser, validation path, anomaly-service",
-        "malformed_invite": "Ingress parser, validation path, anomaly-service",
-        "service_degradation": "HSS, registration flow, downstream scoring path",
-    }
-    return mapping.get(anomaly_type, "Feature extraction, scoring pipeline, operator workflow")
+    definition = scenario_definition(anomaly_type)
+    return str(definition.get("blast_radius") or "Feature extraction, scoring pipeline, operator workflow")
 
 
 def _topology_for(anomaly_type: str) -> List[str]:
-    mapping = {
-        "registration_storm": ["UE", "P-CSCF", "S-CSCF", "HSS"],
-        "malformed_sip": ["UE", "P-CSCF", "Validation", "S-CSCF"],
-        "malformed_invite": ["UE", "P-CSCF", "Validation", "S-CSCF"],
-        "service_degradation": ["UE", "P-CSCF", "S-CSCF", "HSS"],
-    }
-    return mapping.get(anomaly_type, ["UE", "P-CSCF", "S-CSCF", "HSS"])
+    definition = scenario_definition(anomaly_type)
+    return [str(node) for node in definition.get("topology", ["UE", "P-CSCF", "S-CSCF", "HSS"])]
 
 
 def _default_recommendation(anomaly_type: str) -> str:
-    mapping = {
-        "registration_storm": "Scale the relevant IMS function and review the active traffic profile before approving remediation.",
-        "malformed_sip": "Quarantine the malformed traffic source and inspect the SIP generator profile.",
-        "malformed_invite": "Quarantine the malformed traffic source and inspect the SIP generator profile.",
-        "service_degradation": "Inspect infrastructure pressure and clear the bottleneck before closing the incident.",
-    }
-    return mapping.get(anomaly_type, "Review the feature window, inspect RCA evidence, and approve the safest remediation action.")
+    definition = scenario_definition(anomaly_type)
+    return str(
+        definition.get("recommendation")
+        or "Review the feature window, inspect RCA evidence, and approve the safest remediation action."
+    )
+
+
+def _traffic_status_label(response_code: int, malformed: bool = False) -> str:
+    if malformed and 400 <= response_code < 500:
+        return "Malformed"
+    if response_code == 200:
+        return "200 OK"
+    if response_code == 202:
+        return "202 accepted"
+    if response_code == 401:
+        return "401 challenge"
+    if response_code == 407:
+        return "407 challenge"
+    if response_code == 408:
+        return "408 timeout"
+    if response_code == 486:
+        return "486 busy"
+    if 400 <= response_code < 500:
+        return f"{response_code} reject"
+    if response_code >= 500:
+        return f"{response_code} error"
+    return str(response_code)
 
 
 def _incident_impact(incident: Dict[str, object]) -> str:
-    anomaly_type = str(incident.get("anomaly_type", "service_degradation"))
+    anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type", NORMAL_ANOMALY_TYPE)))
     features = incident.get("feature_snapshot") or {}
     if not isinstance(features, dict):
         features = {}
 
     register_rate = _coerce_float(features.get("register_rate"))
     invite_rate = _coerce_float(features.get("invite_rate"))
+    bye_rate = _coerce_float(features.get("bye_rate"))
     latency_p95 = _coerce_float(features.get("latency_p95") or features.get("latency_p95_ms"))
     retransmissions = _coerce_float(features.get("retransmission_count"))
     error_4xx = _coerce_float(features.get("error_4xx_ratio"))
+    error_5xx = _coerce_float(features.get("error_5xx_ratio"))
+    payload_variance = _coerce_float(features.get("payload_variance"))
 
+    if anomaly_type == NORMAL_ANOMALY_TYPE:
+        return (
+            f"Nominal traffic is steady with register rate at {register_rate:.2f}/s, invite rate at {invite_rate:.2f}/s, "
+            f"and latency p95 at {latency_p95:.0f} ms."
+        )
     if anomaly_type == "registration_storm":
         return (
             f"Registration rate reached {register_rate:.2f}/s, retransmissions are {retransmissions:.0f}, "
             f"and latency p95 is {latency_p95:.0f} ms."
         )
-    if anomaly_type in {"malformed_sip", "malformed_invite"}:
+    if anomaly_type == "registration_failure":
+        return (
+            f"Registration requests are failing with a 4xx ratio of {error_4xx:.2f}, register rate at {register_rate:.2f}/s, "
+            f"and retransmissions at {retransmissions:.0f}."
+        )
+    if anomaly_type == "authentication_failure":
+        return (
+            f"Authentication challenges are looping with a 4xx ratio of {error_4xx:.2f}, register rate at {register_rate:.2f}/s, "
+            f"and retransmissions at {retransmissions:.0f}."
+        )
+    if anomaly_type == "malformed_sip":
         return (
             f"INVITE rate is {invite_rate:.2f}/s and the 4xx ratio is {error_4xx:.2f}, "
             "showing ingress validation rejects for malformed traffic."
+        )
+    if anomaly_type == "routing_error":
+        return (
+            f"INVITE rate is {invite_rate:.2f}/s with a 4xx ratio of {error_4xx:.2f}, "
+            "indicating route lookup failures on the session setup path."
+        )
+    if anomaly_type == "busy_destination":
+        return (
+            f"INVITE rate is {invite_rate:.2f}/s while the destination is returning busy responses, "
+            f"driving a 4xx ratio of {error_4xx:.2f}."
+        )
+    if anomaly_type == "call_setup_timeout":
+        return (
+            f"Session setup latency reached {latency_p95:.0f} ms with retransmissions at {retransmissions:.0f}, "
+            f"causing INVITE timeouts at {invite_rate:.2f}/s."
+        )
+    if anomaly_type == "call_drop_mid_session":
+        return (
+            f"Mid-session traffic is unstable with BYE rate at {bye_rate:.2f}/s, retransmissions at {retransmissions:.0f}, "
+            f"and latency p95 at {latency_p95:.0f} ms."
+        )
+    if anomaly_type == "server_internal_error":
+        return (
+            f"Server-side errors pushed the 5xx ratio to {error_5xx:.2f} while latency p95 reached {latency_p95:.0f} ms "
+            f"across register and invite traffic."
+        )
+    if anomaly_type == "network_degradation":
+        return (
+            f"Network instability pushed latency p95 to {latency_p95:.0f} ms with retransmissions at {retransmissions:.0f}, "
+            f"affecting both register rate {register_rate:.2f}/s and invite rate {invite_rate:.2f}/s."
+        )
+    if anomaly_type == "retransmission_spike":
+        return (
+            f"Retransmissions spiked to {retransmissions:.0f} while register rate is {register_rate:.2f}/s "
+            f"and payload variance is {payload_variance:.0f} bytes."
         )
     return (
         f"Latency p95 is {latency_p95:.0f} ms with register rate at {register_rate:.2f}/s, "
@@ -313,23 +376,10 @@ def _incident_impact(incident: Dict[str, object]) -> str:
 
 
 def _explainability_for(incident: Dict[str, object]) -> List[Dict[str, object]]:
-    anomaly_type = str(incident.get("anomaly_type", "service_degradation"))
+    anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type", NORMAL_ANOMALY_TYPE)))
     palettes = ["sky", "amber", "rose", "emerald"]
-    if anomaly_type == "registration_storm":
-        weights = {
-            "register_rate": 0.4,
-            "retransmission_count": 0.3,
-            "latency_p95": 0.2,
-            "error_4xx_ratio": 0.1,
-        }
-    elif anomaly_type in {"malformed_sip", "malformed_invite"}:
-        weights = {
-            "error_4xx_ratio": 0.4,
-            "payload_variance": 0.25,
-            "invite_rate": 0.2,
-            "retransmission_count": 0.15,
-        }
-    else:
+    weights = metric_weights(anomaly_type)
+    if not weights:
         weights = {
             "latency_p95": 0.35,
             "error_5xx_ratio": 0.25,
@@ -407,7 +457,7 @@ def _timeline_for_incident(incident: Dict[str, object], audit_events: List[Dict[
             {
                 "time": str(incident.get("created_at", "")),
                 "title": "Incident created",
-                "detail": _incident_subtitle(str(incident.get("anomaly_type", "service_degradation"))),
+                "detail": _incident_subtitle(str(incident.get("anomaly_type", NORMAL_ANOMALY_TYPE))),
             }
         ]
 
@@ -501,7 +551,7 @@ def _enrich_incident(
     incidents: List[Dict[str, object]],
 ) -> Dict[str, object]:
     score = _coerce_float(incident.get("anomaly_score"))
-    anomaly_type = str(incident.get("anomaly_type", "service_degradation"))
+    anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type", NORMAL_ANOMALY_TYPE)))
     severity = _severity_from_score(score)
     rca_payload = incident.get("rca_payload") or {}
     if not isinstance(rca_payload, dict):
@@ -539,13 +589,15 @@ def _traffic_preview(feature_window: Dict[str, object] | None) -> Dict[str, obje
     labels = feature_window.get("labels")
     if not isinstance(labels, dict):
         labels = {}
-    scenario_name = str(
+    raw_scenario_name = str(
         feature_window.get("scenario_name")
         or feature_window.get("scenario")
         or feature_window.get("anomaly_type")
         or labels.get("anomaly_type")
         or "normal"
     )
+    scenario_name = normalize_scenario_name(raw_scenario_name)
+    definition = scenario_definition(scenario_name)
     latency = _coerce_float(features.get("latency_p95") or features.get("latency_p95_ms"), 80.0)
     register_rate = _coerce_float(features.get("register_rate"))
     invite_rate = _coerce_float(features.get("invite_rate"))
@@ -554,83 +606,42 @@ def _traffic_preview(feature_window: Dict[str, object] | None) -> Dict[str, obje
     total_rate = max(register_rate + invite_rate + bye_rate, 0.0)
     retry_ratio = round(min(retransmissions / max(total_rate, 1.0), 1.0), 2)
     base = datetime.now(tz=timezone.utc)
-
-    if scenario_name == "registration_storm":
-        templates = [
-            ("REGISTER", "UE → P-CSCF → S-CSCF", "401 retry", latency * 1.1),
-            ("REGISTER", "UE → P-CSCF → S-CSCF", "202 accepted", latency),
-            ("REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", latency * 0.7),
-            ("REGISTER", "UE → P-CSCF → S-CSCF", "401 retry", latency * 1.2),
-            ("REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", latency * 0.6),
-            ("REGISTER", "UE → P-CSCF → S-CSCF", "202 accepted", latency * 0.9),
-        ]
-        packet_sample = (
-            "REGISTER sip:ims.demo.lab SIP/2.0\n"
-            "Via: SIP/2.0/UDP 10.0.8.12:5060\n"
-            "From: <sip:user@ims.demo.lab>\n"
-            "To: <sip:user@ims.demo.lab>\n"
-            "Call-ID: registration-surge\n"
-            "CSeq: 314159 REGISTER"
-        )
-    elif scenario_name in {"malformed_sip", "malformed_invite"}:
-        templates = [
-            ("INVITE", "UE → P-CSCF → Validation", "Malformed", 44),
-            ("INVITE", "UE → P-CSCF → Validation", "400 reject", 38),
-            ("REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", 110),
-            ("INVITE", "UE → P-CSCF → Validation", "Malformed", 42),
-            ("INVITE", "UE → P-CSCF → Validation", "400 reject", 39),
-            ("REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", 105),
-        ]
-        packet_sample = (
-            "INVITE sip:user@ims.demo.lab SIP/2.0\n"
-            "Via: SIP/2.0/UDP 10.0.8.44:5060\n"
-            "From malformed header\n"
-            "To: <sip:user@ims.demo.lab>\n"
-            "Call-ID: malformed-invite\n"
-            "CSeq: 11 INVITE"
-        )
-    else:
-        templates = [
-            ("REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", 90),
-            ("INVITE", "UE → P-CSCF → S-CSCF", "200 OK", 70),
-            ("BYE", "UE → P-CSCF → S-CSCF", "200 OK", 55),
-            ("REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", 85),
-            ("INVITE", "UE → P-CSCF → S-CSCF", "200 OK", 68),
-            ("BYE", "UE → P-CSCF → S-CSCF", "200 OK", 50),
-        ]
-        packet_sample = (
-            "REGISTER sip:ims.demo.lab SIP/2.0\n"
-            "Via: SIP/2.0/UDP 10.0.8.10:5060\n"
-            "From: <sip:user@ims.demo.lab>\n"
-            "To: <sip:user@ims.demo.lab>\n"
-            "Call-ID: nominal-register\n"
-            "CSeq: 1 REGISTER"
-        )
-
     rows = []
-    for index, (method, path, status, row_latency) in enumerate(templates):
-        rows.append(
-            {
-                "time": (base.replace(microsecond=0)).strftime("%H:%M:%S"),
-                "method": method,
-                "path": path,
-                "status": status,
-                "latency_ms": round(float(row_latency), 1),
-                "sequence": index,
-            }
-        )
-        base = base.replace(microsecond=0)
+    for profile in list(definition.get("event_profiles", [])):
+        sample_count = 2 if int(profile.get("count", 0)) >= 24 and len(rows) <= 3 else 1
+        for sample_index in range(sample_count):
+            row_latency = float(profile.get("latency_ms", latency or 80.0)) + (
+                float(profile.get("latency_step", 0.0) or 0.0) * sample_index
+            )
+            rows.append(
+                {
+                    "time": (base.replace(microsecond=0)).strftime("%H:%M:%S"),
+                    "method": str(profile.get("method", "REGISTER")),
+                    "path": str(profile.get("path", "UE -> P-CSCF -> S-CSCF")),
+                    "status": _traffic_status_label(
+                        int(profile.get("response_code", 200)),
+                        malformed=bool(profile.get("malformed", False)),
+                    ),
+                    "latency_ms": round(float(row_latency), 1),
+                    "sequence": len(rows),
+                }
+            )
+            if len(rows) >= 6:
+                break
+        if len(rows) >= 6:
+            break
 
     return {
         "scenario_name": scenario_name,
-        "source": str(feature_window.get("feature_source", "derived")),
+        "display_name": str(definition.get("display_name", _titleize(scenario_name))),
+        "source": str(feature_window.get("feature_source") or feature_window.get("source") or "derived"),
         "rows": rows,
         "stats": {
             "requests_per_second": round(total_rate, 2),
             "retry_ratio": retry_ratio,
-            "active_node": "pcscf-1",
+            "active_node": str(features.get("node_id") or feature_window.get("node_id") or "pcscf-1"),
         },
-        "packet_sample": packet_sample,
+        "packet_sample": str(definition.get("packet_sample", "")),
     }
 
 
@@ -649,7 +660,7 @@ def _scenario_execution_from_audit(event: Dict[str, object], project: str) -> Di
     features = payload.get("features")
     preview = _traffic_preview(
         {
-            "scenario_name": payload.get("scenario") or payload.get("anomaly_type") or "normal",
+            "scenario_name": normalize_scenario_name(str(payload.get("scenario") or payload.get("anomaly_type") or NORMAL_SCENARIO_NAME)),
             "feature_source": payload.get("feature_source") or "derived",
             "features": features if isinstance(features, dict) else {},
         }
@@ -660,10 +671,11 @@ def _scenario_execution_from_audit(event: Dict[str, object], project: str) -> Di
             preview = recorded_preview
 
     incident_id = str(event.get("incident_id") or payload.get("incident_id") or "").strip() or None
-    anomaly_type = str(payload.get("anomaly_type") or payload.get("scenario") or "normal")
+    anomaly_type = canonical_anomaly_type(str(payload.get("anomaly_type") or payload.get("scenario") or NORMAL_ANOMALY_TYPE))
+    scenario_name = normalize_scenario_name(str(payload.get("scenario") or anomaly_type or NORMAL_ANOMALY_TYPE))
     return {
         "project": event_project,
-        "scenario": str(payload.get("scenario") or anomaly_type),
+        "scenario": scenario_name,
         "feature_source": str(payload.get("feature_source") or "unknown"),
         "is_anomaly": bool(payload.get("is_anomaly")),
         "anomaly_type": anomaly_type,
@@ -678,14 +690,15 @@ def _active_incident_summary(open_incidents: List[Dict[str, object]]) -> Dict[st
     categories: Dict[str, Dict[str, object]] = {}
     model_versions: Dict[str, Dict[str, object]] = {}
     for incident in open_incidents:
-        anomaly_type = str(incident.get("anomaly_type") or "unknown")
+        anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type") or "unknown"))
+        definition = scenario_definition(anomaly_type)
         model_version = str(incident.get("model_version") or "unknown")
 
         category = categories.setdefault(
             anomaly_type,
             {
                 "anomaly_type": anomaly_type,
-                "label": _titleize(anomaly_type),
+                "label": str(definition.get("display_name") or _titleize(anomaly_type)),
                 "count": 0,
                 "model_versions": set(),
             },
@@ -749,16 +762,20 @@ def _build_console_state(project: str) -> Dict[str, object]:
     set_active_incidents(open_incidents)
     healthy_services = sum(1 for service in services if bool(service.get("ok")))
     active_scenario = (
-        str(latest_scenario.get("scenario"))
+        normalize_scenario_name(str(latest_scenario.get("scenario")))
         if latest_scenario
-        else (str(latest_incident.get("anomaly_type")) if latest_incident else (registry.get("dataset_version") or "normal"))
+        else (
+            normalize_scenario_name(str(latest_incident.get("anomaly_type")))
+            if latest_incident
+            else normalize_scenario_name(str((registry or {}).get("dataset_version") or NORMAL_SCENARIO_NAME))
+        )
     )
     if latest_scenario and isinstance(latest_scenario.get("traffic_preview"), dict):
         traffic_preview = latest_scenario["traffic_preview"]
     else:
         traffic_preview = _traffic_preview(
             {
-                "scenario_name": latest_incident.get("anomaly_type") if latest_incident else "normal",
+                "scenario_name": normalize_scenario_name(str(latest_incident.get("anomaly_type"))) if latest_incident else NORMAL_SCENARIO_NAME,
                 "feature_source": "incident-feature-snapshot",
                 "features": latest_incident.get("feature_snapshot", {}) if latest_incident else {},
             }
@@ -793,6 +810,7 @@ def _build_console_state(project: str) -> Dict[str, object]:
         "services": services,
         "integrations": integration_status(),
         "automation_actions": _list_automation_actions(),
+        "scenarios": console_scenario_catalog(),
         "latest_scenario": latest_scenario,
         "traffic_preview": traffic_preview,
     }
@@ -1004,21 +1022,39 @@ def console_state(project: str = "ims-demo", auth: AuthContext | None = Depends(
 @app.post("/console/run-scenario")
 def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | None = Depends(require_api_key)):
     ensure_project_access(auth, payload.project)
-    if payload.scenario not in CONSOLE_SCENARIOS:
+    scenario_name = normalize_scenario_name(payload.scenario)
+    if scenario_name not in CONSOLE_SCENARIOS:
         raise HTTPException(status_code=400, detail=f"Unsupported scenario {payload.scenario}")
 
-    feature_window = _request_json("GET", f"{FEATURE_GATEWAY_URL}/live-window/{payload.scenario}")
+    feature_window = _request_json("GET", f"{FEATURE_GATEWAY_URL}/live-window/{scenario_name}")
     features = feature_window.get("features")
     if not isinstance(features, dict):
         raise HTTPException(status_code=502, detail="Feature gateway returned an invalid feature window payload")
+
+    labels = feature_window.get("labels")
+    if not isinstance(labels, dict):
+        labels = {}
+    anomaly_type_hint = canonical_anomaly_type(
+        str(feature_window.get("anomaly_type") or labels.get("anomaly_type") or scenario_name)
+    )
+    scoring_features = dict(features)
+    scoring_features["scenario_name"] = str(feature_window.get("scenario_name") or scenario_name)
+    scoring_features["feature_source"] = str(feature_window.get("feature_source") or "feature-gateway-console")
+    scoring_features["source"] = str(feature_window.get("source") or "feature-gateway-console")
+    scoring_features["transport"] = str(feature_window.get("transport") or "udp")
+    scoring_features["call_limit"] = feature_window.get("call_limit")
+    scoring_features["rate"] = feature_window.get("rate")
+    scoring_features["contributing_conditions"] = list(feature_window.get("contributing_conditions") or [])
 
     score = _request_json(
         "POST",
         f"{ANOMALY_SERVICE_URL}/score",
         {
-            "features": features,
+            "features": scoring_features,
             "project": payload.project,
             "feature_window_id": feature_window.get("window_id"),
+            "scenario_name": scenario_name,
+            "anomaly_type_hint": anomaly_type_hint,
         },
     )
 
@@ -1029,7 +1065,7 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
         auth.subject if auth else "console-ui",
         {
             "project": payload.project,
-            "scenario": payload.scenario,
+            "scenario": scenario_name,
             "feature_source": feature_window.get("feature_source"),
             "feature_window_id": feature_window.get("window_id"),
             "window_start": feature_window.get("window_start") or feature_window.get("start_time"),
@@ -1039,7 +1075,7 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
             "anomaly_type": score.get("anomaly_type"),
             "anomaly_score": score.get("anomaly_score"),
             "incident_id": incident_id,
-            "features": features,
+            "features": scoring_features,
             "traffic_preview": traffic_preview,
             "executed_at": _now_iso(),
         },
@@ -1058,10 +1094,10 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
                     "incident_id": incident_id,
                     "context": {
                         "project": payload.project,
-                        "scenario_name": payload.scenario,
+                        "scenario_name": scenario_name,
                         "anomaly_type": score.get("anomaly_type"),
                         "feature_window_id": feature_window.get("window_id"),
-                        "features": features,
+                        "features": scoring_features,
                     },
                 },
             )
@@ -1078,7 +1114,7 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
         enriched_incident = next((item for item in state["incidents"] if item.get("id") == incident["id"]), None)
 
     return {
-        "scenario": payload.scenario,
+        "scenario": scenario_name,
         "feature_window": feature_window,
         "score": score,
         "rca": rca_payload,

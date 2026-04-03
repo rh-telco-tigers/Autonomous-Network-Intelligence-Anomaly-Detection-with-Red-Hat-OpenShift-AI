@@ -36,7 +36,10 @@ spec:
                   project = os.getenv("DEMO_PROJECT", "ims-demo")
                   scenarios = [
                       item.strip()
-                      for item in os.getenv("DEMO_SCENARIOS", "registration_storm,malformed_invite").split(",")
+                      for item in os.getenv(
+                          "DEMO_SCENARIOS",
+                          "registration_storm,registration_failure,authentication_failure,malformed_invite,routing_error,busy_destination,call_setup_timeout,call_drop_mid_session,server_internal_error,network_degradation,retransmission_spike",
+                      ).split(",")
                       if item.strip()
                   ]
                   slot = int(time.time() // 180) % len(scenarios)
@@ -67,7 +70,7 @@ spec:
                 - name: DEMO_PROJECT
                   value: ims-demo
                 - name: DEMO_SCENARIOS
-                  value: registration_storm,malformed_invite
+                  value: registration_storm,registration_failure,authentication_failure,malformed_invite,routing_error,busy_destination,call_setup_timeout,call_drop_mid_session,server_internal_error,network_degradation,retransmission_spike
                 - name: API_KEY
                   valueFrom:
                     secretKeyRef:

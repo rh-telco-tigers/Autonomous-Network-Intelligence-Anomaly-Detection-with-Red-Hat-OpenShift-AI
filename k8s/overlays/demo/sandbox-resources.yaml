@@ -345,9 +345,10 @@ spec:
           resources:
             $patch: replace
             requests:
-              memory: 48Mi
+              cpu: 100m
+              memory: 256Mi
             limits:
-              memory: 96Mi
+              memory: 512Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -364,9 +365,10 @@ spec:
           resources:
             $patch: replace
             requests:
-              memory: 256Mi
+              cpu: 250m
+              memory: 1Gi
             limits:
-              memory: 512Mi
+              memory: 2Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -383,9 +385,9 @@ spec:
           resources:
             $patch: replace
             requests:
-              memory: 64Mi
-            limits:
               memory: 128Mi
+            limits:
+              memory: 256Mi
 ---
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService

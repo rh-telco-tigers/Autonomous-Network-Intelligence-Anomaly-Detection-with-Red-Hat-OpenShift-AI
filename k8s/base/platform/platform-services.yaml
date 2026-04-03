@@ -91,8 +91,6 @@ spec:
             - name: RCA_SERVICE_URL
               value: http://rca-service.ims-demo-lab.svc.cluster.local:8080
             - name: PREDICTIVE_SERVICE_URL
-              value: http://ims-predictive-predictor.ims-demo-lab.svc.cluster.local:8080
-            - name: PREDICTIVE_FS_SERVICE_URL
               value: http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080
           volumeMounts:
             - name: data
@@ -175,6 +173,22 @@ spec:
               value: ""
             - name: IMS_HSS_TELEMETRY_URL
               value: ""
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ims-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ims-demo-lab/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
           readinessProbe:
             httpGet:
               path: /healthz
@@ -258,9 +272,11 @@ spec:
             - name: MODEL_REGISTRY_PATH
               value: /app/ai/registry/model_registry.json
             - name: PREDICTIVE_ENDPOINT
-              value: http://ims-predictive-predictor.ims-demo-lab.svc.cluster.local:8080
+              value: http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080
             - name: PREDICTIVE_MODEL_NAME
-              value: ims-predictive
+              value: ims-predictive-fs
+            - name: PREDICTIVE_MODEL_VERSION_LABEL
+              value: ims-predictive-fs
           readinessProbe:
             httpGet:
               path: /healthz

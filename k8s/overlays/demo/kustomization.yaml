@@ -13,6 +13,8 @@ resources:
   - ../../base/pipelines
 patches:
   - path: sandbox-resources.yaml
+  - path: remove-legacy-predictive-serving.yaml
+  - path: remove-legacy-predictive-metrics.yaml
 images:
   - name: sipp-runner
     newName: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner

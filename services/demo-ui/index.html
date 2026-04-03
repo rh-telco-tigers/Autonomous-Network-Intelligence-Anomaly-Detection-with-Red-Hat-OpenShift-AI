@@ -326,6 +326,7 @@
         services: [],
         integrations: {},
         automation_actions: [],
+        scenarios: [],
         latest_scenario: null,
         traffic_preview: { rows: [], stats: { requests_per_second: 0, retry_ratio: 0, active_node: "pcscf-1" }, packet_sample: "" }
       };
@@ -363,15 +364,37 @@
       return latest && typeof latest === "object" ? latest : null;
     }
 
+    function scenarioCatalog() {
+      const scenarios = consoleState().scenarios;
+      return Array.isArray(scenarios) ? scenarios : [];
+    }
+
+    function scenarioByName(value) {
+      const normalized = String(value ?? "").trim();
+      const scenarios = scenarioCatalog();
+      if (!normalized) {
+        return scenarios.find((item) => item.scenario_name === "normal") || null;
+      }
+      return scenarios.find((item) => item.scenario_name === normalized || item.anomaly_type === normalized) || null;
+    }
+
+    function scenarioLabel(value) {
+      const scenario = scenarioByName(value);
+      if (scenario && scenario.display_name) {
+        return scenario.display_name;
+      }
+      return titleize(value || "unknown");
+    }
+
     function latestScenarioLabel() {
       const latest = latestScenarioActivity();
       if (latest && latest.scenario) {
-        return titleize(latest.scenario);
+        return scenarioLabel(latest.scenario);
       }
       if (state.lastRun && state.lastRun.scenario) {
-        return titleize(state.lastRun.scenario);
+        return scenarioLabel(state.lastRun.scenario);
       }
-      return titleize(consoleState().cluster.current_scenario || "none");
+      return scenarioLabel(consoleState().cluster.current_scenario || "none");
     }
 
     function latestScenarioStatus() {
@@ -381,15 +404,15 @@
       const latest = latestScenarioActivity();
       if (latest && latest.scenario) {
         if (latest.is_anomaly) {
-          return `${titleize(latest.scenario)} recorded anomaly score ${formatScore(latest.anomaly_score)} and incident ${escapeHtml(String(latest.incident_id || "").slice(0, 12))}...`;
+          return `${scenarioLabel(latest.scenario)} recorded anomaly score ${formatScore(latest.anomaly_score)} and incident ${escapeHtml(String(latest.incident_id || "").slice(0, 12))}...`;
         }
-        return `${titleize(latest.scenario)} completed without recording an incident.`;
+        return `${scenarioLabel(latest.scenario)} completed without recording an incident.`;
       }
       if (state.lastRun && state.lastRun.score) {
         if (state.lastRun.score.is_anomaly) {
-          return `${titleize(state.lastRun.scenario)} recorded anomaly score ${formatScore(state.lastRun.score.anomaly_score)} and incident ${escapeHtml(String(state.lastRun.score.incident_id || "").slice(0, 12))}...`;
+          return `${scenarioLabel(state.lastRun.scenario)} recorded anomaly score ${formatScore(state.lastRun.score.anomaly_score)} and incident ${escapeHtml(String(state.lastRun.score.incident_id || "").slice(0, 12))}...`;
         }
-        return `${titleize(state.lastRun.scenario)} completed without recording an incident.`;
+        return `${scenarioLabel(state.lastRun.scenario)} completed without recording an incident.`;
       }
       return "No scenario has been executed yet.";
     }
@@ -457,10 +480,10 @@
     function auditDetail(event) {
       const payload = event && event.payload && typeof event.payload === "object" ? event.payload : {};
       if (event.event_type === "scenario_executed") {
-        return `${titleize(payload.scenario || "unknown")} window generated from ${payload.feature_source || "unknown"} and sent to scoring.`;
+        return `${scenarioLabel(payload.scenario || "unknown")} window generated from ${payload.feature_source || "unknown"} and sent to scoring.`;
       }
       if (event.event_type === "incident_created") {
-        return `${titleize(payload.anomaly_type || "unknown")} raised with score ${formatScore(payload.anomaly_score || 0)}.`;
+        return `${scenarioLabel(payload.anomaly_type || "unknown")} raised with score ${formatScore(payload.anomaly_score || 0)}.`;
       }
       if (event.event_type === "rca_attached") {
         return `RCA attached with confidence ${formatScore(payload.confidence || 0)}.`;
@@ -484,6 +507,133 @@
       return entries.map(([key, value]) => `${key}=${value}`).join(" · ");
     }
 
+    function incidentMixPalette(index) {
+      const palette = [
+        "#38bdf8",
+        "#ef4444",
+        "#f59e0b",
+        "#10b981",
+        "#8b5cf6",
+        "#f97316",
+        "#14b8a6",
+        "#e879f9",
+        "#84cc16",
+        "#fb7185",
+        "#c084fc",
+        "#facc15",
+        "#22c55e",
+        "#60a5fa",
+        "#a855f7",
+        "#06b6d4"
+      ];
+      return palette[index % palette.length];
+    }
+
+    function incidentDistribution(incidents) {
+      const counts = new Map();
+      (incidents || []).forEach((incident) => {
+        const key = String((incident && incident.anomaly_type) || "unknown");
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+      const total = Array.from(counts.values()).reduce((sum, value) => sum + value, 0);
+      return Array.from(counts.entries())
+        .sort((left, right) => {
+          if (right[1] !== left[1]) {
+            return right[1] - left[1];
+          }
+          return left[0].localeCompare(right[0]);
+        })
+        .map(([key, count], index) => ({
+          key,
+          label: scenarioLabel(key),
+          count,
+          percentage: total ? round((count / total) * 100, 1) : 0,
+          color: incidentMixPalette(index)
+        }));
+    }
+
+    function renderIncidentMixChart(items, total) {
+      if (!total) {
+        return `
+          <div class="mt-5 rounded-2xl border border-slate-800 bg-slate-950 px-4 py-8 text-sm text-slate-400">
+            No incident reports are available yet.
+          </div>
+        `;
+      }
+
+      let angle = 0;
+      const slices = items.map((item) => {
+        const start = angle;
+        angle += (item.count / total) * 360;
+        return `${item.color} ${start.toFixed(2)}deg ${angle.toFixed(2)}deg`;
+      });
+      const legendLayoutClass = items.length > 8
+        ? "grid gap-3 md:grid-cols-2 max-h-80 overflow-y-auto pr-1 mini-scroll"
+        : "space-y-3";
+      const legend = items.map((item) => `
+        <div class="rounded-2xl border border-slate-800 bg-slate-950 px-3 py-3">
+          <div class="flex items-start gap-3">
+            <span class="mt-1 h-3 w-3 flex-none rounded-full" style="background:${item.color}"></span>
+            <div class="min-w-0 flex-1">
+              <div class="break-words text-sm font-medium leading-5 text-slate-100">${escapeHtml(item.label)}</div>
+              <div class="mt-1 text-xs text-slate-400">${formatCount(item.count)} reports · ${item.percentage.toFixed(1)}%</div>
+            </div>
+          </div>
+        </div>
+      `).join("");
+
+      return `
+        <div class="mt-5 grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)] xl:items-center">
+          <div class="flex items-center justify-center xl:justify-start">
+            <div class="relative h-56 w-56 rounded-full border border-slate-800" style="background: conic-gradient(${slices.join(", ")});">
+              <div class="absolute inset-[22px] flex flex-col items-center justify-center rounded-full border border-slate-800 bg-slate-950 text-center">
+                <div class="text-3xl font-semibold">${formatCount(total)}</div>
+                <div class="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">Reports</div>
+              </div>
+            </div>
+          </div>
+          <div class="min-w-0">
+            <div class="mb-3 text-xs text-slate-500">Sorted by incident volume. Percentages are based on all currently loaded reports.</div>
+            <div class="${legendLayoutClass}">
+              ${legend}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function previewStatusLabel(responseCode, malformed = false) {
+      const code = Math.round(toNumber(responseCode, 200));
+      if (malformed && code >= 400 && code < 500) {
+        return "Malformed";
+      }
+      if (code === 200) {
+        return "200 OK";
+      }
+      if (code === 202) {
+        return "202 accepted";
+      }
+      if (code === 401) {
+        return "401 challenge";
+      }
+      if (code === 407) {
+        return "407 challenge";
+      }
+      if (code === 408) {
+        return "408 timeout";
+      }
+      if (code === 486) {
+        return "486 busy";
+      }
+      if (code >= 400 && code < 500) {
+        return `${code} reject`;
+      }
+      if (code >= 500) {
+        return `${code} error`;
+      }
+      return String(code);
+    }
+
     function buildDerivedTrafficPreview(featureWindow) {
       if (!featureWindow) {
         return {
@@ -497,7 +647,9 @@
 
       const features = featureWindow.features || featureWindow;
       const labels = featureWindow.labels && typeof featureWindow.labels === "object" ? featureWindow.labels : {};
-      const scenarioName = featureWindow.scenario_name || featureWindow.scenario || featureWindow.anomaly_type || labels.anomaly_type || "normal";
+      const rawScenarioName = featureWindow.scenario_name || featureWindow.scenario || featureWindow.anomaly_type || labels.anomaly_type || "normal";
+      const scenario = scenarioByName(rawScenarioName);
+      const scenarioName = scenario && scenario.scenario_name ? scenario.scenario_name : rawScenarioName;
       const latency = toNumber(features.latency_p95 ?? features.latency_p95_ms, 80);
       const registerRate = toNumber(features.register_rate);
       const inviteRate = toNumber(features.invite_rate);
@@ -505,81 +657,34 @@
       const retransmissions = toNumber(features.retransmission_count);
       const requestsPerSecond = round(registerRate + inviteRate + byeRate);
       const retryRatio = round(Math.min(retransmissions / Math.max(requestsPerSecond, 1), 1));
-
-      let templates;
-      let packetSample;
-      if (scenarioName === "registration_storm") {
-        templates = [
-          ["REGISTER", "UE → P-CSCF → S-CSCF", "401 retry", latency * 1.1],
-          ["REGISTER", "UE → P-CSCF → S-CSCF", "202 accepted", latency],
-          ["REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", latency * 0.7],
-          ["REGISTER", "UE → P-CSCF → S-CSCF", "401 retry", latency * 1.2],
-          ["REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", latency * 0.6],
-          ["REGISTER", "UE → P-CSCF → S-CSCF", "202 accepted", latency * 0.9]
-        ];
-        packetSample = [
-          "REGISTER sip:ims.demo.lab SIP/2.0",
-          "Via: SIP/2.0/UDP 10.0.8.12:5060",
-          "From: <sip:user@ims.demo.lab>",
-          "To: <sip:user@ims.demo.lab>",
-          "Call-ID: registration-surge",
-          "CSeq: 314159 REGISTER"
-        ].join("\n");
-      } else if (scenarioName === "malformed_invite" || scenarioName === "malformed_sip") {
-        templates = [
-          ["INVITE", "UE → P-CSCF → Validation", "Malformed", 44],
-          ["INVITE", "UE → P-CSCF → Validation", "400 reject", 38],
-          ["REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", 110],
-          ["INVITE", "UE → P-CSCF → Validation", "Malformed", 42],
-          ["INVITE", "UE → P-CSCF → Validation", "400 reject", 39],
-          ["REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", 105]
-        ];
-        packetSample = [
-          "INVITE sip:user@ims.demo.lab SIP/2.0",
-          "Via: SIP/2.0/UDP 10.0.8.44:5060",
-          "From malformed header",
-          "To: <sip:user@ims.demo.lab>",
-          "Call-ID: malformed-invite",
-          "CSeq: 11 INVITE"
-        ].join("\n");
-      } else {
-        templates = [
-          ["REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", 90],
-          ["INVITE", "UE → P-CSCF → S-CSCF", "200 OK", 70],
-          ["BYE", "UE → P-CSCF → S-CSCF", "200 OK", 55],
-          ["REGISTER", "UE → P-CSCF → S-CSCF", "200 OK", 85],
-          ["INVITE", "UE → P-CSCF → S-CSCF", "200 OK", 68],
-          ["BYE", "UE → P-CSCF → S-CSCF", "200 OK", 50]
-        ];
-        packetSample = [
-          "REGISTER sip:ims.demo.lab SIP/2.0",
-          "Via: SIP/2.0/UDP 10.0.8.10:5060",
-          "From: <sip:user@ims.demo.lab>",
-          "To: <sip:user@ims.demo.lab>",
-          "Call-ID: nominal-register",
-          "CSeq: 1 REGISTER"
-        ].join("\n");
-      }
-
       const now = Date.now();
-      const rows = templates.map((template, index) => ({
-        time: formatClock(new Date(now - ((templates.length - index) * 1000))),
-        method: template[0],
-        path: template[1],
-        status: template[2],
-        latency_ms: round(template[3], 1)
-      }));
+      const rows = [];
+      const eventProfiles = scenario && Array.isArray(scenario.event_profiles) ? scenario.event_profiles : [];
+      eventProfiles.forEach((profile) => {
+        const count = Math.max(1, Math.round(toNumber(profile.count, 1)));
+        const sampleCount = count >= 24 && rows.length <= 3 ? 2 : 1;
+        for (let index = 0; index < sampleCount && rows.length < 6; index += 1) {
+          rows.push({
+            time: formatClock(new Date(now - ((rows.length + 1) * 1000))),
+            method: profile.method || "REGISTER",
+            path: profile.path || "UE -> P-CSCF -> S-CSCF",
+            status: previewStatusLabel(profile.response_code, Boolean(profile.malformed)),
+            latency_ms: round(toNumber(profile.latency_ms, latency) + (toNumber(profile.latency_step, 0) * index), 1)
+          });
+        }
+      });
 
       return {
         scenario_name: scenarioName,
-        source: featureWindow.feature_source || "derived",
+        display_name: scenario && scenario.display_name ? scenario.display_name : scenarioLabel(scenarioName),
+        source: featureWindow.feature_source || featureWindow.source || "derived",
         rows,
         stats: {
           requests_per_second: requestsPerSecond,
           retry_ratio: retryRatio,
-          active_node: "pcscf-1"
+          active_node: features.node_id || featureWindow.node_id || "pcscf-1"
         },
-        packet_sample: packetSample
+        packet_sample: scenario && scenario.packet_sample ? scenario.packet_sample : ""
       };
     }
 
@@ -671,10 +776,13 @@
       const activeCount = toNumber(summary.active_incident_count, summary.open_incidents || 0);
       const activeCategories = Array.isArray(summary.active_incident_categories) ? summary.active_incident_categories : [];
       const activeModels = Array.isArray(summary.active_incidents_by_model) ? summary.active_incidents_by_model : [];
+      const scenarios = scenarioCatalog();
+      const incidentMix = incidentDistribution(incidents);
+      const incidentMixChart = renderIncidentMixChart(incidentMix, incidents.length);
       const categoryBadges = activeCategories.length
         ? activeCategories.map((entry) => `
             <span class="rounded-full border border-rose-400/20 bg-rose-500/10 px-2.5 py-1 text-xs text-rose-200">
-              ${escapeHtml(titleize(entry.anomaly_type || "unknown"))} · ${formatCount(entry.count || 0)}
+              ${escapeHtml(entry.label || scenarioLabel(entry.anomaly_type || "unknown"))} · ${formatCount(entry.count || 0)}
             </span>
           `).join("")
         : `<span class="text-xs text-slate-500">No active predictive categories.</span>`;
@@ -692,6 +800,25 @@
             title: auditTitle(event.event_type),
             detail: auditDetail(event)
           }));
+      const scenarioCards = scenarios.length
+        ? scenarios.map((scenario) => {
+            const tone = toneClasses(scenario.tone || "sky");
+            const cardClass = scenario.is_nominal
+              ? "bg-slate-950 ring-1 ring-slate-800 hover:bg-slate-900"
+              : `${tone.soft} ring-1 ${tone.border} hover:opacity-90`;
+            const headingClass = scenario.is_nominal ? "text-white" : tone.badge.split(" ").find((item) => item.startsWith("text-")) || "text-slate-100";
+            return `
+              <button class="rounded-2xl px-4 py-3 text-left ${cardClass}" onclick="runScenario('${escapeHtml(scenario.scenario_name)}')">
+                <div class="font-medium ${headingClass}">${escapeHtml(scenario.display_name || scenarioLabel(scenario.scenario_name))}</div>
+                <div class="mt-1 text-sm text-slate-400">${escapeHtml(scenario.description || "")}</div>
+              </button>
+            `;
+          }).join("")
+        : `
+            <div class="rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-400">
+              Scenario catalog is still loading from the control-plane API.
+            </div>
+          `;
 
       document.getElementById("overview").innerHTML = `
         <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -731,7 +858,7 @@
           </div>
         </div>
 
-        <div class="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+        <div class="grid gap-4 xl:grid-cols-[1.35fr_1fr]">
           <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
             <div class="flex items-center justify-between">
               <div>
@@ -762,19 +889,9 @@
           <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
             <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Immediate actions</div>
             <h2 class="mt-2 text-xl font-semibold">Run scenarios and respond</h2>
-            <div class="mt-5 space-y-3">
-              <button class="w-full rounded-2xl bg-slate-950 px-4 py-3 text-left ring-1 ring-slate-800 hover:bg-slate-900" onclick="runScenario('normal')">
-                <div class="font-medium text-white">Run Normal</div>
-                <div class="mt-1 text-sm text-slate-400">Generate a nominal feature window and verify no incident is created.</div>
-              </button>
-              <button class="w-full rounded-2xl bg-rose-500/15 px-4 py-3 text-left ring-1 ring-rose-400/20 hover:bg-rose-500/20" onclick="runScenario('registration_storm')">
-                <div class="font-medium text-rose-200">Run Registration Storm</div>
-                <div class="mt-1 text-sm text-slate-400">Drive a burst scenario through feature generation, scoring, and RCA.</div>
-              </button>
-              <button class="w-full rounded-2xl bg-amber-500/10 px-4 py-3 text-left ring-1 ring-amber-400/20 hover:bg-amber-500/15" onclick="runScenario('malformed_invite')">
-                <div class="font-medium text-amber-200">Run Malformed INVITE</div>
-                <div class="mt-1 text-sm text-slate-400">Exercise malformed SIP handling and the validation failure path.</div>
-              </button>
+            <div class="mt-3 text-sm text-slate-400">The OCP lab now exposes the full 12-scenario catalog through the console and latest model score path.</div>
+            <div class="mt-5 grid gap-3 lg:grid-cols-2">
+              ${scenarioCards}
             </div>
             <div class="mt-5 rounded-2xl border border-slate-800 bg-slate-950 p-4 text-sm text-slate-300">
               ${escapeHtml(scenarioStatus)}
@@ -786,6 +903,13 @@
               <button class="rounded-2xl bg-slate-950 px-4 py-3 ring-1 ring-slate-800 hover:bg-slate-900" onclick="notifySelected('jira')">Open Jira</button>
             </div>
           </div>
+        </div>
+
+        <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+          <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Incident Report Mix</div>
+          <h2 class="mt-2 text-xl font-semibold">All incident reports</h2>
+          <div class="mt-3 text-sm text-slate-400">Shows the category share across all ${formatCount(incidents.length)} incident reports currently loaded in the overview.</div>
+          ${incidentMixChart}
         </div>
 
         <div class="grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
@@ -810,7 +934,7 @@
                 <tbody>
                   ${(incidents.length ? incidents.slice(0, 5).map((incident) => `
                     <tr class="border-t border-slate-800 hover:bg-slate-950/60 cursor-pointer" onclick="selectIncident('${escapeHtml(incident.id)}')">
-                      <td class="px-4 py-3">${escapeHtml(incident.anomaly_type)}</td>
+                      <td class="px-4 py-3">${escapeHtml(scenarioLabel(incident.anomaly_type))}</td>
                       <td class="px-4 py-3">${escapeHtml(incident.severity)}</td>
                       <td class="px-4 py-3">${formatScore(incident.anomaly_score)}</td>
                       <td class="px-4 py-3">${escapeHtml(incident.status)}</td>
@@ -901,7 +1025,7 @@
                   <button class="w-full text-left p-4 border-b border-slate-800 ${active ? "bg-sky-500/10" : "hover:bg-slate-950/60"}" onclick="selectIncident('${escapeHtml(entry.id)}')">
                     <div class="flex items-start justify-between gap-4">
                       <div>
-                        <div class="font-medium">${escapeHtml(entry.anomaly_type)}</div>
+                        <div class="font-medium">${escapeHtml(scenarioLabel(entry.anomaly_type))}</div>
                         <div class="mt-1 text-sm text-slate-400">${escapeHtml(entry.subtitle)}</div>
                       </div>
                       <span class="rounded-full px-2.5 py-1 text-xs ${entryTone.badge}">${escapeHtml(entry.severity)}</span>
@@ -917,7 +1041,7 @@
             <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
                 <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Selected incident</div>
-                <h2 class="mt-2 text-2xl font-semibold">${escapeHtml(incident.anomaly_type)}</h2>
+                <h2 class="mt-2 text-2xl font-semibold">${escapeHtml(scenarioLabel(incident.anomaly_type))}</h2>
                 <div class="mt-1 text-slate-400">${escapeHtml(incident.subtitle)}</div>
               </div>
               <div class="flex flex-wrap gap-2 text-sm">
@@ -1069,7 +1193,7 @@
                 <div class="rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2">Node: ${escapeHtml(activeNode)}</div>
                 <div class="rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2">Method: mixed</div>
                 <div class="rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2">Window: latest</div>
-                <div class="rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2">Scenario: ${escapeHtml(titleize(scenarioName))}</div>
+                <div class="rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2">Scenario: ${escapeHtml(scenarioLabel(scenarioName))}</div>
               </div>
             </div>
             <div class="mt-5 overflow-hidden rounded-2xl border border-slate-800">
@@ -1123,6 +1247,8 @@
       }
 
       const explainability = incident.explainability || [];
+      const evidenceSources = incident.evidence_sources || [];
+      const generationMode = ((incident.rca_payload || {}).generation_mode || "unknown").replace(/_/g, " ");
       const similar = incident.similar_incidents || [];
 
       document.getElementById("rca").innerHTML = `
@@ -1144,17 +1270,36 @@
             <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-950 p-4 text-sm text-slate-300">
               ${escapeHtml(incident.narrative)}
             </div>
+            <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-950 p-4 text-sm text-slate-300">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate-500">RCA retrieval path</div>
+              <div class="mt-2 font-medium">Generated via ${escapeHtml(generationMode)}</div>
+              <div class="mt-1 text-slate-400">${escapeHtml(String(evidenceSources.length))} Milvus-backed source${evidenceSources.length === 1 ? "" : "s"} attached to this analysis.</div>
+            </div>
           </div>
-          <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
-            <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Similar incidents</div>
-            <h2 class="mt-2 text-xl font-semibold">Historical matches</h2>
-            <div class="mt-5 space-y-3 text-sm">
-              ${(similar.length ? similar.map((item) => `
-                <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">
-                  <div class="font-medium">${escapeHtml(item.title)}</div>
-                  <div class="mt-1 text-slate-400">${escapeHtml(item.detail)}</div>
-                </div>
-              `).join("") : `<div class="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-400">No historical matches are available yet.</div>`)}
+          <div class="space-y-4">
+            <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Retrieved context</div>
+              <h2 class="mt-2 text-xl font-semibold">Milvus evidence</h2>
+              <div class="mt-5 space-y-3 text-sm">
+                ${(evidenceSources.length ? evidenceSources.map((item) => `
+                  <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                    <div class="font-medium break-all">${escapeHtml(item.title)}</div>
+                    <div class="mt-1 text-slate-400">${escapeHtml(item.detail)}</div>
+                  </div>
+                `).join("") : `<div class="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-400">No Milvus retrieval context was attached to this RCA payload.</div>`)}
+              </div>
+            </div>
+            <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Similar incidents</div>
+              <h2 class="mt-2 text-xl font-semibold">Historical matches</h2>
+              <div class="mt-5 space-y-3 text-sm">
+                ${(similar.length ? similar.map((item) => `
+                  <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                    <div class="font-medium">${escapeHtml(item.title)}</div>
+                    <div class="mt-1 text-slate-400">${escapeHtml(item.detail)}</div>
+                  </div>
+                `).join("") : `<div class="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-400">No historical matches are available yet.</div>`)}
+              </div>
             </div>
           </div>
         </div>
@@ -1164,21 +1309,40 @@
     function renderModels() {
       const registry = consoleState().models || { models: [] };
       const models = registry.models || [];
-      const deployedVersion = registry.deployed_model_version || "unknown";
-      const candidate = models.find((model) => model.version && model.version !== deployedVersion) || null;
+      const registryDeployedVersion = registry.deployed_model_version || "unknown";
+      const activeModel = (consoleState().services || []).find((service) => service.name === "Anomaly Service")?.payload || {};
+      const activeServingVersion = activeModel.model_version || registryDeployedVersion;
+      const activeServingEndpoint = activeModel.predictive_endpoint || "";
+      const activeScoringModes = Array.isArray(activeModel.scoring_modes) ? activeModel.scoring_modes.join(", ") : "";
+      const candidate = models.find((model) => model.version && model.version !== registryDeployedVersion) || null;
       const grafanaUrl = grafanaBaseUrl();
       const grafanaDashboardUrl = grafanaUrl ? `${grafanaUrl}/d/ims-predictive-model/ims-predictive-model` : "";
 
       document.getElementById("models").innerHTML = `
         <div class="space-y-4">
+          <div class="rounded-3xl border border-emerald-900/70 bg-emerald-950/30 p-5 shadow-soft">
+            <div class="text-xs uppercase tracking-[0.2em] text-emerald-300">Active serving path</div>
+            <h2 class="mt-2 text-xl font-semibold">Remote scoring is using ${escapeHtml(activeServingVersion || "unknown")}</h2>
+            <div class="mt-3 grid gap-3 md:grid-cols-2 text-sm text-slate-300">
+              <div class="rounded-2xl border border-emerald-900/60 bg-slate-950/70 p-4">
+                <div class="text-slate-400">Predictive endpoint</div>
+                <div class="mt-2 break-all font-medium">${escapeHtml(activeServingEndpoint || "local artifact fallback")}</div>
+              </div>
+              <div class="rounded-2xl border border-emerald-900/60 bg-slate-950/70 p-4">
+                <div class="text-slate-400">Scoring modes</div>
+                <div class="mt-2 font-medium">${escapeHtml(activeScoringModes || "unknown")}</div>
+              </div>
+            </div>
+          </div>
           <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Deployed model</div>
-              <div class="mt-3 text-2xl font-semibold">${escapeHtml(deployedVersion)}</div>
+              <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Registry deployment</div>
+              <div class="mt-3 text-2xl font-semibold">${escapeHtml(registryDeployedVersion)}</div>
             </div>
             <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
               <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Dataset version</div>
               <div class="mt-3 text-2xl font-semibold">${escapeHtml(registry.dataset_version || "unknown")}</div>
+              <div class="mt-3 text-sm text-slate-400">Historical registry metadata kept for comparison.</div>
             </div>
             <div class="rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-soft">
               <div class="text-xs uppercase tracking-[0.2em] text-slate-500">Feature schema</div>
@@ -1216,7 +1380,7 @@
                 <tbody>
                   ${(models.length ? models.map((model) => {
                     const metrics = model.metrics || {};
-                    const status = model.version === deployedVersion ? "Deployed" : model.version === registry.selected_model_version ? "Selected" : "Ready";
+                    const status = model.version === registryDeployedVersion ? "Deployed" : model.version === registry.selected_model_version ? "Selected" : "Ready";
                     const statusClass = status === "Deployed" ? "text-emerald-300" : status === "Selected" ? "text-sky-300" : "text-slate-300";
                     return `
                       <tr class="border-t border-slate-800">

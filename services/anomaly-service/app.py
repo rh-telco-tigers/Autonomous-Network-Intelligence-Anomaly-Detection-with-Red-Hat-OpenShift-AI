@@ -16,6 +16,8 @@ class ScoreRequest(BaseModel):
     features: Dict[str, object] = Field(default_factory=dict)
     project: str = "ims-demo"
     feature_window_id: Optional[str] = None
+    scenario_name: Optional[str] = None
+    anomaly_type_hint: Optional[str] = None
 
 
 class BatchScoreRequest(BaseModel):
@@ -48,8 +50,13 @@ def current_model(auth: AuthContext | None = Depends(require_api_key)):
 @app.post("/score")
 def score(request: ScoreRequest, auth: AuthContext | None = Depends(require_api_key)):
     ensure_project_access(auth, request.project)
+    stored_features = dict(request.features)
+    if request.scenario_name and "scenario_name" not in stored_features:
+        stored_features["scenario_name"] = request.scenario_name
+    if request.anomaly_type_hint and "anomaly_type_hint" not in stored_features:
+        stored_features["anomaly_type_hint"] = request.anomaly_type_hint
     try:
-        result = score_features_detailed(request.features)
+        result = score_features_detailed(stored_features, anomaly_type_hint=request.anomaly_type_hint or request.scenario_name)
     except ModelUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -68,7 +75,7 @@ def score(request: ScoreRequest, auth: AuthContext | None = Depends(require_api_
                 "anomaly_score": anomaly_score,
                 "anomaly_type": anomaly_type,
                 "model_version": model_version,
-                "feature_snapshot": request.features,
+                "feature_snapshot": stored_features,
                 "created_at": created_at,
             }
         )

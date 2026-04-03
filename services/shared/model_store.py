@@ -7,6 +7,7 @@ from typing import Dict, Tuple
 from joblib import load as joblib_load
 import requests
 
+from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type
 from shared.model_registry import load_registry as load_registry_document
 
 
@@ -27,6 +28,24 @@ class ModelUnavailableError(RuntimeError):
     pass
 
 
+def _predictive_endpoint() -> str:
+    return os.getenv("PREDICTIVE_ENDPOINT", "").rstrip("/")
+
+
+def _predictive_model_name() -> str:
+    explicit = os.getenv("PREDICTIVE_MODEL_NAME", "ims-predictive-fs").strip()
+    return explicit or "ims-predictive-fs"
+
+
+def _reported_remote_model_version(default: str | None = None) -> str | None:
+    explicit = os.getenv("PREDICTIVE_MODEL_VERSION_LABEL", "").strip()
+    if explicit:
+        return explicit
+    if _predictive_endpoint():
+        return _predictive_model_name()
+    return default
+
+
 def _registry_path() -> Path:
     return Path(os.getenv("MODEL_REGISTRY_PATH", "/app/ai/registry/model_registry.json"))
 
@@ -40,12 +59,13 @@ def load_registry() -> Dict[str, object] | None:
 
 def current_model_status() -> Dict[str, object]:
     registry = load_registry()
-    endpoint = os.getenv("PREDICTIVE_ENDPOINT", "").rstrip("/")
-    deployed = registry.get("deployed_model_version") if registry else None
+    endpoint = _predictive_endpoint()
+    registry_deployed = registry.get("deployed_model_version") if registry else None
+    deployed = _reported_remote_model_version(registry_deployed)
     artifact_path = None
-    if registry and deployed:
+    if registry and registry_deployed:
         for model in registry.get("models", []):
-            if model.get("version") == deployed:
+            if model.get("version") == registry_deployed:
                 artifact = Path(model["artifact"])
                 if not artifact.is_absolute():
                     artifact = _registry_path().parent.parent / artifact
@@ -54,6 +74,7 @@ def current_model_status() -> Dict[str, object]:
     return {
         "registry_loaded": bool(registry and registry.get("models")),
         "deployed_model_version": deployed,
+        "predictive_model_name": _predictive_model_name() if endpoint else None,
         "predictive_endpoint": endpoint or None,
         "artifact_present": bool(artifact_path and artifact_path.exists()),
         "scoring_modes": ["remote-kserve-triton", "local-artifact"] if endpoint else ["local-artifact"],
@@ -78,7 +99,11 @@ def load_deployed_model() -> Dict[str, object] | None:
     return None
 
 
-def classify_anomaly_type(features: Dict[str, object]) -> str:
+def classify_anomaly_type(features: Dict[str, object], anomaly_type_hint: str | None = None) -> str:
+    hinted_type = canonical_anomaly_type(anomaly_type_hint)
+    if hinted_type and hinted_type != NORMAL_ANOMALY_TYPE:
+        return hinted_type
+
     register_rate = float(features.get("register_rate", 0.0))
     error_4xx_ratio = float(features.get("error_4xx_ratio", 0.0))
     error_5xx_ratio = float(features.get("error_5xx_ratio", 0.0))
@@ -91,11 +116,11 @@ def classify_anomaly_type(features: Dict[str, object]) -> str:
         return "malformed_sip"
     if latency_p95 > 250 or error_5xx_ratio > 0.1:
         return "service_degradation"
-    return "normal"
+    return NORMAL_ANOMALY_TYPE
 
 
-def score_features(features: Dict[str, object]) -> Tuple[float, bool, str, str]:
-    result = score_features_detailed(features)
+def score_features(features: Dict[str, object], anomaly_type_hint: str | None = None) -> Tuple[float, bool, str, str]:
+    result = score_features_detailed(features, anomaly_type_hint=anomaly_type_hint)
     return (
         float(result["anomaly_score"]),
         bool(result["is_anomaly"]),
@@ -104,19 +129,21 @@ def score_features(features: Dict[str, object]) -> Tuple[float, bool, str, str]:
     )
 
 
-def score_features_detailed(features: Dict[str, object]) -> Dict[str, object]:
+def score_features_detailed(features: Dict[str, object], anomaly_type_hint: str | None = None) -> Dict[str, object]:
     deployed = load_deployed_model()
     if not deployed:
         raise ModelUnavailableError("No deployed model is registered for anomaly scoring")
 
     artifact = deployed["artifact"]
     metadata = deployed["metadata"]
+    reported_version = str(metadata["version"])
     threshold = float(metadata.get("threshold", artifact.get("threshold", 0.6) if isinstance(artifact, dict) else 0.6))
     model_type = artifact.get("model_type") if isinstance(artifact, dict) else None
     remote_score = _remote_score(features, threshold)
     scoring_mode = "remote-kserve"
     if remote_score is not None:
         score = remote_score
+        reported_version = str(_reported_remote_model_version(reported_version) or reported_version)
     elif metadata.get("kind") == "triton_python_logistic_regression":
         score = _score_triton_export(features, artifact)
         scoring_mode = "triton-artifact"
@@ -132,20 +159,20 @@ def score_features_detailed(features: Dict[str, object]) -> Dict[str, object]:
     else:
         score = _score_weighted(features, artifact)
         scoring_mode = "weighted-artifact"
-    anomaly_type = classify_anomaly_type(features)
+    anomaly_type = classify_anomaly_type(features, anomaly_type_hint=anomaly_type_hint)
     rounded = round(score, 2)
     return {
         "anomaly_score": rounded,
         "is_anomaly": rounded >= threshold,
         "anomaly_type": anomaly_type,
-        "model_version": metadata["version"],
+        "model_version": reported_version,
         "scoring_mode": scoring_mode,
     }
 
 
 def _remote_score(features: Dict[str, object], threshold: float) -> float | None:
-    endpoint = os.getenv("PREDICTIVE_ENDPOINT", "").rstrip("/")
-    model_name = os.getenv("PREDICTIVE_MODEL_NAME", "ims-predictive")
+    endpoint = _predictive_endpoint()
+    model_name = _predictive_model_name()
     if not endpoint:
         return None
 

@@ -52,12 +52,12 @@ spec:
           },
           "targets": [
             {
-              "expr": "sum(ims_demo_active_incidents{project=\"ims-demo\"}) by (anomaly_type)",
-              "legendFormat": "{{anomaly_type}}",
+              "expr": "sum(nv_inference_count{job=\"ims-demo-lab/ims-predictive-fs-metrics\"})",
+              "legendFormat": "runtime calls",
               "refId": "A"
             }
           ],
-          "title": "Active Incidents By Predictive Category",
+          "title": "Serving Runtime Calls (Total)",
           "type": "stat"
         },
         {
@@ -94,12 +94,12 @@ spec:
           },
           "targets": [
             {
-              "expr": "sum(ims_demo_active_incidents{project=\"ims-demo\"}) by (model_version)",
-              "legendFormat": "{{model_version}}",
+              "expr": "sum(ims_demo_http_requests_total{service=\"anomaly-service\",path=\"/score\"})",
+              "legendFormat": "anomaly /score",
               "refId": "A"
             }
           ],
-          "title": "Active Incidents By Model Version",
+          "title": "Anomaly /score Requests (Total)",
           "type": "stat"
         },
         {
@@ -136,12 +136,12 @@ spec:
           },
           "targets": [
             {
-              "expr": "sum(increase(nv_inference_count{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m]))",
+              "expr": "sum(increase(nv_inference_count{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m]))",
               "legendFormat": "requests",
               "refId": "A"
             }
           ],
-          "title": "Predictive Requests (5m)",
+          "title": "Serving Runtime Calls (5m)",
           "type": "stat"
         },
         {
@@ -178,12 +178,12 @@ spec:
           },
           "targets": [
             {
-              "expr": "sum(rate(nv_inference_request_duration_us{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])), 0.001) / 1000",
-              "legendFormat": "avg latency",
+              "expr": "sum(increase(ims_demo_http_requests_total{service=\"anomaly-service\",path=\"/score\"}[5m]))",
+              "legendFormat": "anomaly /score",
               "refId": "A"
             }
           ],
-          "title": "Average Request Latency (ms)",
+          "title": "Anomaly /score Requests (5m)",
           "type": "stat"
         },
         {
@@ -206,17 +206,17 @@ spec:
           "id": 5,
           "targets": [
             {
-              "expr": "sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m]))",
-              "legendFormat": "inference rate",
+              "expr": "sum(increase(ims_demo_http_requests_total{service=\"anomaly-service\",path=\"/score\"}[5m]))",
+              "legendFormat": "anomaly /score",
               "refId": "A"
             },
             {
-              "expr": "sum(rate(nv_inference_request_success{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m]))",
-              "legendFormat": "success rate",
+              "expr": "sum(increase(nv_inference_count{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m]))",
+              "legendFormat": "serving runtime",
               "refId": "B"
             }
           ],
-          "title": "Predictive Throughput",
+          "title": "Request Path Trend (5m Increase)",
           "type": "timeseries"
         },
         {
@@ -239,27 +239,27 @@ spec:
           "id": 6,
           "targets": [
             {
-              "expr": "sum(rate(nv_inference_queue_duration_us{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])), 0.001) / 1000",
+              "expr": "sum(rate(nv_inference_queue_duration_us{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])), 0.001) / 1000",
               "legendFormat": "queue",
               "refId": "A"
             },
             {
-              "expr": "sum(rate(nv_inference_compute_input_duration_us{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])), 0.001) / 1000",
+              "expr": "sum(rate(nv_inference_compute_input_duration_us{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])), 0.001) / 1000",
               "legendFormat": "input",
               "refId": "B"
             },
             {
-              "expr": "sum(rate(nv_inference_compute_infer_duration_us{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])), 0.001) / 1000",
+              "expr": "sum(rate(nv_inference_compute_infer_duration_us{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])), 0.001) / 1000",
               "legendFormat": "infer",
               "refId": "C"
             },
             {
-              "expr": "sum(rate(nv_inference_compute_output_duration_us{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-metrics\"}[5m])), 0.001) / 1000",
+              "expr": "sum(rate(nv_inference_compute_output_duration_us{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])), 0.001) / 1000",
               "legendFormat": "output",
               "refId": "D"
             }
           ],
-          "title": "Triton Stage Latency Breakdown (ms)",
+          "title": "Serving Runtime Stage Latency Breakdown (ms)",
           "type": "timeseries"
         },
         {
@@ -282,12 +282,12 @@ spec:
           "id": 7,
           "targets": [
             {
-              "expr": "sum(increase(ims_demo_incidents_total{project=\"ims-demo\"}[1h])) by (anomaly_type)",
-              "legendFormat": "{{anomaly_type}}",
+              "expr": "sum(increase(ims_demo_http_requests_total{service=\"anomaly-service\",path=\"/score\"}[5m])) by (status)",
+              "legendFormat": "status {{status}}",
               "refId": "A"
             }
           ],
-          "title": "Incidents Created By Anomaly Type (1h)",
+          "title": "Anomaly /score Responses (5m)",
           "type": "timeseries"
         },
         {
@@ -310,8 +310,8 @@ spec:
           "id": 8,
           "targets": [
             {
-              "expr": "max(up{job=\"ims-demo-lab/ims-predictive-metrics\"})",
-              "legendFormat": "predictive service",
+              "expr": "max(up{job=\"ims-demo-lab/ims-predictive-fs-metrics\"})",
+              "legendFormat": "serving runtime",
               "refId": "A"
             },
             {
@@ -325,7 +325,7 @@ spec:
               "refId": "C"
             }
           ],
-          "title": "Key Service Health",
+          "title": "Serving Path Health",
           "type": "timeseries"
         }
       ],
@@ -345,8 +345,8 @@ spec:
         "to": "now"
       },
       "timezone": "browser",
-      "title": "IMS Predictive Model",
+      "title": "IMS Predictive Serving Activity",
       "uid": "ims-predictive-model",
-      "version": 1,
+      "version": 2,
       "weekStart": ""
     }

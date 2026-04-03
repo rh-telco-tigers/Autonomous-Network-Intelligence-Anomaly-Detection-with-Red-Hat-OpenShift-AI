@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from shared.control_plane_client import attach_rca
 from shared.cors import install_cors
+from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type, metric_weights, scenario_definition
 from shared.metrics import install_metrics, record_rca
 from shared.rag import build_prompt, generate_with_llm, publish_document, retrieve_context
 from shared.security import require_api_key
@@ -22,11 +23,8 @@ install_metrics(app, "rca-service")
 
 
 def infer_root_cause(anomaly_type: str) -> str:
-    if anomaly_type == "registration_storm":
-        return "P-CSCF registration saturation causing retransmission amplification"
-    if anomaly_type == "malformed_sip":
-        return "Malformed INVITE traffic rejected by S-CSCF validation path"
-    return "HSS latency impacting downstream IMS registration and call setup flows"
+    definition = scenario_definition(anomaly_type)
+    return str(definition.get("root_cause") or "Unexpected IMS behavior detected on the control plane.")
 
 
 def build_evidence(anomaly_type: str, documents: List[Dict[str, object]]) -> List[Dict[str, object]]:
@@ -38,12 +36,9 @@ def build_evidence(anomaly_type: str, documents: List[Dict[str, object]]) -> Lis
         }
         for doc in documents[:3]
     ]
-    if anomaly_type == "registration_storm":
-        evidence.insert(0, {"type": "metric", "reference": "register_rate", "weight": 0.4})
-    elif anomaly_type == "malformed_sip":
-        evidence.insert(0, {"type": "metric", "reference": "error_4xx_ratio", "weight": 0.4})
-    else:
-        evidence.insert(0, {"type": "metric", "reference": "latency_p95", "weight": 0.4})
+    weights = metric_weights(anomaly_type)
+    primary_metric = max(weights.items(), key=lambda item: item[1])[0] if weights else "latency_p95"
+    evidence.insert(0, {"type": "metric", "reference": primary_metric, "weight": 0.4})
     if len(evidence) < 2:
         evidence.append({"type": "log", "reference": "fallback-log-evidence", "weight": 0.2})
     return evidence
@@ -76,11 +71,15 @@ def summarize_documents(documents: List[Dict[str, object]]) -> List[Dict[str, ob
 
 def normalize_response(response: Dict[str, object], documents: List[Dict[str, object]], anomaly_type: str, incident_id: str) -> Dict[str, object]:
     normalized = dict(response)
+    definition = scenario_definition(anomaly_type)
     normalized["incident_id"] = incident_id
     normalized.setdefault("root_cause", infer_root_cause(anomaly_type))
     normalized.setdefault(
         "recommendation",
-        "Scale the relevant IMS function and review the active SIP traffic scenario before approving remediation.",
+        str(
+            definition.get("recommendation")
+            or "Scale the relevant IMS function and review the active SIP traffic scenario before approving remediation."
+        ),
     )
     evidence = normalized.get("evidence")
     if not isinstance(evidence, list) or len(evidence) < 2:
@@ -113,7 +112,8 @@ def healthz():
 
 @app.post("/rca", dependencies=[Depends(require_api_key)])
 def rca(request: RCARequest):
-    anomaly_type = str(request.context.get("anomaly_type", "service_degradation"))
+    anomaly_type = canonical_anomaly_type(str(request.context.get("anomaly_type", NORMAL_ANOMALY_TYPE)))
+    definition = scenario_definition(anomaly_type)
     query = f"incident={request.incident_id} anomaly_type={anomaly_type} context={request.context}"
     documents = retrieve_context(query, limit=3)
     evidence = build_evidence(anomaly_type, documents)
@@ -124,7 +124,10 @@ def rca(request: RCARequest):
         "root_cause": infer_root_cause(anomaly_type),
         "confidence": confidence,
         "evidence": evidence,
-        "recommendation": "Scale the relevant IMS function and review the active SIP traffic scenario before approving remediation.",
+        "recommendation": str(
+            definition.get("recommendation")
+            or "Scale the relevant IMS function and review the active SIP traffic scenario before approving remediation."
+        ),
         "generation_mode": "local-rag",
         "retrieved_documents": summarize_documents(documents),
     }

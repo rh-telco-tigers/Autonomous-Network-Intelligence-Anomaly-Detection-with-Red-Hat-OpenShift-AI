@@ -25,6 +25,7 @@ DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-demo-lab.svc.cl
 DEFAULT_DATASET_STORE_BUCKET = "ims-models"
 DEFAULT_DATASET_STORE_PREFIX = "pipelines/ims-demo-lab/datasets"
 DEFAULT_CONTROL_PLANE_URL = "http://control-plane.ims-demo-lab.svc.cluster.local:8080"
+DEFAULT_ANOMALY_SERVICE_URL = "http://anomaly-service.ims-demo-lab.svc.cluster.local:8080"
 NUMERIC_FEATURES = [
     "register_rate",
     "invite_rate",
@@ -172,6 +173,57 @@ def _control_plane_headers() -> dict[str, str]:
 def _control_plane_url(path: str) -> str:
     base_url = os.getenv("CONTROL_PLANE_URL", DEFAULT_CONTROL_PLANE_URL).rstrip("/")
     return f"{base_url}/{path.lstrip('/')}"
+
+
+def _anomaly_service_headers() -> dict[str, str]:
+    api_key = os.getenv("ANOMALY_SERVICE_API_KEY", os.getenv("CONTROL_PLANE_API_KEY", os.getenv("API_KEY", ""))).strip()
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["x-api-key"] = api_key
+    return headers
+
+
+def _anomaly_service_url(path: str) -> str:
+    base_url = os.getenv("ANOMALY_SERVICE_URL", DEFAULT_ANOMALY_SERVICE_URL).rstrip("/")
+    return f"{base_url}/{path.lstrip('/')}"
+
+
+def _score_feature_window(window: dict[str, Any]) -> dict[str, Any] | None:
+    if not _env_flag("SIPP_EMIT_CONTROL_PLANE_INCIDENT", False):
+        return None
+
+    sipp_summary = dict(window.get("sipp_summary") or {})
+    features = {
+        **dict(window.get("features") or {}),
+        "scenario_name": str(window.get("scenario_name") or ""),
+        "feature_source": str(window.get("feature_source") or ""),
+        "source": str(window.get("source") or ""),
+        "transport": str(window.get("transport") or sipp_summary.get("transport") or ""),
+        "call_limit": window.get("call_limit") or sipp_summary.get("call_limit"),
+        "rate": window.get("rate") or sipp_summary.get("rate"),
+        "target": window.get("target") or sipp_summary.get("target"),
+        "scenario_file": window.get("scenario_file") or sipp_summary.get("scenario_file"),
+        "contributing_conditions": list(window.get("contributing_conditions") or []),
+        "response_codes": list(sipp_summary.get("response_codes") or []),
+    }
+    timeout_seconds = max(float(os.getenv("ANOMALY_SERVICE_TIMEOUT_SECONDS", "15")), 1.0)
+    response = requests.post(
+        _anomaly_service_url("/score"),
+        json={
+            "features": features,
+            "project": os.getenv("CONTROL_PLANE_PROJECT", "ims-demo").strip() or "ims-demo",
+            "feature_window_id": str(window.get("window_id") or ""),
+            "scenario_name": str(window.get("scenario_name") or ""),
+            "anomaly_type_hint": str(window.get("anomaly_type") or NORMAL_ANOMALY_TYPE),
+        },
+        headers=_anomaly_service_headers(),
+        timeout=timeout_seconds,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if str(payload.get("incident_id") or "").strip():
+        return payload
+    return None
 
 
 def _emit_control_plane_incident(window: dict[str, Any]) -> dict[str, Any] | None:
@@ -439,6 +491,11 @@ def _build_feature_window(args: argparse.Namespace, trace_dir: Path, sipp_result
         "schema_version": FEATURE_SCHEMA_VERSION,
         "dataset_version": args.dataset_version,
         "scenario_name": scenario_name,
+        "transport": args.transport,
+        "call_limit": args.call_limit,
+        "rate": args.rate,
+        "target": f"{args.target_host}:{args.target_port}",
+        "scenario_file": args.scenario_file,
         "label": 0 if is_normal else 1,
         "anomaly_type": anomaly_type,
         "label_confidence": 0.95,
@@ -528,9 +585,13 @@ def _run_once(args: argparse.Namespace) -> dict[str, Any]:
         window_uri = _upload_window(window)
         incident = None
         try:
-            incident = _emit_control_plane_incident(window)
+            incident = _score_feature_window(window)
+            if incident is None and _env_flag("SIPP_FALLBACK_TO_SCENARIO_LABELER", False):
+                incident = _emit_control_plane_incident(window)
         except requests.RequestException:
-            if _env_flag("CONTROL_PLANE_INCIDENT_REQUIRED", False):
+            if _env_flag("SIPP_FALLBACK_TO_SCENARIO_LABELER", False):
+                incident = _emit_control_plane_incident(window)
+            elif _env_flag("CONTROL_PLANE_INCIDENT_REQUIRED", False):
                 raise
         return {"window_uri": window_uri, "window": window, "incident": incident}
     finally:

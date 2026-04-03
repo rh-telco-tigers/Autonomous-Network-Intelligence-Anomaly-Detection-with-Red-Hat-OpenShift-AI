@@ -72,6 +72,87 @@ class ScenarioAnomalyTypeTests(unittest.TestCase):
             [],
         )
 
+    def test_score_feature_window_uses_latest_anomaly_service(self) -> None:
+        window = {
+            "window_id": "live-sipp-v1-registration_failure-1",
+            "scenario_name": "registration_failure",
+            "anomaly_type": "registration_failure",
+            "source": "openims-sipp-lab",
+            "feature_source": "sipp-shortmessages",
+            "transport": "udp",
+            "call_limit": 24,
+            "rate": 4,
+            "target": "ims-pcscf.ims-demo-lab.svc.cluster.local:5060",
+            "scenario_file": "/scenarios/register-failure.xml",
+            "contributing_conditions": ["registration_reject", "auth_challenge_loop"],
+            "features": {
+                "register_rate": 2.4,
+                "invite_rate": 0.0,
+                "bye_rate": 0.0,
+                "error_4xx_ratio": 0.62,
+                "error_5xx_ratio": 0.0,
+                "latency_p95": 148.0,
+                "retransmission_count": 6.0,
+                "inter_arrival_mean": 0.3,
+                "payload_variance": 18.0,
+            },
+            "sipp_summary": {
+                "transport": "udp",
+                "call_limit": 24,
+                "rate": 4,
+                "target": "ims-pcscf.ims-demo-lab.svc.cluster.local:5060",
+                "scenario_file": "/scenarios/register-failure.xml",
+                "response_codes": [401, 403, 403],
+            },
+        }
+        response = mock.Mock()
+        response.json.return_value = {
+            "incident_id": "inc-123",
+            "anomaly_type": "registration_failure",
+            "model_version": "candidate-fs-v1",
+        }
+
+        with (
+            mock.patch.dict(
+                run_scenario.os.environ,
+                {
+                    "SIPP_EMIT_CONTROL_PLANE_INCIDENT": "true",
+                    "CONTROL_PLANE_PROJECT": "ims-demo",
+                    "CONTROL_PLANE_API_KEY": "demo-token",
+                },
+                clear=False,
+            ),
+            mock.patch.object(run_scenario.requests, "post", return_value=response) as post,
+        ):
+            result = run_scenario._score_feature_window(window)
+
+        self.assertEqual(result["incident_id"], "inc-123")
+        post.assert_called_once()
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["scenario_name"], "registration_failure")
+        self.assertEqual(payload["anomaly_type_hint"], "registration_failure")
+        self.assertEqual(payload["features"]["scenario_name"], "registration_failure")
+        self.assertEqual(payload["features"]["feature_source"], "sipp-shortmessages")
+
+    def test_score_feature_window_ignores_nominal_result(self) -> None:
+        window = {
+            "window_id": "live-sipp-v1-normal-1",
+            "scenario_name": "normal_operation",
+            "anomaly_type": "normal_operation",
+            "features": {"register_rate": 0.2},
+            "sipp_summary": {},
+        }
+        response = mock.Mock()
+        response.json.return_value = {"incident_id": None, "anomaly_type": "normal_operation"}
+
+        with (
+            mock.patch.dict(run_scenario.os.environ, {"SIPP_EMIT_CONTROL_PLANE_INCIDENT": "true"}, clear=False),
+            mock.patch.object(run_scenario.requests, "post", return_value=response),
+        ):
+            result = run_scenario._score_feature_window(window)
+
+        self.assertIsNone(result)
+
 
 class BulkBackfillTests(unittest.TestCase):
     def _args(self, **overrides):
