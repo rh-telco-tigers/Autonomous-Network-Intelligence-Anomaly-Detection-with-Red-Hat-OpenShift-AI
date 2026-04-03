@@ -11,6 +11,8 @@ resources:
   - ../../base/serving
   - ../../base/observability
   - ../../base/pipelines
+  - ../../base/rhoai
+  - ../../base/aap-platform
 patches:
   - path: sandbox-resources.yaml
   - path: remove-legacy-predictive-serving.yaml

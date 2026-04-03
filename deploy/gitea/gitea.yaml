@@ -187,6 +187,18 @@ spec:
           volumeMounts:
             - name: shared-storage
               mountPath: /shared
+        - name: wait-for-gitea
+          image: curlimages/curl:8.7.1
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for Gitea HTTP API to be ready..."
+              until curl -fsS http://gitea-http.gitea.svc.cluster.local:3000/api/healthz >/dev/null; do
+                echo "Gitea not ready yet, retrying in 5s..."
+                sleep 5
+              done
+              echo "Gitea is ready."
         - name: create-admin
           image: docker.io/gitea/gitea:1.22.6-rootless
           env:
