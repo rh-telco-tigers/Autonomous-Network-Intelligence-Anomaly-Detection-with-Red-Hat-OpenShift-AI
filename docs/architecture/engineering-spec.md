@@ -39,6 +39,50 @@ Partition the system into four primary planes:
 
 This separation keeps data generation, model lifecycle management, and operator workflows independently testable and deployable.
 
+### 1.4 Phase Breakdown
+
+The same platform is also easier to reason about as eight connected phases:
+
+1. Phase 1: Data Generation
+2. Phase 2: Feature Store
+3. Phase 3: Model Training (KFP)
+4. Phase 4: Model Registry
+5. Phase 5: Model Serving
+6. Phase 6: Custom Services
+7. Phase 7: Real-Time Detection and RCA
+8. Phase 8: Remediation
+
+```mermaid
+flowchart LR
+  P1["Phase 1<br/>Data Generation"] --> P2["Phase 2<br/>Feature Store"]
+  P2 --> P3["Phase 3<br/>Model Training (KFP)"]
+  P3 --> P4["Phase 4<br/>Model Registry"]
+  P4 --> P5["Phase 5<br/>Model Serving"]
+  P5 --> P6["Phase 6<br/>Custom Services"]
+  P6 --> P7["Phase 7<br/>Real-Time Detection + RCA"]
+  P7 --> P8["Phase 8<br/>Remediation"]
+```
+
+Deep-dive document mapping:
+
+- [Architecture by phase](./README.md) is the directory-level index.
+- [Incident release and offline training](./incident-release-corpus-and-offline-training.md) explains persisted source data, release packaging, and offline-training inputs.
+- [Feature store training path](./feature-store-training-path.md) explains phases 2 to 5 in detail.
+- [RCA and remediation](./rca-remediation.md) explains phases 6 to 8 in detail.
+
+### 1.5 Document Role
+
+Keep this document as the umbrella system reference.
+
+Use this file when you need:
+
+- the end-to-end platform story across all phases
+- runtime architecture views that span more than one phase
+- repository-to-runtime mapping
+- cross-cutting system boundaries, service relationships, and deployment context
+
+Use the `phase-01-overview` through `phase-08-overview` files for fast stage-by-stage reading. They are summaries, not replacements for this deeper reference.
+
 ## 2. Goals and Non-Goals
 
 ### Goals

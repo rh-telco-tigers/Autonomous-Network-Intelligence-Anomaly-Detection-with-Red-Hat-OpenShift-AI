@@ -15,7 +15,31 @@ This architecture must:
 - introduce a new Kubeflow pipeline that reads from Feature Store, trains a model, and publishes a model version into the Red Hat OpenShift AI Model Registry
 - deploy the new model into a serving runtime and expose it without breaking the current `ims-predictive` service
 
-This document extends the current [engineering specification](./engineering-spec.md) and the release-oriented [data-generation architecture](./data-generation.md).
+This document extends the current [engineering specification](./engineering-spec.md) and the release-oriented [incident release and offline training contract](./incident-release-corpus-and-offline-training.md).
+
+### 1.1 Phase Alignment
+
+This document is the primary deep dive for the middle model-lifecycle phases:
+
+- Phase 2: Feature Store
+- Phase 3: Model Training (KFP)
+- Phase 4: Model Registry
+- Phase 5: Model Serving
+
+It assumes Phase 1 data has already been persisted by the live platform and does not redefine the RCA or remediation workflow handled later in [rca-remediation](./rca-remediation.md).
+
+### 1.2 Document Role
+
+Keep this document as the detailed transition plan for phases 2 to 5.
+
+Use this file when you need:
+
+- the target Feature Store architecture
+- bundle dataset structure and Feature Store projection rules
+- new Kubeflow pipeline boundaries and inputs
+- model registry transition details and serving rollout options
+
+Use the phase overview files for concise summaries. They do not replace the design detail, milestones, and transition constraints captured here.
 
 ## 2. Product Notes
 

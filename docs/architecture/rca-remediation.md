@@ -12,6 +12,29 @@ Plane is the operator-facing work management surface where incidents become acti
 
 This design intentionally keeps Plane behind a provider abstraction so Jira or another system can be added later without redesigning the core incident pipeline.
 
+### 1.1 Phase Alignment
+
+This document is the primary deep dive for the runtime response phases:
+
+- Phase 6: Custom Services
+- Phase 7: Real-Time Detection and RCA
+- Phase 8: Remediation
+
+It assumes the earlier phases already provide persisted traffic data, a trained anomaly model, model metadata, and a live serving endpoint.
+
+### 1.2 Document Role
+
+Keep this document as the detailed runtime response contract.
+
+Use this file when you need:
+
+- the RCA and remediation workflow in full
+- state machine, data model, APIs, and ticketing behavior
+- embedding strategy and retrieval rules
+- automation execution, safety controls, and human approval rules
+
+Use the phase overview files for short stage summaries. They do not replace the operational and API-level detail captured here.
+
 ---
 
 ## 2. Goals

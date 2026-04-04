@@ -2,7 +2,7 @@
 
 This folder isolates the new release-corpus implementation from the existing live demo training flow.
 
-It is the starting point for the `ims-incident-release` workflow described in `docs/architecture/data-generation.md`.
+It is the starting point for the `ims-incident-release` workflow described in `docs/architecture/incident-release-corpus-and-offline-training.md`.
 
 ## Layout
 
