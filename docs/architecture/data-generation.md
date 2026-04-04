@@ -17,6 +17,20 @@ This document intentionally does **not** define a synthetic/scenario data factor
 
 The implemented runtime may optionally mirror bronze snapshot events and release publication notifications to Kafka for downstream integration. That mirror path is non-authoritative and must never replace the object-storage snapshot, release manifest, validation gates, or published release artifacts.
 
+### 1.1 At a glance
+
+This design produces two reusable outputs from data the platform already persists:
+
+- a public incident corpus for Kaggle-style publication
+- a deterministic offline-training input for model-family experimentation
+
+The workflow keeps four boundaries explicit:
+
+- live runtime persistence remains the only source for incidents, approvals, feature windows, and RCA enrichment
+- release construction is snapshot-based and reproducible
+- public publication is allowlist-driven and privacy-controlled
+- offline training consumes released artifacts, not live storage prefixes
+
 ## 2. Scope
 
 In scope:
@@ -39,33 +53,41 @@ Out of scope:
 
 ## 3. Final Boundary
 
-The architecture is split into three distinct flows.
+The architecture has three distinct processing flows plus the live runtime sources that feed them, with a hard boundary between the live demo path and the public release path.
 
 ```mermaid
 flowchart LR
-  SIPP["SIPp + OpenIMSs"]
-  MinIO["MinIO feature windows"]
-  CPDB["control-plane DB<br/>incidents / approvals / audit"]
-  RCA["RCA payloads + Milvus incident_evidence / incident_reasoning / incident_resolution"]
-  Release["ims-incident-release pipeline"]
-  Gold["Gold release datasets"]
-  Kaggle["Kaggle bundle"]
-  Offline["ims-offline-train pipeline"]
-  Registry["model registry"]
-  Demo["current demo train-and-register pipeline"]
+  subgraph Runtime["Live platform runtime"]
+    SIPP["SIPp + OpenIMSs traffic"]
+    MinIO["MinIO feature windows"]
+    CPDB["control-plane DB<br/>incidents / approvals / audit"]
+    RCA["RCA payloads + Milvus incident_evidence / incident_reasoning / incident_resolution"]
+    SIPP --> MinIO
+  end
 
-  SIPP --> MinIO
-  MinIO --> Release
-  CPDB --> Release
-  RCA --> Release
+  subgraph Release["Public incident release path"]
+    Snapshot["Immutable source snapshot"]
+    Normalize["Normalize + link + classify"]
+    Privacy["Privacy allowlist + redaction"]
+    Gold["Gold release artifacts"]
+    Kaggle["Kaggle bundle"]
+    MinIO --> Snapshot
+    CPDB --> Snapshot
+    RCA --> Snapshot
+    Snapshot --> Normalize --> Privacy --> Gold --> Kaggle
+  end
 
-  Release --> Gold
-  Gold --> Kaggle
-  Gold --> Offline
-  Offline --> Registry
+  subgraph Offline["Offline training path"]
+    Splits["Deterministic split manifests"]
+    Train["ims-offline-train pipeline"]
+    Registry["model registry"]
+    Gold --> Splits --> Train --> Registry
+  end
 
-  MinIO --> Demo
-  Demo --> Registry
+  subgraph Demo["Current live demo path"]
+    LiveTrain["current train-and-register pipeline"]
+    MinIO --> LiveTrain --> Registry
+  end
 ```
 
 Operationally:
@@ -73,6 +95,7 @@ Operationally:
 - the current demo pipeline continues to keep the live demo model working
 - the new release pipeline owns public corpus creation and Kaggle packaging
 - the new offline training pipeline owns model-family experimentation and evaluation
+- the release pipeline may read the same persisted feature windows as the live demo path, but it must not reuse the live training pipeline as its publication mechanism
 
 ## 4. Source of Truth
 
@@ -482,7 +505,7 @@ Allowed values:
 
 Rules:
 
-- all rows in `ims_training_examples.parquet` must have one of these three values
+- all rows in `ims_training_examples.parquet` must have one of these four values
 - only `eligible` rows may appear in split manifests and balanced training export
 - incidents with missing features still appear in `ims_incident_history.parquet`
 - incidents with ambiguous taxonomy mapping still appear in `ims_incident_history.parquet`
@@ -514,6 +537,30 @@ Rules:
 - ship a `label_dictionary.csv` with all mappings
 - version the mapping with `label_taxonomy_version`
 - never expose generation-only helper fields as model features
+- if no deterministic mapping exists, preserve the raw label, set `training_eligibility_status = ineligible_ambiguous_label`, and exclude the row from split manifests
+
+Typical normalization intent:
+
+| Raw source meaning | Normalized label | Guidance |
+| --- | --- | --- |
+| normal or benign baseline behavior | `normal_operation` | Use for non-incident or clearly healthy windows |
+| elevated REGISTER load and retry amplification | `registration_storm` | Use when registration surge is the dominant pattern |
+| registration flow failure without auth as the primary cause | `registration_failure` | Keep distinct from credential-driven rejection |
+| authentication or credential rejection dominates | `authentication_failure` | Use when auth is the principal cause |
+| malformed SIP syntax, invalid headers, or parser-breaking payloads | `malformed_sip` | Prefer this when message construction is the main issue |
+| route, destination, DNS, or service-discovery failure | `routing_error` | Use when path selection or reachability is wrong |
+| destination busy or endpoint unavailable | `busy_destination` | Use when the callee or target is busy rather than broken |
+| setup path stalls before session establishment | `call_setup_timeout` | Use when timeout is the strongest label |
+| established session drops or tears down unexpectedly | `call_drop_mid_session` | Use only after setup succeeded |
+| internal 5xx or server fault dominates | `server_internal_error` | Prefer this when platform-side failure is primary |
+| transport or network impairment dominates | `network_degradation` | Use when network quality is the strongest explanation |
+| retransmissions spike without a stronger primary label | `retransmission_spike` | Keep retransmission-centric failures explicit |
+
+Normalization must remain many-to-one and deterministic:
+
+- semantically similar raw values may collapse into one normalized label
+- one row must publish exactly one primary `anomaly_type`
+- secondary or overlapping causes belong in `contributing_conditions`, not in multiple top-level labels
 
 ## 13. Deterministic Split Policy
 
@@ -585,7 +632,25 @@ The release must maintain an explicit mapping between internal and public fields
 
 ## 15. Release Pipeline Stages
 
-The release pipeline should be implemented as a dedicated workflow, for example `ims-incident-release`.
+The release pipeline should be implemented as a dedicated workflow, for example `ims-incident-release`. It should materialize stable stage outputs instead of acting like one large monolithic export script.
+
+```mermaid
+flowchart TD
+  A["create-source-snapshot"] --> B["export-feature-windows"]
+  A --> C["export-control-plane-history"]
+  A --> D["export-rca-enrichment"]
+  B --> E["normalize-and-link"]
+  C --> E
+  D --> E
+  E --> F["classify-eligibility"]
+  F --> G["apply-privacy-policy"]
+  G --> H["build-gold-artifacts"]
+  H --> I["build-splits"]
+  H --> J["validate-release"]
+  I --> J
+  J --> K["package-kaggle-bundle"]
+  K --> L["publish-kaggle"]
+```
 
 Recommended stages:
 
@@ -637,6 +702,23 @@ Recommended stages:
 
 12. `publish-kaggle`
     - publish only after explicit success of all prior gates
+
+Required persisted handoff per stage:
+
+| Stage | Required output |
+| --- | --- |
+| `create-source-snapshot` | source snapshot manifest with cutoff time and source locations |
+| `export-feature-windows` | feature-window export listing and source dataset version summary |
+| `export-control-plane-history` | exported `incidents`, `approvals`, and `audit_events` files |
+| `export-rca-enrichment` | RCA payload export plus Milvus export summary |
+| `normalize-and-link` | normalized silver tables and incident-to-window link table |
+| `classify-eligibility` | eligibility report with linkage and training-eligibility counts |
+| `apply-privacy-policy` | public-safe intermediate tables with public IDs and redaction metadata |
+| `build-gold-artifacts` | parquet artifacts, `schema.json`, and dictionaries |
+| `build-splits` | persisted train, validation, and test split manifests |
+| `validate-release` | authoritative `quality_report.json` and blocking decision |
+| `package-kaggle-bundle` | final bundle layout with manifest and dataset card |
+| `publish-kaggle` | publication receipt or published version reference |
 
 ### 15.1 Data Quality Ownership
 
