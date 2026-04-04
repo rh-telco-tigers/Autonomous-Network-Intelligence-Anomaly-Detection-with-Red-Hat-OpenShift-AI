@@ -14,6 +14,8 @@ type IntegrationStatus = Record<string, unknown>;
 
 function buildRouteLinks(origin: string, integrations: Record<string, IntegrationStatus>) {
   const replaceHost = (from: string, to: string) => (origin.includes(from) ? origin.replace(from, to) : "");
+  const aapIntegration = integrations.aap ?? {};
+  const aapRoute = String(aapIntegration.controller_url ?? "").trim();
   const planeIntegration = integrations.plane ?? {};
   const planeRoute = String(planeIntegration.app_url ?? process.env.NEXT_PUBLIC_PLANE_URL ?? "").trim();
   return [
@@ -21,6 +23,10 @@ function buildRouteLinks(origin: string, integrations: Record<string, Integratio
     { label: "Control Plane", url: process.env.NEXT_PUBLIC_CONTROL_PLANE_URL ?? replaceHost("demo-ui", "control-plane") },
     { label: "Feature Gateway", url: replaceHost("demo-ui", "feature-gateway") },
     { label: "Milvus Attu", url: process.env.NEXT_PUBLIC_ATTU_URL ?? replaceHost("demo-ui", "milvus-attu") },
+    {
+      label: "AAP Controller",
+      url: Boolean(aapIntegration.live_configured) && isExternalUrl(aapRoute) ? aapRoute : "",
+    },
     {
       label: "Plane",
       url: Boolean(planeIntegration.live_configured) && isExternalUrl(planeRoute) ? planeRoute : "",

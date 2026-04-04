@@ -2,44 +2,45 @@
 
 :root {
   color-scheme: light;
-  --app-body-bg: #f8fafc;
+  --app-body-bg: #f4f7fb;
   --app-main-bg:
-    radial-gradient(circle at top, rgba(56, 189, 248, 0.18), transparent 45%),
-    linear-gradient(#f8fafc, #eef2ff);
-  --app-sidebar-bg: rgba(255, 255, 255, 0.94);
-  --app-topbar-bg: rgba(248, 250, 252, 0.78);
-  --surface-subtle: rgba(255, 255, 255, 0.78);
-  --surface-raised: rgba(255, 255, 255, 0.92);
+    radial-gradient(circle at top, rgba(56, 189, 248, 0.1), transparent 42%),
+    linear-gradient(#f8fafc, #f1f5f9);
+  --app-sidebar-bg: rgba(255, 255, 255, 0.98);
+  --app-topbar-bg: rgba(255, 255, 255, 0.92);
+  --surface: #ffffff;
+  --surface-subtle: rgba(255, 255, 255, 0.96);
+  --surface-raised: rgba(255, 255, 255, 0.98);
   --surface-strong: #ffffff;
-  --surface-hover: #eef2ff;
-  --border-subtle: rgba(148, 163, 184, 0.34);
-  --border-strong: rgba(148, 163, 184, 0.58);
+  --surface-hover: #e2e8f0;
+  --border-subtle: rgba(100, 116, 139, 0.28);
+  --border-strong: rgba(100, 116, 139, 0.42);
   --text-strong: #020617;
   --text-primary: #0f172a;
-  --text-secondary: #334155;
+  --text-secondary: #1e293b;
   --text-muted: #334155;
   --text-subtle: #475569;
-  --accent: #0369a1;
-  --accent-strong: #0ea5e9;
+  --accent: #075985;
+  --accent-strong: #0284c7;
   --accent-contrast: #f8fafc;
-  --accent-soft: rgba(14, 165, 233, 0.12);
-  --accent-ring: rgba(14, 165, 233, 0.24);
-  --brand-bg: rgba(14, 165, 233, 0.12);
-  --brand-fg: #0369a1;
-  --brand-ring: rgba(14, 165, 233, 0.18);
-  --success-bg: rgba(34, 197, 94, 0.12);
+  --accent-soft: rgba(14, 165, 233, 0.14);
+  --accent-ring: rgba(14, 165, 233, 0.26);
+  --brand-bg: rgba(2, 132, 199, 0.12);
+  --brand-fg: #075985;
+  --brand-ring: rgba(2, 132, 199, 0.18);
+  --success-bg: rgba(34, 197, 94, 0.14);
   --success-fg: #166534;
-  --success-ring: rgba(34, 197, 94, 0.2);
-  --warning-bg: rgba(245, 158, 11, 0.12);
+  --success-ring: rgba(34, 197, 94, 0.24);
+  --warning-bg: rgba(245, 158, 11, 0.14);
   --warning-fg: #92400e;
-  --warning-ring: rgba(245, 158, 11, 0.2);
-  --danger-bg: rgba(244, 63, 94, 0.12);
+  --warning-ring: rgba(245, 158, 11, 0.24);
+  --danger-bg: rgba(244, 63, 94, 0.14);
   --danger-bg-hover: rgba(244, 63, 94, 0.18);
   --danger-fg: #be123c;
-  --danger-ring: rgba(244, 63, 94, 0.22);
-  --info-bg: rgba(14, 165, 233, 0.12);
-  --info-fg: #0369a1;
-  --info-ring: rgba(14, 165, 233, 0.2);
+  --danger-ring: rgba(244, 63, 94, 0.24);
+  --info-bg: rgba(14, 165, 233, 0.14);
+  --info-fg: #075985;
+  --info-ring: rgba(14, 165, 233, 0.24);
 }
 
 html.dark {
@@ -194,4 +195,36 @@ html.light :where(.hover\:bg-slate-800:hover, .hover\:bg-slate-900:hover, .hover
 
 html.light :where(.ring-slate-800) {
   --tw-ring-color: var(--border-subtle) !important;
+}
+
+html.light :where(.bg-sky-500\/5, .bg-sky-500\/8, .bg-sky-500\/10, .bg-cyan-500\/8) {
+  background-color: rgba(14, 165, 233, 0.12) !important;
+}
+
+html.light :where(.bg-emerald-500\/5, .bg-emerald-500\/8, .bg-emerald-500\/10) {
+  background-color: rgba(34, 197, 94, 0.12) !important;
+}
+
+html.light :where(.bg-amber-500\/5, .bg-amber-500\/8, .bg-amber-500\/10) {
+  background-color: rgba(245, 158, 11, 0.14) !important;
+}
+
+html.light :where(.bg-rose-500\/10) {
+  background-color: rgba(244, 63, 94, 0.12) !important;
+}
+
+html.light :where(.border-sky-400\/20, .border-sky-400\/25, .border-sky-400\/30, .border-cyan-400\/25) {
+  border-color: rgba(14, 165, 233, 0.26) !important;
+}
+
+html.light :where(.border-emerald-400\/20, .border-emerald-400\/25, .border-emerald-400\/30, .border-emerald-500\/20, .border-emerald-500\/30) {
+  border-color: rgba(34, 197, 94, 0.24) !important;
+}
+
+html.light :where(.border-amber-400\/20, .border-amber-400\/25, .border-amber-400\/30, .border-amber-500\/20, .border-amber-500\/30) {
+  border-color: rgba(245, 158, 11, 0.28) !important;
+}
+
+html.light :where(.border-rose-500\/20) {
+  border-color: rgba(244, 63, 94, 0.24) !important;
 }

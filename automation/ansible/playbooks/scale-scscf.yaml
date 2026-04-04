@@ -2,12 +2,62 @@
 - name: Scale the S-CSCF deployment after operator approval
   hosts: localhost
   gather_facts: false
+  vars:
+    target_namespace: "{{ target_namespace | default('ims-demo-lab') }}"
+    target_deployment: "{{ target_deployment | default('ims-scscf') }}"
+    target_replicas: "{{ (target_replicas | default(2)) | int }}"
+    service_account_token: "{{ lookup('file', '/var/run/secrets/kubernetes.io/serviceaccount/token') }}"
+    kubernetes_api_url: "https://{{ lookup('env', 'KUBERNETES_SERVICE_HOST') | default('kubernetes.default.svc', true) }}:{{ lookup('env', 'KUBERNETES_SERVICE_PORT_HTTPS') | default('443', true) }}"
+    scale_endpoint: >-
+      {{ kubernetes_api_url }}/apis/apps/v1/namespaces/{{ target_namespace }}/deployments/{{ target_deployment }}/scale
   tasks:
-    - name: Scale the S-CSCF deployment
-      kubernetes.core.k8s_scale:
-        api_version: apps/v1
-        kind: Deployment
-        name: openimss-scscf
-        namespace: ims-demo-lab
-        replicas: 2
+    - name: Read the current scale before changing replicas
+      ansible.builtin.uri:
+        url: "{{ scale_endpoint }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ service_account_token }}"
+          Accept: application/json
+        ca_path: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        return_content: true
+        status_code: 200
+      register: current_scale
+
+    - name: Scale the S-CSCF deployment to the approved replica count
+      ansible.builtin.uri:
+        url: "{{ scale_endpoint }}"
+        method: PATCH
+        headers:
+          Authorization: "Bearer {{ service_account_token }}"
+          Accept: application/json
+          Content-Type: application/merge-patch+json
+        ca_path: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        body_format: raw
+        body: "{{ {'spec': {'replicas': target_replicas | int}} | to_json }}"
+        return_content: true
+        status_code: 200
+      register: updated_scale
+
+    - name: Wait for the deployment scale subresource to reflect the requested replicas
+      ansible.builtin.uri:
+        url: "{{ scale_endpoint }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ service_account_token }}"
+          Accept: application/json
+        ca_path: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        return_content: true
+        status_code: 200
+      register: settled_scale
+      retries: 18
+      delay: 5
+      until:
+        - (settled_scale.json.status.replicas | default(0) | int) == (target_replicas | int)
+
+    - name: Emit a concise remediation summary
+      ansible.builtin.debug:
+        msg: >-
+          Scaled {{ target_namespace }}/{{ target_deployment }} from
+          {{ current_scale.json.spec.replicas | default('unknown') }} to
+          {{ target_replicas }} replicas.
 

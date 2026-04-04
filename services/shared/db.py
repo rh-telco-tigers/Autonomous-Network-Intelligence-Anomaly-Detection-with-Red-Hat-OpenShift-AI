@@ -617,6 +617,50 @@ def record_incident_action(
     return get_incident_action(incident_id, action_id) or {}
 
 
+def update_incident_action(
+    incident_id: str,
+    action_id: int,
+    execution_status: str,
+    finished_at: str | None = None,
+    result_summary: str | None = None,
+    result_json: Dict[str, object] | None = None,
+) -> Dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        row = connection.execute(
+            "SELECT remediation_id, result_json FROM incident_actions WHERE incident_id = ? AND id = ?",
+            (incident_id, action_id),
+        ).fetchone()
+        if not row:
+            return None
+        merged_result_json = _json_loads(row["result_json"], {}) | (result_json or {})
+        connection.execute(
+            """
+            UPDATE incident_actions
+            SET execution_status = ?,
+                finished_at = COALESCE(?, finished_at),
+                result_summary = COALESCE(?, result_summary),
+                result_json = ?
+            WHERE incident_id = ? AND id = ?
+            """,
+            (
+                execution_status,
+                finished_at,
+                result_summary,
+                _json_dumps(merged_result_json),
+                incident_id,
+                action_id,
+            ),
+        )
+        remediation_id = row["remediation_id"]
+        if remediation_id is not None:
+            connection.execute(
+                "UPDATE incident_remediation SET status = ? WHERE incident_id = ? AND id = ?",
+                (execution_status, incident_id, remediation_id),
+            )
+        connection.commit()
+    return get_incident_action(incident_id, action_id)
+
+
 def get_incident_action(incident_id: str, action_id: int) -> Dict[str, Any] | None:
     with closing(_connect()) as connection:
         row = connection.execute(
@@ -965,6 +1009,28 @@ def record_approval(
     return record
 
 
+def update_approval(
+    approval_id: int,
+    status: str,
+    output: str | None = None,
+) -> Dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        row = connection.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone()
+        if not row:
+            return None
+        connection.execute(
+            "UPDATE approvals SET status = ?, output = COALESCE(?, output) WHERE id = ?",
+            (status, output, approval_id),
+        )
+        connection.commit()
+        updated = connection.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone()
+    if not updated:
+        return None
+    record = dict(updated)
+    record["execute"] = bool(record["execute"])
+    return record
+
+
 def record_audit(event_type: str, actor: str, payload: Dict[str, Any], incident_id: str | None = None) -> None:
     with closing(_connect()) as connection:
         connection.execute(
@@ -983,12 +1049,26 @@ def record_audit(event_type: str, actor: str, payload: Dict[str, Any], incident_
         connection.commit()
 
 
-def list_audit_events(limit: int = 100, incident_id: str | None = None) -> List[Dict[str, Any]]:
+def list_audit_events(
+    limit: int = 100,
+    incident_id: str | None = None,
+    event_type: str | None = None,
+) -> List[Dict[str, Any]]:
     with closing(_connect()) as connection:
-        if incident_id:
+        if incident_id and event_type:
+            rows = connection.execute(
+                "SELECT * FROM audit_events WHERE incident_id = ? AND event_type = ? ORDER BY created_at DESC LIMIT ?",
+                (incident_id, event_type, limit),
+            ).fetchall()
+        elif incident_id:
             rows = connection.execute(
                 "SELECT * FROM audit_events WHERE incident_id = ? ORDER BY created_at DESC LIMIT ?",
                 (incident_id, limit),
+            ).fetchall()
+        elif event_type:
+            rows = connection.execute(
+                "SELECT * FROM audit_events WHERE event_type = ? ORDER BY created_at DESC LIMIT ?",
+                (event_type, limit),
             ).fetchall()
         else:
             rows = connection.execute(

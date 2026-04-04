@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: control-plane
+  namespace: ims-demo-lab
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aap-automation-config
+  namespace: ims-demo-lab
+data:
+  AAP_AUTOMATION_ENABLED: "true"
+  AAP_CONTROLLER_URL: http://aap-controller-service.aap.svc.cluster.local
+  AAP_CONTROLLER_APP_URL: https://aap-controller-aap.apps.ocp.4h2g6.sandbox195.opentlc.com
+  AAP_CONTROLLER_USERNAME: admin
+  AAP_ORGANIZATION: Default
+  AAP_INVENTORY_NAME: IMS Incident Local Inventory
+  AAP_INVENTORY_HOST: localhost
+  AAP_PROJECT_NAME: IMS Incident Automation
+  AAP_PROJECT_SCM_URL: https://gitea-gitea.apps.ocp.4h2g6.sandbox195.opentlc.com/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+  AAP_PROJECT_BRANCH: main
+  AAP_JOB_TEMPLATE_SCALE_SCSCF: IMS Scale S-CSCF Path
+  AAP_JOB_TIMEOUT_SECONDS: "300"
+  AAP_JOB_POLL_SECONDS: "5"
+  AAP_RUNNER_NAMESPACE: aap
+  AAP_RUNNER_SERVICE_ACCOUNT: aap-controller
+  AAP_EXECUTION_ENVIRONMENT_IMAGE: registry.redhat.io/ansible-automation-platform-26/ee-supported-rhel9@sha256:fe0982d489065a2a287fe076873cf1faa5410c0879def91bbc756280e924118d
+  AAP_SCALE_SCSCF_NAMESPACE: ims-demo-lab
+  AAP_SCALE_SCSCF_DEPLOYMENT: ims-scscf
+  AAP_SCALE_SCSCF_REPLICAS: "2"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aap-scale-ims-scscf
+  namespace: ims-demo-lab
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    resourceNames: ["ims-scscf"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aap-controller-scale-ims-scscf
+  namespace: ims-demo-lab
+subjects:
+  - kind: ServiceAccount
+    name: aap-controller
+    namespace: aap
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aap-scale-ims-scscf
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: control-plane-read-aap-controller-password
+  namespace: aap
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "delete", "get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["aap-controller-admin-password"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: control-plane-read-aap-controller-password
+  namespace: aap
+subjects:
+  - kind: ServiceAccount
+    name: control-plane
+    namespace: ims-demo-lab
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: control-plane-read-aap-controller-password

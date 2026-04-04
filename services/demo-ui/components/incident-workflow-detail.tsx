@@ -323,7 +323,7 @@ export function IncidentWorkflowDetail() {
         values.mode === "reject"
           ? { rejected_by: values.actor, notes: values.notes }
           : { approved_by: values.actor, notes: values.notes };
-      return request<unknown>(path, token, {
+      return request<{ action: IncidentActionRecord; workflow: IncidentWorkflow }>(path, token, {
         method: "POST",
         body: JSON.stringify(body),
       });
@@ -469,19 +469,24 @@ export function IncidentWorkflowDetail() {
     async (mode: "approve" | "execute" | "reject") => {
       await actionForm.handleSubmit(async (values) => {
         try {
-          await actionMutation.mutateAsync({
+          const payload = await actionMutation.mutateAsync({
             remediationId: values.remediation_id ? Number(values.remediation_id) : undefined,
             actor: values.approved_by,
             notes: values.notes,
             mode,
           });
+          const executionStatus = payload.action.execution_status;
           setNotice({
-            kind: "success",
+            kind: mode === "execute" && executionStatus === "failed" ? "error" : "success",
             message:
               mode === "reject"
                 ? "Remediation rejected."
                 : mode === "execute"
-                  ? "Remediation approved and executed."
+                  ? executionStatus === "executing"
+                    ? "Remediation approved and launched in AAP."
+                    : executionStatus === "executed"
+                      ? "Remediation approved and executed."
+                      : payload.action.result_summary ?? "Remediation execution failed."
                   : "Remediation approved.",
           });
         } catch (mutationError) {

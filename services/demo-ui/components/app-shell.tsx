@@ -83,21 +83,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <main className="app-shell-main min-w-0">
           <div className="app-shell-topbar sticky top-0 z-10 px-4 py-4 md:px-8">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.25em] text-[var(--text-subtle)]">Production-ready workflow</p>
-                <h1 className="text-xl font-semibold text-[var(--text-strong)] md:text-2xl">
-                  {navItems.find((item) => pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href)))?.label ??
-                    "Incident Workflow"}
-                </h1>
-              </div>
-              <div className="flex items-center gap-2">
-                <ThemeToggle />
-                <Button variant="secondary" onClick={() => window.location.reload()}>
-                  <RefreshCcw className="mr-2 h-4 w-4" />
-                  Refresh
-                </Button>
-              </div>
+            <div className="flex items-center justify-end gap-2">
+              <ThemeToggle />
+              <Button variant="secondary" onClick={() => window.location.reload()}>
+                <RefreshCcw className="mr-2 h-4 w-4" />
+                Refresh
+              </Button>
             </div>
           </div>
           <div className="px-4 py-8 md:px-8">{children}</div>

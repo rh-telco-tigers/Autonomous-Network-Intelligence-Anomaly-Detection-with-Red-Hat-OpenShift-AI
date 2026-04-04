@@ -28,6 +28,16 @@ export default function LiveTrafficPage() {
       requests: item.traffic_preview.stats.requests_per_second,
       anomalyScore: Number(item.anomaly_score ?? 0),
     }));
+  const fallbackTrend = trafficTrend.length
+    ? trafficTrend
+    : [
+        {
+          time: "Now",
+          requests: data.traffic_preview.stats.requests_per_second,
+          anomalyScore: Number(data.summary.latest_score ?? 0),
+        },
+      ];
+  const hasSnapshotRows = data.traffic_preview.rows.length > 0;
 
   return (
     <div className="space-y-8">
@@ -37,6 +47,49 @@ export default function LiveTrafficPage() {
         description="A dedicated traffic stream page for normal and anomalous windows. No remediation controls here."
       />
 
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Current scenario</CardTitle>
+            <CardDescription>The latest live traffic snapshot attached to the console state.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-lg font-semibold text-[var(--text-strong)]">
+              {titleize(data.traffic_preview.display_name ?? data.traffic_preview.scenario_name ?? "unknown")}
+            </div>
+            <div className="mt-1 text-sm text-[var(--text-secondary)]">
+              {data.traffic_preview.source ?? "derived"}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Request rate</CardTitle>
+            <CardDescription>Current requests per second from the latest snapshot.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-lg font-semibold text-[var(--text-strong)]">
+              {formatRelativeNumber(data.traffic_preview.stats.requests_per_second)} req/s
+            </div>
+            <div className="mt-1 text-sm text-[var(--text-secondary)]">
+              Retry ratio {formatRelativeNumber(data.traffic_preview.stats.retry_ratio)}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Active node</CardTitle>
+            <CardDescription>The node currently associated with the latest preview.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-lg font-semibold text-[var(--text-strong)]">{data.traffic_preview.stats.active_node}</div>
+            <div className="mt-1 text-sm text-[var(--text-secondary)]">
+              {data.traffic_stream.length ? "Streaming event history available below." : "Showing the latest snapshot while the event stream refills."}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
         <Card>
           <CardHeader>
@@ -44,9 +97,9 @@ export default function LiveTrafficPage() {
             <CardDescription>Recent windows across normal and problematic traffic, regardless of incident state.</CardDescription>
           </CardHeader>
           <CardContent className="h-72">
-            {trafficTrend.length ? (
+            {fallbackTrend.length ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trafficTrend}>
+                <AreaChart data={fallbackTrend}>
                   <CartesianGrid stroke="#1e293b" vertical={false} />
                   <XAxis dataKey="time" tick={{ fill: "#94a3b8", fontSize: 12 }} />
                   <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
@@ -72,6 +125,45 @@ export default function LiveTrafficPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Latest traffic snapshot</CardTitle>
+          <CardDescription>Shows the most recent preview even when no recent scenario-execution events are available.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {hasSnapshotRows ? (
+            <div className="overflow-hidden rounded-2xl border border-slate-800">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-900/80 text-slate-400">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Time</th>
+                    <th className="px-4 py-3 font-medium">Method</th>
+                    <th className="px-4 py-3 font-medium">Path</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">Latency</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.traffic_preview.rows.map((row) => (
+                    <tr key={`${row.sequence}-${row.time}`} className="border-t border-slate-800 bg-slate-950/40">
+                      <td className="px-4 py-3 text-slate-400">{row.time}</td>
+                      <td className="px-4 py-3 font-medium text-slate-50">{row.method}</td>
+                      <td className="px-4 py-3 text-slate-300">{row.path}</td>
+                      <td className="px-4 py-3">
+                        <StatusBadge value={row.status} />
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{formatRelativeNumber(row.latency_ms)} ms</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState title="No preview rows yet" description="The latest traffic snapshot will appear here after traffic is observed." />
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

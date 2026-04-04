@@ -16,6 +16,14 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 import requests
 
+from shared.aap import (
+    AAPAutomationError,
+    action_supported as aap_action_supported,
+    launch_action as aap_launch_action,
+    launch_runner_job as aap_launch_runner_job,
+    wait_for_job as aap_wait_for_job,
+    wait_for_runner_job as aap_wait_for_runner_job,
+)
 from shared.cors import install_cors
 from shared.db import (
     attach_rca,
@@ -50,6 +58,8 @@ from shared.db import (
     transition_incident_state,
     upsert_incident_ticket,
     upsert_ticket_comment,
+    update_approval,
+    update_incident_action,
     update_incident_status,
 )
 from shared.incident_taxonomy import (
@@ -245,6 +255,8 @@ CONSOLE_SCENARIOS = set(console_scenario_names())
 CONSOLE_CLUSTER_NAME = os.getenv("CONSOLE_CLUSTER_NAME", "ims-demo-lab")
 CONSOLE_AUTO_REFRESH_SECONDS = _positive_int_from_env("CONSOLE_AUTO_REFRESH_SECONDS", 5)
 UPSTREAM_TIMEOUT_SECONDS = float(os.getenv("CONSOLE_UPSTREAM_TIMEOUT_SECONDS", "20"))
+AAP_JOB_TIMEOUT_SECONDS = _positive_int_from_env("AAP_JOB_TIMEOUT_SECONDS", 300)
+AAP_JOB_POLL_SECONDS = _positive_int_from_env("AAP_JOB_POLL_SECONDS", 5)
 FEATURE_GATEWAY_URL = os.getenv("FEATURE_GATEWAY_URL", "http://feature-gateway.ims-demo-lab.svc.cluster.local:8080").rstrip("/")
 ANOMALY_SERVICE_URL = os.getenv("ANOMALY_SERVICE_URL", "http://anomaly-service.ims-demo-lab.svc.cluster.local:8080").rstrip("/")
 RCA_SERVICE_URL = os.getenv("RCA_SERVICE_URL", "http://rca-service.ims-demo-lab.svc.cluster.local:8080").rstrip("/")
@@ -952,16 +964,234 @@ def _list_automation_actions() -> List[Dict[str, object]]:
     mode = _automation_mode()
     actions = []
     for name, playbook in PLAYBOOKS.items():
+        uses_aap = aap_action_supported(name)
         actions.append(
             {
                 "action": name,
                 "playbook": playbook,
                 "exists": os.path.exists(playbook),
-                "automation_mode": mode,
-                "automation_enabled": mode in {"simulate", "execute"},
+                "automation_mode": "aap" if uses_aap else mode,
+                "automation_enabled": uses_aap or mode in {"simulate", "execute"},
             }
         )
     return actions
+
+
+def _aap_extra_vars_for_action(
+    action_ref: str,
+    incident: Dict[str, object],
+    remediation: Dict[str, object] | None,
+    approved_by: str,
+    notes: str,
+) -> Dict[str, object]:
+    base = {
+        "incident_id": str(incident.get("id") or ""),
+        "approved_by": approved_by,
+        "approval_notes": notes,
+        "workflow_revision": int(incident.get("workflow_revision") or 1),
+        "remediation_id": int(remediation["id"]) if remediation and remediation.get("id") else None,
+        "remediation_title": str((remediation or {}).get("title") or ""),
+    }
+    if action_ref == "scale_scscf":
+        return base | {
+            "target_namespace": os.getenv("AAP_SCALE_SCSCF_NAMESPACE", "ims-demo-lab"),
+            "target_deployment": os.getenv("AAP_SCALE_SCSCF_DEPLOYMENT", "ims-scscf"),
+            "target_replicas": _positive_int_from_env("AAP_SCALE_SCSCF_REPLICAS", 2),
+        }
+    return base
+
+
+def _extract_aap_execution_summary(stdout: str, fallback: str) -> str:
+    match = re.search(r"Scaled [^\n]+ replicas\.", stdout, flags=re.IGNORECASE)
+    if match:
+        return match.group(0).strip()
+    for line in reversed([item.strip() for item in stdout.splitlines() if item.strip()]):
+        if line.startswith("msg:"):
+            return line.replace("msg:", "", 1).strip(" '\"")
+    return fallback
+
+
+def _launch_aap_automation(
+    action_ref: str,
+    incident: Dict[str, object],
+    remediation: Dict[str, object] | None,
+    approved_by: str,
+    notes: str,
+) -> Dict[str, object]:
+    extra_vars = _aap_extra_vars_for_action(action_ref, incident, remediation, approved_by, notes)
+    namespace = str(extra_vars.get("target_namespace") or "")
+    deployment = str(extra_vars.get("target_deployment") or "")
+    replicas = extra_vars.get("target_replicas")
+    try:
+        launch = aap_launch_action(action_ref, extra_vars)
+        launch_summary = f"Launched AAP job {launch['job_id']} for {action_ref}."
+        if namespace and deployment and replicas:
+            launch_summary = f"Launched AAP job {launch['job_id']} to scale {namespace}/{deployment} to {replicas} replicas."
+        return {
+            "backend": "aap-controller",
+            "job_id": launch["job_id"],
+            "job_template_id": launch["job_template_id"],
+            "job_template_name": launch["job_template_name"],
+            "job_api_url": launch["job_api_url"],
+            "job_stdout_url": launch["job_stdout_url"],
+            "controller_app_url": launch.get("controller_app_url"),
+            "playbook": PLAYBOOKS.get(action_ref, ""),
+            "requested_vars": extra_vars,
+            "launch_summary": launch_summary,
+        }
+    except AAPAutomationError as exc:
+        if "License is missing" not in str(exc):
+            raise
+        launch = aap_launch_runner_job(action_ref, extra_vars)
+        launch_summary = (
+            f"AAP controller writes are blocked by the current license, so the platform launched "
+            f"runner job {launch['job_name']} in namespace {launch['job_namespace']}."
+        )
+        if namespace and deployment and replicas:
+            launch_summary = (
+                f"AAP controller writes are blocked by the current license, so the platform launched "
+                f"runner job {launch['job_name']} to scale {namespace}/{deployment} to {replicas} replicas."
+            )
+        return {
+            "backend": "aap-runner-job",
+            "job_name": launch["job_name"],
+            "job_namespace": launch["job_namespace"],
+            "controller_app_url": launch.get("controller_app_url"),
+            "playbook": PLAYBOOKS.get(action_ref, ""),
+            "requested_vars": extra_vars,
+            "launch_summary": launch_summary,
+        }
+
+
+def _finalize_aap_automation(
+    incident_id: str,
+    action_id: int,
+    approval_id: int,
+    action_ref: str,
+    approved_by: str,
+    notes: str,
+) -> None:
+    finished_at = _now_iso()
+    raw_status = "failed"
+    summary = f"AAP automation failed for {action_ref}."
+    merged_result: Dict[str, object] = {}
+    job_id = 0
+    try:
+        action_record = get_incident_action(incident_id, action_id)
+        if not action_record:
+            raise AAPAutomationError(f"Incident action {action_id} for {incident_id} could not be reloaded.")
+
+        result_json = action_record.get("result_json") if isinstance(action_record.get("result_json"), dict) else {}
+        merged_result = dict(result_json)
+        backend = str(result_json.get("backend") or "aap-controller")
+        if backend == "aap-runner-job":
+            job_name = str(result_json.get("job_name") or "")
+            job_namespace = str(result_json.get("job_namespace") or os.getenv("AAP_RUNNER_NAMESPACE", "aap"))
+            if not job_name:
+                raise AAPAutomationError(f"Incident action {action_id} does not contain an AAP runner job name.")
+            job = aap_wait_for_runner_job(
+                job_name,
+                job_namespace,
+                timeout_seconds=AAP_JOB_TIMEOUT_SECONDS,
+                poll_interval_seconds=AAP_JOB_POLL_SECONDS,
+            )
+            raw_status = str(job.get("status") or "failed").strip().lower()
+            stdout = str(job.get("stdout") or "")
+            summary = _extract_aap_execution_summary(
+                stdout,
+                f"AAP runner job {job_name} finished with status {raw_status}.",
+            )
+            merged_result |= {
+                "job_status": raw_status,
+                "job_name": job_name,
+                "job_namespace": job_namespace,
+                "stdout_excerpt": stdout[-4000:] if stdout else "",
+            }
+        else:
+            job_id = int(result_json.get("job_id") or 0)
+            if job_id <= 0:
+                raise AAPAutomationError(f"Incident action {action_id} does not contain an AAP job id.")
+
+            job = aap_wait_for_job(job_id, timeout_seconds=AAP_JOB_TIMEOUT_SECONDS, poll_interval_seconds=AAP_JOB_POLL_SECONDS)
+            raw_status = str(job.get("status") or "failed").strip().lower()
+            stdout = str(job.get("stdout") or "")
+            summary = _extract_aap_execution_summary(stdout, f"AAP job {job_id} finished with status {raw_status}.")
+            finished_at = str(job.get("finished") or finished_at)
+            merged_result |= {
+                "job_status": raw_status,
+                "job_name": job.get("name"),
+                "job_finished_at": job.get("finished"),
+                "stdout_excerpt": stdout[-4000:] if stdout else "",
+            }
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("AAP execution monitoring failed for incident %s action %s", incident_id, action_ref)
+        raw_status = "failed"
+        summary = f"AAP automation failed for {action_ref}: {exc}"
+        merged_result |= {"job_status": raw_status, "error": str(exc)}
+
+    final_status = "executed" if raw_status == "successful" else "failed"
+    update_incident_action(
+        incident_id,
+        action_id,
+        final_status,
+        finished_at=finished_at,
+        result_summary=summary,
+        result_json=merged_result,
+    )
+    update_approval(approval_id, final_status, summary)
+
+    latest_incident = get_incident(incident_id)
+    if latest_incident:
+        current_state = normalize_workflow_state(str(latest_incident.get("status") or NEW))
+        if final_status == "executed" and current_state == EXECUTING:
+            latest_incident = _transition_incident_with_audit(
+                latest_incident,
+                EXECUTED,
+                approved_by,
+                f"AAP automation completed for {action_ref}.",
+            )
+        elif final_status == "failed" and current_state in {APPROVED, EXECUTING}:
+            latest_incident = _transition_incident_with_audit(
+                latest_incident,
+                EXECUTION_FAILED,
+                approved_by,
+                f"AAP automation failed for {action_ref}.",
+            )
+
+    record_audit(
+        "action_execution_completed",
+        approved_by,
+        {
+            "action_ref": action_ref,
+            "execution_status": final_status,
+            "job_id": job_id,
+            "result_summary": summary,
+            "notes": notes,
+        },
+        incident_id=incident_id,
+    )
+    record_automation(action_ref, final_status)
+
+    refreshed_incident = get_incident(incident_id)
+    if refreshed_incident:
+        _sync_current_ticket_best_effort(
+            refreshed_incident,
+            _ticket_note(
+                "Incident action update",
+                [
+                    ("Incident", incident_id),
+                    ("Workflow state", refreshed_incident.get("status")),
+                    ("Operator", approved_by),
+                    ("Action", action_ref),
+                    ("Execution status", final_status),
+                    ("Result", summary),
+                    ("Comment", notes or "AAP execution completed from the incident workflow."),
+                ],
+            ),
+            approved_by,
+            "incident_action",
+        )
+        set_active_incidents(list_incidents(project=str(refreshed_incident.get("project") or "ims-demo")))
 
 
 def _request_json(method: str, url: str, payload: Dict[str, object] | None = None) -> Dict[str, object]:
@@ -1671,13 +1901,14 @@ def _active_incident_summary(open_incidents: List[Dict[str, object]]) -> Dict[st
 def _build_console_state(project: str) -> Dict[str, object]:
     incidents = list_incidents(project=project)
     audit_events = list_audit_events(limit=100)
+    scenario_audit_events = list_audit_events(limit=48, event_type="scenario_executed")
     approvals = list_approvals(limit=100)
     services = _service_snapshot()
     registry = load_registry()
     enriched_incidents = [_enrich_incident(incident, audit_events, incidents) for incident in incidents]
     latest_incident = enriched_incidents[0] if enriched_incidents else None
     latest_scenario = None
-    for event in audit_events:
+    for event in scenario_audit_events:
         latest_scenario = _scenario_execution_from_audit(event, project)
         if latest_scenario:
             break
@@ -1685,7 +1916,7 @@ def _build_console_state(project: str) -> Dict[str, object]:
     active_summary = _active_incident_summary(active_incidents)
     set_active_incidents(active_incidents)
     healthy_services = sum(1 for service in services if bool(service.get("ok")))
-    traffic_stream = _traffic_stream(project, audit_events)
+    traffic_stream = _traffic_stream(project, scenario_audit_events)
     active_scenario = (
         normalize_scenario_name(str(latest_scenario.get("scenario")))
         if latest_scenario
@@ -1916,6 +2147,7 @@ def _execute_incident_action(
     incident_id: str,
     payload: RemediationActionRequest,
     auth: AuthContext | None = Depends(require_api_key),
+    background_tasks: BackgroundTasks | None = None,
 ):
     ensure_role(auth, "operator")
     incident = get_incident(incident_id)
@@ -1941,6 +2173,9 @@ def _execute_incident_action(
         raise HTTPException(status_code=400, detail="Action reference is required")
 
     actor = auth.subject if auth else payload.approved_by
+    started_at = _now_iso() if payload.execute else None
+    finished_at = None
+    action_result_json: Dict[str, object] = {"execute": payload.execute, "action_ref": action_ref}
     current_state = normalize_workflow_state(str(incident.get("status") or NEW))
     if current_state == REMEDIATION_SUGGESTED:
         incident = _transition_incident_with_audit(
@@ -1968,28 +2203,56 @@ def _execute_incident_action(
             actor,
             f"Executing automation for {action_ref}.",
         )
-        output, raw_status = _execute_playbook(action_ref)
-        if raw_status in {"executed", "simulated"}:
-            execution_status = "executed"
-            incident = _transition_incident_with_audit(
-                get_incident(incident_id) or incident,
-                EXECUTED,
-                actor,
-                f"Automation completed for {action_ref}.",
-            )
-        elif raw_status in {"failed", "rejected"}:
-            execution_status = "failed"
-            incident = _transition_incident_with_audit(
-                get_incident(incident_id) or incident,
-                EXECUTION_FAILED,
-                actor,
-                f"Automation failed for {action_ref}.",
-            )
+        if aap_action_supported(action_ref):
+            try:
+                launch = _launch_aap_automation(action_ref, incident, remediation, payload.approved_by, payload.notes)
+                execution_status = "executing"
+                output = str(launch.get("launch_summary") or f"Launched AAP automation for {action_ref}.")
+                action_result_json |= launch | {"raw_status": "launched"}
+            except AAPAutomationError as exc:
+                execution_status = "failed"
+                finished_at = _now_iso()
+                output = str(exc)
+                action_result_json |= {"backend": "aap", "raw_status": "launch_failed", "error": str(exc)}
+                incident = _transition_incident_with_audit(
+                    get_incident(incident_id) or incident,
+                    EXECUTION_FAILED,
+                    actor,
+                    f"AAP automation failed to launch for {action_ref}.",
+                )
         else:
-            execution_status = "approved"
+            output, raw_status = _execute_playbook(action_ref)
+            finished_at = _now_iso()
+            action_result_json |= {"backend": "local", "playbook": PLAYBOOKS.get(action_ref, ""), "raw_status": raw_status}
+            if raw_status in {"executed", "simulated"}:
+                execution_status = "executed"
+                incident = _transition_incident_with_audit(
+                    get_incident(incident_id) or incident,
+                    EXECUTED,
+                    actor,
+                    f"Automation completed for {action_ref}.",
+                )
+            elif raw_status in {"failed", "rejected"}:
+                execution_status = "failed"
+                incident = _transition_incident_with_audit(
+                    get_incident(incident_id) or incident,
+                    EXECUTION_FAILED,
+                    actor,
+                    f"Automation failed for {action_ref}.",
+                )
+            else:
+                execution_status = "approved"
+                incident = _transition_incident_with_audit(
+                    get_incident(incident_id) or incident,
+                    APPROVED,
+                    actor,
+                    f"Automation for {action_ref} was gated before execution.",
+                )
     elif payload.execute:
         execution_status = "executed"
         output = payload.notes or f"Manual or notify action {action_ref} recorded as executed."
+        finished_at = _now_iso()
+        action_result_json |= {"backend": "manual", "raw_status": "executed"}
         incident = _transition_incident_with_audit(
             get_incident(incident_id) or incident,
             EXECUTED,
@@ -2005,6 +2268,7 @@ def _execute_incident_action(
         status=execution_status,
         output=output,
     )
+    action_result_json["approval_id"] = approval.get("id")
     action_record = record_incident_action(
         incident_id=incident_id,
         remediation_id=int(remediation["id"]) if remediation and remediation.get("id") else None,
@@ -2014,10 +2278,10 @@ def _execute_incident_action(
         triggered_by=payload.approved_by,
         execution_status=execution_status,
         notes=payload.notes,
-        started_at=_now_iso() if payload.execute else None,
-        finished_at=_now_iso() if payload.execute else None,
+        started_at=started_at,
+        finished_at=finished_at,
         result_summary=output,
-        result_json={"approval_id": approval.get("id"), "execute": payload.execute, "raw_status": execution_status},
+        result_json=action_result_json,
     )
     record_audit(
         "incident_approved",
@@ -2036,8 +2300,28 @@ def _execute_incident_action(
         },
         incident_id=incident_id,
     )
-    if action_ref in PLAYBOOKS:
+    if action_ref in PLAYBOOKS and execution_status in {"executed", "failed"}:
         record_automation(action_ref, execution_status)
+    if execution_status == "executing":
+        if background_tasks is not None:
+            background_tasks.add_task(
+                _finalize_aap_automation,
+                incident_id,
+                int(action_record["id"]),
+                int(approval["id"]),
+                action_ref,
+                payload.approved_by,
+                payload.notes,
+            )
+        else:
+            _finalize_aap_automation(
+                incident_id,
+                int(action_record["id"]),
+                int(approval["id"]),
+                action_ref,
+                payload.approved_by,
+                payload.notes,
+            )
     refreshed_incident = get_incident(incident_id) or incident
     _sync_current_ticket_best_effort(
         refreshed_incident,
@@ -2089,6 +2373,7 @@ def execute_remediation(
     incident_id: str,
     remediation_id: int,
     payload: RemediationDecisionRequest,
+    background_tasks: BackgroundTasks,
     auth: AuthContext | None = Depends(require_api_key),
 ):
     return _execute_incident_action(
@@ -2100,6 +2385,7 @@ def execute_remediation(
             execute=True,
         ),
         auth,
+        background_tasks,
     )
 
 

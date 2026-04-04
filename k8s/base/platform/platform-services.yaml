@@ -85,6 +85,7 @@ spec:
       labels:
         app: control-plane
     spec:
+      serviceAccountName: control-plane
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -111,6 +112,101 @@ spec:
               value: "false"
             - name: AUTOMATION_MODE
               value: simulate
+            - name: AAP_AUTOMATION_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_AUTOMATION_ENABLED
+            - name: AAP_CONTROLLER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_CONTROLLER_URL
+            - name: AAP_CONTROLLER_APP_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_CONTROLLER_APP_URL
+            - name: AAP_CONTROLLER_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_CONTROLLER_USERNAME
+            - name: AAP_ORGANIZATION
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_ORGANIZATION
+            - name: AAP_INVENTORY_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_INVENTORY_NAME
+            - name: AAP_INVENTORY_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_INVENTORY_HOST
+            - name: AAP_PROJECT_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_PROJECT_NAME
+            - name: AAP_PROJECT_SCM_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_PROJECT_SCM_URL
+            - name: AAP_PROJECT_BRANCH
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_PROJECT_BRANCH
+            - name: AAP_JOB_TEMPLATE_SCALE_SCSCF
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_JOB_TEMPLATE_SCALE_SCSCF
+            - name: AAP_JOB_TIMEOUT_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_JOB_TIMEOUT_SECONDS
+            - name: AAP_JOB_POLL_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_JOB_POLL_SECONDS
+            - name: AAP_RUNNER_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_RUNNER_NAMESPACE
+            - name: AAP_RUNNER_SERVICE_ACCOUNT
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_RUNNER_SERVICE_ACCOUNT
+            - name: AAP_EXECUTION_ENVIRONMENT_IMAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_EXECUTION_ENVIRONMENT_IMAGE
+            - name: AAP_SCALE_SCSCF_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_SCALE_SCSCF_NAMESPACE
+            - name: AAP_SCALE_SCSCF_DEPLOYMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_SCALE_SCSCF_DEPLOYMENT
+            - name: AAP_SCALE_SCSCF_REPLICAS
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_SCALE_SCSCF_REPLICAS
             - name: DEMO_INTEGRATIONS_ENABLED
               value: "true"
             - name: CONSOLE_CLUSTER_NAME
