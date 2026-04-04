@@ -66,7 +66,9 @@ Demo API tokens for the platform services:
 - `demo-operator-token` for operator-only access
 - `demo-viewer-token` for read-limited browser testing
 - Slack and Jira actions default to an in-platform demo relay if live credentials are not supplied
-- remediation approvals default to simulated execution unless `AUTOMATION_MODE=execute`
+- the current `scale_scscf` remediation path is wired to live AAP-backed execution in the demo deployment
+- if AAP controller API writes are license-blocked, the platform falls back to an AAP runner job and still updates the incident execution state
+- local or non-AAP playbook actions still default to simulated execution unless `AUTOMATION_MODE=execute`
 - OpenIMSs WebUI uses the upstream demo credentials `admin` / `1423`
 
 5. Bootstrap Argo CD and the operator subscriptions:
@@ -101,3 +103,8 @@ Cluster-specific values still need to be supplied before a live deployment:
 - if you do not have a shared vLLM endpoint already available, the generative RCA endpoint must be updated from the demo default
 - route hostnames and TLS policy for the target cluster
 - the repository must be pushed into the in-cluster Gitea instance before Argo CD bootstrap
+
+Current live remediation notes:
+
+- the checked-in AAP-backed example is `automation/ansible/playbooks/scale-scscf.yaml`
+- the RBAC and configuration bootstrap for that flow is `k8s/base/platform/aap-remediation-rbac.yaml`
