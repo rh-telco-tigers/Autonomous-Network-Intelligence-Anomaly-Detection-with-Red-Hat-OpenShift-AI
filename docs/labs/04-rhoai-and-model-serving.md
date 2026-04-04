@@ -20,6 +20,57 @@ Run the training pipeline in OpenShift AI, verify that it uses the captured data
 - model storage in MinIO bucket `ims-models`
 - predictive serving resources in `k8s/base/serving`
 
+## RCA LLM Provider Configuration
+
+The RCA service calls an OpenAI-compatible chat completions endpoint. In the current demo deployment it uses the in-cluster vLLM model served from the `my-first-model` namespace through the `ims-generative-proxy` service in `ims-demo-lab`.
+
+Runtime settings now live in:
+
+- `ConfigMap/llm-provider-config` for `LLM_ENDPOINT`, `LLM_MODEL`, and `LLM_REQUEST_TIMEOUT_SECONDS`
+- `Secret/llm-provider-auth` for `LLM_API_KEY`
+
+Current default values:
+
+- `LLM_ENDPOINT=http://ims-generative-proxy.ims-demo-lab.svc.cluster.local:8080`
+- `LLM_MODEL=llama-32-3b-instruct`
+- `LLM_REQUEST_TIMEOUT_SECONDS=20`
+- `LLM_API_KEY` is blank because the in-cluster vLLM endpoint does not require bearer auth
+
+## Swap To Another OpenAI-Compatible Endpoint Later
+
+No code changes are required. Update the runtime config, restart `rca-service`, and verify the new settings.
+
+1. Update the endpoint, model, and timeout:
+
+```sh
+oc patch configmap llm-provider-config -n ims-demo-lab --type merge -p '{"data":{"LLM_ENDPOINT":"https://api.openai.com","LLM_MODEL":"gpt-4.1-mini","LLM_REQUEST_TIMEOUT_SECONDS":"20"}}'
+```
+
+2. Set or rotate the API key if the provider requires one:
+
+```sh
+oc patch secret llm-provider-auth -n ims-demo-lab --type merge -p '{"stringData":{"LLM_API_KEY":"<provider-api-key>"}}'
+```
+
+3. Restart the RCA service and wait for rollout:
+
+```sh
+oc rollout restart deploy/rca-service -n ims-demo-lab
+oc rollout status deploy/rca-service -n ims-demo-lab
+```
+
+4. Verify the live runtime config from inside the pod:
+
+```sh
+oc exec deploy/rca-service -n ims-demo-lab -- python -c "import requests; print(requests.get('http://localhost:8080/healthz', timeout=5).json())"
+```
+
+Notes:
+
+- `LLM_ENDPOINT` can be either the provider root, such as `https://api.openai.com`, or a base URL that already ends with `/v1`
+- do not set `LLM_ENDPOINT` to the full `/chat/completions` path unless you intend to pin the service to that exact route
+- if you only want to test a different model on the same vLLM deployment, change `LLM_MODEL` only
+
 ## Run The Lab
 
 1. Verify the OpenShift AI subscription is ready:

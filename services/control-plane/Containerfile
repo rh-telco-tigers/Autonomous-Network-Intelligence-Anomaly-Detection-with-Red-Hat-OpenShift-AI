@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY services/shared shared
 COPY services/control-plane/app.py app.py
 COPY automation automation
+COPY ai/rag ai/rag
 COPY ai/registry ai/registry
 
 EXPOSE 8080

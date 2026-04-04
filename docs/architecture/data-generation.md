@@ -46,7 +46,7 @@ flowchart LR
   SIPP["SIPp + OpenIMSs"]
   MinIO["MinIO feature windows"]
   CPDB["control-plane DB<br/>incidents / approvals / audit"]
-  RCA["RCA payloads + Milvus ims_incidents"]
+  RCA["RCA payloads + Milvus incident_evidence / incident_reasoning / incident_resolution"]
   Release["ims-incident-release pipeline"]
   Gold["Gold release datasets"]
   Kaggle["Kaggle bundle"]
@@ -82,7 +82,7 @@ The final release workflow is based only on persisted platform artifacts.
 | --- | --- | --- |
 | Feature windows | `services/sipp-runner/run_scenario.py` uploads JSON windows to MinIO under `pipelines/ims-demo-lab/datasets/datasets/<dataset_version>/feature-windows/...` | Primary model-training feature source |
 | Incident store | `services/shared/db.py` stores `incidents`, `approvals`, and `audit_events` in the control-plane database | System of record for all historical incidents and operator workflow history |
-| RCA enrichment | `services/rca-service/app.py` attaches RCA payloads to incidents and publishes documents to Milvus collection `ims_incidents` | Root-cause, evidence, and retrieval context enrichment |
+| RCA enrichment | `services/control-plane/app.py` attaches RCA payloads to incidents and publishes normalized records to Milvus collections `incident_evidence`, `incident_reasoning`, and `incident_resolution` | Stage-specific evidence, RCA, remediation, and verified resolution enrichment |
 | Model metadata | `services/shared/model_registry.py` and `ai/registry/model_registry.json` | Feature schema, dataset lineage, selected model, and serving metadata |
 
 Source-of-truth order:
@@ -90,7 +90,7 @@ Source-of-truth order:
 1. control-plane database for incident existence and status
 2. MinIO feature windows for training features
 3. control-plane RCA payload for incident explanation
-4. Milvus `ims_incidents` documents as supplemental enrichment only
+4. Milvus `incident_evidence`, `incident_reasoning`, and `incident_resolution` records as supplemental enrichment only
 
 Milvus is not authoritative for whether an incident exists.
 
@@ -256,7 +256,7 @@ Bronze content:
 - exported `approvals` rows
 - exported `audit_events` rows
 - exported RCA payload snapshots
-- exported Milvus `ims_incidents` documents when available
+- exported Milvus `incident_evidence`, `incident_reasoning`, and `incident_resolution` records when available
 
 Important:
 

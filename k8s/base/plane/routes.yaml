@@ -1,0 +1,132 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: plane-web
+  namespace: ims-demo-lab
+spec:
+  host: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  path: /
+  to:
+    kind: Service
+    name: plane-web
+    weight: 100
+  port:
+    targetPort: web-3000
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: plane-api
+  namespace: ims-demo-lab
+spec:
+  host: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  path: /api
+  to:
+    kind: Service
+    name: plane-api
+    weight: 100
+  port:
+    targetPort: api-8000
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: plane-auth
+  namespace: ims-demo-lab
+spec:
+  host: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  path: /auth
+  to:
+    kind: Service
+    name: plane-api
+    weight: 100
+  port:
+    targetPort: api-8000
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: plane-live
+  namespace: ims-demo-lab
+spec:
+  host: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  path: /live
+  to:
+    kind: Service
+    name: plane-live
+    weight: 100
+  port:
+    targetPort: live-3000
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: plane-space
+  namespace: ims-demo-lab
+spec:
+  host: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  path: /spaces
+  to:
+    kind: Service
+    name: plane-space
+    weight: 100
+  port:
+    targetPort: space-3000
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: plane-admin
+  namespace: ims-demo-lab
+spec:
+  host: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  path: /god-mode
+  to:
+    kind: Service
+    name: plane-admin
+    weight: 100
+  port:
+    targetPort: admin-3000
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: plane-uploads
+  namespace: ims-demo-lab
+spec:
+  host: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  path: /uploads
+  to:
+    kind: Service
+    name: plane-minio
+    weight: 100
+  port:
+    targetPort: minio-api-9000
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

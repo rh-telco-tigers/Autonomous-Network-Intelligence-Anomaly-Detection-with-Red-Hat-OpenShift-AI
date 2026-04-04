@@ -1,7 +1,30 @@
 # demo-ui
 
-Provides the operator-facing dashboard for the IMS anomaly demo.
+Production-ready operator UI for the IMS anomaly workflow.
 
-It lets a user run traffic scenarios, watch health and model status, and review the latest incidents, RCA results, and approval actions.
+## Stack
 
-The container now serves the UI and proxies same-origin `/api/*` requests to the in-cluster `control-plane` service. That avoids browser failures on clusters where the public routes use self-signed certificates, because the browser only talks to the `demo-ui` route directly.
+- Next.js App Router
+- TypeScript
+- Tailwind CSS
+- TanStack Query
+- TanStack Table
+- React Hook Form + Zod
+- Recharts
+
+## Navigation
+
+The UI is intentionally split into focused pages instead of a single overloaded dashboard:
+
+- `Overview` for high-level metrics and charts
+- `Incidents` for queue management
+- `Incident detail` for RCA, remediation, ticket sync, execution, and verification
+- `Live Traffic` for the normal/anomalous stream
+- `Services` for platform health and integration links
+- `Demo Scenarios` for on-demand scenario execution
+
+## Proxy model
+
+The Next.js server rewrites same-origin `/api/*` requests to the in-cluster `control-plane` service using `CONTROL_PLANE_PROXY_URL`.
+
+That keeps browser traffic on the `demo-ui` route while still allowing the UI to call the control-plane API without separate frontend CORS work.

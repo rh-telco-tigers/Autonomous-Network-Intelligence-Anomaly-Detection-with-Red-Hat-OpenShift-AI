@@ -4,6 +4,8 @@ from typing import Dict
 
 import requests
 
+from shared.tickets import ticketing_status
+
 
 def _demo_integrations_enabled() -> bool:
     return os.getenv("DEMO_INTEGRATIONS_ENABLED", "true").lower() == "true"
@@ -11,26 +13,13 @@ def _demo_integrations_enabled() -> bool:
 
 def integration_status() -> Dict[str, Dict[str, object]]:
     slack_configured = bool(os.getenv("SLACK_WEBHOOK_URL", "").strip())
-    jira_configured = all(
-        [
-            os.getenv("JIRA_BASE_URL", "").strip(),
-            os.getenv("JIRA_EMAIL", "").strip(),
-            os.getenv("JIRA_API_TOKEN", "").strip(),
-            os.getenv("JIRA_PROJECT_KEY", "").strip(),
-        ]
-    )
     return {
         "slack": {
             "configured": slack_configured or _demo_integrations_enabled(),
             "mode": "webhook" if slack_configured else "demo-relay",
             "live_configured": slack_configured,
         },
-        "jira": {
-            "configured": jira_configured or _demo_integrations_enabled(),
-            "mode": "rest-api" if jira_configured else "demo-relay",
-            "live_configured": jira_configured,
-        },
-    }
+    } | ticketing_status()
 
 
 def send_slack_notification(text: str) -> Dict[str, str]:

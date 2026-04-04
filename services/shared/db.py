@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from shared.workflow import NEW, RCA_GENERATED, REMEDIATION_SUGGESTED, normalize_workflow_state, severity_from_score
+
 
 def _db_path() -> Path:
     return Path(os.getenv("CONTROL_PLANE_DB_PATH", "/tmp/ims-demo-control-plane.db"))
@@ -21,6 +23,33 @@ def _connect() -> sqlite3.Connection:
 
 def _now() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
+
+
+def _table_columns(connection: sqlite3.Connection, table_name: str) -> set[str]:
+    rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {str(row["name"]) for row in rows}
+
+
+def _ensure_columns(connection: sqlite3.Connection, table_name: str, columns: Dict[str, str]) -> None:
+    existing = _table_columns(connection, table_name)
+    for name, definition in columns.items():
+        if name not in existing:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {name} {definition}")
+
+
+def _json_dumps(value: object) -> str:
+    return json.dumps(value)
+
+
+def _json_loads(value: object, fallback: object) -> object:
+    if not value:
+        return fallback
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return fallback
 
 
 def init_db() -> None:
@@ -61,40 +90,220 @@ def init_db() -> None:
               payload TEXT,
               created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS incident_rca (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              incident_id TEXT NOT NULL,
+              version INTEGER NOT NULL,
+              based_on_revision INTEGER NOT NULL,
+              root_cause TEXT NOT NULL,
+              category TEXT,
+              confidence REAL NOT NULL,
+              explanation TEXT,
+              model_name TEXT,
+              prompt_version TEXT,
+              retrieval_refs TEXT,
+              payload TEXT,
+              created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS incident_remediation (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              incident_id TEXT NOT NULL,
+              rca_id INTEGER,
+              based_on_revision INTEGER NOT NULL,
+              suggestion_rank INTEGER NOT NULL,
+              title TEXT NOT NULL,
+              suggestion_type TEXT NOT NULL,
+              description TEXT NOT NULL,
+              risk_level TEXT,
+              confidence REAL,
+              automation_level TEXT,
+              requires_approval INTEGER NOT NULL,
+              playbook_ref TEXT,
+              action_ref TEXT,
+              preconditions_json TEXT,
+              expected_outcome TEXT,
+              rank_score REAL,
+              factors_json TEXT,
+              status TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS incident_actions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              incident_id TEXT NOT NULL,
+              remediation_id INTEGER,
+              action_mode TEXT NOT NULL,
+              source_of_action TEXT NOT NULL,
+              approved_revision INTEGER NOT NULL,
+              triggered_by TEXT NOT NULL,
+              execution_status TEXT NOT NULL,
+              notes TEXT,
+              started_at TEXT,
+              finished_at TEXT,
+              result_summary TEXT,
+              result_json TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS incident_verification (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              incident_id TEXT NOT NULL,
+              action_id INTEGER,
+              verified_by TEXT NOT NULL,
+              verification_status TEXT NOT NULL,
+              notes TEXT,
+              custom_resolution TEXT,
+              metric_based INTEGER NOT NULL,
+              created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS incident_tickets (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              incident_id TEXT NOT NULL,
+              provider TEXT NOT NULL,
+              external_key TEXT,
+              external_id TEXT,
+              workspace_id TEXT,
+              project_id TEXT,
+              status TEXT,
+              url TEXT,
+              title TEXT,
+              last_synced_at TEXT,
+              sync_state TEXT,
+              last_synced_revision INTEGER,
+              metadata_json TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE(incident_id, provider)
+            );
+
+            CREATE TABLE IF NOT EXISTS ticket_sync_events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              ticket_id INTEGER NOT NULL,
+              direction TEXT NOT NULL,
+              event_type TEXT NOT NULL,
+              delivery_id TEXT,
+              payload_hash TEXT,
+              status TEXT NOT NULL,
+              payload TEXT,
+              created_at TEXT NOT NULL,
+              UNIQUE(ticket_id, delivery_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS ticket_comments_index (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              ticket_id INTEGER NOT NULL,
+              external_comment_id TEXT NOT NULL UNIQUE,
+              author TEXT,
+              body TEXT,
+              comment_type TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS ticket_resolution_extracts (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              incident_id TEXT NOT NULL,
+              ticket_id INTEGER,
+              source_comment_id TEXT,
+              summary TEXT NOT NULL,
+              verified INTEGER NOT NULL,
+              verification_quality TEXT,
+              knowledge_weight REAL,
+              usage_count INTEGER NOT NULL DEFAULT 0,
+              success_rate REAL NOT NULL DEFAULT 0,
+              last_validated_at TEXT,
+              created_at TEXT NOT NULL
+            );
+            """
+        )
+        _ensure_columns(
+            connection,
+            "incidents",
+            {
+                "severity": "TEXT",
+                "source_system": "TEXT",
+                "workflow_state": "TEXT",
+                "workflow_revision": "INTEGER DEFAULT 1",
+                "current_rca_id": "INTEGER",
+                "current_ticket_id": "INTEGER",
+                "duplicate_of_incident_id": "TEXT",
+            },
+        )
+        connection.execute(
+            """
+            UPDATE incidents
+            SET workflow_state = COALESCE(workflow_state, status),
+                workflow_revision = COALESCE(workflow_revision, 1),
+                severity = COALESCE(severity, 'Medium'),
+                source_system = COALESCE(source_system, 'anomaly-service')
             """
         )
         connection.commit()
 
 
+def _incident_row(connection: sqlite3.Connection, incident_id: str) -> sqlite3.Row | None:
+    return connection.execute("SELECT * FROM incidents WHERE id = ?", (incident_id,)).fetchone()
+
+
+def _rca_row(connection: sqlite3.Connection, incident_id: str, rca_id: int) -> sqlite3.Row | None:
+    return connection.execute(
+        "SELECT * FROM incident_rca WHERE incident_id = ? AND id = ?",
+        (incident_id, rca_id),
+    ).fetchone()
+
+
 def create_incident(payload: Dict[str, Any]) -> Dict[str, Any]:
+    workflow_state = normalize_workflow_state(str(payload.get("status") or payload.get("workflow_state") or NEW))
     record = {
         "id": payload["incident_id"],
         "project": payload.get("project", "ims-demo"),
-        "status": payload.get("status", "open"),
+        "status": workflow_state,
+        "severity": payload.get("severity") or severity_from_score(float(payload["anomaly_score"])),
+        "source_system": payload.get("source_system", "anomaly-service"),
         "anomaly_score": payload["anomaly_score"],
         "anomaly_type": payload["anomaly_type"],
         "model_version": payload["model_version"],
         "feature_window_id": payload.get("feature_window_id"),
-        "feature_snapshot": json.dumps(payload.get("feature_snapshot", {})),
+        "feature_snapshot": _json_dumps(payload.get("feature_snapshot", {})),
         "rca_payload": None,
-        "recommendation": None,
-        "created_at": payload.get("created_at", _now()),
+        "recommendation": payload.get("recommendation"),
+        "created_at": payload.get("created_at") or _now(),
         "updated_at": _now(),
+        "workflow_revision": int(payload.get("workflow_revision") or 1),
+        "duplicate_of_incident_id": payload.get("duplicate_of_incident_id"),
     }
-
     with closing(_connect()) as connection:
         connection.execute(
             """
-            INSERT OR REPLACE INTO incidents (
-              id, project, status, anomaly_score, anomaly_type, model_version,
-              feature_window_id, feature_snapshot, rca_payload, recommendation,
-              created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO incidents (
+              id, project, status, severity, source_system, anomaly_score, anomaly_type, model_version,
+              feature_window_id, feature_snapshot, rca_payload, recommendation, created_at, updated_at,
+              workflow_state, workflow_revision, duplicate_of_incident_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              project = excluded.project,
+              status = excluded.status,
+              severity = excluded.severity,
+              source_system = excluded.source_system,
+              anomaly_score = excluded.anomaly_score,
+              anomaly_type = excluded.anomaly_type,
+              model_version = excluded.model_version,
+              feature_window_id = excluded.feature_window_id,
+              feature_snapshot = excluded.feature_snapshot,
+              recommendation = COALESCE(incidents.recommendation, excluded.recommendation),
+              updated_at = excluded.updated_at,
+              workflow_state = excluded.workflow_state,
+              workflow_revision = COALESCE(incidents.workflow_revision, excluded.workflow_revision),
+              duplicate_of_incident_id = COALESCE(excluded.duplicate_of_incident_id, incidents.duplicate_of_incident_id)
             """,
             (
                 record["id"],
                 record["project"],
                 record["status"],
+                record["severity"],
+                record["source_system"],
                 record["anomaly_score"],
                 record["anomaly_type"],
                 record["model_version"],
@@ -104,6 +313,9 @@ def create_incident(payload: Dict[str, Any]) -> Dict[str, Any]:
                 record["recommendation"],
                 record["created_at"],
                 record["updated_at"],
+                record["status"],
+                record["workflow_revision"],
+                record["duplicate_of_incident_id"],
             ),
         )
         connection.commit()
@@ -112,7 +324,7 @@ def create_incident(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_incident(incident_id: str) -> Dict[str, Any] | None:
     with closing(_connect()) as connection:
-        row = connection.execute("SELECT * FROM incidents WHERE id = ?", (incident_id,)).fetchone()
+        row = _incident_row(connection, incident_id)
     return _deserialize_incident(row) if row else None
 
 
@@ -130,39 +342,587 @@ def list_incidents(project: str | None = None) -> List[Dict[str, Any]]:
 
 def attach_rca(incident_id: str, rca_payload: Dict[str, Any]) -> Dict[str, Any] | None:
     with closing(_connect()) as connection:
+        incident = _incident_row(connection, incident_id)
+        if not incident:
+            return None
+        current_revision = int(incident["workflow_revision"] or 1)
+        next_revision = current_revision + 1
+        version = int(
+            connection.execute(
+                "SELECT COALESCE(MAX(version), 0) + 1 FROM incident_rca WHERE incident_id = ?",
+                (incident_id,),
+            ).fetchone()[0]
+        )
+        retrieval_refs = [
+            str(item.get("reference") or item.get("title") or "")
+            for item in rca_payload.get("retrieved_documents", [])
+            if isinstance(item, dict)
+        ]
+        cursor = connection.execute(
+            """
+            INSERT INTO incident_rca (
+              incident_id, version, based_on_revision, root_cause, category, confidence, explanation,
+              model_name, prompt_version, retrieval_refs, payload, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                incident_id,
+                version,
+                next_revision,
+                str(rca_payload.get("root_cause") or ""),
+                str(incident["anomaly_type"]),
+                float(rca_payload.get("confidence") or 0.0),
+                str(rca_payload.get("explanation") or rca_payload.get("root_cause") or ""),
+                str(rca_payload.get("llm_model") or incident["model_version"]),
+                str(rca_payload.get("generation_mode") or "local-rag"),
+                _json_dumps(retrieval_refs),
+                _json_dumps(rca_payload),
+                _now(),
+            ),
+        )
+        rca_id = int(cursor.lastrowid)
         connection.execute(
             """
             UPDATE incidents
-            SET rca_payload = ?, recommendation = ?, updated_at = ?
+            SET rca_payload = ?, recommendation = ?, current_rca_id = ?, workflow_revision = ?,
+                status = ?, workflow_state = ?, updated_at = ?
             WHERE id = ?
             """,
             (
-                json.dumps(rca_payload),
+                _json_dumps(rca_payload),
                 rca_payload.get("recommendation"),
+                rca_id,
+                next_revision,
+                RCA_GENERATED,
+                RCA_GENERATED,
                 _now(),
                 incident_id,
             ),
+        )
+        connection.commit()
+    return get_incident(incident_id)
+
+
+def list_incident_rca(incident_id: str) -> List[Dict[str, Any]]:
+    with closing(_connect()) as connection:
+        rows = connection.execute(
+            "SELECT * FROM incident_rca WHERE incident_id = ? ORDER BY created_at DESC, id DESC",
+            (incident_id,),
+        ).fetchall()
+    return [_deserialize_rca(row) for row in rows]
+
+
+def get_incident_rca(incident_id: str, rca_id: int) -> Dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        row = _rca_row(connection, incident_id, rca_id)
+    return _deserialize_rca(row) if row else None
+
+
+def replace_remediations(incident_id: str, rca_id: int | None, suggestions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    with closing(_connect()) as connection:
+        incident = _incident_row(connection, incident_id)
+        if not incident:
+            return []
+        current_revision = int(incident["workflow_revision"] or 1)
+        next_revision = current_revision + 1
+        connection.execute(
+            """
+            UPDATE incident_remediation
+            SET status = 'superseded'
+            WHERE incident_id = ? AND status IN ('available', 'approved', 'executing', 'executed')
+            """,
+            (incident_id,),
+        )
+        for suggestion in suggestions:
+            connection.execute(
+                """
+                INSERT INTO incident_remediation (
+                  incident_id, rca_id, based_on_revision, suggestion_rank, title, suggestion_type, description,
+                  risk_level, confidence, automation_level, requires_approval, playbook_ref, action_ref,
+                  preconditions_json, expected_outcome, rank_score, factors_json, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    incident_id,
+                    rca_id,
+                    next_revision,
+                    int(suggestion.get("suggestion_rank") or 1),
+                    str(suggestion.get("title") or "Untitled remediation"),
+                    str(suggestion.get("suggestion_type") or "manual"),
+                    str(suggestion.get("description") or ""),
+                    str(suggestion.get("risk_level") or "medium"),
+                    float(suggestion.get("confidence") or 0.0),
+                    str(suggestion.get("automation_level") or "manual"),
+                    int(bool(suggestion.get("requires_approval", True))),
+                    str(suggestion.get("playbook_ref") or ""),
+                    str(suggestion.get("action_ref") or ""),
+                    _json_dumps(suggestion.get("preconditions") or []),
+                    str(suggestion.get("expected_outcome") or ""),
+                    float(suggestion.get("rank_score") or 0.0),
+                    _json_dumps(
+                        {
+                            "historical_success_rate": suggestion.get("historical_success_rate"),
+                            "retrieval_similarity": suggestion.get("retrieval_similarity"),
+                            "rca_confidence": suggestion.get("rca_confidence"),
+                            "policy_bonus": suggestion.get("policy_bonus"),
+                            "risk_penalty": suggestion.get("risk_penalty"),
+                            "execution_cost_penalty": suggestion.get("execution_cost_penalty"),
+                        }
+                    ),
+                    "available",
+                    _now(),
+                ),
+            )
+        recommendation = str(suggestions[0].get("description") or suggestions[0].get("title")) if suggestions else None
+        connection.execute(
+            """
+            UPDATE incidents
+            SET recommendation = ?, workflow_revision = ?, status = ?, workflow_state = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                recommendation,
+                next_revision,
+                REMEDIATION_SUGGESTED,
+                REMEDIATION_SUGGESTED,
+                _now(),
+                incident_id,
+            ),
+        )
+        connection.commit()
+    return list_incident_remediations(incident_id)
+
+
+def list_incident_remediations(incident_id: str) -> List[Dict[str, Any]]:
+    with closing(_connect()) as connection:
+        rows = connection.execute(
+            """
+            SELECT * FROM incident_remediation
+            WHERE incident_id = ?
+            ORDER BY based_on_revision DESC, suggestion_rank ASC, id DESC
+            """,
+            (incident_id,),
+        ).fetchall()
+    return [_deserialize_remediation(row) for row in rows]
+
+
+def get_incident_remediation(incident_id: str, remediation_id: int) -> Dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        row = connection.execute(
+            "SELECT * FROM incident_remediation WHERE incident_id = ? AND id = ?",
+            (incident_id, remediation_id),
+        ).fetchone()
+    return _deserialize_remediation(row) if row else None
+
+
+def set_incident_remediation_status(incident_id: str, remediation_id: int, status: str) -> Dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        connection.execute(
+            "UPDATE incident_remediation SET status = ? WHERE incident_id = ? AND id = ?",
+            (status, incident_id, remediation_id),
+        )
+        connection.commit()
+    return get_incident_remediation(incident_id, remediation_id)
+
+
+def remediation_success_rates() -> Dict[str, float]:
+    with closing(_connect()) as connection:
+        rows = connection.execute(
+            """
+            SELECT
+              COALESCE(r.action_ref, '') AS action_ref,
+              SUM(CASE WHEN v.verification_status = 'verified' THEN 1 ELSE 0 END) AS success_count,
+              SUM(CASE WHEN v.id IS NOT NULL THEN 1 ELSE 0 END) AS total_count
+            FROM incident_remediation r
+            LEFT JOIN incident_actions a ON a.remediation_id = r.id
+            LEFT JOIN incident_verification v ON v.action_id = a.id
+            GROUP BY COALESCE(r.action_ref, '')
+            """
+        ).fetchall()
+    results: Dict[str, float] = {}
+    for row in rows:
+        action_ref = str(row["action_ref"] or "").strip()
+        if not action_ref:
+            continue
+        total = int(row["total_count"] or 0)
+        success = int(row["success_count"] or 0)
+        if total > 0:
+            results[action_ref] = round(success / total, 4)
+    return results
+
+
+def transition_incident_state(incident_id: str, state: str) -> Dict[str, Any] | None:
+    normalized = normalize_workflow_state(state)
+    with closing(_connect()) as connection:
+        connection.execute(
+            """
+            UPDATE incidents
+            SET status = ?, workflow_state = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (normalized, normalized, _now(), incident_id),
         )
         connection.commit()
     return get_incident(incident_id)
 
 
 def update_incident_status(incident_id: str, status: str) -> Dict[str, Any] | None:
+    return transition_incident_state(incident_id, status)
+
+
+def record_incident_action(
+    incident_id: str,
+    remediation_id: int | None,
+    action_mode: str,
+    source_of_action: str,
+    approved_revision: int,
+    triggered_by: str,
+    execution_status: str,
+    notes: str = "",
+    started_at: str | None = None,
+    finished_at: str | None = None,
+    result_summary: str = "",
+    result_json: Dict[str, object] | None = None,
+) -> Dict[str, Any]:
+    with closing(_connect()) as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO incident_actions (
+              incident_id, remediation_id, action_mode, source_of_action, approved_revision, triggered_by,
+              execution_status, notes, started_at, finished_at, result_summary, result_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                incident_id,
+                remediation_id,
+                action_mode,
+                source_of_action,
+                approved_revision,
+                triggered_by,
+                execution_status,
+                notes,
+                started_at,
+                finished_at,
+                result_summary,
+                _json_dumps(result_json or {}),
+            ),
+        )
+        action_id = int(cursor.lastrowid)
+        if remediation_id is not None:
+            connection.execute(
+                "UPDATE incident_remediation SET status = ? WHERE id = ? AND incident_id = ?",
+                (execution_status, remediation_id, incident_id),
+            )
+        connection.commit()
+    return get_incident_action(incident_id, action_id) or {}
+
+
+def get_incident_action(incident_id: str, action_id: int) -> Dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        row = connection.execute(
+            "SELECT * FROM incident_actions WHERE incident_id = ? AND id = ?",
+            (incident_id, action_id),
+        ).fetchone()
+    return _deserialize_action(row) if row else None
+
+
+def list_incident_actions(incident_id: str) -> List[Dict[str, Any]]:
+    with closing(_connect()) as connection:
+        rows = connection.execute(
+            "SELECT * FROM incident_actions WHERE incident_id = ? ORDER BY id DESC",
+            (incident_id,),
+        ).fetchall()
+    return [_deserialize_action(row) for row in rows]
+
+
+def record_verification(
+    incident_id: str,
+    action_id: int | None,
+    verified_by: str,
+    verification_status: str,
+    notes: str = "",
+    custom_resolution: str = "",
+    metric_based: bool = False,
+) -> Dict[str, Any]:
+    with closing(_connect()) as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO incident_verification (
+              incident_id, action_id, verified_by, verification_status, notes, custom_resolution, metric_based, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                incident_id,
+                action_id,
+                verified_by,
+                verification_status,
+                notes,
+                custom_resolution,
+                int(metric_based),
+                _now(),
+            ),
+        )
+        verification_id = int(cursor.lastrowid)
+        connection.commit()
+    return get_incident_verification(incident_id, verification_id) or {}
+
+
+def get_incident_verification(incident_id: str, verification_id: int) -> Dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        row = connection.execute(
+            "SELECT * FROM incident_verification WHERE incident_id = ? AND id = ?",
+            (incident_id, verification_id),
+        ).fetchone()
+    return _deserialize_verification(row) if row else None
+
+
+def list_incident_verifications(incident_id: str) -> List[Dict[str, Any]]:
+    with closing(_connect()) as connection:
+        rows = connection.execute(
+            "SELECT * FROM incident_verification WHERE incident_id = ? ORDER BY id DESC",
+            (incident_id,),
+        ).fetchall()
+    return [_deserialize_verification(row) for row in rows]
+
+
+def upsert_incident_ticket(
+    incident_id: str,
+    provider: str,
+    external_key: str = "",
+    external_id: str = "",
+    workspace_id: str = "",
+    project_id: str = "",
+    status: str = "",
+    url: str = "",
+    title: str = "",
+    sync_state: str = "",
+    last_synced_revision: int | None = None,
+    metadata: Dict[str, object] | None = None,
+) -> Dict[str, Any]:
+    now = _now()
     with closing(_connect()) as connection:
         connection.execute(
             """
-            UPDATE incidents
-            SET status = ?, updated_at = ?
-            WHERE id = ?
+            INSERT INTO incident_tickets (
+              incident_id, provider, external_key, external_id, workspace_id, project_id, status, url, title,
+              last_synced_at, sync_state, last_synced_revision, metadata_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(incident_id, provider) DO UPDATE SET
+              external_key = excluded.external_key,
+              external_id = excluded.external_id,
+              workspace_id = excluded.workspace_id,
+              project_id = excluded.project_id,
+              status = excluded.status,
+              url = excluded.url,
+              title = excluded.title,
+              last_synced_at = excluded.last_synced_at,
+              sync_state = excluded.sync_state,
+              last_synced_revision = excluded.last_synced_revision,
+              metadata_json = excluded.metadata_json,
+              updated_at = excluded.updated_at
             """,
             (
-                status,
-                _now(),
                 incident_id,
+                provider,
+                external_key,
+                external_id,
+                workspace_id,
+                project_id,
+                status,
+                url,
+                title,
+                now,
+                sync_state,
+                last_synced_revision,
+                _json_dumps(metadata or {}),
+                now,
+                now,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM incident_tickets WHERE incident_id = ? AND provider = ?",
+            (incident_id, provider),
+        ).fetchone()
+        if row:
+            connection.execute(
+                "UPDATE incidents SET current_ticket_id = ?, updated_at = ? WHERE id = ?",
+                (int(row["id"]), now, incident_id),
+            )
+        connection.commit()
+    return get_incident_ticket(incident_id, int(row["id"])) if row else {}
+
+
+def get_incident_ticket(incident_id: str, ticket_id: int) -> Dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        row = connection.execute(
+            "SELECT * FROM incident_tickets WHERE incident_id = ? AND id = ?",
+            (incident_id, ticket_id),
+        ).fetchone()
+    return _deserialize_ticket(row) if row else None
+
+
+def get_ticket_by_provider_external_id(provider: str, external_id: str) -> Dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        row = connection.execute(
+            "SELECT * FROM incident_tickets WHERE provider = ? AND external_id = ?",
+            (provider, external_id),
+        ).fetchone()
+    return _deserialize_ticket(row) if row else None
+
+
+def list_incident_tickets(incident_id: str) -> List[Dict[str, Any]]:
+    with closing(_connect()) as connection:
+        rows = connection.execute(
+            "SELECT * FROM incident_tickets WHERE incident_id = ? ORDER BY updated_at DESC, id DESC",
+            (incident_id,),
+        ).fetchall()
+    return [_deserialize_ticket(row) for row in rows]
+
+
+def record_ticket_sync_event(
+    ticket_id: int,
+    direction: str,
+    event_type: str,
+    delivery_id: str | None,
+    payload_hash: str,
+    status: str,
+    payload: Dict[str, object] | None = None,
+) -> Dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        cursor = connection.execute(
+            """
+            INSERT OR IGNORE INTO ticket_sync_events (
+              ticket_id, direction, event_type, delivery_id, payload_hash, status, payload, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                ticket_id,
+                direction,
+                event_type,
+                delivery_id,
+                payload_hash,
+                status,
+                _json_dumps(payload or {}),
+                _now(),
+            ),
+        )
+        if cursor.rowcount == 0:
+            return None
+        event_id = int(cursor.lastrowid)
+        connection.commit()
+        row = connection.execute(
+            "SELECT * FROM ticket_sync_events WHERE id = ?",
+            (event_id,),
+        ).fetchone()
+    return _deserialize_ticket_sync(row) if row else None
+
+
+def list_ticket_sync_events(ticket_id: int) -> List[Dict[str, Any]]:
+    with closing(_connect()) as connection:
+        rows = connection.execute(
+            "SELECT * FROM ticket_sync_events WHERE ticket_id = ? ORDER BY id DESC",
+            (ticket_id,),
+        ).fetchall()
+    return [_deserialize_ticket_sync(row) for row in rows]
+
+
+def upsert_ticket_comment(
+    ticket_id: int,
+    external_comment_id: str,
+    author: str,
+    body: str,
+    comment_type: str,
+    created_at: str | None = None,
+) -> Dict[str, Any]:
+    now = _now()
+    with closing(_connect()) as connection:
+        connection.execute(
+            """
+            INSERT INTO ticket_comments_index (
+              ticket_id, external_comment_id, author, body, comment_type, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(external_comment_id) DO UPDATE SET
+              author = excluded.author,
+              body = excluded.body,
+              comment_type = excluded.comment_type,
+              updated_at = excluded.updated_at
+            """,
+            (
+                ticket_id,
+                external_comment_id,
+                author,
+                body,
+                comment_type,
+                created_at or now,
+                now,
             ),
         )
         connection.commit()
-    return get_incident(incident_id)
+        row = connection.execute(
+            "SELECT * FROM ticket_comments_index WHERE external_comment_id = ?",
+            (external_comment_id,),
+        ).fetchone()
+    return _deserialize_ticket_comment(row) if row else {}
+
+
+def list_ticket_comments(ticket_id: int) -> List[Dict[str, Any]]:
+    with closing(_connect()) as connection:
+        rows = connection.execute(
+            "SELECT * FROM ticket_comments_index WHERE ticket_id = ? ORDER BY updated_at DESC, id DESC",
+            (ticket_id,),
+        ).fetchall()
+    return [_deserialize_ticket_comment(row) for row in rows]
+
+
+def create_ticket_resolution_extract(
+    incident_id: str,
+    ticket_id: int | None,
+    source_comment_id: str | None,
+    summary: str,
+    verified: bool,
+    verification_quality: str,
+    knowledge_weight: float,
+    success_rate: float,
+    last_validated_at: str | None = None,
+) -> Dict[str, Any]:
+    with closing(_connect()) as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO ticket_resolution_extracts (
+              incident_id, ticket_id, source_comment_id, summary, verified, verification_quality,
+              knowledge_weight, usage_count, success_rate, last_validated_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                incident_id,
+                ticket_id,
+                source_comment_id,
+                summary,
+                int(verified),
+                verification_quality,
+                knowledge_weight,
+                0,
+                success_rate,
+                last_validated_at,
+                _now(),
+            ),
+        )
+        extract_id = int(cursor.lastrowid)
+        connection.commit()
+        row = connection.execute(
+            "SELECT * FROM ticket_resolution_extracts WHERE id = ?",
+            (extract_id,),
+        ).fetchone()
+    return _deserialize_resolution_extract(row) if row else {}
+
+
+def list_ticket_resolution_extracts(incident_id: str) -> List[Dict[str, Any]]:
+    with closing(_connect()) as connection:
+        rows = connection.execute(
+            "SELECT * FROM ticket_resolution_extracts WHERE incident_id = ? ORDER BY id DESC",
+            (incident_id,),
+        ).fetchall()
+    return [_deserialize_resolution_extract(row) for row in rows]
 
 
 def record_approval(
@@ -199,8 +959,9 @@ def record_approval(
             ),
         )
         connection.commit()
-        approval_id = cursor.lastrowid
+        approval_id = int(cursor.lastrowid)
     record["id"] = approval_id
+    record["execute"] = bool(record["execute"])
     return record
 
 
@@ -215,28 +976,40 @@ def record_audit(event_type: str, actor: str, payload: Dict[str, Any], incident_
                 event_type,
                 actor,
                 incident_id,
-                json.dumps(payload),
+                _json_dumps(payload),
                 _now(),
             ),
         )
         connection.commit()
 
 
-def list_audit_events(limit: int = 100) -> List[Dict[str, Any]]:
+def list_audit_events(limit: int = 100, incident_id: str | None = None) -> List[Dict[str, Any]]:
     with closing(_connect()) as connection:
-        rows = connection.execute(
-            "SELECT * FROM audit_events ORDER BY created_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-    return [dict(row) | {"payload": json.loads(row["payload"] or "{}")} for row in rows]
+        if incident_id:
+            rows = connection.execute(
+                "SELECT * FROM audit_events WHERE incident_id = ? ORDER BY created_at DESC LIMIT ?",
+                (incident_id, limit),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                "SELECT * FROM audit_events ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    return [dict(row) | {"payload": _json_loads(row["payload"], {})} for row in rows]
 
 
-def list_approvals(limit: int = 100) -> List[Dict[str, Any]]:
+def list_approvals(limit: int = 100, incident_id: str | None = None) -> List[Dict[str, Any]]:
     with closing(_connect()) as connection:
-        rows = connection.execute(
-            "SELECT * FROM approvals ORDER BY created_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+        if incident_id:
+            rows = connection.execute(
+                "SELECT * FROM approvals WHERE incident_id = ? ORDER BY created_at DESC LIMIT ?",
+                (incident_id, limit),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                "SELECT * FROM approvals ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
     results = []
     for row in rows:
         record = dict(row)
@@ -247,6 +1020,74 @@ def list_approvals(limit: int = 100) -> List[Dict[str, Any]]:
 
 def _deserialize_incident(row: sqlite3.Row) -> Dict[str, Any]:
     record = dict(row)
-    record["feature_snapshot"] = json.loads(record["feature_snapshot"] or "{}")
-    record["rca_payload"] = json.loads(record["rca_payload"] or "{}") if record["rca_payload"] else None
+    state = normalize_workflow_state(str(record.get("workflow_state") or record.get("status") or NEW))
+    record["status"] = state
+    record["workflow_state"] = state
+    record["workflow_revision"] = int(record.get("workflow_revision") or 1)
+    record["feature_snapshot"] = _json_loads(record.get("feature_snapshot"), {})
+    record["rca_payload"] = _json_loads(record.get("rca_payload"), None)
+    record["current_rca_id"] = int(record["current_rca_id"]) if record.get("current_rca_id") else None
+    record["current_ticket_id"] = int(record["current_ticket_id"]) if record.get("current_ticket_id") else None
+    record["severity"] = str(record.get("severity") or severity_from_score(float(record.get("anomaly_score") or 0.0)))
+    record["source_system"] = str(record.get("source_system") or "anomaly-service")
+    return record
+
+
+def _deserialize_rca(row: sqlite3.Row) -> Dict[str, Any]:
+    record = dict(row)
+    record["based_on_revision"] = int(record.get("based_on_revision") or 1)
+    record["confidence"] = float(record.get("confidence") or 0.0)
+    record["retrieval_refs"] = _json_loads(record.get("retrieval_refs"), [])
+    record["payload"] = _json_loads(record.get("payload"), {})
+    return record
+
+
+def _deserialize_remediation(row: sqlite3.Row) -> Dict[str, Any]:
+    record = dict(row)
+    record["based_on_revision"] = int(record.get("based_on_revision") or 1)
+    record["suggestion_rank"] = int(record.get("suggestion_rank") or 1)
+    record["confidence"] = float(record.get("confidence") or 0.0)
+    record["requires_approval"] = bool(record.get("requires_approval"))
+    record["rank_score"] = float(record.get("rank_score") or 0.0)
+    record["preconditions"] = _json_loads(record.get("preconditions_json"), [])
+    record["factors"] = _json_loads(record.get("factors_json"), {})
+    return record
+
+
+def _deserialize_action(row: sqlite3.Row) -> Dict[str, Any]:
+    record = dict(row)
+    record["approved_revision"] = int(record.get("approved_revision") or 1)
+    record["result_json"] = _json_loads(record.get("result_json"), {})
+    return record
+
+
+def _deserialize_verification(row: sqlite3.Row) -> Dict[str, Any]:
+    record = dict(row)
+    record["metric_based"] = bool(record.get("metric_based"))
+    return record
+
+
+def _deserialize_ticket(row: sqlite3.Row) -> Dict[str, Any]:
+    record = dict(row)
+    record["last_synced_revision"] = int(record["last_synced_revision"]) if record.get("last_synced_revision") is not None else None
+    record["metadata"] = _json_loads(record.get("metadata_json"), {})
+    return record
+
+
+def _deserialize_ticket_sync(row: sqlite3.Row) -> Dict[str, Any]:
+    record = dict(row)
+    record["payload"] = _json_loads(record.get("payload"), {})
+    return record
+
+
+def _deserialize_ticket_comment(row: sqlite3.Row) -> Dict[str, Any]:
+    return dict(row)
+
+
+def _deserialize_resolution_extract(row: sqlite3.Row) -> Dict[str, Any]:
+    record = dict(row)
+    record["verified"] = bool(record.get("verified"))
+    record["knowledge_weight"] = float(record.get("knowledge_weight") or 0.0)
+    record["usage_count"] = int(record.get("usage_count") or 0)
+    record["success_rate"] = float(record.get("success_rate") or 0.0)
     return record

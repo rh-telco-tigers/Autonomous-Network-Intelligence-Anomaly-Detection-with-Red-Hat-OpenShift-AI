@@ -14,7 +14,7 @@ This documentation set is organized for a customer-facing demo flow rather than 
 Labs 03 to 05 are written as a connected story:
 
 - Lab 03 explains how real SIPp-driven IMS traffic becomes labeled feature windows
-- Lab 04 explains how OpenShift AI trains and serves the predictive model from that dataset
+- Lab 04 explains how OpenShift AI trains and serves the predictive model from that dataset and how the RCA service is wired to an OpenAI-compatible LLM endpoint
 - Lab 05 explains how to present the full flow to an end user or customer audience
 
 ## Reference material
@@ -47,6 +47,9 @@ This repo is meant to support a guided platform demo:
 - MinIO console password: `minioadmin`
 - Milvus UI: Attu on the `milvus-attu` route
 - Attu does not use a separate username or password in this demo deployment
+- Plane route: `https://plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com/`
+- Plane user (email login): `plane-admin@ims-demo.local`
+- Plane password: `plane`
 - OpenIMSs WebUI route: `openimss-webui`
 - OpenIMSs WebUI user: `admin`
 - OpenIMSs WebUI password: `1423`

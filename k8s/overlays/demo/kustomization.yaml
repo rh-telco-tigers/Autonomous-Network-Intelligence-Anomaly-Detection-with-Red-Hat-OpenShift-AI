@@ -8,6 +8,7 @@ resources:
   - ../../base/milvus
   - ../../base/minio
   - ../../base/platform
+  - ../../base/plane
   - ../../base/serving
   - ../../base/observability
   - ../../base/pipelines

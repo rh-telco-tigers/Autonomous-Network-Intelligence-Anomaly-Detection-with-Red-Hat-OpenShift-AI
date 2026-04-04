@@ -9,6 +9,7 @@ resources:
   - milvus
   - minio
   - platform
+  - plane
   - feature-store
   - observability
   - rhoai

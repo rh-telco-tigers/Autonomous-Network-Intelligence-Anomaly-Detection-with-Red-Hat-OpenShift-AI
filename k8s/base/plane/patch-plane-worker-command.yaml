@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plane-worker-wl
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: plane-worker
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              python manage.py wait_for_db
+              python manage.py wait_for_migrations
+              celery -A plane worker -l info --concurrency=2

@@ -26,6 +26,39 @@ stringData:
     }
 ---
 apiVersion: v1
+kind: Secret
+metadata:
+  name: plane-integration-auth
+  namespace: ims-demo-lab
+type: Opaque
+stringData:
+  PLANE_BASE_URL: http://plane-api.ims-demo-lab.svc.cluster.local:8000
+  PLANE_APP_URL: https://plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  PLANE_WORKSPACE_SLUG: ims-demo
+  PLANE_PROJECT_ID: 0ef04bba-a220-4915-ab0d-fa3734d77c46
+  PLANE_API_KEY: plane_api_e45e4623aa664519bcea31c71e8d44f2
+  PLANE_WEBHOOK_SECRET: plane_wh_3dc715aef91a491caaecebf50e73108d
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-provider-config
+  namespace: ims-demo-lab
+data:
+  LLM_ENDPOINT: http://ims-generative-proxy.ims-demo-lab.svc.cluster.local:8080
+  LLM_MODEL: llama-32-3b-instruct
+  LLM_REQUEST_TIMEOUT_SECONDS: "20"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: llm-provider-auth
+  namespace: ims-demo-lab
+type: Opaque
+stringData:
+  LLM_API_KEY: ""
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: control-plane-data
@@ -90,8 +123,44 @@ spec:
               value: http://anomaly-service.ims-demo-lab.svc.cluster.local:8080
             - name: RCA_SERVICE_URL
               value: http://rca-service.ims-demo-lab.svc.cluster.local:8080
+            - name: MILVUS_URI
+              value: http://milvus.ims-demo-lab.svc.cluster.local:19530
+            - name: MILVUS_COLLECTIONS
+              value: ims_runbooks,incident_evidence,incident_reasoning,incident_resolution,ims_topology,ims_signal_patterns
+            - name: RAG_ROOT_DIR
+              value: /app/ai/rag
             - name: PREDICTIVE_SERVICE_URL
               value: http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080
+            - name: PLANE_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: plane-integration-auth
+                  key: PLANE_BASE_URL
+            - name: PLANE_APP_URL
+              valueFrom:
+                secretKeyRef:
+                  name: plane-integration-auth
+                  key: PLANE_APP_URL
+            - name: PLANE_WORKSPACE_SLUG
+              valueFrom:
+                secretKeyRef:
+                  name: plane-integration-auth
+                  key: PLANE_WORKSPACE_SLUG
+            - name: PLANE_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: plane-integration-auth
+                  key: PLANE_PROJECT_ID
+            - name: PLANE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: plane-integration-auth
+                  key: PLANE_API_KEY
+            - name: PLANE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: plane-integration-auth
+                  key: PLANE_WEBHOOK_SECRET
           volumeMounts:
             - name: data
               mountPath: /data
@@ -360,9 +429,27 @@ spec:
             - name: MILVUS_URI
               value: http://milvus.ims-demo-lab.svc.cluster.local:19530
             - name: MILVUS_COLLECTIONS
-              value: ims_runbooks,ims_incidents,ims_topology,ims_signal_patterns
+              value: ims_runbooks,incident_evidence,incident_reasoning,incident_resolution,ims_topology,ims_signal_patterns
             - name: LLM_ENDPOINT
-              value: http://ims-generative-proxy.ims-demo-lab.svc.cluster.local:8080
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_ENDPOINT
+            - name: LLM_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_MODEL
+            - name: LLM_REQUEST_TIMEOUT_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_REQUEST_TIMEOUT_SECONDS
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-provider-auth
+                  key: LLM_API_KEY
             - name: RAG_ROOT_DIR
               value: /app/ai/rag
           readinessProbe:
@@ -435,12 +522,22 @@ spec:
           env:
             - name: CONTROL_PLANE_PROXY_URL
               value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+            - name: NEXT_TELEMETRY_DISABLED
+              value: "1"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
+              cpu: 100m
+              memory: 256Mi
             limits:
-              memory: 128Mi
+              memory: 512Mi
 ---
 apiVersion: v1
 kind: Service

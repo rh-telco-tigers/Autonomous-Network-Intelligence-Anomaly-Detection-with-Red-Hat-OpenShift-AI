@@ -43,7 +43,7 @@ oc get pods -n ims-demo-lab
 10. Open the incident details and confirm that the record includes the feature window and model version.
 11. Open the RCA result and review the evidence and recommendation fields.
 12. Show the latest workflow in OpenShift AI and confirm that the model-serving resources are present.
-13. If needed, open Attu and confirm that the `ims_runbooks` and `ims_incidents` collections are available.
+13. If needed, open Attu and confirm that the `ims_runbooks`, `incident_evidence`, `incident_reasoning`, and `incident_resolution` collections are available.
 
 ## What To Verify During The Demo
 

@@ -1,0 +1,136 @@
+# Plane CE Helm values for the ims-demo-lab OpenShift sandbox.
+# Chart: plane/plane-ce 1.5.0
+# App: v1.2.3
+
+planeVersion: v1.2.3
+
+ingress:
+  enabled: false
+  appHost: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  ingressClass: openshift-default
+  ingress_annotations: {}
+  minioHost: ""
+  rabbitmqHost: ""
+
+ssl:
+  tls_secret_name: ""
+  createIssuer: false
+  generateCerts: false
+
+redis:
+  local_setup: true
+  image: valkey/valkey:7.2.11-alpine
+  pullPolicy: IfNotPresent
+  servicePort: 6379
+  volumeSize: 250Mi
+  assign_cluster_ip: true
+
+postgres:
+  local_setup: true
+  image: postgres:15.7-alpine
+  pullPolicy: IfNotPresent
+  servicePort: 5432
+  volumeSize: 2Gi
+  assign_cluster_ip: true
+
+rabbitmq:
+  local_setup: true
+  image: rabbitmq:3.13.6-management-alpine
+  pullPolicy: IfNotPresent
+  servicePort: 5672
+  managementPort: 15672
+  volumeSize: 250Mi
+  default_user: plane
+  default_password: plane
+  assign_cluster_ip: true
+
+minio:
+  local_setup: true
+  image: minio/minio:latest
+  image_mc: minio/mc:latest
+  pullPolicy: IfNotPresent
+  root_user: planeadmin
+  root_password: planepassword
+  volumeSize: 2Gi
+  assign_cluster_ip: true
+  env:
+    minio_endpoint_ssl: false
+
+web:
+  replicas: 1
+  image: artifacts.plane.so/makeplane/plane-frontend
+  pullPolicy: IfNotPresent
+  cpuRequest: 50m
+  memoryRequest: 128Mi
+  cpuLimit: 250m
+  memoryLimit: 256Mi
+  assign_cluster_ip: true
+
+space:
+  replicas: 1
+  image: artifacts.plane.so/makeplane/plane-space
+  pullPolicy: IfNotPresent
+  cpuRequest: 50m
+  memoryRequest: 128Mi
+  cpuLimit: 250m
+  memoryLimit: 256Mi
+  assign_cluster_ip: true
+
+admin:
+  replicas: 1
+  image: artifacts.plane.so/makeplane/plane-admin
+  pullPolicy: IfNotPresent
+  cpuRequest: 50m
+  memoryRequest: 96Mi
+  cpuLimit: 200m
+  memoryLimit: 192Mi
+  assign_cluster_ip: true
+
+live:
+  replicas: 1
+  image: artifacts.plane.so/makeplane/plane-live
+  pullPolicy: IfNotPresent
+  cpuRequest: 50m
+  memoryRequest: 96Mi
+  cpuLimit: 200m
+  memoryLimit: 192Mi
+  assign_cluster_ip: true
+
+api:
+  replicas: 1
+  image: artifacts.plane.so/makeplane/plane-backend
+  pullPolicy: IfNotPresent
+  cpuRequest: 100m
+  memoryRequest: 256Mi
+  cpuLimit: 500m
+  memoryLimit: 512Mi
+  assign_cluster_ip: true
+
+worker:
+  replicas: 1
+  image: artifacts.plane.so/makeplane/plane-backend
+  pullPolicy: IfNotPresent
+  cpuRequest: 100m
+  memoryRequest: 256Mi
+  cpuLimit: 500m
+  memoryLimit: 768Mi
+
+beatworker:
+  replicas: 1
+  image: artifacts.plane.so/makeplane/plane-backend
+  pullPolicy: IfNotPresent
+  cpuRequest: 100m
+  memoryRequest: 192Mi
+  cpuLimit: 500m
+  memoryLimit: 512Mi
+
+env:
+  pgdb_username: plane
+  pgdb_password: plane
+  pgdb_name: plane
+  docstore_bucket: uploads
+  secret_key: 60gp0byfz2dvffa45cxl20p1scy9xbpf6d8c5y0geejgkyp1b5
+  live_server_secret_key: htbqvBJAgpm9bzvf3r4urJer0ENReatceh
+  cors_allowed_origins: ""
+  default_cluster_domain: cluster.local
+  api_key_rate_limit: 600/minute

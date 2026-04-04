@@ -1,25 +1,55 @@
+import logging
+import html
 import json
+import hashlib
+import hmac
 import os
+import re
 import shutil
 import subprocess
+import time
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 import requests
 
 from shared.cors import install_cors
 from shared.db import (
     attach_rca,
+    create_ticket_resolution_extract,
     create_incident,
     get_incident,
+    get_incident_action,
+    get_incident_remediation,
+    get_incident_ticket,
+    get_incident_verification,
+    get_ticket_by_provider_external_id,
     list_approvals,
     init_db,
     list_audit_events,
+    list_incident_actions,
+    list_incident_rca,
+    list_incident_remediations,
+    list_incident_tickets,
+    list_incident_verifications,
     list_incidents,
+    list_ticket_comments,
+    list_ticket_resolution_extracts,
+    list_ticket_sync_events,
     record_approval,
     record_audit,
+    record_incident_action,
+    record_ticket_sync_event,
+    record_verification,
+    remediation_success_rates,
+    replace_remediations,
+    set_incident_remediation_status,
+    transition_incident_state,
+    upsert_incident_ticket,
+    upsert_ticket_comment,
     update_incident_status,
 )
 from shared.incident_taxonomy import (
@@ -39,10 +69,41 @@ from shared.metrics import (
     record_incident,
     record_integration,
     record_model_promotion,
+    record_ticket_sync,
+    record_verification as record_verification_metric,
+    record_workflow_transition,
     set_active_incidents,
 )
 from shared.model_registry import get_model, list_datasets, list_feature_schemas, load_registry, promote_model
+from shared.rag import publish_semantic_record, retrieve_context
 from shared.security import AuthContext, ensure_project_access, ensure_role, outbound_headers, require_api_key
+from shared.tickets import TicketProviderError, get_ticket_provider
+from shared.workflow import (
+    APPROVED,
+    AWAITING_APPROVAL,
+    CLOSED,
+    ESCALATED,
+    EXECUTING,
+    EXECUTED,
+    EXECUTION_FAILED,
+    FALSE_POSITIVE,
+    NEW,
+    RCA_GENERATED,
+    RCA_REJECTED,
+    REMEDIATION_SUGGESTED,
+    VERIFIED,
+    VERIFICATION_FAILED,
+    can_transition,
+    generate_remediation_suggestions,
+    is_active_state,
+    normalize_workflow_state,
+    plane_state_for_workflow,
+    resolution_quality,
+    severity_from_score,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 class IncidentCreate(BaseModel):
@@ -54,23 +115,25 @@ class IncidentCreate(BaseModel):
     feature_window_id: Optional[str] = None
     feature_snapshot: Dict[str, object] = Field(default_factory=dict)
     created_at: Optional[str] = None
-    status: str = "open"
+    status: str = NEW
+    severity: Optional[str] = None
+    source_system: str = "anomaly-service"
+    auto_generate_rca: bool = True
 
 
 class RCAAttach(BaseModel):
     root_cause: str
+    explanation: Optional[str] = None
     confidence: float
     evidence: List[Dict[str, object]]
     recommendation: str
     generation_mode: Optional[str] = None
+    generation_source_label: Optional[str] = None
+    llm_used: Optional[bool] = None
+    llm_configured: Optional[bool] = None
+    llm_model: Optional[str] = None
+    llm_runtime: Optional[str] = None
     retrieved_documents: List[Dict[str, object]] = Field(default_factory=list)
-
-
-class ApprovalRequest(BaseModel):
-    action: str
-    approved_by: str
-    notes: str = ""
-    execute: bool = False
 
 
 class ModelPromotionRequest(BaseModel):
@@ -84,6 +147,62 @@ class ConsoleScenarioRequest(BaseModel):
     project: str = "ims-demo"
 
 
+class IncidentTransitionRequest(BaseModel):
+    target_state: str
+    notes: str = ""
+
+
+class RemediationActionRequest(BaseModel):
+    remediation_id: Optional[int] = None
+    action: Optional[str] = None
+    approved_by: str
+    notes: str = ""
+    execute: bool = False
+    source_of_action: str = "platform_ui"
+
+
+class VerificationRequest(BaseModel):
+    action_id: Optional[int] = None
+    verified_by: str
+    verification_status: str
+    notes: str = ""
+    custom_resolution: str = ""
+    metric_based: bool = False
+    close_after_verify: bool = False
+
+
+class TicketRequest(BaseModel):
+    provider: str = "plane"
+    note: str = ""
+    force: bool = False
+    source_url: str = ""
+
+
+class TicketSyncRequest(BaseModel):
+    note: str = ""
+    source_url: str = ""
+
+
+class ResolutionExtractRequest(BaseModel):
+    summary: Optional[str] = None
+    source_comment_id: Optional[str] = None
+    verified: bool = True
+
+
+class RemediationDecisionRequest(BaseModel):
+    approved_by: str
+    notes: str = ""
+
+
+class RemediationRejectRequest(BaseModel):
+    rejected_by: str
+    notes: str = ""
+
+
+class RelatedRecordsRequest(BaseModel):
+    limit: int = Field(default=6, ge=1, le=24)
+
+
 app = FastAPI(title="control-plane", version="0.1.0")
 install_cors(app)
 install_metrics(app, "control-plane")
@@ -94,6 +213,23 @@ PLAYBOOKS = {
     "rate_limit_pcscf": "/app/automation/ansible/playbooks/rate-limit-pcscf.yaml",
     "quarantine_imsi": "/app/automation/ansible/playbooks/quarantine-imsi.yaml",
 }
+
+WORKFLOW_STATE_OPTIONS = [
+    NEW,
+    RCA_GENERATED,
+    REMEDIATION_SUGGESTED,
+    AWAITING_APPROVAL,
+    APPROVED,
+    EXECUTING,
+    EXECUTED,
+    VERIFIED,
+    CLOSED,
+    RCA_REJECTED,
+    EXECUTION_FAILED,
+    VERIFICATION_FAILED,
+    FALSE_POSITIVE,
+    ESCALATED,
+]
 
 
 def _positive_int_from_env(name: str, default: int) -> int:
@@ -137,6 +273,679 @@ def _coerce_float(value: object, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _plane_webhook_secret() -> str:
+    return os.getenv("PLANE_WEBHOOK_SECRET", "").strip()
+
+
+def _available_transition_targets(current_state: str) -> List[str]:
+    current = normalize_workflow_state(current_state)
+    return [state for state in WORKFLOW_STATE_OPTIONS if can_transition(current, state) and state != current]
+
+
+def _transition_incident_with_audit(
+    incident: Dict[str, object],
+    target_state: str,
+    actor: str,
+    detail: str = "",
+) -> Dict[str, object]:
+    current_state = normalize_workflow_state(str(incident.get("status") or incident.get("workflow_state") or NEW))
+    normalized_target = normalize_workflow_state(target_state)
+    if not can_transition(current_state, normalized_target):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid workflow transition from {current_state} to {normalized_target}",
+        )
+    updated = transition_incident_state(str(incident.get("id")), normalized_target)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    if current_state != normalized_target:
+        record_workflow_transition(current_state, normalized_target)
+    record_audit(
+        "workflow_transition",
+        actor,
+        {
+            "from_state": current_state,
+            "to_state": normalized_target,
+            "detail": detail,
+        },
+        incident_id=str(incident.get("id")),
+    )
+    return updated
+
+
+def _workflow_state_counts(incidents: List[Dict[str, object]]) -> List[Dict[str, object]]:
+    counts: Dict[str, int] = {}
+    for incident in incidents:
+        state = normalize_workflow_state(str(incident.get("status") or incident.get("workflow_state") or NEW))
+        counts[state] = counts.get(state, 0) + 1
+    items = [{"state": state, "count": count, "plane_state": plane_state_for_workflow(state)} for state, count in counts.items()]
+    items.sort(key=lambda item: (-int(item["count"]), str(item["state"])))
+    return items
+
+
+def _current_remediation_items(remediations: List[Dict[str, object]]) -> List[Dict[str, object]]:
+    return [
+        item
+        for item in remediations
+        if str(item.get("status") or "").lower() in {"available", "approved", "executing", "executed"}
+    ]
+
+
+def _workflow_payload(incident: Dict[str, object]) -> Dict[str, object]:
+    incident_id = str(incident.get("id") or "")
+    project = str(incident.get("project") or "ims-demo")
+    all_incidents = list_incidents(project=project)
+    audit_events = list_audit_events(limit=200, incident_id=incident_id)
+    enriched_incident = _enrich_incident(incident, audit_events, all_incidents)
+    rca_history = list_incident_rca(incident_id)
+    remediations = list_incident_remediations(incident_id)
+    actions = list_incident_actions(incident_id)
+    verifications = list_incident_verifications(incident_id)
+    tickets = list_incident_tickets(incident_id)
+    resolution_extracts = list_ticket_resolution_extracts(incident_id)
+    detailed_tickets = []
+    for ticket in tickets:
+        detailed_tickets.append(
+            ticket
+            | {
+                "sync_events": list_ticket_sync_events(int(ticket["id"]))[:10],
+                "comments": list_ticket_comments(int(ticket["id"]))[:10],
+            }
+        )
+    current_ticket = next(
+        (ticket for ticket in detailed_tickets if ticket.get("id") == incident.get("current_ticket_id")),
+        detailed_tickets[0] if detailed_tickets else None,
+    )
+    return {
+        "incident": enriched_incident,
+        "rca_history": rca_history,
+        "remediations": remediations,
+        "current_remediations": _current_remediation_items(remediations),
+        "actions": actions,
+        "verifications": verifications,
+        "tickets": detailed_tickets,
+        "current_ticket": current_ticket,
+        "resolution_extracts": resolution_extracts,
+        "available_transitions": _available_transition_targets(str(enriched_incident.get("status") or NEW)),
+        "plane_workflow_state": plane_state_for_workflow(str(enriched_incident.get("status") or NEW)),
+    }
+
+
+def _generate_and_store_remediations(incident_id: str, actor: str = "control-plane") -> List[Dict[str, object]]:
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    rca_payload = incident.get("rca_payload") or {}
+    if not isinstance(rca_payload, dict) or not rca_payload:
+        return []
+    previous_state = normalize_workflow_state(str(incident.get("status") or NEW))
+    suggestions = generate_remediation_suggestions(incident, rca_payload, remediation_success_rates())
+    remediations = replace_remediations(incident_id, incident.get("current_rca_id"), suggestions)
+    _publish_remediation_reasoning_records(get_incident(incident_id) or incident, remediations)
+    if suggestions:
+        record_audit(
+            "remediations_generated",
+            actor,
+            {
+                "count": len(suggestions),
+                "top_suggestion": suggestions[0].get("title"),
+            },
+            incident_id=incident_id,
+        )
+        if previous_state != REMEDIATION_SUGGESTED:
+            record_workflow_transition(previous_state, REMEDIATION_SUGGESTED)
+            record_audit(
+                "workflow_transition",
+                actor,
+                {
+                    "from_state": previous_state,
+                    "to_state": REMEDIATION_SUGGESTED,
+                    "detail": "Deterministic remediation suggestions ranked from the RCA context.",
+                },
+                incident_id=incident_id,
+            )
+        updated = get_incident(incident_id)
+        if updated:
+            _transition_incident_with_audit(
+                updated,
+                AWAITING_APPROVAL,
+                actor,
+                "Remediation suggestions generated and awaiting operator approval.",
+            )
+    return remediations
+
+
+def _find_matching_remediation(incident_id: str, action_ref: str) -> Dict[str, object] | None:
+    normalized_action = str(action_ref or "").strip()
+    if not normalized_action:
+        return None
+    for remediation in list_incident_remediations(incident_id):
+        if str(remediation.get("action_ref") or "") == normalized_action:
+            return remediation
+        if str(remediation.get("playbook_ref") or "") == normalized_action:
+            return remediation
+    return None
+
+
+def _text_from_rich_comment(value: object) -> str:
+    if isinstance(value, str):
+        text = html.unescape(value)
+        if "<" in text and ">" in text:
+            text = (
+                text.replace("<br/>", "\n")
+                .replace("<br>", "\n")
+                .replace("</p>", "\n")
+                .replace("</div>", "\n")
+                .replace("</li>", "\n")
+                .replace("<li>", "- ")
+            )
+            text = re.sub(r"<[^>]+>", "", text)
+        return "\n".join(line.strip() for line in text.splitlines() if line.strip()).strip()
+    if isinstance(value, dict):
+        fragments = []
+        text = value.get("text")
+        if text:
+            fragments.append(str(text))
+        for item in value.get("content") or []:
+            fragments.append(_text_from_rich_comment(item))
+        return " ".join(fragment for fragment in fragments if fragment).strip()
+    if isinstance(value, list):
+        return " ".join(_text_from_rich_comment(item) for item in value if item).strip()
+    return ""
+
+
+def _plane_actor_name(payload: Dict[str, Any], data: Dict[str, Any]) -> str:
+    actor = data.get("actor")
+    if isinstance(actor, dict):
+        for field in ("display_name", "first_name", "email", "id"):
+            value = str(actor.get(field) or "").strip()
+            if value:
+                return value
+
+    activity = payload.get("activity") or {}
+    if isinstance(activity, dict):
+        activity_actor = activity.get("actor")
+        if isinstance(activity_actor, dict):
+            for field in ("display_name", "first_name", "email", "id"):
+                value = str(activity_actor.get(field) or "").strip()
+                if value:
+                    return value
+        elif activity_actor:
+            value = str(activity_actor).strip()
+            if value:
+                return value
+
+    if actor:
+        value = str(actor).strip()
+        if value:
+            return value
+
+    for fallback in ("created_by", "updated_by"):
+        value = str(data.get(fallback) or "").strip()
+        if value:
+            return value
+    return "plane-user"
+
+
+def _string_list(value: object) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    items = []
+    for item in value:
+        text = str(item or "").strip()
+        if text:
+            items.append(text)
+    return items
+
+
+def _feature_signal_summary(features: Dict[str, object]) -> str:
+    keys = (
+        "register_rate",
+        "invite_rate",
+        "bye_rate",
+        "error_4xx_ratio",
+        "error_5xx_ratio",
+        "latency_p95",
+        "retransmission_count",
+        "payload_variance",
+    )
+    fragments = []
+    for key in keys:
+        if key not in features:
+            continue
+        value = features.get(key)
+        if value in {None, ""}:
+            continue
+        fragments.append(f"{key}={value}")
+    return ", ".join(fragments[:8]) or "no summarized feature signals"
+
+
+def _related_context_query(incident: Dict[str, object]) -> str:
+    features = incident.get("feature_snapshot") or {}
+    if not isinstance(features, dict):
+        features = {}
+    anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE))
+    scenario_name = str(features.get("scenario_name") or "")
+    conditions = ", ".join(_string_list(features.get("contributing_conditions")))
+    signal_summary = _feature_signal_summary(features)
+    recommendation = str(incident.get("recommendation") or "")
+    return " | ".join(
+        part
+        for part in [
+            f"incident_id={incident.get('id')}",
+            f"anomaly_type={anomaly_type}",
+            f"scenario_name={scenario_name}",
+            f"signals={signal_summary}",
+            f"conditions={conditions}",
+            f"recommendation={recommendation}",
+        ]
+        if part
+    )
+
+
+def _publish_incident_evidence_record(incident: Dict[str, object]) -> None:
+    incident_id = str(incident.get("id") or "")
+    if not incident_id:
+        return
+    features = incident.get("feature_snapshot") or {}
+    if not isinstance(features, dict):
+        features = {}
+    anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE))
+    severity = str(incident.get("severity") or severity_from_score(float(incident.get("anomaly_score") or 0.0)))
+    scenario_name = str(features.get("scenario_name") or "")
+    contributing_conditions = _string_list(features.get("contributing_conditions"))
+    signal_summary = _feature_signal_summary(features)
+    content = {
+        "incident_id": incident_id,
+        "stage": "evidence",
+        "project": str(incident.get("project") or "ims-demo"),
+        "anomaly_type": anomaly_type,
+        "severity": severity,
+        "status": str(incident.get("status") or NEW),
+        "scenario_name": scenario_name,
+        "contributing_conditions": contributing_conditions,
+        "feature_window_id": incident.get("feature_window_id"),
+        "feature_snapshot": features,
+    }
+    embedding_text = (
+        f"Evidence incident {incident_id}. "
+        f"Anomaly type {anomaly_type}. "
+        f"Scenario {scenario_name or 'unknown'}. "
+        f"Contributing conditions: {'; '.join(contributing_conditions) or 'none'}. "
+        f"Summarized feature signals: {signal_summary}."
+    )
+    publish_semantic_record(
+        collection_name="incident_evidence",
+        reference=f"evidence/{incident_id}.json",
+        title=f"Incident evidence {incident_id}",
+        content=content,
+        doc_type="incident_evidence",
+        embedding_text=embedding_text,
+        metadata={
+            "stage": "evidence",
+            "incident_id": incident_id,
+            "project": incident.get("project"),
+            "created_at": incident.get("created_at"),
+            "status": incident.get("status"),
+            "knowledge_weight": 0.55,
+        },
+    )
+
+
+def _publish_rca_reasoning_record(incident: Dict[str, object], rca_payload: Dict[str, object]) -> None:
+    incident_id = str(incident.get("id") or "")
+    if not incident_id:
+        return
+    history = list_incident_rca(incident_id)
+    current_rca_id = incident.get("current_rca_id")
+    current_rca = next((item for item in history if current_rca_id and item.get("id") == current_rca_id), history[0] if history else None)
+    evidence_refs = [str(item.get("reference") or "") for item in rca_payload.get("evidence") or [] if isinstance(item, dict)]
+    retrieved_refs = [
+        str(item.get("reference") or "")
+        for item in rca_payload.get("retrieved_documents") or []
+        if isinstance(item, dict)
+    ]
+    content = {
+        "incident_id": incident_id,
+        "parent_id": str(current_rca.get("id") if current_rca else current_rca_id or incident_id),
+        "stage": "rca",
+        "record_status": "active",
+        "root_cause": str(rca_payload.get("root_cause") or ""),
+        "recommendation": str(rca_payload.get("recommendation") or ""),
+        "confidence": float(rca_payload.get("confidence") or 0.0),
+        "evidence_references": evidence_refs,
+        "retrieved_documents": retrieved_refs,
+    }
+    embedding_text = (
+        f"RCA incident {incident_id}. "
+        f"Root cause summary: {rca_payload.get('root_cause') or 'unknown'}. "
+        f"Causal reasoning recommendation: {rca_payload.get('recommendation') or 'none'}. "
+        f"Evidence references: {'; '.join(evidence_refs) or 'none'}."
+    )
+    publish_semantic_record(
+        collection_name="incident_reasoning",
+        reference=f"reasoning/{incident_id}-rca-{current_rca.get('id') if current_rca else 'current'}.json",
+        title=f"RCA reasoning {incident_id}",
+        content=content,
+        doc_type="incident_reasoning",
+        embedding_text=embedding_text,
+        metadata={
+            "stage": "rca",
+            "incident_id": incident_id,
+            "parent_id": incident_id,
+            "project": incident.get("project"),
+            "created_at": current_rca.get("created_at") if current_rca else incident.get("updated_at"),
+            "status": "active",
+            "category": canonical_anomaly_type(str(incident.get("anomaly_type") or "")),
+            "knowledge_weight": max(0.6, min(float(rca_payload.get("confidence") or 0.0), 1.0)),
+        },
+    )
+
+
+def _publish_remediation_reasoning_records(incident: Dict[str, object], remediations: List[Dict[str, object]]) -> None:
+    incident_id = str(incident.get("id") or "")
+    if not incident_id:
+        return
+    for remediation in remediations:
+        remediation_id = remediation.get("id")
+        if remediation_id is None:
+            continue
+        preconditions = _string_list(remediation.get("preconditions"))
+        embedding_text = (
+            f"Remediation incident {incident_id}. "
+            f"Action title: {remediation.get('title') or 'unknown'}. "
+            f"Action type: {remediation.get('suggestion_type') or remediation.get('action_mode') or 'manual'}. "
+            f"Preconditions: {'; '.join(preconditions) or 'none'}. "
+            f"Expected outcome: {remediation.get('expected_outcome') or 'none'}."
+        )
+        content = {
+            "incident_id": incident_id,
+            "parent_id": str(remediation.get("rca_id") or incident.get("current_rca_id") or incident_id),
+            "stage": "remediation",
+            "remediation_id": remediation_id,
+            "title": remediation.get("title"),
+            "description": remediation.get("description"),
+            "suggestion_type": remediation.get("suggestion_type"),
+            "action_ref": remediation.get("action_ref"),
+            "playbook_ref": remediation.get("playbook_ref"),
+            "preconditions": preconditions,
+            "expected_outcome": remediation.get("expected_outcome"),
+            "risk_level": remediation.get("risk_level"),
+            "confidence": remediation.get("confidence"),
+            "rank_score": remediation.get("rank_score"),
+            "status": remediation.get("status"),
+        }
+        publish_semantic_record(
+            collection_name="incident_reasoning",
+            reference=f"reasoning/{incident_id}-remediation-{remediation_id}.json",
+            title=f"Remediation {remediation_id} for {incident_id}",
+            content=content,
+            doc_type="incident_remediation",
+            embedding_text=embedding_text,
+            metadata={
+                "stage": "remediation",
+                "incident_id": incident_id,
+                "parent_id": remediation.get("rca_id") or incident.get("current_rca_id"),
+                "project": incident.get("project"),
+                "created_at": remediation.get("created_at"),
+                "status": remediation.get("status"),
+                "category": canonical_anomaly_type(str(incident.get("anomaly_type") or "")),
+                "suggestion_type": remediation.get("suggestion_type"),
+                "knowledge_weight": max(0.45, min(float(remediation.get("confidence") or 0.0), 1.0)),
+            },
+        )
+
+
+def _publish_resolution_record(
+    incident: Dict[str, object],
+    verification: Dict[str, object],
+    extract: Dict[str, object],
+    action: Dict[str, object] | None = None,
+    ticket: Dict[str, object] | None = None,
+) -> None:
+    incident_id = str(incident.get("id") or "")
+    if not incident_id:
+        return
+    summary = str(extract.get("summary") or verification.get("custom_resolution") or verification.get("notes") or "").strip()
+    if not summary:
+        return
+    resolution_type = "verified_resolution" if bool(extract.get("verified")) else "resolution_candidate"
+    operator_notes = str(verification.get("notes") or "")
+    action_summary = str((action or {}).get("result_summary") or "")
+    content = {
+        "incident_id": incident_id,
+        "parent_id": str((action or {}).get("id") or incident.get("current_rca_id") or incident_id),
+        "stage": "resolution",
+        "verified": bool(extract.get("verified")),
+        "verified_by": verification.get("verified_by"),
+        "resolution_type": resolution_type,
+        "resolution_summary": summary,
+        "operator_notes": operator_notes,
+        "action_summary": action_summary,
+        "ticket_id": (ticket or {}).get("id"),
+        "ticket_provider": (ticket or {}).get("provider"),
+    }
+    embedding_text = (
+        f"Resolution incident {incident_id}. "
+        f"Actual fix applied: {summary}. "
+        f"Validation outcome: {verification.get('verification_status') or 'unknown'}. "
+        f"Why it worked: {operator_notes or action_summary or 'not recorded'}."
+    )
+    publish_semantic_record(
+        collection_name="incident_resolution",
+        reference=f"resolution/{incident_id}-{extract.get('id')}.json",
+        title=f"Resolution {incident_id}",
+        content=content,
+        doc_type=resolution_type,
+        embedding_text=embedding_text,
+        metadata={
+            "stage": "resolution",
+            "incident_id": incident_id,
+            "parent_id": (action or {}).get("id") or incident.get("current_rca_id"),
+            "project": incident.get("project"),
+            "created_at": extract.get("created_at") or _now_iso(),
+            "status": "verified" if bool(extract.get("verified")) else "candidate",
+            "verified": bool(extract.get("verified")),
+            "verified_by": verification.get("verified_by"),
+            "resolution_type": resolution_type,
+            "knowledge_weight": extract.get("knowledge_weight"),
+            "success_score": extract.get("success_rate"),
+        },
+    )
+
+
+def _categorize_related_documents(documents: List[Dict[str, object]]) -> Dict[str, List[Dict[str, object]]]:
+    related = {
+        "evidence": [],
+        "reasoning": [],
+        "resolution": [],
+    }
+    for document in documents:
+        collection = str(document.get("collection") or "")
+        if collection == "incident_evidence":
+            related["evidence"].append(document)
+        elif collection == "incident_reasoning":
+            related["reasoning"].append(document)
+        elif collection == "incident_resolution":
+            related["resolution"].append(document)
+    return related
+
+
+def _maybe_create_resolution_extract(
+    incident: Dict[str, object],
+    verification: Dict[str, object],
+    action: Dict[str, object] | None = None,
+    ticket: Dict[str, object] | None = None,
+    source_comment_id: str | None = None,
+    summary_override: str | None = None,
+) -> Dict[str, object] | None:
+    status = str(verification.get("verification_status") or "").strip().lower()
+    if status != "verified":
+        return None
+    action_summary = str((action or {}).get("result_summary") or "").strip()
+    summary = str(
+        summary_override
+        or verification.get("custom_resolution")
+        or verification.get("notes")
+        or action_summary
+    ).strip()
+    if not summary:
+        return None
+    quality = resolution_quality(
+        bool(verification.get("metric_based")),
+        str(verification.get("notes") or ""),
+        str(verification.get("custom_resolution") or summary),
+    )
+    knowledge_weight = 1.0 if quality == "high" else 0.75 if quality == "medium" else 0.55
+    extract = create_ticket_resolution_extract(
+        incident_id=str(incident.get("id")),
+        ticket_id=int(ticket["id"]) if ticket and ticket.get("id") else None,
+        source_comment_id=source_comment_id,
+        summary=summary,
+        verified=True,
+        verification_quality=quality,
+        knowledge_weight=knowledge_weight,
+        success_rate=1.0,
+        last_validated_at=_now_iso(),
+    )
+    _publish_resolution_record(incident, verification, extract, action=action, ticket=ticket)
+    return extract
+
+
+def _sync_ticket_provider(
+    incident: Dict[str, object],
+    provider_name: str,
+    note: str = "",
+    force: bool = False,
+    source_url: str = "",
+) -> Dict[str, object]:
+    workflow = _workflow_payload(incident)
+    provider = get_ticket_provider(provider_name)
+    existing_ticket = next((ticket for ticket in workflow["tickets"] if str(ticket.get("provider")) == provider_name), None)
+    existing_metadata = (existing_ticket or {}).get("metadata") if isinstance(existing_ticket, dict) else {}
+    if not isinstance(existing_metadata, dict):
+        existing_metadata = {}
+    reference_url = str(source_url or existing_metadata.get("source_url") or "").strip()
+    if existing_ticket:
+        result = provider.sync_ticket(incident, workflow, existing_ticket, note=note, source_url=reference_url)
+    else:
+        result = provider.create_ticket(incident, workflow, note=note, force=force, source_url=reference_url)
+    status = str(result.get("status") or "unknown")
+    record_ticket_sync(provider_name, "outbound", status)
+    if status in {"created", "synced"}:
+        ticket = upsert_incident_ticket(
+            incident_id=str(incident.get("id")),
+            provider=provider_name,
+            external_key=str(result.get("external_key") or result.get("external_id") or ""),
+            external_id=str(result.get("external_id") or ""),
+            workspace_id=str(result.get("workspace_id") or ""),
+            project_id=str(result.get("project_id") or ""),
+            status=str(result.get("ticket_status") or plane_state_for_workflow(str(incident.get("status") or NEW))),
+            url=str(result.get("url") or ""),
+            title=str(result.get("title") or ""),
+            sync_state=status,
+            last_synced_revision=int(incident.get("workflow_revision") or 1),
+            metadata={
+                "mode": result.get("mode"),
+                "raw": result.get("raw", {}),
+                "source_url": reference_url,
+            },
+        )
+        payload_hash = hashlib.sha256(json.dumps(result, sort_keys=True).encode("utf-8")).hexdigest()
+        sync_event = record_ticket_sync_event(
+            int(ticket["id"]),
+            "outbound",
+            f"{provider_name}_sync",
+            None,
+            payload_hash,
+            status,
+            result,
+        )
+        comment_payload = result.get("comment")
+        if not isinstance(comment_payload, dict) and str(result.get("note") or note).strip():
+            comment_payload = {
+                "body": str(result.get("note") or note).strip(),
+                "author": "IMS Platform",
+                "comment_type": "operator_update",
+            }
+        if isinstance(comment_payload, dict):
+            comment_body = str(comment_payload.get("body") or result.get("note") or note).strip()
+            if comment_body:
+                comment_external_id = str(comment_payload.get("external_comment_id") or "").strip()
+                if not comment_external_id:
+                    comment_external_id = f"{provider_name}-outbound-{sync_event.get('id') or uuid.uuid4().hex}"
+                upsert_ticket_comment(
+                    ticket_id=int(ticket["id"]),
+                    external_comment_id=comment_external_id,
+                    author=str(comment_payload.get("author") or "IMS Platform"),
+                    body=comment_body,
+                    comment_type=str(comment_payload.get("comment_type") or "operator_update"),
+                )
+        record_audit(
+            "ticket_synced" if existing_ticket else "ticket_created",
+            "operator",
+            {
+                "provider": provider_name,
+                "ticket_id": ticket.get("id"),
+                "external_key": ticket.get("external_key"),
+                "status": status,
+                "note": note.strip() or None,
+                "sync_event_id": sync_event.get("id") if sync_event else None,
+            },
+            incident_id=str(incident.get("id")),
+        )
+        return ticket | {"operation": result}
+    return result
+
+
+def _ticket_note(title: str, fields: List[tuple[str, object]]) -> str:
+    lines = [title]
+    for label, value in fields:
+        rendered = str(value or "").strip()
+        if rendered:
+            lines.append(f"{label}: {rendered}")
+    return "\n".join(lines)
+
+
+def _current_ticket_from_workflow(workflow: Dict[str, object]) -> Dict[str, object] | None:
+    current_ticket = workflow.get("current_ticket")
+    if isinstance(current_ticket, dict) and current_ticket:
+        return current_ticket
+    tickets = workflow.get("tickets") or []
+    for ticket in tickets:
+        if isinstance(ticket, dict) and ticket:
+            return ticket
+    return None
+
+
+def _sync_current_ticket_best_effort(
+    incident: Dict[str, object],
+    note: str,
+    actor: str,
+    reason: str,
+) -> Dict[str, object] | None:
+    incident_id = str(incident.get("id") or "")
+    if not incident_id:
+        return None
+    workflow = _workflow_payload(incident)
+    current_ticket = _current_ticket_from_workflow(workflow)
+    provider_name = str((current_ticket or {}).get("provider") or "").strip().lower()
+    if not provider_name:
+        return None
+    try:
+        return _sync_ticket_provider(incident, provider_name, note=note, force=True)
+    except Exception as exc:
+        logger.warning("Ticket sync failed for incident %s during %s: %s", incident_id, reason, exc)
+        record_ticket_sync(provider_name, "outbound", "failed")
+        record_audit(
+            "ticket_sync_failed",
+            actor,
+            {"provider": provider_name, "reason": reason, "detail": str(exc)},
+            incident_id=incident_id,
+        )
+        return None
 
 
 def _list_automation_actions() -> List[Dict[str, object]]:
@@ -185,6 +994,70 @@ def _request_json(method: str, url: str, payload: Dict[str, object] | None = Non
         )
 
     return parsed if isinstance(parsed, dict) else {"value": parsed}
+
+
+def _incident_feature_context(incident: Dict[str, object]) -> Dict[str, object]:
+    features = incident.get("feature_snapshot") or {}
+    return features if isinstance(features, dict) else {}
+
+
+def _incident_rca_request_payload(incident: Dict[str, object]) -> Dict[str, object]:
+    features = _incident_feature_context(incident)
+    return {
+        "incident_id": str(incident.get("id") or incident.get("incident_id") or ""),
+        "context": {
+            "project": incident.get("project"),
+            "scenario_name": features.get("scenario_name"),
+            "anomaly_type": incident.get("anomaly_type"),
+            "feature_window_id": incident.get("feature_window_id"),
+            "features": features,
+        },
+    }
+
+
+def _request_incident_rca(incident: Dict[str, object]) -> Dict[str, object]:
+    return _request_json("POST", f"{RCA_SERVICE_URL}/rca", _incident_rca_request_payload(incident))
+
+
+def _auto_generate_incident_rca(incident_id: str, actor: str = "control-plane:auto-rca") -> None:
+    incident = get_incident(incident_id)
+    if not incident:
+        return
+
+    existing_rca = incident.get("rca_payload") or {}
+    if isinstance(existing_rca, dict) and existing_rca:
+        return
+
+    try:
+        _request_incident_rca(incident)
+    except HTTPException as exc:
+        logger.warning("Auto RCA generation failed for incident %s: %s", incident_id, exc.detail)
+        record_audit(
+            "rca_auto_generation_failed",
+            actor,
+            {"detail": exc.detail},
+            incident_id=incident_id,
+        )
+    except Exception as exc:
+        logger.exception("Unexpected auto RCA generation failure for incident %s", incident_id)
+        record_audit(
+            "rca_auto_generation_failed",
+            actor,
+            {"detail": str(exc)},
+            incident_id=incident_id,
+        )
+
+
+def _wait_for_incident_rca(incident_id: str, timeout_seconds: float = 8.0, poll_interval_seconds: float = 0.5) -> Dict[str, object] | None:
+    deadline = time.monotonic() + max(timeout_seconds, 0.0)
+    latest_incident = get_incident(incident_id)
+    while time.monotonic() < deadline:
+        rca_payload = (latest_incident or {}).get("rca_payload") or {}
+        if isinstance(rca_payload, dict) and rca_payload:
+            return latest_incident
+        time.sleep(max(poll_interval_seconds, 0.1))
+        latest_incident = get_incident(incident_id)
+    return latest_incident
 
 
 def _probe_service(name: str, url: str, path: str = "/healthz") -> Dict[str, object]:
@@ -405,9 +1278,18 @@ def _timeline_title(event_type: str) -> str:
         "scenario_executed": "Scenario executed",
         "incident_created": "Incident created",
         "rca_attached": "RCA attached",
+        "remediations_generated": "Remediations generated",
+        "workflow_transition": "Workflow transitioned",
         "incident_approved": "Action approved",
+        "action_executed": "Action executed",
+        "verification_recorded": "Verification recorded",
         "slack_notified": "Slack notified",
         "jira_created": "Jira ticket created",
+        "ticket_created": "Ticket created",
+        "ticket_synced": "Ticket synced",
+        "ticket_sync_failed": "Ticket sync failed",
+        "plane_webhook_processed": "Plane webhook processed",
+        "resolution_extract_created": "Resolution extract created",
         "model_promoted": "Model promoted",
     }
     return mapping.get(event_type, _titleize(event_type))
@@ -430,15 +1312,43 @@ def _timeline_detail(event: Dict[str, object]) -> str:
     if event_type == "rca_attached":
         confidence = _coerce_float(payload.get("confidence"))
         return f"RCA attached with confidence {confidence:.2f}."
+    if event_type == "remediations_generated":
+        return f"{int(payload.get('count', 0))} remediation suggestions ranked for approval."
+    if event_type == "workflow_transition":
+        from_state = payload.get("from_state", "unknown")
+        to_state = payload.get("to_state", "unknown")
+        detail = str(payload.get("detail") or "").strip()
+        summary = f"{_titleize(str(from_state))} -> {_titleize(str(to_state))}."
+        return f"{summary} {detail}".strip()
     if event_type == "incident_approved":
         action = payload.get("action", "unknown_action")
         execute = bool(payload.get("execute"))
         return f"{_titleize(str(action))} approved ({'execute' if execute else 'record only'})."
+    if event_type == "action_executed":
+        action = payload.get("action", payload.get("action_ref", "action"))
+        status = payload.get("execution_status", "unknown")
+        return f"{_titleize(str(action))} recorded with status {status}."
+    if event_type == "verification_recorded":
+        status = payload.get("verification_status", "unknown")
+        return f"Verification outcome recorded as {_titleize(str(status))}."
     if event_type == "slack_notified":
         return f"Slack notification status: {payload.get('status', 'unknown')}."
     if event_type == "jira_created":
         issue_key = payload.get("issue_key", "pending")
         return f"Jira issue {issue_key} created."
+    if event_type in {"ticket_created", "ticket_synced"}:
+        provider = payload.get("provider", "ticket")
+        external_key = payload.get("external_key", payload.get("ticket_id", "pending"))
+        return f"{_titleize(str(provider))} ticket {external_key} {event_type.removeprefix('ticket_')}."
+    if event_type == "ticket_sync_failed":
+        provider = payload.get("provider", "ticket")
+        reason = payload.get("reason", "unknown")
+        return f"{_titleize(str(provider))} ticket sync failed during {reason}."
+    if event_type == "plane_webhook_processed":
+        return f"Plane webhook {payload.get('event', 'unknown')}::{payload.get('action', 'unknown')} processed."
+    if event_type == "resolution_extract_created":
+        quality = payload.get("verification_quality", "unknown")
+        return f"Resolution extract captured with {quality} verification quality."
     if event_type == "model_promoted":
         version = payload.get("version", "unknown")
         stage = payload.get("stage", "prod")
@@ -552,7 +1462,8 @@ def _enrich_incident(
 ) -> Dict[str, object]:
     score = _coerce_float(incident.get("anomaly_score"))
     anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type", NORMAL_ANOMALY_TYPE)))
-    severity = _severity_from_score(score)
+    severity_label = str(incident.get("severity") or severity_from_score(score))
+    severity = _severity_from_score(score if severity_label == "Medium" else 0.95 if severity_label == "Critical" else 0.85)
     rca_payload = incident.get("rca_payload") or {}
     if not isinstance(rca_payload, dict):
         rca_payload = {}
@@ -569,14 +1480,27 @@ def _enrich_incident(
         "impact": _incident_impact(incident),
         "blast_radius": _blast_radius(anomaly_type),
         "recommendation": recommendation,
-        "narrative": str(rca_payload.get("root_cause") or _incident_subtitle(anomaly_type)),
+        "narrative": str(rca_payload.get("explanation") or rca_payload.get("root_cause") or _incident_subtitle(anomaly_type)),
         "timeline": _timeline_for_incident(incident, audit_events),
         "evidence_sources": _evidence_sources(incident),
         "similar_incidents": _similar_incidents(incident, incidents),
         "explainability": _explainability_for(incident),
         "payload_pretty": _payload_view(incident),
         "topology": _topology_for(anomaly_type),
+        "plane_workflow_state": plane_state_for_workflow(str(incident.get("status") or NEW)),
+        "is_active": is_active_state(str(incident.get("status") or NEW)),
     }
+
+
+def _traffic_stream(project: str, audit_events: List[Dict[str, object]]) -> List[Dict[str, object]]:
+    stream: List[Dict[str, object]] = []
+    for event in audit_events:
+        execution = _scenario_execution_from_audit(event, project)
+        if execution:
+            stream.append(execution)
+        if len(stream) >= 24:
+            break
+    return stream
 
 
 def _traffic_preview(feature_window: Dict[str, object] | None) -> Dict[str, object]:
@@ -757,10 +1681,11 @@ def _build_console_state(project: str) -> Dict[str, object]:
         latest_scenario = _scenario_execution_from_audit(event, project)
         if latest_scenario:
             break
-    open_incidents = [incident for incident in enriched_incidents if str(incident.get("status", "open")) == "open"]
-    active_summary = _active_incident_summary(open_incidents)
-    set_active_incidents(open_incidents)
+    active_incidents = [incident for incident in enriched_incidents if is_active_state(str(incident.get("status") or NEW))]
+    active_summary = _active_incident_summary(active_incidents)
+    set_active_incidents(active_incidents)
     healthy_services = sum(1 for service in services if bool(service.get("ok")))
+    traffic_stream = _traffic_stream(project, audit_events)
     active_scenario = (
         normalize_scenario_name(str(latest_scenario.get("scenario")))
         if latest_scenario
@@ -786,7 +1711,7 @@ def _build_console_state(project: str) -> Dict[str, object]:
         "generated_at": _now_iso(),
         "cluster": {
             "name": CONSOLE_CLUSTER_NAME,
-            "status": "degraded" if open_incidents or healthy_services < len(services) else "healthy",
+            "status": "degraded" if active_incidents or healthy_services < len(services) else "healthy",
             "active_incident_id": latest_incident.get("id") if latest_incident else None,
             "rca_status": "attached" if latest_incident and latest_incident.get("rca_payload") else "none",
             "current_scenario": active_scenario,
@@ -794,11 +1719,12 @@ def _build_console_state(project: str) -> Dict[str, object]:
         },
         "summary": {
             "incident_count": len(enriched_incidents),
-            "active_incident_count": len(open_incidents),
-            "open_incidents": len(open_incidents),
-            "critical_incidents": sum(1 for incident in open_incidents if incident.get("severity") == "Critical"),
+            "active_incident_count": len(active_incidents),
+            "open_incidents": len(active_incidents),
+            "critical_incidents": sum(1 for incident in active_incidents if incident.get("severity") == "Critical"),
             "active_incident_categories": active_summary["categories"],
             "active_incidents_by_model": active_summary["models"],
+            "workflow_state_distribution": _workflow_state_counts(enriched_incidents),
             "latest_score": _coerce_float(latest_incident.get("anomaly_score")) if latest_incident else 0.0,
             "healthy_services": healthy_services,
             "service_count": len(services),
@@ -812,6 +1738,7 @@ def _build_console_state(project: str) -> Dict[str, object]:
         "automation_actions": _list_automation_actions(),
         "scenarios": console_scenario_catalog(),
         "latest_scenario": latest_scenario,
+        "traffic_stream": traffic_stream,
         "traffic_preview": traffic_preview,
     }
 
@@ -829,28 +1756,52 @@ def healthz():
 
 
 @app.post("/incidents")
-def post_incident(payload: IncidentCreate, auth: AuthContext | None = Depends(require_api_key)):
+def post_incident(
+    payload: IncidentCreate,
+    background_tasks: BackgroundTasks,
+    auth: AuthContext | None = Depends(require_api_key),
+):
     ensure_project_access(auth, payload.project)
-    incident = create_incident(payload.model_dump())
+    incident = create_incident(payload.model_dump(exclude_none=True))
+    _publish_incident_evidence_record(incident)
     record_audit("incident_created", "anomaly-service", incident, incident_id=incident["id"])
     record_incident(incident["project"], incident["anomaly_type"], incident["status"])
     set_active_incidents(list_incidents(project=incident["project"]))
+    if payload.auto_generate_rca:
+        background_tasks.add_task(
+            _auto_generate_incident_rca,
+            incident["id"],
+            f"{incident.get('source_system') or payload.source_system}:auto-rca",
+        )
     return incident
 
 
 @app.get("/incidents")
-def get_incidents(project: str | None = None, auth: AuthContext | None = Depends(require_api_key)):
+def get_incidents(
+    project: str | None = None,
+    active_only: bool = False,
+    auth: AuthContext | None = Depends(require_api_key),
+):
     if project:
         ensure_project_access(auth, project)
-        return list_incidents(project=project)
+        incidents = list_incidents(project=project)
+        audit_events = list_audit_events(limit=200)
+        enriched = [_enrich_incident(incident, audit_events, incidents) for incident in incidents]
+        if active_only:
+            enriched = [incident for incident in enriched if is_active_state(str(incident.get("status") or NEW))]
+        return enriched
     if auth is None or "*" in auth.projects:
-        return list_incidents()
-
-    incidents = []
-    for allowed_project in auth.projects:
-        incidents.extend(list_incidents(project=allowed_project))
-    incidents.sort(key=lambda item: item["created_at"], reverse=True)
-    return incidents
+        incidents = list_incidents()
+    else:
+        incidents = []
+        for allowed_project in auth.projects:
+            incidents.extend(list_incidents(project=allowed_project))
+        incidents.sort(key=lambda item: item["created_at"], reverse=True)
+    audit_events = list_audit_events(limit=200)
+    enriched = [_enrich_incident(incident, audit_events, incidents) for incident in incidents]
+    if active_only:
+        enriched = [incident for incident in enriched if is_active_state(str(incident.get("status") or NEW))]
+    return enriched
 
 
 @app.get("/incidents/{incident_id}")
@@ -859,7 +1810,37 @@ def get_incident_by_id(incident_id: str, auth: AuthContext | None = Depends(requ
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
     ensure_project_access(auth, incident["project"])
-    return incident
+    return _workflow_payload(incident)
+
+
+@app.get("/incidents/{incident_id}/rca")
+def get_incident_rca(incident_id: str, auth: AuthContext | None = Depends(require_api_key)):
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+    history = list_incident_rca(incident_id)
+    current_rca_id = incident.get("current_rca_id")
+    current = next((item for item in history if current_rca_id and item.get("id") == current_rca_id), history[0] if history else None)
+    return {
+        "current_rca": current,
+        "history": history,
+    }
+
+
+@app.post("/incidents/{incident_id}/rca/generate")
+def generate_incident_rca(incident_id: str, auth: AuthContext | None = Depends(require_api_key)):
+    ensure_role(auth, "operator")
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+    rca_payload = _request_incident_rca(incident)
+    updated = get_incident(incident_id) or incident
+    return {
+        "rca": rca_payload,
+        "workflow": _workflow_payload(updated),
+    }
 
 
 @app.post("/incidents/{incident_id}/rca")
@@ -869,37 +1850,315 @@ def post_rca(incident_id: str, payload: RCAAttach, auth: AuthContext | None = De
         raise HTTPException(status_code=404, detail="Incident not found")
     ensure_project_access(auth, incident["project"])
     record_audit("rca_attached", "rca-service", payload.model_dump(), incident_id=incident_id)
-    return incident
+    refreshed = get_incident(incident_id) or incident
+    _publish_rca_reasoning_record(refreshed, payload.model_dump())
+    _generate_and_store_remediations(incident_id, actor="rca-service")
+    refreshed = get_incident(incident_id)
+    set_active_incidents(list_incidents(project=incident["project"]))
+    return _workflow_payload(refreshed or incident)
 
 
-@app.post("/incidents/{incident_id}/approve")
-def approve_incident(incident_id: str, payload: ApprovalRequest, auth: AuthContext | None = Depends(require_api_key)):
+@app.post("/incidents/{incident_id}/transition")
+def transition_incident(
+    incident_id: str,
+    payload: IncidentTransitionRequest,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    ensure_role(auth, "operator")
     incident = get_incident(incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
     ensure_project_access(auth, incident["project"])
+    updated = _transition_incident_with_audit(
+        incident,
+        payload.target_state,
+        auth.subject if auth else "operator",
+        payload.notes,
+    )
+    updated = get_incident(incident_id) or updated
+    _sync_current_ticket_best_effort(
+        updated,
+        _ticket_note(
+            "Workflow update",
+            [
+                ("Incident", incident_id),
+                ("Workflow state", updated.get("status")),
+                ("Operator", auth.subject if auth else "operator"),
+                ("Comment", payload.notes or f"Transitioned incident to {payload.target_state}."),
+            ],
+        ),
+        auth.subject if auth else "operator",
+        "workflow_transition",
+    )
+    set_active_incidents(list_incidents(project=incident["project"]))
+    return _workflow_payload(updated)
+
+
+@app.post("/incidents/{incident_id}/remediation/generate")
+def generate_incident_remediations(incident_id: str, auth: AuthContext | None = Depends(require_api_key)):
+    ensure_role(auth, "operator")
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+    rca_payload = incident.get("rca_payload") or {}
+    if not isinstance(rca_payload, dict) or not rca_payload:
+        raise HTTPException(status_code=400, detail="RCA must exist before generating remediations")
+    remediations = _generate_and_store_remediations(incident_id, actor=auth.subject if auth else "operator")
+    updated = get_incident(incident_id) or incident
+    return {
+        "remediations": remediations,
+        "workflow": _workflow_payload(updated),
+    }
+
+
+def _execute_incident_action(
+    incident_id: str,
+    payload: RemediationActionRequest,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    ensure_role(auth, "operator")
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+
+    remediation = None
+    if payload.remediation_id is not None:
+        remediation = get_incident_remediation(incident_id, payload.remediation_id)
+        if not remediation:
+            raise HTTPException(status_code=404, detail="Remediation not found")
+    elif payload.action:
+        remediation = _find_matching_remediation(incident_id, payload.action)
+
+    action_ref = str(
+        payload.action
+        or (remediation or {}).get("action_ref")
+        or (remediation or {}).get("playbook_ref")
+        or ""
+    ).strip()
+    if not action_ref:
+        raise HTTPException(status_code=400, detail="Action reference is required")
+
+    actor = auth.subject if auth else payload.approved_by
+    current_state = normalize_workflow_state(str(incident.get("status") or NEW))
+    if current_state == REMEDIATION_SUGGESTED:
+        incident = _transition_incident_with_audit(
+            incident,
+            AWAITING_APPROVAL,
+            actor,
+            "Operator opened remediation workflow.",
+        )
+
+    incident = _transition_incident_with_audit(
+        incident,
+        APPROVED,
+        actor,
+        payload.notes or f"Approved remediation action {action_ref}.",
+    )
     if payload.execute:
         ensure_role(auth, "automation")
 
-    output = "execution skipped"
-    status = "approved"
-    if payload.execute:
-        output, status = _execute_playbook(payload.action)
+    execution_status = "approved"
+    output = "Approval recorded."
+    if payload.execute and action_ref in PLAYBOOKS:
+        incident = _transition_incident_with_audit(
+            incident,
+            EXECUTING,
+            actor,
+            f"Executing automation for {action_ref}.",
+        )
+        output, raw_status = _execute_playbook(action_ref)
+        if raw_status in {"executed", "simulated"}:
+            execution_status = "executed"
+            incident = _transition_incident_with_audit(
+                get_incident(incident_id) or incident,
+                EXECUTED,
+                actor,
+                f"Automation completed for {action_ref}.",
+            )
+        elif raw_status in {"failed", "rejected"}:
+            execution_status = "failed"
+            incident = _transition_incident_with_audit(
+                get_incident(incident_id) or incident,
+                EXECUTION_FAILED,
+                actor,
+                f"Automation failed for {action_ref}.",
+            )
+        else:
+            execution_status = "approved"
+    elif payload.execute:
+        execution_status = "executed"
+        output = payload.notes or f"Manual or notify action {action_ref} recorded as executed."
+        incident = _transition_incident_with_audit(
+            get_incident(incident_id) or incident,
+            EXECUTED,
+            actor,
+            f"Manual or notify action {action_ref} recorded as executed.",
+        )
 
     approval = record_approval(
         incident_id=incident_id,
-        action=payload.action,
+        action=action_ref,
         approved_by=payload.approved_by,
         execute=payload.execute,
-        status=status,
+        status=execution_status,
         output=output,
     )
-    next_status = "resolved" if status in {"executed", "simulated"} else "acknowledged" if status in {"approved", "pending_execution"} else "open"
-    update_incident_status(incident_id, next_status)
+    action_record = record_incident_action(
+        incident_id=incident_id,
+        remediation_id=int(remediation["id"]) if remediation and remediation.get("id") else None,
+        action_mode=str((remediation or {}).get("action_mode") or ("ansible" if action_ref in PLAYBOOKS else "manual")),
+        source_of_action=payload.source_of_action,
+        approved_revision=int((get_incident(incident_id) or incident).get("workflow_revision") or 1),
+        triggered_by=payload.approved_by,
+        execution_status=execution_status,
+        notes=payload.notes,
+        started_at=_now_iso() if payload.execute else None,
+        finished_at=_now_iso() if payload.execute else None,
+        result_summary=output,
+        result_json={"approval_id": approval.get("id"), "execute": payload.execute, "raw_status": execution_status},
+    )
+    record_audit(
+        "incident_approved",
+        payload.approved_by,
+        payload.model_dump(),
+        incident_id=incident_id,
+    )
+    record_audit(
+        "action_executed",
+        payload.approved_by,
+        {
+            "action_ref": action_ref,
+            "execution_status": execution_status,
+            "notes": payload.notes,
+            "result_summary": output,
+        },
+        incident_id=incident_id,
+    )
+    if action_ref in PLAYBOOKS:
+        record_automation(action_ref, execution_status)
+    refreshed_incident = get_incident(incident_id) or incident
+    _sync_current_ticket_best_effort(
+        refreshed_incident,
+        _ticket_note(
+            "Incident action update",
+            [
+                ("Incident", incident_id),
+                ("Workflow state", refreshed_incident.get("status")),
+                ("Operator", payload.approved_by),
+                ("Action", action_ref),
+                ("Remediation", (remediation or {}).get("title")),
+                ("Execution status", execution_status),
+                ("Result", output),
+                ("Comment", payload.notes or "Action recorded from the incident workflow."),
+            ],
+        ),
+        payload.approved_by,
+        "incident_action",
+    )
     set_active_incidents(list_incidents(project=incident["project"]))
-    record_audit("incident_approved", payload.approved_by, payload.model_dump(), incident_id=incident_id)
-    record_automation(payload.action, status)
-    return approval
+    return {
+        "approval": approval,
+        "action": action_record,
+        "workflow": _workflow_payload(refreshed_incident),
+    }
+
+
+@app.post("/incidents/{incident_id}/remediation/{remediation_id}/approve")
+def approve_remediation(
+    incident_id: str,
+    remediation_id: int,
+    payload: RemediationDecisionRequest,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    return _execute_incident_action(
+        incident_id,
+        RemediationActionRequest(
+            remediation_id=remediation_id,
+            approved_by=payload.approved_by,
+            notes=payload.notes,
+            execute=False,
+        ),
+        auth,
+    )
+
+
+@app.post("/incidents/{incident_id}/remediation/{remediation_id}/execute")
+def execute_remediation(
+    incident_id: str,
+    remediation_id: int,
+    payload: RemediationDecisionRequest,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    return _execute_incident_action(
+        incident_id,
+        RemediationActionRequest(
+            remediation_id=remediation_id,
+            approved_by=payload.approved_by,
+            notes=payload.notes,
+            execute=True,
+        ),
+        auth,
+    )
+
+
+@app.post("/incidents/{incident_id}/remediation/{remediation_id}/reject")
+def reject_remediation(
+    incident_id: str,
+    remediation_id: int,
+    payload: RemediationRejectRequest,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    ensure_role(auth, "operator")
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+    remediation = get_incident_remediation(incident_id, remediation_id)
+    if not remediation:
+        raise HTTPException(status_code=404, detail="Remediation not found")
+    updated_remediation = set_incident_remediation_status(incident_id, remediation_id, "rejected")
+    record_audit(
+        "remediation_rejected",
+        payload.rejected_by,
+        {
+            "remediation_id": remediation_id,
+            "title": remediation.get("title"),
+            "notes": payload.notes,
+        },
+        incident_id=incident_id,
+    )
+    updated_incident = get_incident(incident_id) or incident
+    active_items = _current_remediation_items(list_incident_remediations(incident_id))
+    if not active_items and can_transition(str(updated_incident.get("status") or NEW), RCA_REJECTED):
+        updated_incident = _transition_incident_with_audit(
+            updated_incident,
+            RCA_REJECTED,
+            payload.rejected_by,
+            payload.notes or "All current remediation suggestions were rejected.",
+        )
+    updated_incident = get_incident(incident_id) or updated_incident
+    _sync_current_ticket_best_effort(
+        updated_incident,
+        _ticket_note(
+            "Remediation rejection update",
+            [
+                ("Incident", incident_id),
+                ("Workflow state", updated_incident.get("status")),
+                ("Operator", payload.rejected_by),
+                ("Remediation", remediation.get("title")),
+                ("Comment", payload.notes or "Selected remediation was rejected."),
+            ],
+        ),
+        payload.rejected_by,
+        "remediation_rejected",
+    )
+    set_active_incidents(list_incidents(project=incident["project"]))
+    return {
+        "remediation": updated_remediation,
+        "workflow": _workflow_payload(updated_incident),
+    }
 
 
 @app.post("/incidents/{incident_id}/notify/slack")
@@ -931,16 +2190,397 @@ def notify_jira(incident_id: str, auth: AuthContext | None = Depends(require_api
     return result
 
 
-@app.get("/audit")
-def audit(limit: int = 100, auth: AuthContext | None = Depends(require_api_key)):
+@app.post("/incidents/{incident_id}/verify")
+def verify_incident(
+    incident_id: str,
+    payload: VerificationRequest,
+    auth: AuthContext | None = Depends(require_api_key),
+):
     ensure_role(auth, "operator")
-    return list_audit_events(limit=limit)
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+    action = get_incident_action(incident_id, payload.action_id) if payload.action_id is not None else None
+    verification = record_verification(
+        incident_id=incident_id,
+        action_id=payload.action_id,
+        verified_by=payload.verified_by,
+        verification_status=payload.verification_status,
+        notes=payload.notes,
+        custom_resolution=payload.custom_resolution,
+        metric_based=payload.metric_based,
+    )
+    normalized_status = str(payload.verification_status or "").strip().lower()
+    if normalized_status == "verified":
+        updated = _transition_incident_with_audit(
+            incident,
+            VERIFIED,
+            auth.subject if auth else payload.verified_by,
+            payload.notes or "Verification passed.",
+        )
+        if payload.close_after_verify:
+            updated = _transition_incident_with_audit(
+                updated,
+                CLOSED,
+                auth.subject if auth else payload.verified_by,
+                "Incident closed after successful verification.",
+            )
+    elif normalized_status == "false_positive":
+        updated = _transition_incident_with_audit(
+            incident,
+            FALSE_POSITIVE,
+            auth.subject if auth else payload.verified_by,
+            payload.notes or "Marked as false positive.",
+        )
+        if payload.close_after_verify:
+            updated = _transition_incident_with_audit(
+                updated,
+                CLOSED,
+                auth.subject if auth else payload.verified_by,
+                "False positive closed.",
+            )
+    else:
+        updated = _transition_incident_with_audit(
+            incident,
+            VERIFICATION_FAILED,
+            auth.subject if auth else payload.verified_by,
+            payload.notes or "Verification failed or requires more work.",
+        )
+
+    current_ticket = None
+    tickets = list_incident_tickets(incident_id)
+    if tickets:
+        current_ticket = next((ticket for ticket in tickets if ticket.get("id") == updated.get("current_ticket_id")), tickets[0])
+    extract = _maybe_create_resolution_extract(updated, verification, action=action, ticket=current_ticket)
+    if extract:
+        record_audit(
+            "resolution_extract_created",
+            payload.verified_by,
+            extract,
+            incident_id=incident_id,
+        )
+    record_audit(
+        "verification_recorded",
+        payload.verified_by,
+        verification,
+        incident_id=incident_id,
+    )
+    updated = get_incident(incident_id) or updated
+    _sync_current_ticket_best_effort(
+        updated,
+        _ticket_note(
+            "Verification update",
+            [
+                ("Incident", incident_id),
+                ("Workflow state", updated.get("status")),
+                ("Operator", payload.verified_by),
+                ("Outcome", normalized_status or payload.verification_status),
+                ("Related action", (action or {}).get("result_summary") or (action or {}).get("execution_status")),
+                ("Actual fix", payload.custom_resolution),
+                ("Comment", payload.notes or "Verification recorded from the incident workflow."),
+            ],
+        ),
+        payload.verified_by,
+        "verification",
+    )
+    record_verification_metric(normalized_status or "unknown")
+    set_active_incidents(list_incidents(project=incident["project"]))
+    return {
+        "verification": verification,
+        "resolution_extract": extract,
+        "workflow": _workflow_payload(updated),
+    }
+
+
+@app.post("/incidents/{incident_id}/related")
+def related_incident_records(
+    incident_id: str,
+    payload: RelatedRecordsRequest,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    ensure_role(auth, "operator")
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+    documents = retrieve_context(_related_context_query(incident), limit=payload.limit)
+    categorized = _categorize_related_documents(documents)
+    return {
+        "incident_id": incident_id,
+        "documents": documents,
+        **categorized,
+    }
+
+
+@app.get("/incidents/{incident_id}/tickets")
+def list_incident_ticket_references(incident_id: str, auth: AuthContext | None = Depends(require_api_key)):
+    ensure_role(auth, "operator")
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+    workflow = _workflow_payload(incident)
+    return {
+        "tickets": workflow["tickets"],
+        "current_ticket": workflow["current_ticket"],
+    }
+
+
+@app.post("/incidents/{incident_id}/tickets/{provider}")
+def create_or_update_incident_ticket(
+    incident_id: str,
+    provider: str,
+    payload: TicketRequest,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    ensure_role(auth, "operator")
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+    try:
+        result = _sync_ticket_provider(
+            incident,
+            provider,
+            note=payload.note,
+            force=payload.force,
+            source_url=payload.source_url,
+        )
+    except TicketProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "ticket": result,
+        "workflow": _workflow_payload(get_incident(incident_id) or incident),
+    }
+
+
+@app.post("/incidents/{incident_id}/tickets/{ticket_id}/sync")
+def sync_incident_ticket(
+    incident_id: str,
+    ticket_id: int,
+    payload: TicketSyncRequest,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    ensure_role(auth, "operator")
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+    ticket = get_incident_ticket(incident_id, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    try:
+        result = _sync_ticket_provider(
+            incident,
+            str(ticket.get("provider") or "plane"),
+            note=payload.note,
+            force=True,
+            source_url=payload.source_url,
+        )
+    except TicketProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "ticket": result,
+        "workflow": _workflow_payload(get_incident(incident_id) or incident),
+    }
+
+
+@app.get("/tickets/{provider}/{external_id}")
+def get_ticket_reference(
+    provider: str,
+    external_id: str,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    ensure_role(auth, "operator")
+    ticket = get_ticket_by_provider_external_id(provider, external_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    incident_id = str(ticket.get("incident_id") or "")
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+
+    detailed_ticket = ticket | {
+        "sync_events": list_ticket_sync_events(int(ticket["id"]))[:20],
+        "comments": list_ticket_comments(int(ticket["id"]))[:20],
+    }
+    return {
+        "ticket": detailed_ticket,
+        "workflow": _workflow_payload(incident),
+    }
+
+
+@app.post("/incidents/{incident_id}/tickets/{ticket_id}/extract-resolution")
+def extract_ticket_resolution(
+    incident_id: str,
+    ticket_id: int,
+    payload: ResolutionExtractRequest,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    ensure_role(auth, "operator")
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+    ticket = get_incident_ticket(incident_id, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    summary = str(payload.summary or "").strip()
+    if not summary:
+        comments = list_ticket_comments(ticket_id)
+        if payload.source_comment_id:
+            selected = next((comment for comment in comments if comment.get("external_comment_id") == payload.source_comment_id), None)
+            summary = str((selected or {}).get("body") or "").strip()
+        elif comments:
+            summary = str(comments[0].get("body") or "").strip()
+    if not summary:
+        raise HTTPException(status_code=400, detail="No resolution summary available to extract")
+    quality = resolution_quality(True, summary, summary)
+    extract = create_ticket_resolution_extract(
+        incident_id=incident_id,
+        ticket_id=ticket_id,
+        source_comment_id=payload.source_comment_id,
+        summary=summary,
+        verified=payload.verified,
+        verification_quality=quality,
+        knowledge_weight=1.0 if quality == "high" else 0.75 if quality == "medium" else 0.55,
+        success_rate=1.0 if payload.verified else 0.0,
+        last_validated_at=_now_iso(),
+    )
+    _publish_resolution_record(
+        incident,
+        {
+            "verified_by": auth.subject if auth else "operator",
+            "verification_status": "verified" if payload.verified else "candidate",
+            "notes": summary,
+            "custom_resolution": summary,
+        },
+        extract,
+        ticket=ticket,
+    )
+    record_audit("resolution_extract_created", auth.subject if auth else "operator", extract, incident_id=incident_id)
+    return extract
+
+
+@app.post("/integrations/plane/webhooks")
+async def plane_webhook(request: Request):
+    raw_body = await request.body()
+    secret = _plane_webhook_secret()
+    signature = request.headers.get("X-Plane-Signature", "")
+    if secret:
+        expected = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, signature):
+            raise HTTPException(status_code=403, detail="Invalid Plane webhook signature")
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"Invalid webhook payload: {exc}") from exc
+
+    event = str(request.headers.get("X-Plane-Event") or payload.get("event") or "unknown")
+    delivery_id = str(request.headers.get("X-Plane-Delivery") or "")
+    action = str(payload.get("action") or "unknown")
+    data = payload.get("data") or {}
+    if not isinstance(data, dict):
+        data = {}
+
+    external_id = ""
+    if event == "issue":
+        external_id = str(data.get("id") or "")
+    elif event == "issue_comment":
+        external_id = str(
+            data.get("work_item")
+            or data.get("work_item_id")
+            or data.get("issue")
+            or data.get("issue_id")
+            or (data.get("issue_detail") or {}).get("id")
+            or ""
+        )
+
+    ticket = get_ticket_by_provider_external_id("plane", external_id) if external_id else None
+    payload_hash = hashlib.sha256(raw_body).hexdigest()
+    if not ticket:
+        record_ticket_sync("plane", "inbound", "unmapped")
+        return {"status": "ignored", "reason": "No matching Plane ticket", "event": event, "action": action}
+
+    sync_event = record_ticket_sync_event(
+        int(ticket["id"]),
+        "inbound",
+        f"plane_{event}",
+        delivery_id or None,
+        payload_hash,
+        "received",
+        payload if isinstance(payload, dict) else {"value": payload},
+    )
+    if sync_event is None:
+        return {"status": "duplicate", "delivery_id": delivery_id}
+
+    if event == "issue":
+        ticket_metadata = ticket.get("metadata") if isinstance(ticket, dict) else {}
+        if not isinstance(ticket_metadata, dict):
+            ticket_metadata = {}
+        updated_ticket = upsert_incident_ticket(
+            incident_id=str(ticket["incident_id"]),
+            provider="plane",
+            external_key=str(data.get("sequence_id") or ticket.get("external_key") or ""),
+            external_id=str(ticket.get("external_id") or external_id),
+            workspace_id=str(ticket.get("workspace_id") or payload.get("workspace_id") or ""),
+            project_id=str(ticket.get("project_id") or ""),
+            status=str((data.get("state_detail") or {}).get("name") or data.get("state") or action),
+            url=str(ticket.get("url") or ""),
+            title=str(data.get("name") or ticket.get("title") or ""),
+            sync_state="received",
+            last_synced_revision=ticket.get("last_synced_revision"),
+            metadata=ticket_metadata | {"webhook": payload},
+        )
+        record_audit(
+            "plane_webhook_processed",
+            "plane-webhook",
+            {"event": event, "action": action, "ticket_id": updated_ticket.get("id")},
+            incident_id=str(ticket["incident_id"]),
+        )
+    elif event == "issue_comment":
+        body = _text_from_rich_comment(data.get("comment_json") or data.get("comment_html") or "")
+        comment = upsert_ticket_comment(
+            int(ticket["id"]),
+            str(data.get("id") or delivery_id or payload_hash[:12]),
+            _plane_actor_name(payload, data),
+            body,
+            "plane_comment",
+            created_at=str(data.get("created_at") or _now_iso()),
+        )
+        record_audit(
+            "plane_webhook_processed",
+            "plane-webhook",
+            {"event": event, "action": action, "ticket_id": ticket.get("id"), "comment_id": comment.get("id")},
+            incident_id=str(ticket["incident_id"]),
+        )
+    record_ticket_sync("plane", "inbound", "received")
+    return {"status": "processed", "event": event, "action": action}
+
+
+@app.get("/audit")
+def audit(limit: int = 100, incident_id: str | None = None, auth: AuthContext | None = Depends(require_api_key)):
+    ensure_role(auth, "operator")
+    if incident_id:
+        incident = get_incident(incident_id)
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        ensure_project_access(auth, incident["project"])
+    return list_audit_events(limit=limit, incident_id=incident_id)
 
 
 @app.get("/approvals")
-def approvals(limit: int = 100, auth: AuthContext | None = Depends(require_api_key)):
+def approvals(limit: int = 100, incident_id: str | None = None, auth: AuthContext | None = Depends(require_api_key)):
     ensure_role(auth, "operator")
-    return list_approvals(limit=limit)
+    if incident_id:
+        incident = get_incident(incident_id)
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        ensure_project_access(auth, incident["project"])
+    return list_approvals(limit=limit, incident_id=incident_id)
 
 
 @app.get("/models")
@@ -1005,7 +2645,7 @@ def platform_status(auth: AuthContext | None = Depends(require_api_key)):
     incidents = list_incidents()
     return {
         "incident_count": len(incidents),
-        "open_incidents": sum(1 for incident in incidents if incident["status"] == "open"),
+        "open_incidents": sum(1 for incident in incidents if is_active_state(str(incident.get("status") or NEW))),
         "approval_count": len(list_approvals(limit=100)),
         "model_registry": load_registry(),
         "integrations": integration_status(),
@@ -1086,27 +2726,12 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
     rca_error: Dict[str, object] | None = None
     incident: Dict[str, object] | None = None
     if incident_id:
-        try:
-            rca_payload = _request_json(
-                "POST",
-                f"{RCA_SERVICE_URL}/rca",
-                {
-                    "incident_id": incident_id,
-                    "context": {
-                        "project": payload.project,
-                        "scenario_name": scenario_name,
-                        "anomaly_type": score.get("anomaly_type"),
-                        "feature_window_id": feature_window.get("window_id"),
-                        "features": scoring_features,
-                    },
-                },
-            )
-        except HTTPException as exc:
-            rca_error = {
-                "status_code": exc.status_code,
-                "detail": exc.detail,
-            }
-        incident = get_incident(incident_id)
+        incident = _wait_for_incident_rca(incident_id, timeout_seconds=8.0, poll_interval_seconds=0.5)
+        if not incident:
+            incident = get_incident(incident_id)
+        current_rca = (incident or {}).get("rca_payload") or {}
+        if isinstance(current_rca, dict) and current_rca:
+            rca_payload = current_rca
 
     state = _build_console_state(payload.project)
     enriched_incident = None

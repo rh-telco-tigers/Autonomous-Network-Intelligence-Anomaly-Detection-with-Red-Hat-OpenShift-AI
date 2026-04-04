@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plane-app-vars
+  namespace: ims-demo-lab
+data:
+  WEB_URL: https://plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com

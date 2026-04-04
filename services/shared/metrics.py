@@ -5,6 +5,8 @@ from typing import Iterable, Mapping
 from fastapi import FastAPI, Response, Request
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
+from shared.workflow import is_active_state
+
 
 REQUEST_COUNT = Counter(
     "ims_demo_http_requests_total",
@@ -55,6 +57,24 @@ MODEL_PROMOTIONS = Counter(
     ["stage", "status"],
 )
 
+WORKFLOW_TRANSITIONS = Counter(
+    "ims_demo_workflow_transitions_total",
+    "Workflow transitions recorded by the demo control plane",
+    ["from_state", "to_state"],
+)
+
+TICKET_SYNC_EVENTS = Counter(
+    "ims_demo_ticket_sync_events_total",
+    "Ticket creation and sync operations observed by the demo control plane",
+    ["provider", "direction", "status"],
+)
+
+VERIFICATION_EVENTS = Counter(
+    "ims_demo_verification_events_total",
+    "Verification outcomes captured by the demo control plane",
+    ["status"],
+)
+
 
 def record_incident(project: str, anomaly_type: str, status: str) -> None:
     INCIDENT_COUNT.labels(project, anomaly_type, status).inc()
@@ -69,7 +89,7 @@ def set_active_incidents(incidents: Iterable[Mapping[str, object]]) -> None:
             str(incident.get("model_version") or "unknown"),
         )
         for incident in incidents
-        if str(incident.get("status") or "open") == "open"
+        if is_active_state(str(incident.get("status") or incident.get("workflow_state") or "NEW"))
     )
     for (project, anomaly_type, model_version), count in counts.items():
         ACTIVE_INCIDENTS.labels(project, anomaly_type, model_version).set(count)
@@ -89,6 +109,18 @@ def record_integration(integration: str, status: str) -> None:
 
 def record_model_promotion(stage: str, status: str) -> None:
     MODEL_PROMOTIONS.labels(stage, status).inc()
+
+
+def record_workflow_transition(from_state: str, to_state: str) -> None:
+    WORKFLOW_TRANSITIONS.labels(from_state, to_state).inc()
+
+
+def record_ticket_sync(provider: str, direction: str, status: str) -> None:
+    TICKET_SYNC_EVENTS.labels(provider, direction, status).inc()
+
+
+def record_verification(status: str) -> None:
+    VERIFICATION_EVENTS.labels(status).inc()
 
 
 def install_metrics(app: FastAPI, service_name: str) -> None:

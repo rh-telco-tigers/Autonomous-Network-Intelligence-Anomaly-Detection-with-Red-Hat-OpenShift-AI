@@ -128,9 +128,27 @@ spec:
             - name: MILVUS_URI
               value: http://milvus.ims-demo-lab.svc.cluster.local:19530
             - name: MILVUS_COLLECTIONS
-              value: ims_runbooks,ims_incidents,ims_topology,ims_signal_patterns
+              value: ims_runbooks,incident_evidence,incident_reasoning,incident_resolution,ims_topology,ims_signal_patterns
             - name: LLM_ENDPOINT
-              value: http://ims-generative-proxy.ims-demo-lab.svc.cluster.local:8080
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_ENDPOINT
+            - name: LLM_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_MODEL
+            - name: LLM_REQUEST_TIMEOUT_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_REQUEST_TIMEOUT_SECONDS
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-provider-auth
+                  key: LLM_API_KEY
             - name: RAG_ROOT_DIR
               value: /app/ai/rag
           resources:
@@ -155,9 +173,9 @@ spec:
           resources:
             $patch: replace
             requests:
-              memory: 24Mi
+              memory: 128Mi
             limits:
-              memory: 64Mi
+              memory: 256Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
