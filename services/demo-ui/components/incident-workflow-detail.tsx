@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Bot, Info, Sparkles } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -67,6 +68,7 @@ type RcaGenerationInfo = {
   retrievedDocumentCount: number;
   llmUsed: boolean;
   llmConfigured: boolean;
+  provenanceLabel: string;
 };
 
 type RelatedDocument = {
@@ -1057,7 +1059,10 @@ export function IncidentWorkflowDetail() {
             <Card>
               <CardHeader className="flex-row items-start justify-between gap-4">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">AI analysis</div>
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">
+                    <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" aria-hidden="true" />
+                    <span>AI analysis</span>
+                  </div>
                   <CardTitle className="mt-1">Root cause and recommendation</CardTitle>
                   <CardDescription>The AI explanation is kept separate from raw system signals so operators can judge it clearly.</CardDescription>
                 </div>
@@ -1066,28 +1071,62 @@ export function IncidentWorkflowDetail() {
                     {generateRcaMutation.isPending ? "Generating..." : "Generate RCA"}
                   </Button>
                 ) : (
-                  <div
-                    className={cn(
-                      "rounded-full border px-3 py-1 text-xs font-medium",
-                      latestRcaGeneration.llmUsed
-                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
-                        : latestRcaGeneration.llmConfigured
-                          ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
-                          : "border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-[var(--text-secondary)]",
-                    )}
-                  >
-                    {latestRcaGeneration.sourceLabel}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <AiGeneratedBadge generation={latestRcaGeneration} />
+                    <div
+                      className={cn(
+                        "rounded-full border px-3 py-1 text-xs font-medium",
+                        latestRcaGeneration.llmUsed
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                          : latestRcaGeneration.llmConfigured
+                            ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                            : "border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-[var(--text-secondary)]",
+                      )}
+                    >
+                      {latestRcaGeneration.sourceLabel}
+                    </div>
                   </div>
                 )}
               </CardHeader>
               <CardContent className="space-y-4">
+                {hasRca ? (
+                  <div className="flex items-start gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                    <div
+                      className={cn(
+                        "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border",
+                        latestRcaGeneration.llmUsed
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                          : latestRcaGeneration.llmConfigured
+                            ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                            : "border-[var(--border-subtle)] bg-[var(--surface-raised)] text-[var(--text-secondary)]",
+                      )}
+                    >
+                      {latestRcaGeneration.llmUsed ? <Bot className="h-4 w-4" aria-hidden="true" /> : <Info className="h-4 w-4" aria-hidden="true" />}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{latestRcaGeneration.provenanceLabel}</div>
+                      <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{latestRcaGeneration.summary}</p>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
-                  <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Analysis</div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Analysis</div>
+                    {hasRca ? <AiContentPill generation={latestRcaGeneration} /> : null}
+                  </div>
                   <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{latestRcaAnalysis}</p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <SummaryItem label="Root cause summary" value={latestRca?.root_cause || "Pending RCA"} />
-                  <SummaryItem label="Recommended action" value={latestRcaRecommendation} />
+                  <SummaryItem
+                    label="Root cause summary"
+                    value={latestRca?.root_cause || "Pending RCA"}
+                    meta={hasRca ? <AiContentPill generation={latestRcaGeneration} /> : undefined}
+                  />
+                  <SummaryItem
+                    label="Recommended action"
+                    value={latestRcaRecommendation}
+                    meta={hasRca ? <AiContentPill generation={latestRcaGeneration} /> : undefined}
+                  />
                 </div>
                 <div className="grid gap-4 md:grid-cols-4">
                   <SummaryItem label="Confidence" value={rcaConfidenceLabel} />
@@ -1612,10 +1651,57 @@ function StepReferenceCard({ steps, planeState }: { steps: GuideStep[]; planeSta
   );
 }
 
-function SummaryItem({ label, value }: { label: string; value: React.ReactNode }) {
+function AiGeneratedBadge({ generation }: { generation: RcaGenerationInfo }) {
+  return (
+    <div
+      className={cn(
+        "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium",
+        generation.llmUsed
+          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+          : generation.llmConfigured
+            ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+            : "border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-[var(--text-secondary)]",
+      )}
+    >
+      {generation.llmUsed ? <Bot className="h-3.5 w-3.5" aria-hidden="true" /> : <Info className="h-3.5 w-3.5" aria-hidden="true" />}
+      <span>{generation.provenanceLabel}</span>
+    </div>
+  );
+}
+
+function AiContentPill({ generation }: { generation: RcaGenerationInfo }) {
+  return (
+    <div
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em]",
+        generation.llmUsed
+          ? "border-emerald-500/25 bg-emerald-500/8 text-emerald-200/90"
+          : generation.llmConfigured
+            ? "border-amber-500/25 bg-amber-500/8 text-amber-200/90"
+            : "border-[var(--border-subtle)] bg-[var(--surface-raised)] text-[var(--text-secondary)]",
+      )}
+    >
+      {generation.llmUsed ? <Sparkles className="h-3 w-3" aria-hidden="true" /> : <Info className="h-3 w-3" aria-hidden="true" />}
+      <span>{generation.llmUsed ? "AI generated" : "Fallback"}</span>
+    </div>
+  );
+}
+
+function SummaryItem({
+  label,
+  value,
+  meta,
+}: {
+  label: string;
+  value: React.ReactNode;
+  meta?: React.ReactNode;
+}) {
   return (
     <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-      <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{label}</div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{label}</div>
+        {meta}
+      </div>
       <div className="mt-2 text-sm text-[var(--text-strong)]">{value}</div>
     </div>
   );
@@ -2173,13 +2259,20 @@ function buildRcaGenerationInfo(source?: RcaRecord | RcaPayload | null): RcaGene
       ? source.retrieval_refs.length
       : 0;
 
+  let provenanceLabel = "Local summary";
   let summary = "This RCA does not include generation metadata yet.";
   if (llmUsed) {
-    summary = `This RCA was generated by the LLM using retrieved platform context${model !== "Not recorded" ? ` on ${model}` : ""}.`;
+    provenanceLabel = "AI generated";
+    summary =
+      `Generated by the AI reasoning service` +
+      `${model !== "Not recorded" ? ` with ${model}` : ""}` +
+      `${runtime !== "Not recorded" ? ` via ${runtime}` : ""}` +
+      `${retrievedDocuments ? ` and grounded with ${retrievedDocuments} retrieved evidence references.` : "."}`;
   } else if (llmConfigured) {
-    summary = "This RCA used the local fallback path for this run even though an LLM was configured.";
+    provenanceLabel = "Fallback summary";
+    summary = "This RCA used the local fallback path for this run even though an AI runtime was configured.";
   } else {
-    summary = "This RCA used the local fallback path because no LLM endpoint was configured for the service.";
+    summary = "This RCA used the local fallback path because no AI runtime was configured for the service.";
   }
 
   return {
@@ -2190,6 +2283,7 @@ function buildRcaGenerationInfo(source?: RcaRecord | RcaPayload | null): RcaGene
     retrievedDocumentCount: retrievedDocuments,
     llmUsed,
     llmConfigured,
+    provenanceLabel,
   };
 }
 
