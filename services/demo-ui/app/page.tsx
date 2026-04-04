@@ -24,15 +24,24 @@ import { useConsoleStateQuery } from "@/lib/api";
 import { formatInteger, formatRelativeNumber, formatTime, titleize } from "@/lib/utils";
 
 const chartPalette = ["#38bdf8", "#f97316", "#ef4444", "#10b981", "#8b5cf6", "#facc15", "#14b8a6", "#fb7185"];
+const chartTickStyle = { fill: "var(--chart-axis)", fontSize: 12 };
+const chartTooltipContentStyle = {
+  backgroundColor: "var(--chart-tooltip-bg)",
+  borderColor: "var(--chart-tooltip-border)",
+  borderRadius: 16,
+  color: "var(--chart-tooltip-text)",
+};
+const chartTooltipLabelStyle = { color: "var(--chart-tooltip-label)", fontWeight: 600 };
+const chartTooltipItemStyle = { color: "var(--chart-tooltip-text)" };
 
 export default function OverviewPage() {
   const { data, isLoading, error } = useConsoleStateQuery();
 
   if (isLoading) {
-    return <div className="text-sm text-slate-400">Loading overview...</div>;
+    return <div className="text-sm text-[var(--text-muted)]">Loading overview...</div>;
   }
   if (error || !data) {
-    return <div className="text-sm text-rose-300">Could not load overview data.</div>;
+    return <div className="text-sm text-[var(--danger-fg)]">Could not load overview data.</div>;
   }
 
   const incidentMix = data.incidents.reduce<Array<{ name: string; value: number }>>((acc, incident) => {
@@ -85,10 +94,14 @@ export default function OverviewPage() {
           <CardContent className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.summary.workflow_state_distribution}>
-                <CartesianGrid stroke="#1e293b" vertical={false} />
-                <XAxis dataKey="state" tick={{ fill: "#94a3b8", fontSize: 12 }} interval={0} angle={-25} height={80} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                <Tooltip />
+                <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
+                <XAxis dataKey="state" tick={chartTickStyle} interval={0} angle={-25} height={80} />
+                <YAxis tick={chartTickStyle} />
+                <Tooltip
+                  contentStyle={chartTooltipContentStyle}
+                  labelStyle={chartTooltipLabelStyle}
+                  itemStyle={chartTooltipItemStyle}
+                />
                 <Bar dataKey="count" fill="#38bdf8" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -110,6 +123,9 @@ export default function OverviewPage() {
                     ))}
                   </Pie>
                   <Tooltip
+                    contentStyle={chartTooltipContentStyle}
+                    labelStyle={chartTooltipLabelStyle}
+                    itemStyle={chartTooltipItemStyle}
                     formatter={(value, name) => [
                       Number(value ?? 0),
                       titleize(String(name ?? "")),
@@ -134,10 +150,14 @@ export default function OverviewPage() {
             {scoreTrend.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={scoreTrend}>
-                  <CartesianGrid stroke="#1e293b" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                  <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} domain={[0, 1]} />
-                  <Tooltip />
+                  <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
+                  <XAxis dataKey="name" tick={chartTickStyle} />
+                  <YAxis tick={chartTickStyle} domain={[0, 1]} />
+                  <Tooltip
+                    contentStyle={chartTooltipContentStyle}
+                    labelStyle={chartTooltipLabelStyle}
+                    itemStyle={chartTooltipItemStyle}
+                  />
                   <Line type="monotone" dataKey="score" stroke="#f97316" strokeWidth={3} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
@@ -157,16 +177,18 @@ export default function OverviewPage() {
               <Link
                 key={incident.id}
                 href={`/incidents/${incident.id}`}
-                className="block rounded-2xl border border-slate-800 bg-slate-900/70 p-4 transition-colors hover:bg-slate-900"
+                className="block rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4 transition-colors hover:bg-[var(--surface-hover)]"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="font-medium text-slate-50">{titleize(incident.anomaly_type)}</div>
-                    <div className="mt-1 text-sm text-slate-400">{incident.subtitle ?? incident.impact ?? "Incident workflow item"}</div>
+                    <div className="font-medium text-[var(--text-strong)]">{titleize(incident.anomaly_type)}</div>
+                    <div className="mt-1 text-sm text-[var(--text-secondary)]">
+                      {incident.subtitle ?? incident.impact ?? "Incident workflow item"}
+                    </div>
                   </div>
                   <StatusBadge value={incident.status} />
                 </div>
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                <div className="mt-3 flex items-center justify-between text-xs text-[var(--text-subtle)]">
                   <span>Score {formatRelativeNumber(incident.anomaly_score)}</span>
                   <span>{formatTime(incident.updated_at)}</span>
                 </div>
@@ -186,7 +208,7 @@ function MetricCard({ label, value, detail }: { label: string; value: string; de
         <CardDescription>{label}</CardDescription>
         <CardTitle className="text-3xl">{value}</CardTitle>
       </CardHeader>
-      <CardContent className="text-sm text-slate-400">{detail}</CardContent>
+      <CardContent className="text-sm text-[var(--text-muted)]">{detail}</CardContent>
     </Card>
   );
 }

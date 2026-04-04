@@ -1517,7 +1517,7 @@ export function IncidentWorkflowDetail() {
       </Card>
 
       <div className="text-sm text-[var(--text-muted)]">
-        <Link href="/incidents" className="text-sky-300">
+        <Link href="/incidents" className="text-[var(--accent)]">
           Back to incident queue
         </Link>
       </div>
@@ -1533,7 +1533,7 @@ function WorkflowStageDock({
   status: WorkflowState;
 }) {
   return (
-    <Card className="border-[var(--border-subtle)] bg-[var(--surface)]/95 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-[var(--surface)]/85">
+    <Card className="border-[var(--border-subtle)] bg-[var(--surface-raised)] shadow-lg backdrop-blur supports-[backdrop-filter]:bg-[var(--surface-raised)]">
       <CardContent className="space-y-4 p-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>

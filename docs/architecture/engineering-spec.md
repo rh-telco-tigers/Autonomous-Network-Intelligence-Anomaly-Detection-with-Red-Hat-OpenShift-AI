@@ -605,6 +605,158 @@ Response:
 }
 ```
 
+##### Current Runtime Constraint in This Repo
+
+The checked-in implementation is Triton-specific today.
+
+- `k8s/base/serving/featurestore-serving.yaml` binds `ims-predictive-fs` to `nvidia-triton-runtime` with `modelFormat.name: triton`
+- `ai/training/featurestore_train.py` exports a Triton repository made of `config.pbtxt`, `model.py`, and `weights.json`
+- the same training path generates deployment YAML with `modelFormat.name: triton` and a Triton runtime name
+- `services/shared/model_store.py` calls the V2 endpoint at `/v2/models/{model_name}/infer` and treats the first output tensor as the anomaly score
+
+This means the current serving path is compatible with Triton both at the API layer and at the artifact-layout layer.
+
+##### MLServer Evaluation
+
+MLServer is a credible next runtime candidate because it supports the KServe V2 inference protocol, REST and gRPC endpoints, multi-model serving, adaptive batching, parallel inference workers, and framework-specific or custom runtimes. It is also the Python inference server used by KServe for several model formats, including scikit-learn, XGBoost, LightGBM, and MLflow ([MLServer](https://github.com/seldonio/mlserver), [KServe ServingRuntime](https://kserve.github.io/website/latest/modelserving/servingruntimes/)).
+
+For this repo, the fastest MLServer path is not a direct port of the Triton Python backend. The fastest path is a second export mode that packages the serving model as a scikit-learn `joblib` artifact and serves it through an MLServer sklearn runtime.
+
+##### Can Triton Be Replaced In Place?
+
+| Layer | Simple swap? | Why |
+| --- | --- | --- |
+| KServe V2 REST and gRPC protocol | mostly yes | both runtimes can expose the V2 inference protocol |
+| existing client URL shape | partially | the current client can keep using `/v2/models/{model_name}/infer`, but output tensor semantics must still match |
+| current model artifact layout | no | Triton expects a Triton model repository, while MLServer expects framework-native artifacts plus MLServer model settings |
+| ServingRuntime manifest | no | image, environment variables, supported model formats, and metrics conventions differ |
+| training and deployment pipeline | no | current export and generated deployment YAML are hardcoded to Triton |
+| safe rollout strategy | no | replacing Triton in place would combine runtime, artifact, client, and observability changes in one step |
+
+Decision:
+
+- keep the existing Triton endpoints running
+- add MLServer as a side-by-side candidate runtime
+- only consider cutover after artifact parity, output parity, and smoke-test parity are demonstrated
+
+##### Target Side-by-Side Serving Design
+
+```mermaid
+flowchart LR
+  KFP["feature-store KFP pipeline"] --> ExportT["Triton export"]
+  KFP --> ExportM["MLServer sklearn export"]
+  ExportT --> TritonISVC["ims-predictive-fs<br/>Triton InferenceService"]
+  ExportM --> MLISVC["ims-predictive-fs-mlserver<br/>MLServer InferenceService"]
+  Client["anomaly-service / control-plane"] --> Adapter["score adapter"]
+  Adapter --> TritonISVC
+  Adapter -. smoke tests / canary .-> MLISVC
+  TritonISVC --> Compare["score, latency, and error comparison"]
+  MLISVC --> Compare
+```
+
+##### MLServer Artifact Contract
+
+Recommended storage layout:
+
+```text
+s3://ims-models/predictive-featurestore-mlserver/ims-predictive-fs-mlserver/current/
+  model-settings.json
+  model.joblib
+  serving-metadata.json
+```
+
+Minimal `model-settings.json`:
+
+```json
+{
+  "name": "ims-predictive-fs-mlserver",
+  "implementation": "mlserver_sklearn.SKLearnModel",
+  "parameters": {
+    "uri": "./model.joblib",
+    "version": "current"
+  }
+}
+```
+
+Required rules:
+
+- preserve the exact numeric feature order already used by the Triton path
+- preserve the same anomaly threshold in `serving-metadata.json`
+- return an anomaly score or probability, not only a class label
+- do not point MLServer at the existing Triton repository prefix
+
+##### ServingRuntime and InferenceService Resources
+
+Checked-in scaffolding:
+
+- `k8s/base/serving/mlserver-runtime-template.yaml`
+- `k8s/base/serving/featurestore-serving-mlserver.yaml`
+
+Deployment intent:
+
+- `mlserver-sklearn-runtime` is the opt-in ServingRuntime for MLServer-backed sklearn artifacts
+- `ims-predictive-fs-mlserver` is the side-by-side candidate endpoint
+- these manifests are intentionally not added to `k8s/base/serving/kustomization.yaml` until the export path writes MLServer-compatible artifacts
+
+##### Required Repo Changes Before Cutover
+
+1. Training export
+   - extend `ai/training/featurestore_train.py` with a serving backend switch such as `triton|mlserver`
+   - keep `_export_triton_repository()` for the active path
+   - add an MLServer export function that writes `model.joblib`, `model-settings.json`, and `serving-metadata.json`
+   - generate MLServer deployment YAML with `modelFormat.name: sklearn`
+2. Registry and metadata
+   - record `serving_runtime`, `serving_model_format`, and `serving_protocol`
+   - distinguish Triton and MLServer storage URIs in registry metadata
+3. Scoring client
+   - keep `services/shared/model_store.py` on the V2 `/infer` endpoint
+   - add explicit validation of output tensor name, type, and shape
+   - add runtime-aware configuration such as `PREDICTIVE_RUNTIME` or candidate-endpoint settings for smoke tests
+4. Smoke tests
+   - compare Triton and MLServer responses on the same feature vectors
+   - verify returned score, threshold behavior, latency, and error handling
+   - only promote MLServer after parity is acceptable
+5. Observability
+   - add a PodMonitor for MLServer at port `8080`
+   - keep Triton dashboards unchanged and add comparison dashboards for MLServer as needed
+
+##### Inference Endpoint Contract For MLServer
+
+Active Triton path:
+
+- `http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080`
+
+Candidate MLServer path:
+
+- `http://ims-predictive-fs-mlserver-predictor.ims-demo-lab.svc.cluster.local:8080`
+
+Request contract should remain:
+
+```json
+{
+  "inputs": [
+    {
+      "name": "predict",
+      "shape": [1, 9],
+      "datatype": "FP32",
+      "data": [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
+    }
+  ]
+}
+```
+
+Response acceptance rules:
+
+- the first output must be numeric
+- the output must represent anomaly score or probability, not only a class label
+- the client must reject unexpected output shapes instead of silently accepting nested values
+
+##### Recommended Rollout Decision
+
+- keep Triton as the current production/default runtime
+- introduce MLServer as a side-by-side candidate runtime
+- do not perform an in-place Triton-to-MLServer swap until artifact layout, response semantics, and observability are aligned
+
 ## 5. RCA Architecture (vLLM and Milvus)
 
 ### 5.1 Data Sources for Milvus

@@ -198,10 +198,13 @@ def _remote_score(features: Dict[str, object], threshold: float) -> float | None
             return None
         output = outputs[0]
         raw = output.get("data", [0.0])
+        output_name = str(output.get("name", "")).lower()
         value = raw[0] if isinstance(raw, list) else raw
         while isinstance(value, list):
             if not value:
                 return None
+            if output_name == "predict_proba" and len(value) >= 2 and all(not isinstance(item, list) for item in value):
+                return float(value[1])
             value = value[0]
         value = float(value)
         datatype = str(output.get("datatype", "")).upper()

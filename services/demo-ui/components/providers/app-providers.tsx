@@ -34,6 +34,14 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  React.useEffect(() => {
+    const storedTheme = window.localStorage.getItem(themeStorageKey)?.trim();
+    if (storedTheme === "light" || storedTheme === "dark") {
+      return;
+    }
+    window.localStorage.setItem(themeStorageKey, "dark");
+  }, []);
+
   const setToken = React.useCallback(
     (value: string) => {
       const next = value.trim() || "demo-token";
@@ -45,7 +53,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange storageKey={themeStorageKey}>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange storageKey={themeStorageKey}>
       <ApiTokenContext.Provider value={{ token, setToken }}>
         <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
       </ApiTokenContext.Provider>

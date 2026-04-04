@@ -1,0 +1,79 @@
+# Opt-in MLServer runtime kept separate from the base kustomization so the
+# rollout can stay side-by-side with the active Triton path.
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: mlserver-sklearn-runtime-template
+  namespace: redhat-ods-applications
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    description: MLServer runtime for side-by-side predictive model serving.
+    opendatahub.io/apiProtocol: REST
+    opendatahub.io/model-type: '["predictive-mlserver"]'
+    opendatahub.io/modelServingSupport: '["single"]'
+    openshift.io/display-name: MLServer SKLearn Runtime
+    openshift.io/provider-display-name: Red Hat, Inc.
+    tags: rhods,rhoai,kserve,servingruntime,mlserver,sklearn
+    template.openshift.io/long-description: This template defines resources needed to deploy an MLServer ServingRuntime with KServe in Red Hat OpenShift AI.
+  labels:
+    app: odh-dashboard
+    app.kubernetes.io/part-of: odh-model-controller
+    app.opendatahub.io/odh-model-controller: "true"
+    opendatahub.io/dashboard: "true"
+    platform.opendatahub.io/part-of: modelcontroller
+objects:
+  - apiVersion: serving.kserve.io/v1alpha1
+    kind: ServingRuntime
+    metadata:
+      name: mlserver-sklearn-runtime
+      annotations:
+        opendatahub.io/apiProtocol: REST
+        opendatahub.io/runtime-version: 1.7.1
+        opendatahub.io/serving-runtime-scope: global
+        opendatahub.io/template-display-name: MLServer SKLearn Runtime
+        opendatahub.io/template-name: mlserver-sklearn-runtime-template
+        openshift.io/display-name: MLServer SKLearn Runtime
+      labels:
+        opendatahub.io/dashboard: "true"
+    spec:
+      annotations:
+        monitoring.opendatahub.io/scrape: "true"
+        opendatahub.io/kserve-runtime: mlserver
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8082"
+      supportedModelFormats:
+        - name: sklearn
+          version: "0"
+          autoSelect: true
+      protocolVersions:
+        - v2
+      multiModel: false
+      containers:
+        - name: kserve-container
+          image: docker.io/seldonio/mlserver:1.7.1
+          env:
+            - name: MLSERVER_MODEL_IMPLEMENTATION
+              value: mlserver_sklearn.SKLearnModel
+            - name: MLSERVER_HTTP_PORT
+              value: "8080"
+            - name: MLSERVER_GRPC_PORT
+              value: "9000"
+            - name: MLSERVER_METRICS_PORT
+              value: "8082"
+            - name: MODELS_DIR
+              value: /mnt/models
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+            - containerPort: 9000
+              protocol: TCP
+              name: grpc
+            - containerPort: 8082
+              protocol: TCP
+              name: metrics
+          resources:
+            requests:
+              cpu: 100m
+              memory: 1Gi
+            limits:
+              memory: 2Gi

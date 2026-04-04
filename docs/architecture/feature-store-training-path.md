@@ -460,6 +460,8 @@ Rules:
 - do not replace `ims-predictive` on the first rollout
 - keep the current serving runtime available for fallback
 - expose the new service independently and compare readiness, metrics, and model outputs before cutover
+- keep Triton as the active runtime during the first new-path rollout
+- evaluate MLServer only as a side-by-side candidate runtime, not as an in-place replacement
 
 ### 10.2 Serving Artifact
 
@@ -470,6 +472,11 @@ Initial recommendation:
 - keep exporting a Triton-serving repository for the first new path
 - store the artifact in object storage
 - register the artifact location in the Red Hat OpenShift AI Model Registry
+
+MLServer evaluation note:
+
+- MLServer is a valid future candidate because it supports the KServe V2 protocol and framework-native runtimes, but it should be introduced as a second serving target with a separate artifact export path
+- do not point MLServer at the Triton repository directly; produce a dedicated MLServer bundle instead
 
 ### 10.3 Inference Integration Options
 

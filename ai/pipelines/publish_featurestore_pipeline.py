@@ -28,6 +28,9 @@ DEFAULT_PIPELINE_PARAMETERS = {
     "model_version_name": "ims-anomaly-featurestore-v1",
     "serving_model_name": "ims-predictive-fs",
     "serving_runtime_name": "nvidia-triton-runtime",
+    "serving_model_format_name": "triton",
+    "serving_model_format_version": "2",
+    "serving_protocol_version": "v2",
     "serving_prefix": "predictive-featurestore",
     "serving_alias": "current",
 }

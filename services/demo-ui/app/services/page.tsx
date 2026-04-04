@@ -43,10 +43,10 @@ export default function ServicesPage() {
   }, []);
 
   if (isLoading) {
-    return <div className="text-sm text-slate-400">Loading services...</div>;
+    return <div className="text-sm text-[var(--text-muted)]">Loading services...</div>;
   }
   if (error || !data) {
-    return <div className="text-sm text-rose-300">Could not load service data.</div>;
+    return <div className="text-sm text-[var(--danger-fg)]">Could not load service data.</div>;
   }
 
   const routeLinks = buildRouteLinks(origin, data.integrations);
@@ -74,12 +74,12 @@ export default function ServicesPage() {
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {data.services.map((service) => (
-            <div key={service.name} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+            <div key={service.name} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
               <div className="flex items-center justify-between gap-3">
-                <div className="font-medium text-slate-50">{service.name}</div>
+                <div className="font-medium text-[var(--text-strong)]">{service.name}</div>
                 <StatusBadge value={titleize(service.status)} />
               </div>
-              <div className="mt-3 text-sm text-slate-400">{service.endpoint}</div>
+              <div className="mt-3 text-sm text-[var(--text-secondary)]">{service.endpoint}</div>
             </div>
           ))}
         </CardContent>
@@ -93,16 +93,16 @@ export default function ServicesPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {Object.entries(data.integrations).map(([name, value]) => (
-              <div key={name} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+              <div key={name} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="font-medium text-slate-50">{titleize(name)}</div>
+                  <div className="font-medium text-[var(--text-strong)]">{titleize(name)}</div>
                   <StatusBadge value={String(value.live_configured ? "Live" : value.mode ?? "Unknown")} />
                 </div>
-                <div className="mt-2 text-sm text-slate-400">
+                <div className="mt-2 text-sm text-[var(--text-secondary)]">
                   Mode: {String(value.mode ?? "unknown")} · Configured: {String(value.configured ?? false)}
                 </div>
                 {name === "plane" && !value.live_configured ? (
-                  <div className="mt-2 text-sm text-slate-500">
+                  <div className="mt-2 text-sm text-[var(--text-subtle)]">
                     No standalone Plane route is exposed in demo-relay mode. Open Plane-linked tickets from the incident page instead.
                   </div>
                 ) : null}
@@ -119,10 +119,13 @@ export default function ServicesPage() {
           <CardContent className="space-y-3">
             {configuredLinks.length ? (
               configuredLinks.map((link) => (
-                <div key={link.label} className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                <div
+                  key={link.label}
+                  className="flex items-center justify-between rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4"
+                >
                   <div>
-                    <div className="font-medium text-slate-50">{link.label}</div>
-                    <div className="text-sm text-slate-500">{link.url}</div>
+                    <div className="font-medium text-[var(--text-strong)]">{link.label}</div>
+                    <div className="text-sm text-[var(--text-subtle)]">{link.url}</div>
                   </div>
                   <Button asChild variant="secondary">
                     <a href={link.url} target="_blank" rel="noreferrer">
@@ -133,7 +136,7 @@ export default function ServicesPage() {
                 </div>
               ))
             ) : (
-              <div className="text-sm text-slate-500">No public route links have been configured for this deployment yet.</div>
+              <div className="text-sm text-[var(--text-subtle)]">No public route links have been configured for this deployment yet.</div>
             )}
           </CardContent>
         </Card>

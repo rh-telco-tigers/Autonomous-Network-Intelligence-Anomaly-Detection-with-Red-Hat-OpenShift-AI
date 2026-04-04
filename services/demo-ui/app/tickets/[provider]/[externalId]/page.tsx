@@ -19,10 +19,10 @@ export default function TicketDetailPage() {
   const { data, isLoading, error } = useTicketLookupQuery(provider, externalId);
 
   if (isLoading) {
-    return <div className="text-sm text-slate-400">Loading ticket view...</div>;
+    return <div className="text-sm text-[var(--text-muted)]">Loading ticket view...</div>;
   }
   if (error || !data) {
-    return <div className="text-sm text-rose-300">Could not load this ticket reference.</div>;
+    return <div className="text-sm text-[var(--danger-fg)]">Could not load this ticket reference.</div>;
   }
 
   const ticket = data.ticket;
@@ -64,7 +64,9 @@ export default function TicketDetailPage() {
               <StatusBadge value={incident.status} />
               <StatusBadge value={incident.severity} />
             </div>
-            <div className="text-sm text-slate-300">{incident.subtitle ?? incident.narrative ?? "No additional incident summary available."}</div>
+            <div className="text-sm text-[var(--text-secondary)]">
+              {incident.subtitle ?? incident.narrative ?? "No additional incident summary available."}
+            </div>
             <div className="flex flex-wrap gap-2">
               <Button asChild>
                 <Link href={`/incidents/${encodeURIComponent(incident.id)}`}>Open incident workflow</Link>
@@ -107,9 +109,9 @@ export default function TicketDetailPage() {
 
 function SummaryItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-      <div className="text-xs uppercase tracking-[0.2em] text-slate-500">{label}</div>
-      <div className="mt-2 text-sm text-slate-100">{value}</div>
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+      <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-subtle)]">{label}</div>
+      <div className="mt-2 text-sm text-[var(--text-strong)]">{value}</div>
     </div>
   );
 }
@@ -133,9 +135,12 @@ function ListCard({
       <CardContent className="space-y-3">
         {items.length ? (
           items.map((item) => (
-            <div key={`${item.title}-${item.description}`} className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
-              <div className="font-medium text-slate-50">{item.title}</div>
-              <div className="mt-1 text-sm text-slate-400">{item.description}</div>
+            <div
+              key={`${item.title}-${item.description}`}
+              className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4"
+            >
+              <div className="font-medium text-[var(--text-strong)]">{item.title}</div>
+              <div className="mt-1 text-sm text-[var(--text-secondary)]">{item.description}</div>
             </div>
           ))
         ) : (

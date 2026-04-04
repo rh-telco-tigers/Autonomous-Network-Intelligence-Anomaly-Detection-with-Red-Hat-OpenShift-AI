@@ -41,8 +41,8 @@ export function IncidentsPageClient({ initialFilters }: { initialFilters: Filter
         header: "Incident",
         cell: ({ row }) => (
           <div>
-            <div className="font-medium text-slate-50">{titleize(row.original.anomaly_type)}</div>
-            <div className="text-xs text-slate-500">{row.original.id}</div>
+            <div className="font-medium text-[var(--text-strong)]">{titleize(row.original.anomaly_type)}</div>
+            <div className="text-xs text-[var(--text-subtle)]">{row.original.id}</div>
           </div>
         ),
       },
@@ -70,7 +70,7 @@ export function IncidentsPageClient({ initialFilters }: { initialFilters: Filter
         id: "open",
         header: "",
         cell: ({ row }) => (
-          <Link href={`/incidents/${row.original.id}`} className="text-sm font-medium text-sky-300">
+          <Link href={`/incidents/${row.original.id}`} className="text-sm font-medium text-[var(--accent)]">
             Open
           </Link>
         ),
@@ -145,15 +145,15 @@ export function IncidentsPageClient({ initialFilters }: { initialFilters: Filter
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="text-sm text-slate-400">Loading incidents...</div>
+            <div className="text-sm text-[var(--text-muted)]">Loading incidents...</div>
           ) : error ? (
-            <div className="text-sm text-rose-300">Could not load incidents.</div>
+            <div className="text-sm text-[var(--danger-fg)]">Could not load incidents.</div>
           ) : !data?.length ? (
             <EmptyState title="No incidents match these filters" description="Adjust the queue filters or wait for new incidents." />
           ) : (
-            <div className="overflow-hidden rounded-2xl border border-slate-800">
+            <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)]">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-900/80 text-slate-400">
+                <thead className="bg-[var(--surface-raised)] text-[var(--text-muted)]">
                   {table.getHeaderGroups().map((headerGroup) => (
                     <tr key={headerGroup.id}>
                       {headerGroup.headers.map((header) => (
@@ -166,7 +166,10 @@ export function IncidentsPageClient({ initialFilters }: { initialFilters: Filter
                 </thead>
                 <tbody>
                   {table.getRowModel().rows.map((row) => (
-                    <tr key={row.id} className="border-t border-slate-800 bg-slate-950/40 hover:bg-slate-900/70">
+                    <tr
+                      key={row.id}
+                      className="border-t border-[var(--border-subtle)] bg-[var(--surface-subtle)] hover:bg-[var(--surface-hover)]"
+                    >
                       {row.getVisibleCells().map((cell) => (
                         <td key={cell.id} className="px-4 py-3 align-top">
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}

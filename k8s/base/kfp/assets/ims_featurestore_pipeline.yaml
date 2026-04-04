@@ -9,8 +9,11 @@
 #    model_name: str [Default: 'ims-anomaly-featurestore']
 #    model_version_name: str [Default: 'ims-anomaly-featurestore-v1']
 #    serving_alias: str [Default: 'current']
+#    serving_model_format_name: str [Default: 'triton']
+#    serving_model_format_version: str [Default: '2']
 #    serving_model_name: str [Default: 'ims-predictive-fs']
 #    serving_prefix: str [Default: 'predictive-featurestore']
+#    serving_protocol_version: str [Default: 'v2']
 #    serving_runtime_name: str [Default: 'nvidia-triton-runtime']
 components:
   comp-evaluate-models:
@@ -41,12 +44,24 @@ components:
           defaultValue: current
           isOptional: true
           parameterType: STRING
+        serving_model_format_name:
+          defaultValue: triton
+          isOptional: true
+          parameterType: STRING
+        serving_model_format_version:
+          defaultValue: '2'
+          isOptional: true
+          parameterType: STRING
         serving_model_name:
           defaultValue: ims-predictive-fs
           isOptional: true
           parameterType: STRING
         serving_prefix:
           defaultValue: predictive-featurestore
+          isOptional: true
+          parameterType: STRING
+        serving_protocol_version:
+          defaultValue: v2
           isOptional: true
           parameterType: STRING
         serving_runtime_name:
@@ -272,6 +287,12 @@ deploymentSpec:
         - '{{$.inputs.parameters[''serving_model_name'']}}'
         - --serving-runtime-name
         - '{{$.inputs.parameters[''serving_runtime_name'']}}'
+        - --serving-model-format-name
+        - '{{$.inputs.parameters[''serving_model_format_name'']}}'
+        - --serving-model-format-version
+        - '{{$.inputs.parameters[''serving_model_format_version'']}}'
+        - --serving-protocol-version
+        - '{{$.inputs.parameters[''serving_protocol_version'']}}'
         - --serving-prefix
         - '{{$.inputs.parameters[''serving_prefix'']}}'
         - --serving-alias
@@ -757,10 +778,16 @@ root:
                 producerTask: select-best
             serving_alias:
               componentInputParameter: serving_alias
+            serving_model_format_name:
+              componentInputParameter: serving_model_format_name
+            serving_model_format_version:
+              componentInputParameter: serving_model_format_version
             serving_model_name:
               componentInputParameter: serving_model_name
             serving_prefix:
               componentInputParameter: serving_prefix
+            serving_protocol_version:
+              componentInputParameter: serving_protocol_version
             serving_runtime_name:
               componentInputParameter: serving_runtime_name
             training_manifest:
@@ -955,12 +982,24 @@ root:
         defaultValue: current
         isOptional: true
         parameterType: STRING
+      serving_model_format_name:
+        defaultValue: triton
+        isOptional: true
+        parameterType: STRING
+      serving_model_format_version:
+        defaultValue: '2'
+        isOptional: true
+        parameterType: STRING
       serving_model_name:
         defaultValue: ims-predictive-fs
         isOptional: true
         parameterType: STRING
       serving_prefix:
         defaultValue: predictive-featurestore
+        isOptional: true
+        parameterType: STRING
+      serving_protocol_version:
+        defaultValue: v2
         isOptional: true
         parameterType: STRING
       serving_runtime_name:

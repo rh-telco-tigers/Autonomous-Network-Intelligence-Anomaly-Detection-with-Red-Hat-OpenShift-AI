@@ -1,0 +1,52 @@
+# Opt-in MLServer endpoint kept separate from the base kustomization so it can
+# be validated against the active Triton endpoint before any cutover.
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: ims-predictive-fs-mlserver
+  namespace: ims-demo-lab
+  labels:
+    opendatahub.io/dashboard: "true"
+  annotations:
+    opendatahub.io/model-type: predictive-featurestore-mlserver
+    openshift.io/display-name: ims-predictive-fs-mlserver
+    serving.kserve.io/deploymentMode: RawDeployment
+    serving.kserve.io/enable-prometheus-scraping: "true"
+    ims.redhat.com/serving-alias: current
+    ims.redhat.com/implementation-note: Side-by-side MLServer endpoint; validate against Triton before any cutover.
+spec:
+  predictor:
+    serviceAccountName: model-storage-sa
+    minReplicas: 1
+    maxReplicas: 1
+    model:
+      runtime: mlserver-sklearn-runtime
+      modelFormat:
+        name: sklearn
+      protocolVersion: v2
+      storageUri: s3://ims-models/predictive-featurestore-mlserver/ims-predictive-fs-mlserver/current/
+      resources:
+        requests:
+          cpu: 100m
+          memory: 1Gi
+        limits:
+          memory: 2Gi
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: ims-predictive-fs-mlserver-metrics
+  namespace: ims-demo-lab
+  labels:
+    monitoring.opendatahub.io/scrape: "true"
+spec:
+  namespaceSelector:
+    matchNames:
+      - ims-demo-lab
+  selector:
+    matchLabels:
+      serving.kserve.io/inferenceservice: ims-predictive-fs-mlserver
+  podMetricsEndpoints:
+    - path: /metrics
+      targetPort: 8082
+      interval: 30s

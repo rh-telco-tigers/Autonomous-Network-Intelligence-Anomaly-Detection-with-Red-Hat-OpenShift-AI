@@ -14,10 +14,10 @@ export default function DemoPage() {
   const scenarioRunner = useScenarioRunner();
 
   if (isLoading) {
-    return <div className="text-sm text-slate-400">Loading scenarios...</div>;
+    return <div className="text-sm text-[var(--text-muted)]">Loading scenarios...</div>;
   }
   if (error || !data) {
-    return <div className="text-sm text-rose-300">Could not load demo scenario data.</div>;
+    return <div className="text-sm text-[var(--danger-fg)]">Could not load demo scenario data.</div>;
   }
 
   const latest = scenarioRunner.data ?? null;
@@ -40,15 +40,15 @@ export default function DemoPage() {
             {data.scenarios.map((scenario) => (
               <button
                 key={scenario.scenario_name}
-                className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-left transition-colors hover:bg-slate-900"
+                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-left transition-colors hover:bg-[var(--surface-hover)]"
                 onClick={() => scenarioRunner.mutate(scenario.scenario_name)}
                 disabled={scenarioRunner.isPending}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="font-medium text-slate-50">{scenario.display_name}</div>
+                  <div className="font-medium text-[var(--text-strong)]">{scenario.display_name}</div>
                   <StatusBadge value={scenario.is_nominal ? "Normal" : "Scenario"} />
                 </div>
-                <div className="mt-2 text-sm text-slate-400">{scenario.description}</div>
+                <div className="mt-2 text-sm text-[var(--text-secondary)]">{scenario.description}</div>
               </button>
             ))}
           </CardContent>
@@ -62,13 +62,13 @@ export default function DemoPage() {
           <CardContent className="space-y-4">
             {latest ? (
               <>
-                <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-                  <div className="font-medium text-slate-50">{titleize(latest.scenario)}</div>
-                  <div className="mt-1 text-sm text-slate-400">
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <div className="font-medium text-[var(--text-strong)]">{titleize(latest.scenario)}</div>
+                  <div className="mt-1 text-sm text-[var(--text-secondary)]">
                     Score {formatRelativeNumber(Number(latest.score.anomaly_score ?? 0))} ·{" "}
                     {String(latest.score.is_anomaly ? "Anomaly detected" : "No incident")}
                   </div>
-                  <div className="mt-2 text-xs text-slate-500">{formatTime(new Date().toISOString())}</div>
+                  <div className="mt-2 text-xs text-[var(--text-subtle)]">{formatTime(new Date().toISOString())}</div>
                 </div>
                 {latest.incident?.id ? (
                   <Button asChild className="w-full">
@@ -77,9 +77,9 @@ export default function DemoPage() {
                 ) : null}
               </>
             ) : (
-              <div className="text-sm text-slate-500">No scenario has been run from this page yet.</div>
+              <div className="text-sm text-[var(--text-subtle)]">No scenario has been run from this page yet.</div>
             )}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-400">
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm text-[var(--text-secondary)]">
               {scenarioRunner.isPending
                 ? "Executing scenario through feature generation, anomaly scoring, RCA, and workflow updates."
                 : "Scenario execution updates the incident queue and traffic stream without polluting overview controls."}

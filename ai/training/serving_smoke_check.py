@@ -120,12 +120,20 @@ def _infer(endpoint: str, model_name: str, features: dict[str, float]) -> float:
     outputs = response.json().get("outputs", [])
     if not outputs:
         raise ValueError("Predictive response is missing outputs")
-    value: Any = outputs[0].get("data", [0.0])
+    output = outputs[0]
+    value: Any = output.get("data", [0.0])
+    output_name = str(output.get("name", "")).lower()
     while isinstance(value, list):
         if not value:
             raise ValueError("Predictive response contains an empty output payload")
+        if output_name == "predict_proba" and len(value) >= 2 and all(not isinstance(item, list) for item in value):
+            return float(value[1])
         value = value[0]
-    return float(value)
+    datatype = str(output.get("datatype", "")).upper()
+    scalar = float(value)
+    if datatype.startswith("INT") or datatype.startswith("UINT"):
+        return 1.0 if scalar >= 1.0 else 0.0
+    return scalar
 
 
 def main() -> None:

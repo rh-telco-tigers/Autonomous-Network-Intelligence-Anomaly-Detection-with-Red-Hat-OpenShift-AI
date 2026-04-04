@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   color-scheme: light;
   --app-body-bg: #f4f7fb;
@@ -41,6 +43,12 @@
   --info-bg: rgba(14, 165, 233, 0.14);
   --info-fg: #075985;
   --info-ring: rgba(14, 165, 233, 0.24);
+  --chart-grid: rgba(100, 116, 139, 0.22);
+  --chart-axis: #64748b;
+  --chart-tooltip-bg: rgba(255, 255, 255, 0.98);
+  --chart-tooltip-border: rgba(100, 116, 139, 0.28);
+  --chart-tooltip-label: #020617;
+  --chart-tooltip-text: #334155;
 }
 
 html.dark {
@@ -51,6 +59,7 @@ html.dark {
     linear-gradient(#020617, #020617);
   --app-sidebar-bg: rgba(2, 6, 23, 0.95);
   --app-topbar-bg: rgba(2, 6, 23, 0.7);
+  --surface: rgba(15, 23, 42, 0.88);
   --surface-subtle: rgba(15, 23, 42, 0.4);
   --surface-raised: rgba(15, 23, 42, 0.78);
   --surface-strong: rgba(15, 23, 42, 0.92);
@@ -83,6 +92,12 @@ html.dark {
   --info-bg: rgba(14, 165, 233, 0.12);
   --info-fg: #7dd3fc;
   --info-ring: rgba(14, 165, 233, 0.2);
+  --chart-grid: rgba(51, 65, 85, 0.72);
+  --chart-axis: #94a3b8;
+  --chart-tooltip-bg: rgba(15, 23, 42, 0.96);
+  --chart-tooltip-border: rgba(51, 65, 85, 0.9);
+  --chart-tooltip-label: #f8fafc;
+  --chart-tooltip-text: #cbd5e1;
 }
 
 * {

@@ -6,24 +6,28 @@ This phase exposes the selected anomaly model through a stable inference runtime
 
 ## Status
 
-This phase is live in the current demo through the `ims-predictive` serving path. A side-by-side Feature-Store-driven serving path is planned for future rollout.
+This phase is live in the current demo through the `ims-predictive` and `ims-predictive-fs` Triton-backed serving paths. A side-by-side MLServer candidate path is the next serving experiment, but Triton remains the active default runtime.
 
 ## What This Phase Covers
 
 - package the winning model for serving
-- publish the model into the Triton repository layout
+- publish the model into the active serving artifact layout
 - expose the runtime through OpenShift AI model serving
 - provide stable REST and gRPC inference endpoints
-- support side-by-side serving when a new path is introduced
+- support side-by-side serving when a new runtime path is introduced
 
 ## Stage Diagram
 
 ```mermaid
 flowchart LR
-  Registry["approved model version"] --> Repo["Triton model repository"]
-  Repo --> MinIO["MinIO model storage"]
-  MinIO --> Serve["KServe / Triton InferenceService"]
-  Serve --> API["REST and gRPC endpoints"]
+  Registry["approved model version"] --> TritonRepo["Triton model repository"]
+  Registry --> MLRepo["MLServer model bundle"]
+  TritonRepo --> MinIO["MinIO model storage"]
+  MLRepo --> MinIO
+  MinIO --> TritonServe["KServe / Triton InferenceService"]
+  MinIO --> MLServe["KServe / MLServer InferenceService"]
+  TritonServe --> API["REST and gRPC endpoints"]
+  MLServe --> API
   API --> Consumers["anomaly-service and platform consumers"]
 ```
 
@@ -31,13 +35,14 @@ flowchart LR
 
 - approved model artifact and metadata
 - serving compatibility contract
-- runtime configuration for KServe and Triton
+- runtime configuration for KServe, Triton, and candidate MLServer paths
 
 ## Outputs
 
 - deployed inference runtime
 - stable inference endpoints
 - serving metadata that downstream services can trust
+- side-by-side comparison path when a new runtime is introduced
 
 ## Current Repo Touchpoints
 

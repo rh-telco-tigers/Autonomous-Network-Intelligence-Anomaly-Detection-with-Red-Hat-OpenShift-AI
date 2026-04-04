@@ -10,14 +10,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useConsoleStateQuery } from "@/lib/api";
 import { formatRelativeNumber, formatTime, titleize } from "@/lib/utils";
 
+const chartTickStyle = { fill: "var(--chart-axis)", fontSize: 12 };
+const chartTooltipContentStyle = {
+  backgroundColor: "var(--chart-tooltip-bg)",
+  borderColor: "var(--chart-tooltip-border)",
+  borderRadius: 16,
+  color: "var(--chart-tooltip-text)",
+};
+const chartTooltipLabelStyle = { color: "var(--chart-tooltip-label)", fontWeight: 600 };
+const chartTooltipItemStyle = { color: "var(--chart-tooltip-text)" };
+
 export default function LiveTrafficPage() {
   const { data, isLoading, error } = useConsoleStateQuery(5_000);
 
   if (isLoading) {
-    return <div className="text-sm text-slate-400">Loading traffic stream...</div>;
+    return <div className="text-sm text-[var(--text-muted)]">Loading traffic stream...</div>;
   }
   if (error || !data) {
-    return <div className="text-sm text-rose-300">Could not load live traffic data.</div>;
+    return <div className="text-sm text-[var(--danger-fg)]">Could not load live traffic data.</div>;
   }
 
   const trafficTrend = data.traffic_stream
@@ -100,10 +110,14 @@ export default function LiveTrafficPage() {
             {fallbackTrend.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={fallbackTrend}>
-                  <CartesianGrid stroke="#1e293b" vertical={false} />
-                  <XAxis dataKey="time" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                  <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                  <Tooltip />
+                  <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
+                  <XAxis dataKey="time" tick={chartTickStyle} />
+                  <YAxis tick={chartTickStyle} />
+                  <Tooltip
+                    contentStyle={chartTooltipContentStyle}
+                    labelStyle={chartTooltipLabelStyle}
+                    itemStyle={chartTooltipItemStyle}
+                  />
                   <Area type="monotone" dataKey="requests" stroke="#38bdf8" fill="#0ea5e933" strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
@@ -119,7 +133,7 @@ export default function LiveTrafficPage() {
             <CardDescription>The most recent traffic preview currently attached to the console state.</CardDescription>
           </CardHeader>
           <CardContent>
-            <pre className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300">
+            <pre className="overflow-x-auto rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4 text-sm text-[var(--text-secondary)]">
               {data.traffic_preview.packet_sample || "No packet sample available."}
             </pre>
           </CardContent>
@@ -133,9 +147,9 @@ export default function LiveTrafficPage() {
         </CardHeader>
         <CardContent>
           {hasSnapshotRows ? (
-            <div className="overflow-hidden rounded-2xl border border-slate-800">
+            <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)]">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-900/80 text-slate-400">
+                <thead className="bg-[var(--surface-raised)] text-[var(--text-muted)]">
                   <tr>
                     <th className="px-4 py-3 font-medium">Time</th>
                     <th className="px-4 py-3 font-medium">Method</th>
@@ -146,14 +160,14 @@ export default function LiveTrafficPage() {
                 </thead>
                 <tbody>
                   {data.traffic_preview.rows.map((row) => (
-                    <tr key={`${row.sequence}-${row.time}`} className="border-t border-slate-800 bg-slate-950/40">
-                      <td className="px-4 py-3 text-slate-400">{row.time}</td>
-                      <td className="px-4 py-3 font-medium text-slate-50">{row.method}</td>
-                      <td className="px-4 py-3 text-slate-300">{row.path}</td>
+                    <tr key={`${row.sequence}-${row.time}`} className="border-t border-[var(--border-subtle)] bg-[var(--surface-subtle)]">
+                      <td className="px-4 py-3 text-[var(--text-muted)]">{row.time}</td>
+                      <td className="px-4 py-3 font-medium text-[var(--text-strong)]">{row.method}</td>
+                      <td className="px-4 py-3 text-[var(--text-secondary)]">{row.path}</td>
                       <td className="px-4 py-3">
                         <StatusBadge value={row.status} />
                       </td>
-                      <td className="px-4 py-3 text-slate-300">{formatRelativeNumber(row.latency_ms)} ms</td>
+                      <td className="px-4 py-3 text-[var(--text-secondary)]">{formatRelativeNumber(row.latency_ms)} ms</td>
                     </tr>
                   ))}
                 </tbody>
@@ -174,9 +188,9 @@ export default function LiveTrafficPage() {
           {!data.traffic_stream.length ? (
             <EmptyState title="No traffic events yet" description="Run a scenario or wait for traffic to populate the stream." />
           ) : (
-            <div className="overflow-hidden rounded-2xl border border-slate-800">
+            <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)]">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-900/80 text-slate-400">
+                <thead className="bg-[var(--surface-raised)] text-[var(--text-muted)]">
                   <tr>
                     <th className="px-4 py-3 font-medium">Scenario</th>
                     <th className="px-4 py-3 font-medium">Traffic</th>
@@ -187,10 +201,10 @@ export default function LiveTrafficPage() {
                 </thead>
                 <tbody>
                   {data.traffic_stream.map((item) => (
-                    <tr key={`${item.executed_at}-${item.scenario}`} className="border-t border-slate-800 bg-slate-950/40">
+                    <tr key={`${item.executed_at}-${item.scenario}`} className="border-t border-[var(--border-subtle)] bg-[var(--surface-subtle)]">
                       <td className="px-4 py-3">
-                        <div className="font-medium text-slate-50">{titleize(item.scenario)}</div>
-                        <div className="text-xs text-slate-500">{item.feature_source}</div>
+                        <div className="font-medium text-[var(--text-strong)]">{titleize(item.scenario)}</div>
+                        <div className="text-xs text-[var(--text-subtle)]">{item.feature_source}</div>
                       </td>
                       <td className="px-4 py-3">
                         {formatRelativeNumber(item.traffic_preview.stats.requests_per_second)} req/s · retry{" "}
@@ -199,19 +213,19 @@ export default function LiveTrafficPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <StatusBadge value={item.is_anomaly ? "Anomaly" : "Normal"} />
-                          <span className="text-slate-300">{formatRelativeNumber(item.anomaly_score)}</span>
+                          <span className="text-[var(--text-secondary)]">{formatRelativeNumber(item.anomaly_score)}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3">
                         {item.incident_id ? (
-                          <Link href={`/incidents/${item.incident_id}`} className="text-sky-300">
+                          <Link href={`/incidents/${item.incident_id}`} className="text-[var(--accent)]">
                             Open incident
                           </Link>
                         ) : (
-                          <span className="text-slate-500">No incident</span>
+                          <span className="text-[var(--text-subtle)]">No incident</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-slate-400">{formatTime(item.executed_at)}</td>
+                      <td className="px-4 py-3 text-[var(--text-muted)]">{formatTime(item.executed_at)}</td>
                     </tr>
                   ))}
                 </tbody>

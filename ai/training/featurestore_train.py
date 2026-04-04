@@ -19,6 +19,7 @@ if str(REPO_ROOT) not in sys.path:
 
 import boto3
 from botocore.config import Config
+from joblib import dump as joblib_dump
 import pandas as pd
 
 from ai.training.build_feature_bundle import build_bundle, localize_bundle_manifest, resolve_bundle_manifest
@@ -63,6 +64,8 @@ DEFAULT_SERVING_ALIAS = "current"
 DEFAULT_PIPELINE_NAME = "ims-featurestore-train-and-register"
 DEFAULT_MODEL_FORMAT_NAME = "triton"
 DEFAULT_MODEL_FORMAT_VERSION = "2"
+DEFAULT_PROTOCOL_VERSION = "v2"
+DEFAULT_MLSERVER_IMPLEMENTATION = "mlserver_sklearn.SKLearnModel"
 DEFAULT_FEATURESTORE_MODE = "local"
 DEFAULT_MANAGED_FEATURESTORE_PROJECT = "ims_anomaly_featurestore"
 DEFAULT_MANAGED_FEATURESTORE_REGISTRY_PATH = "feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443"
@@ -210,6 +213,15 @@ def _parse_source_dataset_versions(raw_value: str) -> list[str]:
             raise ValueError("--source-dataset-versions-json must be a JSON array of strings")
         return [item.strip() for item in parsed]
     return [item.strip() for item in stripped.split(",") if item.strip()]
+
+
+def _serving_backend(model_format_name: str) -> str:
+    normalized = (model_format_name or DEFAULT_MODEL_FORMAT_NAME).strip().lower()
+    if normalized == "triton":
+        return "triton"
+    if normalized == "sklearn":
+        return "mlserver-sklearn"
+    raise ValueError(f"Unsupported serving model format {model_format_name!r}")
 
 
 def _build_bundle_step(
@@ -512,6 +524,44 @@ def _export_triton_repository(
     }
 
 
+def _export_mlserver_bundle(
+    serving_root: Path,
+    serving_model_name: str,
+    model,
+    source_model_version: str,
+) -> Dict[str, Path]:
+    if serving_root.exists():
+        shutil.rmtree(serving_root)
+    serving_root.mkdir(parents=True, exist_ok=True)
+
+    model_path = serving_root / "model.joblib"
+    joblib_dump(model, model_path)
+
+    model_settings_path = serving_root / "model-settings.json"
+    model_settings_path.write_text(
+        json.dumps(
+            {
+                "name": serving_model_name,
+                "implementation": DEFAULT_MLSERVER_IMPLEMENTATION,
+                "parameters": {
+                    "uri": "./model.joblib",
+                    "version": source_model_version,
+                    "extra": {
+                        "predict_fn": "predict_proba",
+                    },
+                },
+            },
+            indent=2,
+        )
+    )
+
+    return {
+        "repository_root": serving_root,
+        "model_artifact_path": model_path,
+        "model_settings_path": model_settings_path,
+    }
+
+
 def _upload_serving_bundle(
     serving_repository_root: Path,
     *,
@@ -579,8 +629,11 @@ def _export_serving_artifact_step(
     artifact_dir: str,
     serving_model_name: str,
     serving_runtime_name: str,
+    serving_model_format_name: str,
+    serving_model_format_version: str,
     serving_prefix: str,
     serving_alias: str,
+    protocol_version: str = DEFAULT_PROTOCOL_VERSION,
 ) -> Dict[str, Any]:
     training_manifest = _load_training_manifest(training_manifest_path)
     selection_manifest = _json_load(selection_manifest_path)
@@ -595,13 +648,21 @@ def _export_serving_artifact_step(
     artifact_dir_path = Path(artifact_dir)
     artifact_dir_path.mkdir(parents=True, exist_ok=True)
     serving_root = artifact_dir_path.parent / "serving" / serving_model_name
-    serving_root.mkdir(parents=True, exist_ok=True)
-    triton_export = _export_triton_repository(
-        serving_root=serving_root,
-        serving_model_name=serving_model_name,
-        model=serving_model,
-        source_model_version=selected_version,
-    )
+    serving_backend = _serving_backend(serving_model_format_name)
+    if serving_backend == "triton":
+        serving_export = _export_triton_repository(
+            serving_root=serving_root,
+            serving_model_name=serving_model_name,
+            model=serving_model,
+            source_model_version=selected_version,
+        )
+    else:
+        serving_export = _export_mlserver_bundle(
+            serving_root=serving_root,
+            serving_model_name=serving_model_name,
+            model=serving_model,
+            source_model_version=selected_version,
+        )
     metadata_path = artifact_dir_path.parent / "serving" / f"{serving_model_name}-metadata.json"
     serving_metadata = {
         "bundle_version": training_manifest["bundle_version"],
@@ -610,6 +671,10 @@ def _export_serving_artifact_step(
         "selected_artifact_path": selected_artifact_path,
         "serving_model_name": serving_model_name,
         "serving_runtime_name": serving_runtime_name,
+        "serving_model_format_name": serving_model_format_name,
+        "serving_model_format_version": serving_model_format_version,
+        "serving_protocol_version": protocol_version,
+        "serving_backend": serving_backend,
         "serving_metrics": serving_metrics,
         "created_at": _now(),
     }
@@ -633,13 +698,26 @@ def _export_serving_artifact_step(
         "training_manifest": training_manifest_path,
         "selection_manifest": selection_manifest_path,
         "serving_repository_path": str(serving_root),
-        "serving_weights_path": str(triton_export["weights_path"]),
         "serving_storage_uri": upload["storage_uri"],
         "serving_alias_storage_uri": upload["alias_storage_uri"],
-        "serving_weights_uri": upload["weights_uri"],
-        "serving_alias_weights_uri": upload["alias_weights_uri"],
         "deployment_readiness_status": deployment_readiness,
         "minio_upload": upload,
+        **(
+            {
+                "serving_weights_path": str(serving_export["weights_path"]),
+                "serving_weights_uri": upload["weights_uri"],
+                "serving_alias_weights_uri": upload["alias_weights_uri"],
+            }
+            if serving_backend == "triton"
+            else {
+                "serving_model_artifact_path": str(serving_export["model_artifact_path"]),
+                "serving_model_settings_path": str(serving_export["model_settings_path"]),
+                "serving_model_artifact_uri": f"{upload['storage_uri']}model.joblib",
+                "serving_model_settings_uri": f"{upload['storage_uri']}model-settings.json",
+                "serving_alias_model_artifact_uri": f"{upload['alias_storage_uri']}model.joblib",
+                "serving_alias_model_settings_uri": f"{upload['alias_storage_uri']}model-settings.json",
+            }
+        ),
     }
 
 
@@ -659,14 +737,18 @@ def _register_model_version_step(
         bundle_version=export_manifest["bundle_version"],
         feature_schema_version=FEATURE_SCHEMA_VERSION,
         feature_service_name=feature_service_name or export_manifest["feature_service_name"],
-        model_format_name=DEFAULT_MODEL_FORMAT_NAME,
-        model_format_version=DEFAULT_MODEL_FORMAT_VERSION,
+        model_format_name=export_manifest.get("serving_model_format_name", DEFAULT_MODEL_FORMAT_NAME),
+        model_format_version=export_manifest.get("serving_model_format_version", DEFAULT_MODEL_FORMAT_VERSION),
         pipeline_name=pipeline_name,
         metrics=export_manifest["serving_metrics"],
         deployment_readiness_status=export_manifest.get("deployment_readiness_status", "needs-review"),
         metadata={
             "serving_model_name": export_manifest["serving_model_name"],
             "serving_runtime_name": export_manifest["serving_runtime_name"],
+            "serving_model_format_name": export_manifest.get("serving_model_format_name", DEFAULT_MODEL_FORMAT_NAME),
+            "serving_model_format_version": export_manifest.get("serving_model_format_version", DEFAULT_MODEL_FORMAT_VERSION),
+            "serving_protocol_version": export_manifest.get("serving_protocol_version", DEFAULT_PROTOCOL_VERSION),
+            "serving_backend": export_manifest.get("serving_backend", _serving_backend(DEFAULT_MODEL_FORMAT_NAME)),
             "selected_model_version": export_manifest["selected_model_version"],
             "serving_alias_storage_uri": export_manifest.get("serving_alias_storage_uri", ""),
             "description": f"Feature-store-trained IMS anomaly model for bundle {export_manifest['bundle_version']}",
@@ -691,11 +773,13 @@ def _deployment_yaml(
     *,
     serving_model_name: str,
     serving_runtime_name: str,
+    serving_model_format_name: str,
     service_account_name: str,
     storage_uri: str,
     bundle_version: str,
     feature_service_name: str,
     selected_model_version: str,
+    protocol_version: str,
 ) -> str:
     return "\n".join(
         [
@@ -720,8 +804,8 @@ def _deployment_yaml(
             "    model:",
             f"      runtime: {serving_runtime_name}",
             "      modelFormat:",
-            "        name: triton",
-            "      protocolVersion: v2",
+            f"        name: {serving_model_format_name}",
+            f"      protocolVersion: {protocol_version}",
             f"      storageUri: {storage_uri}",
             "      resources:",
             "        requests:",
@@ -747,17 +831,22 @@ def _publish_deployment_manifest_step(
     deployment_yaml = _deployment_yaml(
         serving_model_name=export_manifest["serving_model_name"],
         serving_runtime_name=export_manifest["serving_runtime_name"],
+        serving_model_format_name=export_manifest.get("serving_model_format_name", DEFAULT_MODEL_FORMAT_NAME),
         service_account_name=service_account_name,
         storage_uri=export_manifest.get("serving_alias_storage_uri", export_manifest["serving_storage_uri"]),
         bundle_version=export_manifest["bundle_version"],
         feature_service_name=export_manifest["feature_service_name"],
         selected_model_version=export_manifest["selected_model_version"],
+        protocol_version=export_manifest.get("serving_protocol_version", DEFAULT_PROTOCOL_VERSION),
     )
     deployment_path.write_text(deployment_yaml)
     compatibility_manifest_path = deployment_root / f"{export_manifest['serving_model_name']}-compatibility.json"
     compatibility_manifest = {
         "serving_model_name": export_manifest["serving_model_name"],
         "serving_runtime_name": export_manifest["serving_runtime_name"],
+        "serving_model_format_name": export_manifest.get("serving_model_format_name", DEFAULT_MODEL_FORMAT_NAME),
+        "serving_model_format_version": export_manifest.get("serving_model_format_version", DEFAULT_MODEL_FORMAT_VERSION),
+        "serving_protocol_version": export_manifest.get("serving_protocol_version", DEFAULT_PROTOCOL_VERSION),
         "bundle_version": export_manifest["bundle_version"],
         "selected_model_version": export_manifest["selected_model_version"],
         "versioned_storage_uri": export_manifest["serving_storage_uri"],
@@ -804,6 +893,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--model-version-name")
     parser.add_argument("--serving-model-name", default=DEFAULT_SERVING_MODEL_NAME)
     parser.add_argument("--serving-runtime-name", default=DEFAULT_SERVING_RUNTIME_NAME)
+    parser.add_argument("--serving-model-format-name", default=DEFAULT_MODEL_FORMAT_NAME)
+    parser.add_argument("--serving-model-format-version", default=DEFAULT_MODEL_FORMAT_VERSION)
+    parser.add_argument("--serving-protocol-version", default=DEFAULT_PROTOCOL_VERSION)
     parser.add_argument("--serving-prefix", default=DEFAULT_SERVING_PREFIX)
     parser.add_argument("--serving-alias", default=DEFAULT_SERVING_ALIAS)
     parser.add_argument("--service-account-name", default=DEFAULT_SERVING_SERVICE_ACCOUNT)
@@ -881,8 +973,11 @@ def main() -> None:
             args.artifact_dir,
             args.serving_model_name,
             args.serving_runtime_name,
+            args.serving_model_format_name,
+            args.serving_model_format_version,
             args.serving_prefix,
             args.serving_alias,
+            args.serving_protocol_version,
         )
     elif args.step == "register-model-version":
         if not args.export_manifest:
