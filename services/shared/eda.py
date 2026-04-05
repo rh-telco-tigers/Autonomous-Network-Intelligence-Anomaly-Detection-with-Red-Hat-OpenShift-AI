@@ -442,6 +442,8 @@ def _rulebooks_by_name(project_id: int) -> Dict[str, Dict[str, Any]]:
     payload = _request("GET", "/api/eda/v1/rulebooks/", params={"page_size": 200})
     matches: Dict[str, Dict[str, Any]] = {}
     for item in payload.get("results", []):
+        if not isinstance(item, dict):
+            continue
         if int(item.get("project_id") or 0) != project_id:
             continue
         name = str(item.get("name") or "")
@@ -510,21 +512,28 @@ def _ensure_activation(
         if current != desired[field]:
             patch[field] = desired[field]
     if patch:
-        try:
-            _request("PATCH", f"/api/eda/v1/activations/{existing['id']}/", expected_status=(200,), json=patch)
-        except EDAAutomationError as exc:
-            if ": 409 " not in str(exc):
-                raise
-            _replace_activation(int(existing["id"]), desired)
-            return _find_named_item("/api/eda/v1/activations/", str(definition["name"])) or {}
-    if not bool(existing.get("is_enabled")):
+        activation_id = int(existing["id"])
+        if bool(existing.get("is_enabled")):
+            _request(
+                "POST",
+                f"/api/eda/v1/activations/{activation_id}/disable/",
+                expected_status=(200, 201, 202, 409),
+            )
+            _wait_for_activation_stopped(activation_id)
+        _request("PATCH", f"/api/eda/v1/activations/{activation_id}/", expected_status=(200,), json=patch)
+        existing = _request("GET", f"/api/eda/v1/activations/{activation_id}/")
+    if desired["is_enabled"] and not bool(existing.get("is_enabled")):
         _request("POST", f"/api/eda/v1/activations/{existing['id']}/enable/", expected_status=(200, 201, 202))
     return _request("GET", f"/api/eda/v1/activations/{existing['id']}/")
 
 
 def _policy_status() -> List[Dict[str, Any]]:
     payload = _request("GET", "/api/eda/v1/activations/", params={"page_size": 200})
-    activations = {str(item.get("name") or ""): item for item in payload.get("results", [])}
+    activations = {
+        str(item.get("name") or ""): item
+        for item in payload.get("results", [])
+        if isinstance(item, dict)
+    }
     policies: List[Dict[str, Any]] = []
     for item in policy_catalog():
         activation = activations.get(str(item["name"]))
@@ -573,6 +582,8 @@ def _ensure_awx_token_id() -> int:
     name = _controller_token_name()
     payload = _request("GET", "/api/eda/v1/users/me/awx-tokens/", params={"page_size": 200})
     for item in payload.get("results", []):
+        if not isinstance(item, dict):
+            continue
         if str(item.get("name") or "") == name:
             return int(item["id"])
 
@@ -588,6 +599,8 @@ def _ensure_awx_token_id() -> int:
         params={"page_size": 200},
     )
     for item in existing_tokens.get("results", []):
+        if not isinstance(item, dict):
+            continue
         if str(item.get("description") or "") == name:
             _controller_request("DELETE", f"/api/v2/tokens/{item['id']}/", expected_status=(204,))
 
@@ -613,10 +626,16 @@ def _ensure_awx_token_id() -> int:
     )
     return int(created_awx_token["id"])
 
-
-def _replace_activation(activation_id: int, desired: Dict[str, Any]) -> None:
-    _request("DELETE", f"/api/eda/v1/activations/{activation_id}/", expected_status=(200, 202, 204))
-    _request("POST", "/api/eda/v1/activations/", expected_status=(200, 201), json=desired)
+def _wait_for_activation_stopped(activation_id: int) -> None:
+    deadline = time.time() + float(os.getenv("EDA_ACTIVATION_STOP_TIMEOUT_SECONDS", "90"))
+    while time.time() < deadline:
+        activation = _request("GET", f"/api/eda/v1/activations/{activation_id}/")
+        if not bool(activation.get("is_enabled")) and str(activation.get("status") or "").lower() in {"stopped", "disabled"}:
+            return
+        time.sleep(3)
+    raise EDAAutomationError(
+        f"EDA activation {activation_id} did not stop after disable within the configured timeout."
+    )
 
 
 def _activation_event_stream_urls(activation_id: int, activation: Dict[str, Any] | None = None) -> List[str]:
@@ -632,6 +651,8 @@ def _activation_event_stream_urls(activation_id: int, activation: Dict[str, Any]
 def _find_named_item(path: str, name: str) -> Dict[str, Any] | None:
     payload = _request("GET", path, params={"name": name, "page_size": 200})
     for item in payload.get("results", []):
+        if not isinstance(item, dict):
+            continue
         if str(item.get("name") or "") == name:
             return item
     return None
