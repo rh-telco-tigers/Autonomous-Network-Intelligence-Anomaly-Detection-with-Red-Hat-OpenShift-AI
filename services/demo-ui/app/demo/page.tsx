@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { TransientDataWarning } from "@/components/transient-data-warning";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConsoleStateQuery, useScenarioRunner } from "@/lib/api";
@@ -13,12 +14,13 @@ export default function DemoPage() {
   const { data, isLoading, error } = useConsoleStateQuery(10_000);
   const scenarioRunner = useScenarioRunner();
 
-  if (isLoading) {
+  if (isLoading && !data) {
     return <div className="text-sm text-[var(--text-muted)]">Loading scenarios...</div>;
   }
-  if (error || !data) {
+  if (!data) {
     return <div className="text-sm text-[var(--danger-fg)]">Could not load demo scenario data.</div>;
   }
+  const showRefreshWarning = Boolean(error);
 
   const latest = scenarioRunner.data ?? null;
 
@@ -29,6 +31,11 @@ export default function DemoPage() {
         title="Run Scenarios"
         description="This page is the only place for on-demand scenario execution. It is intentionally separated from overview and incident workflow."
       />
+      {showRefreshWarning ? (
+        <TransientDataWarning>
+          Showing the last successful scenario snapshot while the background refresh reconnects.
+        </TransientDataWarning>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
         <Card>

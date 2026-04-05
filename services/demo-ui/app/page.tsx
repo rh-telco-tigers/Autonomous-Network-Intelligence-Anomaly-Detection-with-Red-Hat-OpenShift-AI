@@ -19,6 +19,7 @@ import {
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { TransientDataWarning } from "@/components/transient-data-warning";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConsoleStateQuery } from "@/lib/api";
 import { formatInteger, formatRelativeNumber, formatTime, titleize } from "@/lib/utils";
@@ -37,12 +38,13 @@ const chartTooltipItemStyle = { color: "var(--chart-tooltip-text)" };
 export default function OverviewPage() {
   const { data, isLoading, error } = useConsoleStateQuery();
 
-  if (isLoading) {
+  if (isLoading && !data) {
     return <div className="text-sm text-[var(--text-muted)]">Loading overview...</div>;
   }
-  if (error || !data) {
+  if (!data) {
     return <div className="text-sm text-[var(--danger-fg)]">Could not load overview data.</div>;
   }
+  const showRefreshWarning = Boolean(error);
 
   const incidentMix = data.incidents.reduce<Array<{ name: string; value: number }>>((acc, incident) => {
     const key = incident.anomaly_type;
@@ -69,6 +71,11 @@ export default function OverviewPage() {
         title="Overview"
         description="High-level incident, traffic, and service posture without repeating incident workflow controls."
       />
+      {showRefreshWarning ? (
+        <TransientDataWarning>
+          Showing the last successful overview snapshot while the next background refresh is retried.
+        </TransientDataWarning>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Active incidents" value={formatInteger(data.summary.active_incident_count)} detail="Workflow states that still need attention" />

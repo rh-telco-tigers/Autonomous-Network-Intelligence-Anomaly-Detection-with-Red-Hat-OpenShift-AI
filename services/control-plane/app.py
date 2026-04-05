@@ -1897,6 +1897,20 @@ def _similar_incidents(incident: Dict[str, object], incidents: List[Dict[str, ob
     return matches
 
 
+def _ticket_search_fragments(ticket: Dict[str, object]) -> List[str]:
+    fragments = [
+        str(ticket.get(field) or "")
+        for field in ("provider", "external_key", "external_id", "title", "status", "sync_state", "url")
+    ]
+    metadata = ticket.get("metadata")
+    if isinstance(metadata, dict) and metadata:
+        fragments.extend(str(metadata.get(field) or "") for field in ("mode", "source_url"))
+        raw = metadata.get("raw")
+        if isinstance(raw, dict) and raw:
+            fragments.extend(str(raw.get(field) or "") for field in ("name", "priority", "external_source"))
+    return [fragment for fragment in fragments if fragment]
+
+
 def _ticket_context(incident: Dict[str, object]) -> tuple[Dict[str, object] | None, str, int]:
     incident_id = str(incident.get("id") or "")
     if not incident_id:
@@ -1913,13 +1927,7 @@ def _ticket_context(incident: Dict[str, object]) -> tuple[Dict[str, object] | No
     )
     search_fragments: List[str] = []
     for ticket in tickets:
-        search_fragments.extend(
-            str(ticket.get(field) or "")
-            for field in ("provider", "external_key", "external_id", "title", "status", "sync_state", "url")
-        )
-        metadata = ticket.get("metadata")
-        if isinstance(metadata, dict) and metadata:
-            search_fragments.append(json.dumps(metadata, sort_keys=True))
+        search_fragments.extend(_ticket_search_fragments(ticket))
         ticket_id = ticket.get("id")
         if ticket_id:
             for comment in list_ticket_comments(int(ticket_id)):
@@ -1954,23 +1962,9 @@ def _ticket_context(incident: Dict[str, object]) -> tuple[Dict[str, object] | No
     )
 
 
-def _payload_view(incident: Dict[str, object]) -> str:
-    payload = {
-        "incident": incident.get("id"),
-        "type": incident.get("anomaly_type"),
-        "status": incident.get("status"),
-        "model_version": incident.get("model_version"),
-        "feature_window_id": incident.get("feature_window_id"),
-        "features": incident.get("feature_snapshot", {}),
-        "rca": incident.get("rca_payload", {}),
-    }
-    return json.dumps(payload, indent=2)
-
-
-def _enrich_incident(
+def _incident_summary_view(
     incident: Dict[str, object],
-    audit_events: List[Dict[str, object]],
-    incidents: List[Dict[str, object]],
+    *,
     include_ticket_context: bool = False,
 ) -> Dict[str, object]:
     score = _coerce_float(incident.get("anomaly_score"))
@@ -1991,25 +1985,67 @@ def _enrich_incident(
     ticket_count = 0
     if include_ticket_context:
         current_ticket_summary, ticket_search_text, ticket_count = _ticket_context(incident)
-    return incident | {
+    workflow_state = normalize_workflow_state(str(incident.get("status") or incident.get("workflow_state") or NEW))
+    feature_snapshot = incident.get("feature_snapshot")
+    if not isinstance(feature_snapshot, dict):
+        feature_snapshot = {}
+
+    return {
+        "id": str(incident.get("id") or ""),
+        "project": str(incident.get("project") or "ims-demo"),
+        "status": workflow_state,
+        "workflow_state": workflow_state,
+        "workflow_revision": int(incident.get("workflow_revision") or 1),
         "severity": severity["label"],
         "severity_tone": severity["tone"],
+        "anomaly_score": score,
+        "anomaly_type": anomaly_type,
+        "model_version": str(incident.get("model_version") or ""),
+        "feature_window_id": incident.get("feature_window_id"),
+        "feature_snapshot": feature_snapshot,
+        "recommendation": recommendation,
+        "created_at": str(incident.get("created_at") or ""),
+        "updated_at": str(incident.get("updated_at") or incident.get("created_at") or ""),
         "subtitle": _incident_subtitle(anomaly_type),
         "impact": _incident_impact(incident),
         "blast_radius": _blast_radius(anomaly_type),
-        "recommendation": recommendation,
         "narrative": str(rca_payload.get("explanation") or rca_payload.get("root_cause") or _incident_subtitle(anomaly_type)),
+        "plane_workflow_state": plane_state_for_workflow(workflow_state),
+        "is_active": is_active_state(workflow_state),
+        "current_ticket_summary": current_ticket_summary,
+        "ticket_search_text": ticket_search_text,
+        "ticket_count": ticket_count,
+    }
+
+
+def _payload_view(incident: Dict[str, object]) -> str:
+    payload = {
+        "incident": incident.get("id"),
+        "type": incident.get("anomaly_type"),
+        "status": incident.get("status"),
+        "model_version": incident.get("model_version"),
+        "feature_window_id": incident.get("feature_window_id"),
+        "features": incident.get("feature_snapshot", {}),
+        "rca": incident.get("rca_payload", {}),
+    }
+    return json.dumps(payload, indent=2)
+
+
+def _enrich_incident(
+    incident: Dict[str, object],
+    audit_events: List[Dict[str, object]],
+    incidents: List[Dict[str, object]],
+    include_ticket_context: bool = False,
+) -> Dict[str, object]:
+    summary = _incident_summary_view(incident, include_ticket_context=include_ticket_context)
+    anomaly_type = str(summary.get("anomaly_type") or NORMAL_ANOMALY_TYPE)
+    return summary | {
         "timeline": _timeline_for_incident(incident, audit_events),
         "evidence_sources": _evidence_sources(incident),
         "similar_incidents": _similar_incidents(incident, incidents),
         "explainability": _explainability_for(incident),
         "payload_pretty": _payload_view(incident),
         "topology": _topology_for(anomaly_type),
-        "plane_workflow_state": plane_state_for_workflow(str(incident.get("status") or NEW)),
-        "is_active": is_active_state(str(incident.get("status") or NEW)),
-        "current_ticket_summary": current_ticket_summary,
-        "ticket_search_text": ticket_search_text,
-        "ticket_count": ticket_count,
     }
 
 
@@ -2196,14 +2232,15 @@ def _build_console_state(project: str) -> Dict[str, object]:
     approvals = list_approvals(limit=100)
     services = _service_snapshot()
     registry = load_registry()
-    enriched_incidents = [_enrich_incident(incident, audit_events, incidents) for incident in incidents]
-    latest_incident = enriched_incidents[0] if enriched_incidents else None
+    incident_summaries = [_incident_summary_view(incident) for incident in incidents]
+    latest_incident = incidents[0] if incidents else None
+    latest_incident_summary = incident_summaries[0] if incident_summaries else None
     latest_scenario = None
     for event in scenario_audit_events:
         latest_scenario = _scenario_execution_from_audit(event, project)
         if latest_scenario:
             break
-    active_incidents = [incident for incident in enriched_incidents if is_active_state(str(incident.get("status") or NEW))]
+    active_incidents = [incident for incident in incident_summaries if is_active_state(str(incident.get("status") or NEW))]
     active_summary = _active_incident_summary(active_incidents)
     set_active_incidents(active_incidents)
     healthy_services = sum(1 for service in services if bool(service.get("ok")))
@@ -2212,8 +2249,8 @@ def _build_console_state(project: str) -> Dict[str, object]:
         normalize_scenario_name(str(latest_scenario.get("scenario")))
         if latest_scenario
         else (
-            normalize_scenario_name(str(latest_incident.get("anomaly_type")))
-            if latest_incident
+            normalize_scenario_name(str(latest_incident_summary.get("anomaly_type")))
+            if latest_incident_summary
             else normalize_scenario_name(str((registry or {}).get("dataset_version") or NORMAL_SCENARIO_NAME))
         )
     )
@@ -2222,7 +2259,9 @@ def _build_console_state(project: str) -> Dict[str, object]:
     else:
         traffic_preview = _traffic_preview(
             {
-                "scenario_name": normalize_scenario_name(str(latest_incident.get("anomaly_type"))) if latest_incident else NORMAL_SCENARIO_NAME,
+                "scenario_name": normalize_scenario_name(str(latest_incident_summary.get("anomaly_type")))
+                if latest_incident_summary
+                else NORMAL_SCENARIO_NAME,
                 "feature_source": "incident-feature-snapshot",
                 "features": latest_incident.get("feature_snapshot", {}) if latest_incident else {},
             }
@@ -2234,24 +2273,24 @@ def _build_console_state(project: str) -> Dict[str, object]:
         "cluster": {
             "name": CONSOLE_CLUSTER_NAME,
             "status": "degraded" if active_incidents or healthy_services < len(services) else "healthy",
-            "active_incident_id": latest_incident.get("id") if latest_incident else None,
+            "active_incident_id": latest_incident_summary.get("id") if latest_incident_summary else None,
             "rca_status": "attached" if latest_incident and latest_incident.get("rca_payload") else "none",
             "current_scenario": active_scenario,
             "auto_refresh_seconds": CONSOLE_AUTO_REFRESH_SECONDS,
         },
         "summary": {
-            "incident_count": len(enriched_incidents),
+            "incident_count": len(incident_summaries),
             "active_incident_count": len(active_incidents),
             "open_incidents": len(active_incidents),
             "critical_incidents": sum(1 for incident in active_incidents if incident.get("severity") == "Critical"),
             "active_incident_categories": active_summary["categories"],
             "active_incidents_by_model": active_summary["models"],
-            "workflow_state_distribution": _workflow_state_counts(enriched_incidents),
-            "latest_score": _coerce_float(latest_incident.get("anomaly_score")) if latest_incident else 0.0,
+            "workflow_state_distribution": _workflow_state_counts(incident_summaries),
+            "latest_score": _coerce_float(latest_incident_summary.get("anomaly_score")) if latest_incident_summary else 0.0,
             "healthy_services": healthy_services,
             "service_count": len(services),
         },
-        "incidents": enriched_incidents,
+        "incidents": incident_summaries,
         "audit": audit_events,
         "approvals": approvals,
         "models": registry,
@@ -2303,13 +2342,17 @@ def post_incident(
 def get_incidents(
     project: str | None = None,
     active_only: bool = False,
+    include_details: bool = False,
     auth: AuthContext | None = Depends(require_api_key),
 ):
     if project:
         ensure_project_access(auth, project)
         incidents = list_incidents(project=project)
         audit_events = list_audit_events(limit=200)
-        enriched = [_enrich_incident(incident, audit_events, incidents, include_ticket_context=True) for incident in incidents]
+        if include_details:
+            enriched = [_enrich_incident(incident, audit_events, incidents, include_ticket_context=True) for incident in incidents]
+        else:
+            enriched = [_incident_summary_view(incident, include_ticket_context=True) for incident in incidents]
         if active_only:
             enriched = [incident for incident in enriched if is_active_state(str(incident.get("status") or NEW))]
         return enriched
@@ -2321,7 +2364,10 @@ def get_incidents(
             incidents.extend(list_incidents(project=allowed_project))
         incidents.sort(key=lambda item: item["created_at"], reverse=True)
     audit_events = list_audit_events(limit=200)
-    enriched = [_enrich_incident(incident, audit_events, incidents, include_ticket_context=True) for incident in incidents]
+    if include_details:
+        enriched = [_enrich_incident(incident, audit_events, incidents, include_ticket_context=True) for incident in incidents]
+    else:
+        enriched = [_incident_summary_view(incident, include_ticket_context=True) for incident in incidents]
     if active_only:
         enriched = [incident for incident in enriched if is_active_state(str(incident.get("status") or NEW))]
     return enriched

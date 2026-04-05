@@ -38,6 +38,7 @@ export function useConsoleStateQuery(refetchInterval = 10_000) {
     queryKey: ["console-state", defaultProject, token],
     queryFn: () => request<ConsoleState>(`/api/console/state?project=${encodeURIComponent(defaultProject)}`, token),
     refetchInterval,
+    retry: 2,
   });
 }
 
@@ -73,6 +74,7 @@ export function useIncidentsQuery(filters: { status?: string; severity?: string;
       });
     },
     refetchInterval: 10_000,
+    retry: 2,
   });
 }
 

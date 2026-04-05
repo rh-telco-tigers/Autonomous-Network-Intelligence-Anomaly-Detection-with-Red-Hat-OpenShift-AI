@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PaginationControls } from "@/components/pagination-controls";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { TransientDataWarning } from "@/components/transient-data-warning";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -37,6 +38,7 @@ export function IncidentsPageClient({ initialFilters }: { initialFilters: Filter
 
   const { data, isLoading, error } = useIncidentsQuery(filters);
   const totalItems = data?.length ?? 0;
+  const showRefreshWarning = Boolean(error) && Boolean(data);
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const safePage = Math.min(page, totalPages);
   const paginatedData = useMemo(() => {
@@ -186,14 +188,19 @@ export function IncidentsPageClient({ initialFilters }: { initialFilters: Filter
           <CardTitle>Incident queue</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isLoading && !data ? (
             <div className="text-sm text-[var(--text-muted)]">Loading incidents...</div>
-          ) : error ? (
+          ) : !data ? (
             <div className="text-sm text-[var(--danger-fg)]">Could not load incidents.</div>
           ) : !totalItems ? (
             <EmptyState title="No incidents match these filters" description="Adjust the queue filters or wait for new incidents." />
           ) : (
             <div className="space-y-4">
+              {showRefreshWarning ? (
+                <TransientDataWarning>
+                  Showing the last successful incident queue while the background refresh is retried.
+                </TransientDataWarning>
+              ) : null}
               <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)]">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-[var(--surface-raised)] text-[var(--text-muted)]">

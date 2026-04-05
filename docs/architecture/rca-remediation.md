@@ -1,12 +1,12 @@
-# IMS Anomaly Detection: RCA, Remediation, Human-in-the-Loop, and Plane Integration
+# IMS Anomaly Detection: RCA, Remediation, AAP / EDA Automation, Human-in-the-Loop, and Plane Integration
 
 ## 1. Executive Summary
 
-This document defines the production-oriented design for the next phase of the IMS anomaly detection demo: converting anomaly events into grounded root cause analysis (RCA), ranked remediation suggestions, human validation, Plane-backed workflow, and verified knowledge that improves future responses.
+This document defines the production-oriented design for the runtime response phase of the IMS anomaly detection demo: converting anomaly events into grounded root cause analysis (RCA), ranked remediation suggestions, AAP-backed execution, EDA-backed policy automation, Plane-backed workflow, and verified knowledge that improves future responses.
 
 The target outcome is a closed-loop system:
 
-**Anomaly Detection → Incident Created → Plane Issue Created/Updated → Human Review → Remediation Execution → Verification → Knowledge Capture**
+**Anomaly Detection → Incident Created → RCA / Remediation → Human-Approved AAP Execution or EDA Policy Callback → Verification → Knowledge Capture**
 
 Plane is the operator-facing work management surface where incidents become actionable tickets, humans collaborate, remediation decisions are tracked, and final outcomes are captured. Plane is not the semantic knowledge store. Milvus remains the retrieval layer, and PostgreSQL remains the operational source of truth.
 
@@ -33,6 +33,18 @@ Use this file when you need:
 - embedding strategy and retrieval rules
 - automation execution, safety controls, and human approval rules
 
+### 1.3 Current Implementation Snapshot
+
+The current cluster implementation already includes the following runtime control points:
+
+- AAP Controller project sync from the in-cluster Gitea repository
+- dynamic OpenShift API credential creation for controller execution
+- controller job templates for `scale_scscf`, `rate_limit_pcscf`, and `quarantine_imsi`
+- controller callback templates for event-driven incident transition and event-driven action execution
+- EDA project, decision environment, and running activations bootstrapped from the same repository
+- Plane ticket creation plus comment synchronization for workflow transitions and action execution updates
+- automatic bootstrap on control-plane startup so a fresh cluster can reconcile the automation surfaces without manual setup
+
 Use the phase overview files for short stage summaries. They do not replace the operational and API-level detail captured here.
 
 ---
@@ -43,7 +55,7 @@ Use the phase overview files for short stage summaries. They do not replace the 
 
 - Produce grounded RCA for detected IMS/SIP anomalies.
 - Produce one or more remediation suggestions for each incident.
-- Support human-in-the-loop validation before any action is taken.
+- Support human-in-the-loop validation before medium- or high-impact action is taken, while allowing explicit low-risk policy-driven automation.
 - Support execution of manual steps and automation, including Ansible playbooks.
 - Record final outcomes, including whether remediation worked.
 - Feed verified outcomes back into the knowledge system so future RCA/remediation becomes more accurate.
@@ -85,10 +97,11 @@ When the anomaly detection system detects an issue, the platform should:
 4. Generate one or more remediation suggestions.
 5. Open a human review workflow.
 6. Based on policy, create or update a Plane issue for human workflow.
-7. Allow a human to approve, reject, modify, or execute a remediation.
-8. Capture execution outcome.
-9. Mark the outcome as verified or not verified.
-10. Store validated knowledge for future retrieval.
+7. Optionally publish EDA events for selected escalation or low-risk guardrail cases.
+8. Allow a human to approve, reject, modify, or execute a remediation, or let an explicit EDA policy call back into the same workflow.
+9. Capture execution outcome.
+10. Mark the outcome as verified or not verified.
+11. Store validated knowledge for future retrieval.
 
 ---
 
@@ -120,7 +133,7 @@ Do not keep mutating one semantic record for the entire lifecycle. Instead, crea
 
 ### 5.4 Human Approval Before Action
 
-Any action with operational impact must be gated through a human review step in V1.
+Human approval remains the default gate for operationally impactful remediation in V1. The only exceptions should be explicit, low-risk, policy-backed EDA actions that still re-enter the control-plane workflow, audit, and verification path.
 
 ### 5.5 Ticketing Is a Workflow Surface, Not the Source of Truth
 
@@ -133,13 +146,14 @@ The system’s operational database remains the source of truth. Plane is the co
 ### 6.1 Core Components
 
 - **Traffic / anomaly pipeline**: SIPp/OpenIMS traffic and anomaly detection.
-- **Incident API / orchestrator**: creates incidents and coordinates downstream processing.
+- **Incident API / orchestrator**: creates incidents, coordinates downstream processing, and owns workflow state transitions.
 - **Milvus**: semantic knowledge store for evidence, RCA, remediations, and verified resolutions.
 - **Operational DB**: PostgreSQL recommended for workflow state, approvals, ticket IDs, execution logs, and audit history.
 - **RCA service**: retrieval + prompt construction + LLM invocation + structured RCA output.
 - **Remediation service**: produces ranked suggestions.
 - **Human review UI**: operator-facing interface for approve/reject/modify/verify.
-- **Automation executor**: Ansible execution adapter and manual action tracking.
+- **AAP controller integration**: project sync, inventory, dynamic OpenShift credential, job template launch, and controller job monitoring.
+- **EDA integration**: project sync, decision environment, activation lifecycle, callback templates, and webhook delivery services.
 - **Plane**: in-cluster ticket and collaboration workflow surface for V1.
 - **Ticketing adapter**: `PlaneTicketProvider` for V1, Jira-compatible abstraction for future.
 - **Notification layer**: optional Slack notifications / approval links.
@@ -149,8 +163,37 @@ The system’s operational database remains the source of truth. Plane is the co
 - OpenShift cluster hosts all components.
 - Existing components reused where possible: OpenShift AI, Milvus, Kafka, KFP if needed.
 - PostgreSQL deployed in-cluster or consumed if already available.
+- AAP Controller and AAP EDA are deployed in-cluster in the `aap` namespace.
+- The control-plane bootstraps controller job templates, callback templates, the EDA project, the decision environment, and activations on startup from repository content stored in Gitea.
+- OpenShift RBAC and token minting allow the control-plane to provision controller credentials and expose EDA webhook services without storing a static cluster kubeconfig in git.
 - Plane deployed in-cluster, ideally in `plane-system` or `ims-ticketing`.
-- Ansible automation service deployed in-cluster.
+- All remediation playbooks and rulebooks remain versioned in the same repository as the application.
+
+### 6.3 Current Runtime Control Flow
+
+```mermaid
+flowchart TD
+  Detect["Anomaly / feature window"] --> CP["control-plane incident orchestration"]
+  CP --> RCA["RCA service + Milvus retrieval"]
+  RCA --> Rank["rank remediation suggestions"]
+  Rank --> UI["platform UI approval path"]
+  Rank --> Event["control-plane publishes EDA event"]
+  UI -->|approve + execute| JT["AAP controller job template"]
+  Event --> Policy{"EDA policy match?"}
+  Policy -->|rca_attached| Escalate["IMS Critical Incident Escalation"]
+  Policy -->|remediations_generated + low risk| Guardrail["IMS Critical Signal Guardrail"]
+  Escalate --> CallbackState["AAP callback template: transition incident state"]
+  Guardrail --> CallbackAction["AAP callback template: execute incident action"]
+  CallbackState --> CPAPI["control-plane transition / ticket APIs"]
+  CallbackAction --> CPAPI
+  CPAPI --> JT
+  JT --> Playbook["Ansible playbooks"]
+  Playbook --> OCP["OpenShift resources"]
+  CPAPI --> Plane["Plane ticket create / sync / comments"]
+  OCP --> Result["execution result + workflow audit"]
+  Plane --> Result
+  Result --> Verify["verification + knowledge capture"]
+```
 
 ---
 
@@ -213,7 +256,18 @@ Remediation service generates one or more suggestions:
 - investigate / gather-more-data actions
 - ticket-only / escalate actions
 
-Each suggestion is ranked and recorded.
+Each suggestion is ranked and recorded with a stable `action_ref`.
+
+Current live automation-backed `action_ref` values are:
+
+- `scale_scscf`
+- `rate_limit_pcscf`
+- `quarantine_imsi`
+
+Current policy-backed, non-playbook workflow actions include:
+
+- escalation into Plane-backed coordination
+- selective event-driven execution of the low-risk P-CSCF guardrail path
 
 ### 7.5 Stage 5: Human Review
 
@@ -227,15 +281,28 @@ A human operator can:
 - create or sync a Plane issue
 - trigger automation
 
+In the current implementation:
+
+- the platform UI is the control point for human approval and manual execution
+- Plane mirrors the workflow and receives synced comments, but does not directly execute remediation
+- EDA may act on a small allowlist of low-risk conditions, but it still calls back through the control-plane workflow APIs rather than bypassing them
+
 ### 7.6 Stage 6: Execution
 
 Execution paths:
 
 - manual operator action
-- Ansible playbook trigger
+- AAP Controller job template launch
+- controller runner-job fallback when controller writes are blocked by the current license
+- EDA callback template invoking the control-plane execution API
 - no-op / notify only
 
-Execution outcome is recorded.
+Execution outcome is recorded together with:
+
+- the launched controller job id or runner job name
+- the effective `extra_vars` used for the allowlisted action
+- workflow transition audit events
+- ticket comment synchronization when a Plane issue is already attached
 
 ### 7.7 Stage 7: Verification
 
@@ -246,6 +313,8 @@ Operator marks remediation result:
 - failed
 - wrong RCA
 - custom fix applied
+
+If execution was triggered through AAP or EDA, verification still happens in the same platform workflow. Event-driven automation does not bypass the verification gate.
 
 ### 7.8 Stage 8: Knowledge Capture
 
@@ -803,40 +872,112 @@ Approval rules:
 
 Ansible is suitable because it aligns with deterministic operations, repeatable tasks, and enterprise expectations.
 
-## 13.2 Execution Model
+## 13.2 Current Execution Model
 
 The platform does not let the LLM directly execute playbooks. Instead:
 
-- LLM suggests remediation
-- human approves
-- automation service triggers execution
-- execution results are recorded
+- LLM and deterministic logic suggest remediation
+- the control-plane owns workflow state and policy checks
+- manual execution is launched from the platform UI after approval
+- event-driven execution is limited to an explicit EDA allowlist and still routes back through the control-plane APIs
+- execution results are recorded as incident actions, approvals, audit events, and ticket comments
 
-## 13.3 Execution Adapter Contract
+The current manual execution path is:
 
-Input:
+1. Operator approves remediation in the platform UI.
+2. Control-plane validates role, workflow revision, and action allowlist.
+3. Control-plane builds action-specific `extra_vars`.
+4. AAP Controller launches the matching job template.
+5. Control-plane polls job status and stores the outcome.
+6. Plane receives synced comments when a ticket is attached.
 
-- incident_id
-- remediation_id
-- playbook_ref
-- inventory_ref
-- extra_vars
-- approved_by
+The current event-driven path is:
 
-Output:
+1. Control-plane publishes a structured EDA event such as `rca_attached` or `remediations_generated`.
+2. EDA rulebook activation receives the webhook and evaluates policy conditions.
+3. EDA launches a controller callback job template.
+4. The callback template calls the control-plane transition or automation API.
+5. Control-plane re-enters the same workflow and auditing path used by the UI.
 
-- execution_id
-- status
-- logs reference
-- summary
+## 13.3 Bootstrapped Controller Resources
 
-## 13.4 Execution Safety Controls
+On startup, the control-plane reconciles the controller-side resources required for remediation:
 
-- approval required
-- allowlist playbooks only
-- input schema validation
-- timeout and failure handling
-- full audit logging
+- organization: `Default`
+- inventory: `IMS Incident Local Inventory`
+- project: `IMS Incident Automation`
+- dynamic OpenShift credential: `IMS OpenShift API Credential`
+
+Current manual job templates:
+
+- `IMS Scale S-CSCF Path`
+- `IMS Rate Limit P-CSCF Ingress`
+- `IMS Quarantine Subscriber or Source`
+
+Current callback job templates used by EDA:
+
+- `IMS EDA Transition Incident State`
+- `IMS EDA Execute Incident Action`
+
+The controller project syncs from the in-cluster Gitea URL so the same repository revision drives both the application and the automation content.
+
+## 13.4 Current Manual Action Catalog
+
+The current live manual automation catalog is:
+
+- `scale_scscf`
+  - template: `IMS Scale S-CSCF Path`
+  - playbook: `automation/ansible/playbooks/scale-scscf.yaml`
+  - target: `ims-scscf` deployment scale subresource
+  - typical cases: `registration_storm`, `call_setup_timeout`, `server_internal_error`
+- `rate_limit_pcscf`
+  - template: `IMS Rate Limit P-CSCF Ingress`
+  - playbook: `automation/ansible/playbooks/rate-limit-pcscf.yaml`
+  - target: `ims-pcscf` deployment annotation `ims.demo/rate-limit-review`
+  - typical cases: `registration_storm`, `retransmission_spike`, `network_degradation`
+- `quarantine_imsi`
+  - template: `IMS Quarantine Subscriber or Source`
+  - playbook: `automation/ansible/playbooks/quarantine-imsi.yaml`
+  - target: remediation state ConfigMap entry for the selected IMSI
+  - typical cases: `authentication_failure`, `registration_failure`, `malformed_sip`
+
+Each playbook consumes Kubernetes API details through `K8S_AUTH_*` environment variables injected by the controller credential rather than relying on a static kubeconfig in git.
+
+## 13.5 Event-Driven Ansible Policies
+
+The current live EDA configuration is also bootstrapped from the repository:
+
+- project: `IMS Incident Event Policies`
+- decision environment: `IMS Incident Decisions`
+- webhook activations exposed through control-plane-managed Services in the `aap` namespace
+
+Current policy catalog:
+
+- `IMS Critical Incident Escalation`
+  - rulebook: `rulebooks/critical-incident-escalation.yml`
+  - event: `rca_attached`
+  - cases: `authentication_failure`, `server_internal_error`, `network_degradation`
+  - behavior: transitions the incident to `ESCALATED` and creates or syncs the Plane issue through the callback template
+- `IMS Critical Signal Guardrail`
+  - rulebook: `rulebooks/critical-signal-guardrail.yml`
+  - event: `remediations_generated`
+  - cases: `registration_storm`, `retransmission_spike`, `network_degradation`
+  - behavior: triggers `rate_limit_pcscf` through the callback template when the ranked remediation set includes that low-risk guardrail
+
+## 13.6 Execution Safety Controls
+
+- approval required for manual controller-backed actions
+- allowlist playbooks and callback templates only
+- input schema validation and `workflow_revision` validation before execution
+- timeout, failure handling, and background status polling for controller jobs
+- full audit logging for approval, execution, ticket sync, and verification
+- dynamic service-account token minting for the AAP controller credential instead of static cluster secrets
+- namespace-scoped RBAC for:
+  - `ims-scscf` deployment scale operations
+  - `ims-pcscf` deployment patch/update
+  - remediation ConfigMap writes
+  - `serviceaccounts/token` creation
+  - `jobs`, `pods/log`, and `services` access in the `aap` namespace for runner fallback and EDA webhook service reconciliation
 
 ---
 
@@ -895,17 +1036,19 @@ Recommended system boundaries:
 2. The platform creates an operational incident.
 3. RCA is generated.
 4. Remediation suggestions are generated.
-5. Based on policy, the platform creates a Plane issue.
-6. The issue is populated with:
+5. Control-plane emits structured EDA events such as `rca_attached` and `remediations_generated`.
+6. Based on severity and policy, the platform creates or updates a Plane issue.
+7. The issue is populated with:
 
    - incident summary
    - RCA summary
    - ranked remediation suggestions
    - links back to the platform UI
-7. Operators work in Plane and/or the platform UI.
-8. Approved remediation is executed through the platform.
-9. Verification result is captured.
-10. Plane issue is updated and eventually closed.
+8. Operators work in Plane and/or the platform UI.
+9. Human-approved remediation is executed through AAP Controller, or a selected low-risk EDA policy triggers the callback template path.
+10. Control-plane records job state, action state, and comments back to the same Plane issue.
+11. Verification result is captured.
+12. Plane issue is updated and eventually closed.
 
 ### Reverse Path
 
@@ -913,8 +1056,9 @@ Recommended system boundaries:
 2. Plane sends webhook events to the platform.
 3. The platform validates the webhook signature.
 4. The platform updates local ticket sync state.
-5. If human notes indicate a real fix, the platform creates a normalized verified resolution artifact.
-6. The verified resolution artifact is stored in Milvus for future retrieval.
+5. Plane comments may enrich local context, but they do not directly execute remediations.
+6. If human notes indicate a real fix, the platform creates a normalized verified resolution artifact.
+7. The verified resolution artifact is stored in Milvus for future retrieval.
 
 ## 14.5 Integration Modes
 
@@ -1169,6 +1313,7 @@ Recommended V1 split:
 
 - platform UI remains best for AI-specific context and action controls
 - Plane is used for collaboration, assignment, and notes
+- EDA is used only for selected, low-risk workflow or guardrail automations that the platform explicitly publishes and allows
 
 Supported human actions in Plane:
 
@@ -1181,17 +1326,23 @@ Supported human actions in Plane:
 Supported human actions in the platform UI:
 
 - approve or reject remediation
-- trigger Ansible playbook
+- trigger AAP-backed remediation
 - mark RCA correct or incorrect
 - submit verification result
 - mark resolution as verified knowledge
+
+Current automation split:
+
+- human-approved controller execution for `scale_scscf`, `rate_limit_pcscf`, and `quarantine_imsi`
+- event-driven escalation through `IMS Critical Incident Escalation`
+- event-driven low-risk guardrail through `IMS Critical Signal Guardrail`
 
 Plane should not directly execute remediations. Instead:
 
 1. Plane issue contains remediation suggestion.
 2. Human approves in the platform UI.
-3. Platform runs the Ansible playbook.
-4. Platform adds a comment to Plane with the execution result.
+3. Platform runs the AAP controller job template or runner fallback.
+4. Platform adds execution and workflow comments to the same Plane issue.
 5. Human verifies outcome.
 6. Platform updates both its own verification record and the Plane issue.
 
@@ -1201,6 +1352,9 @@ Plane should not directly execute remediations. Instead:
 - validate webhook HMAC signatures exactly as documented
 - store webhook delivery IDs and outbound sync hashes to support idempotent retries
 - allow only approved platform service accounts to create or update Plane issues automatically
+- allow only the control-plane service account to bootstrap or reconcile AAP / EDA resources in cluster
+- use short-lived OpenShift tokens for the controller Kubernetes credential rather than a long-lived kubeconfig secret
+- keep EDA webhook activations behind internal cluster Services created from activation metadata so event delivery can be reconciled deterministically
 
 ---
 
@@ -1215,6 +1369,10 @@ Create incident from anomaly event.
 ### `GET /api/incidents/{incident_id}`
 
 Return incident with RCA, remediations, verification state, and ticket info.
+
+### `POST /api/incidents/{incident_id}/transition`
+
+Transition workflow state through the platform-owned state machine. This is the endpoint used by the EDA escalation callback template to move incidents into `ESCALATED` and sync the linked Plane issue.
 
 ---
 
@@ -1247,6 +1405,10 @@ Reject suggestion.
 ### `POST /api/incidents/{incident_id}/remediation/{remediation_id}/execute`
 
 Trigger approved execution.
+
+### `POST /api/incidents/{incident_id}/automation/actions/{action_ref}/execute`
+
+Trigger execution by `action_ref` rather than remediation id. This is the endpoint used by EDA callback templates so event-driven policies re-enter the same workflow and auditing path as the UI.
 
 ---
 
@@ -1286,6 +1448,14 @@ Receive Plane webhook events, validate `X-Plane-Signature`, deduplicate `X-Plane
 ### `POST /api/incidents/{incident_id}/tickets/{ticket_id}/extract-resolution`
 
 Normalize final resolution content from Plane issue fields and comments into a verified knowledge candidate.
+
+### `GET /api/automation/actions`
+
+Return the controller-backed manual action catalog and the current automation mode exposed by the platform.
+
+### `GET /integrations/status`
+
+Return live integration status for AAP Controller, EDA, Plane, and other platform surfaces so operators can confirm that automation resources have bootstrapped.
 
 ---
 

@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PaginationControls } from "@/components/pagination-controls";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { TransientDataWarning } from "@/components/transient-data-warning";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConsoleStateQuery } from "@/lib/api";
 import { formatRelativeNumber, formatTime, titleize } from "@/lib/utils";
@@ -37,12 +38,13 @@ function LiveTrafficPageContent() {
   const pathname = usePathname();
   const { data, isLoading, error } = useConsoleStateQuery(5_000);
 
-  if (isLoading) {
+  if (isLoading && !data) {
     return <div className="text-sm text-[var(--text-muted)]">Loading traffic stream...</div>;
   }
-  if (error || !data) {
+  if (!data) {
     return <div className="text-sm text-[var(--danger-fg)]">Could not load live traffic data.</div>;
   }
+  const showRefreshWarning = Boolean(error);
 
   const trafficTrend = data.traffic_stream
     .slice(0, 18)
@@ -98,6 +100,11 @@ function LiveTrafficPageContent() {
         title="Live Traffic"
         description="A dedicated traffic stream page for normal and anomalous windows. No remediation controls here."
       />
+      {showRefreshWarning ? (
+        <TransientDataWarning>
+          Showing the last successful traffic snapshot while the background refresh reconnects.
+        </TransientDataWarning>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>

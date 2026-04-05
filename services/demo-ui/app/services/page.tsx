@@ -5,6 +5,7 @@ import { ExternalLink } from "lucide-react";
 
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { TransientDataWarning } from "@/components/transient-data-warning";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConsoleStateQuery } from "@/lib/api";
@@ -48,12 +49,13 @@ export default function ServicesPage() {
     setOrigin(window.location.origin);
   }, []);
 
-  if (isLoading) {
+  if (isLoading && !data) {
     return <div className="text-sm text-[var(--text-muted)]">Loading services...</div>;
   }
-  if (error || !data) {
+  if (!data) {
     return <div className="text-sm text-[var(--danger-fg)]">Could not load service data.</div>;
   }
+  const showRefreshWarning = Boolean(error);
 
   const routeLinks = buildRouteLinks(origin, data.integrations);
   const configuredLinks = routeLinks.filter((item) => isExternalUrl(item.url));
@@ -69,6 +71,11 @@ export default function ServicesPage() {
         title="Services"
         description="Service health, integration readiness, and direct navigation links when routes are exposed."
       />
+      {showRefreshWarning ? (
+        <TransientDataWarning>
+          Showing the last successful service snapshot while the background refresh is retried.
+        </TransientDataWarning>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <ServiceMetric label="Healthy services" value={formatInteger(data.summary.healthy_services)} />
