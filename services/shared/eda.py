@@ -663,8 +663,13 @@ def _activation_delivery_urls(
 ) -> List[str]:
     event_streams = activation.get("event_streams") if isinstance(activation, dict) else None
     service_name = activation.get("k8s_service_name") if isinstance(activation, dict) else None
+    instances = activation.get("instances") if isinstance(activation, dict) else None
     if activation_id > 0 and (
-        activation is None or not isinstance(event_streams, list) or not str(service_name or "").strip()
+        activation is None
+        or not isinstance(event_streams, list)
+        or not str(service_name or "").strip()
+        or not isinstance(instances, list)
+        or not instances
     ):
         activation = _request("GET", f"/api/eda/v1/activations/{activation_id}/")
     if not isinstance(activation, dict):
@@ -675,9 +680,97 @@ def _activation_delivery_urls(
     webhook_port = int(POLICY_DEFINITIONS.get(policy_key, {}).get("webhook_port") or 0)
     namespace = os.getenv("EDA_SERVICE_NAMESPACE", "aap").strip() or "aap"
     if service_name and webhook_port > 0:
+        _ensure_activation_webhook_service(policy_key, activation, namespace, service_name, webhook_port)
         urls.append(f"http://{service_name}.{namespace}.svc.cluster.local:{webhook_port}")
     # Preserve order while removing duplicates.
     return list(dict.fromkeys(urls))
+
+
+def _ensure_activation_webhook_service(
+    policy_key: str,
+    activation: Dict[str, Any],
+    namespace: str,
+    service_name: str,
+    webhook_port: int,
+) -> None:
+    activation_id = int(activation.get("id") or 0)
+    if activation_id <= 0:
+        return
+    instances = activation.get("instances") if isinstance(activation.get("instances"), list) else []
+    current_instance = next(
+        (
+            item
+            for item in instances
+            if isinstance(item, dict) and str(item.get("status") or "").lower() == "running"
+        ),
+        next((item for item in instances if isinstance(item, dict)), None),
+    )
+    if not isinstance(current_instance, dict):
+        return
+    instance_id = int(current_instance.get("id") or 0)
+    if instance_id <= 0:
+        return
+
+    job_name = f"activation-job-{activation_id}-{instance_id}"
+    desired = {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "name": service_name,
+            "namespace": namespace,
+            "labels": {
+                "app": "eda",
+                "ims.demo/managed-by": "control-plane",
+                "ims.demo/policy-key": policy_key,
+            },
+        },
+        "spec": {
+            "selector": {"job-name": job_name},
+            "ports": [
+                {
+                    "name": "webhook",
+                    "protocol": "TCP",
+                    "port": webhook_port,
+                    "targetPort": webhook_port,
+                }
+            ],
+        },
+    }
+    existing = _kubernetes_request(
+        "GET",
+        f"/api/v1/namespaces/{namespace}/services/{service_name}",
+        expected_status=(200, 404),
+    )
+    if str(existing.get("kind") or "").lower() == "status":
+        _kubernetes_request(
+            "POST",
+            f"/api/v1/namespaces/{namespace}/services",
+            expected_status=(200, 201),
+            json=desired,
+        )
+        return
+
+    current_selector = existing.get("spec", {}).get("selector") or {}
+    current_ports = existing.get("spec", {}).get("ports") or []
+    current_port = current_ports[0] if current_ports and isinstance(current_ports[0], dict) else {}
+    if (
+        current_selector.get("job-name") == job_name
+        and int(current_port.get("port") or 0) == webhook_port
+        and int(current_port.get("targetPort") or 0) == webhook_port
+    ):
+        return
+    _kubernetes_request(
+        "PATCH",
+        f"/api/v1/namespaces/{namespace}/services/{service_name}",
+        expected_status=(200,),
+        headers={"Content-Type": "application/merge-patch+json"},
+        data=json.dumps(
+            {
+                "metadata": desired["metadata"],
+                "spec": desired["spec"],
+            }
+        ),
+    )
 
 
 def _find_named_item(path: str, name: str) -> Dict[str, Any] | None:

@@ -36,7 +36,7 @@ data:
   AAP_SCALE_SCSCF_DEPLOYMENT: ims-scscf
   AAP_SCALE_SCSCF_REPLICAS: "2"
   AAP_RATE_LIMIT_PCSCF_NAMESPACE: ims-demo-lab
-  AAP_RATE_LIMIT_PCSCF_DEPLOYMENT: openimss-pcscf
+  AAP_RATE_LIMIT_PCSCF_DEPLOYMENT: ims-pcscf
   AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY: ims.demo/rate-limit-review
   AAP_RATE_LIMIT_PCSCF_ANNOTATION_VALUE: eda-guardrail
   AAP_QUARANTINE_NAMESPACE: ims-demo-lab
@@ -93,7 +93,7 @@ metadata:
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    resourceNames: ["openimss-pcscf"]
+    resourceNames: ["ims-pcscf"]
     verbs: ["get", "patch", "update"]
   - apiGroups: [""]
     resources: ["configmaps"]
@@ -125,6 +125,9 @@ rules:
   - apiGroups: [""]
     resources: ["pods", "pods/log"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["create", "get", "list", "patch", "update"]
   - apiGroups: [""]
     resources: ["secrets"]
     resourceNames: ["aap-controller-admin-password", "aap-eda-admin-password"]

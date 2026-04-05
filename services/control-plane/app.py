@@ -1154,7 +1154,7 @@ def _aap_extra_vars_for_action(
     if action_ref == "rate_limit_pcscf":
         return base | {
             "target_namespace": _string_from_env("AAP_RATE_LIMIT_PCSCF_NAMESPACE", "ims-demo-lab"),
-            "target_deployment": _string_from_env("AAP_RATE_LIMIT_PCSCF_DEPLOYMENT", "openimss-pcscf"),
+            "target_deployment": _string_from_env("AAP_RATE_LIMIT_PCSCF_DEPLOYMENT", "ims-pcscf"),
             "annotation_key": _string_from_env("AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY", "ims.demo/rate-limit-review"),
             "annotation_value": _string_from_env("AAP_RATE_LIMIT_PCSCF_ANNOTATION_VALUE", "approved"),
         }
