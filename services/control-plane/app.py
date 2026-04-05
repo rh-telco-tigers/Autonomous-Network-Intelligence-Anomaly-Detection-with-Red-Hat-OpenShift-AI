@@ -168,6 +168,7 @@ class ConsoleScenarioRequest(BaseModel):
 class IncidentTransitionRequest(BaseModel):
     target_state: str
     notes: str = ""
+    source_url: str = ""
 
 
 class RemediationActionRequest(BaseModel):
@@ -1642,11 +1643,16 @@ def _evidence_sources(incident: Dict[str, object]) -> List[Dict[str, object]]:
                 continue
             evidence.append(
                 {
-                    "title": str(document.get("reference") or document.get("title") or "retrieved-document"),
+                    "title": str(document.get("title") or document.get("reference") or "retrieved-document"),
                     "detail": (
                         f"{document.get('doc_type', 'document')} "
                         f"· score {float(document.get('score', 0.0)):.2f}"
                     ),
+                    "reference": str(document.get("reference") or ""),
+                    "collection": str(document.get("collection") or ""),
+                    "doc_type": str(document.get("doc_type") or ""),
+                    "score": float(document.get("score", 0.0)),
+                    "excerpt": str(document.get("excerpt") or ""),
                 }
             )
         if evidence:
@@ -1662,6 +1668,7 @@ def _evidence_sources(incident: Dict[str, object]) -> List[Dict[str, object]]:
                 {
                     "title": str(item.get("reference") or item.get("type") or "evidence"),
                     "detail": f"weight {float(item.get('weight', 0.0)):.2f}",
+                    "reference": str(item.get("reference") or ""),
                 }
             )
     return evidence
@@ -1690,6 +1697,63 @@ def _similar_incidents(incident: Dict[str, object], incidents: List[Dict[str, ob
     return matches
 
 
+def _ticket_context(incident: Dict[str, object]) -> tuple[Dict[str, object] | None, str, int]:
+    incident_id = str(incident.get("id") or "")
+    if not incident_id:
+        return None, "", 0
+
+    tickets = list_incident_tickets(incident_id)
+    if not tickets:
+        return None, "", 0
+
+    current_ticket_id = incident.get("current_ticket_id")
+    current_ticket = next(
+        (ticket for ticket in tickets if current_ticket_id and ticket.get("id") == current_ticket_id),
+        tickets[0],
+    )
+    search_fragments: List[str] = []
+    for ticket in tickets:
+        search_fragments.extend(
+            str(ticket.get(field) or "")
+            for field in ("provider", "external_key", "external_id", "title", "status", "sync_state", "url")
+        )
+        metadata = ticket.get("metadata")
+        if isinstance(metadata, dict) and metadata:
+            search_fragments.append(json.dumps(metadata, sort_keys=True))
+        ticket_id = ticket.get("id")
+        if ticket_id:
+            for comment in list_ticket_comments(int(ticket_id)):
+                search_fragments.extend(
+                    [
+                        str(comment.get("author") or ""),
+                        str(comment.get("body") or ""),
+                        str(comment.get("comment_type") or ""),
+                    ]
+                )
+            for event in list_ticket_sync_events(int(ticket_id)):
+                search_fragments.extend(
+                    [
+                        str(event.get("direction") or ""),
+                        str(event.get("event_type") or ""),
+                        str(event.get("status") or ""),
+                    ]
+                )
+
+    return (
+        {
+            "provider": str(current_ticket.get("provider") or ""),
+            "external_key": str(current_ticket.get("external_key") or ""),
+            "external_id": str(current_ticket.get("external_id") or ""),
+            "title": str(current_ticket.get("title") or ""),
+            "url": str(current_ticket.get("url") or ""),
+            "sync_state": str(current_ticket.get("sync_state") or ""),
+            "status": str(current_ticket.get("status") or ""),
+        },
+        " ".join(fragment for fragment in search_fragments if fragment),
+        len(tickets),
+    )
+
+
 def _payload_view(incident: Dict[str, object]) -> str:
     payload = {
         "incident": incident.get("id"),
@@ -1707,6 +1771,7 @@ def _enrich_incident(
     incident: Dict[str, object],
     audit_events: List[Dict[str, object]],
     incidents: List[Dict[str, object]],
+    include_ticket_context: bool = False,
 ) -> Dict[str, object]:
     score = _coerce_float(incident.get("anomaly_score"))
     anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type", NORMAL_ANOMALY_TYPE)))
@@ -1721,6 +1786,11 @@ def _enrich_incident(
         or rca_payload.get("recommendation")
         or _default_recommendation(anomaly_type)
     )
+    current_ticket_summary = None
+    ticket_search_text = ""
+    ticket_count = 0
+    if include_ticket_context:
+        current_ticket_summary, ticket_search_text, ticket_count = _ticket_context(incident)
     return incident | {
         "severity": severity["label"],
         "severity_tone": severity["tone"],
@@ -1737,6 +1807,9 @@ def _enrich_incident(
         "topology": _topology_for(anomaly_type),
         "plane_workflow_state": plane_state_for_workflow(str(incident.get("status") or NEW)),
         "is_active": is_active_state(str(incident.get("status") or NEW)),
+        "current_ticket_summary": current_ticket_summary,
+        "ticket_search_text": ticket_search_text,
+        "ticket_count": ticket_count,
     }
 
 
@@ -2035,7 +2108,7 @@ def get_incidents(
         ensure_project_access(auth, project)
         incidents = list_incidents(project=project)
         audit_events = list_audit_events(limit=200)
-        enriched = [_enrich_incident(incident, audit_events, incidents) for incident in incidents]
+        enriched = [_enrich_incident(incident, audit_events, incidents, include_ticket_context=True) for incident in incidents]
         if active_only:
             enriched = [incident for incident in enriched if is_active_state(str(incident.get("status") or NEW))]
         return enriched
@@ -2047,7 +2120,7 @@ def get_incidents(
             incidents.extend(list_incidents(project=allowed_project))
         incidents.sort(key=lambda item: item["created_at"], reverse=True)
     audit_events = list_audit_events(limit=200)
-    enriched = [_enrich_incident(incident, audit_events, incidents) for incident in incidents]
+    enriched = [_enrich_incident(incident, audit_events, incidents, include_ticket_context=True) for incident in incidents]
     if active_only:
         enriched = [incident for incident in enriched if is_active_state(str(incident.get("status") or NEW))]
     return enriched
@@ -2125,20 +2198,42 @@ def transition_incident(
         payload.notes,
     )
     updated = get_incident(incident_id) or updated
-    _sync_current_ticket_best_effort(
-        updated,
-        _ticket_note(
-            "Workflow update",
-            [
-                ("Incident", incident_id),
-                ("Workflow state", updated.get("status")),
-                ("Operator", auth.subject if auth else "operator"),
-                ("Comment", payload.notes or f"Transitioned incident to {payload.target_state}."),
-            ],
-        ),
-        auth.subject if auth else "operator",
-        "workflow_transition",
+    transition_note = _ticket_note(
+        "Workflow update",
+        [
+            ("Incident", incident_id),
+            ("Workflow state", updated.get("status")),
+            ("Operator", auth.subject if auth else "operator"),
+            ("Comment", payload.notes or f"Transitioned incident to {payload.target_state}."),
+        ],
     )
+    normalized_target = normalize_workflow_state(payload.target_state)
+    if normalized_target == ESCALATED:
+        try:
+            _sync_ticket_provider(
+                updated,
+                "plane",
+                note=transition_note,
+                force=True,
+                source_url=payload.source_url,
+            )
+        except Exception as exc:
+            logger.warning("Plane ticket sync failed for escalated incident %s: %s", incident_id, exc)
+            record_ticket_sync("plane", "outbound", "failed")
+            record_audit(
+                "ticket_sync_failed",
+                auth.subject if auth else "operator",
+                {"provider": "plane", "reason": "workflow_transition_escalated", "detail": str(exc)},
+                incident_id=incident_id,
+            )
+    else:
+        _sync_current_ticket_best_effort(
+            updated,
+            transition_note,
+            auth.subject if auth else "operator",
+            "workflow_transition",
+        )
+    updated = get_incident(incident_id) or updated
     set_active_incidents(list_incidents(project=incident["project"]))
     return _workflow_payload(updated)
 
@@ -2632,6 +2727,17 @@ def knowledge_article(reference: str, auth: AuthContext | None = Depends(require
     if not article:
         raise HTTPException(status_code=404, detail="Knowledge article not found")
     return {"article": article}
+
+
+@app.get("/documents/{collection}/{reference:path}")
+def document_detail(collection: str, reference: str, auth: AuthContext | None = Depends(require_api_key)):
+    ensure_role(auth, "operator")
+    if collection not in DEFAULT_MILVUS_COLLECTIONS:
+        raise HTTPException(status_code=404, detail="Document collection not found")
+    document = get_document_by_reference(reference, collection_name=collection)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"document": document}
 
 
 @app.get("/incidents/{incident_id}/tickets")

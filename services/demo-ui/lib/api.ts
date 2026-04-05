@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiToken } from "@/components/providers/app-providers";
 import type {
   ConsoleState,
+  DocumentResponse,
   IncidentRecord,
   IncidentWorkflow,
   KnowledgeArticleResponse,
@@ -51,7 +52,19 @@ export function useIncidentsQuery(filters: { status?: string; severity?: string;
         const severityMatch = filters.severity ? row.severity === filters.severity : true;
         const q = (filters.q ?? "").trim().toLowerCase();
         const searchMatch = q
-          ? [row.id, row.anomaly_type, row.severity, row.status, row.subtitle ?? "", row.recommendation ?? ""]
+          ? [
+              row.id,
+              row.anomaly_type,
+              row.severity,
+              row.status,
+              row.subtitle ?? "",
+              row.recommendation ?? "",
+              row.current_ticket_summary?.provider ?? "",
+              row.current_ticket_summary?.external_key ?? "",
+              row.current_ticket_summary?.external_id ?? "",
+              row.current_ticket_summary?.title ?? "",
+              row.ticket_search_text ?? "",
+            ]
               .join(" ")
               .toLowerCase()
               .includes(q)
@@ -93,6 +106,19 @@ export function useKnowledgeArticleQuery(reference: string) {
     queryKey: ["knowledge-article", reference, token],
     queryFn: () => request<KnowledgeArticleResponse>(`/api/knowledge/articles/${normalizedReference}`, token),
     enabled: Boolean(reference),
+  });
+}
+
+export function useDocumentQuery(collection: string, reference: string) {
+  const { token } = useApiToken();
+  const normalizedReference = reference
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return useQuery({
+    queryKey: ["document", collection, reference, token],
+    queryFn: () => request<DocumentResponse>(`/api/documents/${encodeURIComponent(collection)}/${normalizedReference}`, token),
+    enabled: Boolean(collection) && Boolean(reference),
   });
 }
 

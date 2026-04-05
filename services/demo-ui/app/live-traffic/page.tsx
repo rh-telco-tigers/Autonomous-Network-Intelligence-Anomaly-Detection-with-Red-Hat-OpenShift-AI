@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { EmptyState } from "@/components/empty-state";
+import { PaginationControls } from "@/components/pagination-controls";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +24,17 @@ const chartTooltipLabelStyle = { color: "var(--chart-tooltip-label)", fontWeight
 const chartTooltipItemStyle = { color: "var(--chart-tooltip-text)" };
 
 export default function LiveTrafficPage() {
+  return (
+    <Suspense fallback={<div className="text-sm text-[var(--text-muted)]">Loading traffic stream...</div>}>
+      <LiveTrafficPageContent />
+    </Suspense>
+  );
+}
+
+function LiveTrafficPageContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const { data, isLoading, error } = useConsoleStateQuery(5_000);
 
   if (isLoading) {
@@ -48,6 +62,34 @@ export default function LiveTrafficPage() {
         },
       ];
   const hasSnapshotRows = data.traffic_preview.rows.length > 0;
+  const page = parsePositiveInt(searchParams.get("page"), 1);
+  const pageSize = normalizePageSize(searchParams.get("pageSize"), 10);
+  const totalItems = data.traffic_stream.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paginatedTrafficStream = data.traffic_stream.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  function replaceQuery(next: URLSearchParams) {
+    const queryString = next.toString();
+    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
+  }
+
+  function updatePage(nextPage: number) {
+    const next = new URLSearchParams(searchParams.toString());
+    if (nextPage <= 1) {
+      next.delete("page");
+    } else {
+      next.set("page", String(nextPage));
+    }
+    replaceQuery(next);
+  }
+
+  function updatePageSize(nextPageSize: number) {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("pageSize", String(nextPageSize));
+    next.delete("page");
+    replaceQuery(next);
+  }
 
   return (
     <div className="space-y-8">
@@ -188,52 +230,74 @@ export default function LiveTrafficPage() {
           {!data.traffic_stream.length ? (
             <EmptyState title="No traffic events yet" description="Run a scenario or wait for traffic to populate the stream." />
           ) : (
-            <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)]">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-[var(--surface-raised)] text-[var(--text-muted)]">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Scenario</th>
-                    <th className="px-4 py-3 font-medium">Traffic</th>
-                    <th className="px-4 py-3 font-medium">Anomaly</th>
-                    <th className="px-4 py-3 font-medium">Incident</th>
-                    <th className="px-4 py-3 font-medium">Window time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.traffic_stream.map((item) => (
-                    <tr key={`${item.executed_at}-${item.scenario}`} className="border-t border-[var(--border-subtle)] bg-[var(--surface-subtle)]">
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-[var(--text-strong)]">{titleize(item.scenario)}</div>
-                        <div className="text-xs text-[var(--text-subtle)]">{item.feature_source}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        {formatRelativeNumber(item.traffic_preview.stats.requests_per_second)} req/s · retry{" "}
-                        {formatRelativeNumber(item.traffic_preview.stats.retry_ratio)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <StatusBadge value={item.is_anomaly ? "Anomaly" : "Normal"} />
-                          <span className="text-[var(--text-secondary)]">{formatRelativeNumber(item.anomaly_score)}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        {item.incident_id ? (
-                          <Link href={`/incidents/${item.incident_id}`} className="text-[var(--accent)]">
-                            Open incident
-                          </Link>
-                        ) : (
-                          <span className="text-[var(--text-subtle)]">No incident</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-[var(--text-muted)]">{formatTime(item.executed_at)}</td>
+            <div className="space-y-4">
+              <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)]">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-[var(--surface-raised)] text-[var(--text-muted)]">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Scenario</th>
+                      <th className="px-4 py-3 font-medium">Traffic</th>
+                      <th className="px-4 py-3 font-medium">Anomaly</th>
+                      <th className="px-4 py-3 font-medium">Incident</th>
+                      <th className="px-4 py-3 font-medium">Window time</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {paginatedTrafficStream.map((item) => (
+                      <tr key={`${item.executed_at}-${item.scenario}`} className="border-t border-[var(--border-subtle)] bg-[var(--surface-subtle)]">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-[var(--text-strong)]">{titleize(item.scenario)}</div>
+                          <div className="text-xs text-[var(--text-subtle)]">{item.feature_source}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {formatRelativeNumber(item.traffic_preview.stats.requests_per_second)} req/s · retry{" "}
+                          {formatRelativeNumber(item.traffic_preview.stats.retry_ratio)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <StatusBadge value={item.is_anomaly ? "Anomaly" : "Normal"} />
+                            <span className="text-[var(--text-secondary)]">{formatRelativeNumber(item.anomaly_score)}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {item.incident_id ? (
+                            <Link href={`/incidents/${item.incident_id}`} className="text-[var(--accent)]">
+                              Open incident
+                            </Link>
+                          ) : (
+                            <span className="text-[var(--text-subtle)]">No incident</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-[var(--text-muted)]">{formatTime(item.executed_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <PaginationControls
+                page={safePage}
+                pageSize={pageSize}
+                totalItems={totalItems}
+                itemLabel="traffic windows"
+                pageSizeOptions={[5, 10, 20, 24]}
+                onPageChange={updatePage}
+                onPageSizeChange={updatePageSize}
+              />
             </div>
           )}
         </CardContent>
       </Card>
     </div>
   );
+}
+
+function parsePositiveInt(value: string | null, fallback: number) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function normalizePageSize(value: string | null, fallback: number) {
+  const allowed = new Set([5, 10, 20, 24]);
+  const parsed = parsePositiveInt(value, fallback);
+  return allowed.has(parsed) ? parsed : fallback;
 }

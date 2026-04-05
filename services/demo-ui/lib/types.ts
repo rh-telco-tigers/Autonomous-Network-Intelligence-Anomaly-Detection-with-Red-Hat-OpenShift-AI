@@ -44,6 +44,16 @@ export type TrafficPreview = {
   packet_sample: string;
 };
 
+export type IncidentTicketSummary = {
+  provider: string;
+  external_key?: string;
+  external_id?: string;
+  title?: string;
+  url?: string;
+  sync_state?: string;
+  status?: string;
+};
+
 export type IncidentRecord = {
   id: string;
   project: string;
@@ -66,12 +76,15 @@ export type IncidentRecord = {
   blast_radius?: string;
   narrative?: string;
   timeline?: Array<{ time: string; title: string; detail: string }>;
-  evidence_sources?: Array<{ title: string; detail: string }>;
+  evidence_sources?: EvidenceSource[];
   similar_incidents?: Array<{ title: string; detail: string }>;
   explainability?: Array<{ feature: string; weight: number; label: string; tone: string }>;
   topology?: string[];
   plane_workflow_state?: string;
   is_active?: boolean;
+  current_ticket_summary?: IncidentTicketSummary | null;
+  ticket_search_text?: string;
+  ticket_count?: number;
 };
 
 export type WorkflowDistribution = {
@@ -187,6 +200,16 @@ export type RelatedDocument = {
   category?: string;
   incident_id?: string;
   knowledge_weight?: number;
+};
+
+export type EvidenceSource = {
+  title: string;
+  detail: string;
+  reference?: string;
+  collection?: string;
+  doc_type?: string;
+  score?: number;
+  excerpt?: string;
 };
 
 export type RelatedRecords = {
@@ -329,6 +352,10 @@ export type TicketLookupResponse = {
 
 export type KnowledgeArticleResponse = {
   article: RelatedDocument;
+};
+
+export type DocumentResponse = {
+  document: RelatedDocument;
 };
 
 export type TrafficStreamEvent = {

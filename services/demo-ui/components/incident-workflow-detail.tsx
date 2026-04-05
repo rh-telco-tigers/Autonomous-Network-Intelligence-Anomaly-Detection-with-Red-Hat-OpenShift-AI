@@ -348,7 +348,7 @@ export function IncidentWorkflowDetail() {
     mutationFn: async (notes: string) => {
       return request<IncidentWorkflow>(`/api/incidents/${encodeURIComponent(incidentId)}/transition`, token, {
         method: "POST",
-        body: JSON.stringify({ target_state: "ESCALATED", notes }),
+        body: JSON.stringify({ target_state: "ESCALATED", notes, source_url: currentPageUrl }),
       });
     },
     onSuccess: refreshWorkflow,
@@ -790,9 +790,14 @@ export function IncidentWorkflowDetail() {
                       variant="outline"
                       onClick={async () => {
                         try {
-                          await escalateIncidentMutation.mutateAsync("Operator escalated before RCA approval.");
+                          const workflow = await escalateIncidentMutation.mutateAsync("Operator escalated before RCA approval.");
                           scrollToSection(ticketRef);
-                          setNotice({ kind: "warning", message: "Incident escalated. Coordinate through the Plane ticket workflow." });
+                          setNotice({
+                            kind: "warning",
+                            message: workflow.current_ticket
+                              ? "Incident escalated. Plane ticket created and linked to this incident."
+                              : "Incident escalated. Open the ticket workflow to create or sync the Plane ticket.",
+                          });
                         } catch (mutationError) {
                           setNotice({
                             kind: "error",
@@ -822,9 +827,14 @@ export function IncidentWorkflowDetail() {
                       variant="outline"
                       onClick={async () => {
                         try {
-                          await escalateIncidentMutation.mutateAsync("Operator escalated after RCA review.");
+                          const workflow = await escalateIncidentMutation.mutateAsync("Operator escalated after RCA review.");
                           scrollToSection(ticketRef);
-                          setNotice({ kind: "warning", message: "Incident escalated. Use the ticket workflow to coordinate next steps." });
+                          setNotice({
+                            kind: "warning",
+                            message: workflow.current_ticket
+                              ? "Incident escalated. Plane ticket is now attached for coordination."
+                              : "Incident escalated. Open the ticket workflow to create or sync the Plane ticket.",
+                          });
                         } catch (mutationError) {
                           setNotice({
                             kind: "error",
@@ -976,11 +986,16 @@ export function IncidentWorkflowDetail() {
                       variant="outline"
                       onClick={async () => {
                         try {
-                          await escalateIncidentMutation.mutateAsync(
+                          const workflow = await escalateIncidentMutation.mutateAsync(
                             actionForm.getValues("notes") || "Operator escalated instead of executing the current remediation.",
                           );
                           scrollToSection(ticketRef);
-                          setNotice({ kind: "warning", message: "Incident escalated. Continue coordination in the Plane ticket workflow." });
+                          setNotice({
+                            kind: "warning",
+                            message: workflow.current_ticket
+                              ? "Incident escalated. Plane ticket is attached and ready for coordination."
+                              : "Incident escalated. Open the ticket workflow to create or sync the Plane ticket.",
+                          });
                         } catch (mutationError) {
                           setNotice({
                             kind: "error",
@@ -1123,8 +1138,23 @@ export function IncidentWorkflowDetail() {
                     {incident.evidence_sources?.length ? (
                       incident.evidence_sources.map((item) => (
                         <div key={`${item.title}-${item.detail}`} className="rounded-xl bg-[var(--surface-raised)] p-3">
-                          <div className="font-medium text-[var(--text-strong)]">{item.title}</div>
-                          <div className="mt-1 text-sm text-[var(--text-secondary)]">{item.detail}</div>
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="font-medium text-[var(--text-strong)]">{item.title}</div>
+                              {item.reference && item.reference !== item.title ? (
+                                <div className="mt-1 break-all font-mono text-xs text-[var(--text-muted)]">{item.reference}</div>
+                              ) : null}
+                              <div className="mt-1 text-sm text-[var(--text-secondary)]">{item.detail}</div>
+                              {item.excerpt ? (
+                                <div className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{truncateText(item.excerpt, 220)}</div>
+                              ) : null}
+                            </div>
+                            {item.reference && item.collection ? (
+                              <Button asChild variant="secondary" className="shrink-0">
+                                <Link href={evidenceDocumentHref(incident.id, item.collection, item.reference)}>Read evidence</Link>
+                              </Button>
+                            ) : null}
+                          </div>
                         </div>
                       ))
                     ) : (
@@ -2487,4 +2517,12 @@ function knowledgeArticleHref(incidentId: string, reference: string) {
     .map((segment) => encodeURIComponent(segment))
     .join("/");
   return `/incidents/${encodeURIComponent(incidentId)}/knowledge/${encodedReference}`;
+}
+
+function evidenceDocumentHref(incidentId: string, collection: string, reference: string) {
+  const encodedReference = reference
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return `/incidents/${encodeURIComponent(incidentId)}/evidence/${encodeURIComponent(collection)}/${encodedReference}`;
 }
