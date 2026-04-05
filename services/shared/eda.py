@@ -20,6 +20,7 @@ POLICY_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "critical_incident_escalation": {
         "name": "IMS Critical Incident Escalation",
         "rulebook": "rulebooks/critical-incident-escalation.yml",
+        "webhook_port": 5000,
         "description": "Escalate critical incidents to Plane after RCA is attached.",
         "event_types": ["rca_attached"],
         "cases": ["authentication_failure", "server_internal_error", "network_degradation"],
@@ -29,6 +30,7 @@ POLICY_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "critical_signal_guardrail": {
         "name": "IMS Critical Signal Guardrail",
         "rulebook": "rulebooks/critical-signal-guardrail.yml",
+        "webhook_port": 5001,
         "description": "Apply the low-risk P-CSCF ingress guardrail after remediations are generated.",
         "event_types": ["remediations_generated"],
         "cases": ["registration_storm", "retransmission_spike", "network_degradation"],
@@ -92,7 +94,7 @@ def bootstrap_resources() -> Dict[str, Any]:
                 "activation_id": int(activation.get("id") or 0),
                 "rulebook": _rulebook_name(policy_key),
                 "status": str(activation.get("status") or "unknown"),
-                "event_stream_urls": _activation_event_stream_urls(int(activation.get("id") or 0), activation),
+                "event_stream_urls": _activation_delivery_urls(policy_key, int(activation.get("id") or 0), activation),
             }
         )
 
@@ -137,6 +139,7 @@ def status() -> Dict[str, Any]:
                 item.get("activation_exists")
                 and item.get("enabled")
                 and str(item.get("status") or "").lower() not in {"failed", "missing"}
+                and bool(item.get("event_stream_urls"))
                 for item in policies
             ),
             "policies": policies,
@@ -517,11 +520,16 @@ def _ensure_activation(
             _request(
                 "POST",
                 f"/api/eda/v1/activations/{activation_id}/disable/",
-                expected_status=(200, 201, 202, 409),
+                expected_status=(200, 201, 202, 204, 409),
             )
             _wait_for_activation_stopped(activation_id)
-        _request("PATCH", f"/api/eda/v1/activations/{activation_id}/", expected_status=(200,), json=patch)
-        existing = _request("GET", f"/api/eda/v1/activations/{activation_id}/")
+        try:
+            _request("PATCH", f"/api/eda/v1/activations/{activation_id}/", expected_status=(200,), json=patch)
+            existing = _request("GET", f"/api/eda/v1/activations/{activation_id}/")
+        except EDAAutomationError as exc:
+            if ": 400 " not in str(exc) and ": 409 " not in str(exc):
+                raise
+            return _replace_activation(activation_id, str(definition["name"]), desired)
     if desired["is_enabled"] and not bool(existing.get("is_enabled")):
         _request("POST", f"/api/eda/v1/activations/{existing['id']}/enable/", expected_status=(200, 201, 202))
     return _request("GET", f"/api/eda/v1/activations/{existing['id']}/")
@@ -545,7 +553,7 @@ def _policy_status() -> List[Dict[str, Any]]:
                 "activation_id": activation_id or None,
                 "enabled": bool(activation.get("is_enabled")) if activation else False,
                 "status": str(activation.get("status") or ("ready" if activation else "missing")),
-                "event_stream_urls": _activation_event_stream_urls(activation_id, activation),
+                "event_stream_urls": _activation_delivery_urls(str(item["policy_key"]), activation_id, activation),
             }
         )
     return policies
@@ -638,14 +646,38 @@ def _wait_for_activation_stopped(activation_id: int) -> None:
     )
 
 
-def _activation_event_stream_urls(activation_id: int, activation: Dict[str, Any] | None = None) -> List[str]:
+def _replace_activation(activation_id: int, activation_name: str, desired: Dict[str, Any]) -> Dict[str, Any]:
+    _request("DELETE", f"/api/eda/v1/activations/{activation_id}/", expected_status=(200, 202, 204))
+    deadline = time.time() + float(os.getenv("EDA_ACTIVATION_RECREATE_TIMEOUT_SECONDS", "90"))
+    while time.time() < deadline:
+        if _find_named_item("/api/eda/v1/activations/", activation_name) is None:
+            return _request("POST", "/api/eda/v1/activations/", expected_status=(200, 201), json=desired)
+        time.sleep(3)
+    raise EDAAutomationError(f"EDA activation '{activation_name}' was not deleted before recreate timed out.")
+
+
+def _activation_delivery_urls(
+    policy_key: str,
+    activation_id: int,
+    activation: Dict[str, Any] | None = None,
+) -> List[str]:
     event_streams = activation.get("event_streams") if isinstance(activation, dict) else None
-    if activation_id > 0 and (activation is None or not isinstance(event_streams, list)):
+    service_name = activation.get("k8s_service_name") if isinstance(activation, dict) else None
+    if activation_id > 0 and (
+        activation is None or not isinstance(event_streams, list) or not str(service_name or "").strip()
+    ):
         activation = _request("GET", f"/api/eda/v1/activations/{activation_id}/")
     if not isinstance(activation, dict):
         return []
     event_streams = activation.get("event_streams") if isinstance(activation.get("event_streams"), list) else []
-    return [str(item.get("url") or "").strip() for item in event_streams if str(item.get("url") or "").strip()]
+    urls = [str(item.get("url") or "").strip() for item in event_streams if str(item.get("url") or "").strip()]
+    service_name = str(activation.get("k8s_service_name") or "").strip()
+    webhook_port = int(POLICY_DEFINITIONS.get(policy_key, {}).get("webhook_port") or 0)
+    namespace = os.getenv("EDA_SERVICE_NAMESPACE", "aap").strip() or "aap"
+    if service_name and webhook_port > 0:
+        urls.append(f"http://{service_name}.{namespace}.svc.cluster.local:{webhook_port}")
+    # Preserve order while removing duplicates.
+    return list(dict.fromkeys(urls))
 
 
 def _find_named_item(path: str, name: str) -> Dict[str, Any] | None:
