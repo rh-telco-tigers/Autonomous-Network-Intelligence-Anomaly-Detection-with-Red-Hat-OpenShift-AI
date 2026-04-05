@@ -9,6 +9,8 @@ from typing import Any, Dict, List
 
 import requests
 
+from shared.aap import controller_callback_template_name
+
 
 class EDAAutomationError(RuntimeError):
     pass
@@ -22,6 +24,7 @@ POLICY_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "event_types": ["rca_attached"],
         "cases": ["authentication_failure", "server_internal_error", "network_degradation"],
         "action_summary": "Transition the incident to ESCALATED and create or sync the Plane ticket.",
+        "controller_template_key": "eda_transition_incident_state",
     },
     "critical_signal_guardrail": {
         "name": "IMS Critical Signal Guardrail",
@@ -30,6 +33,7 @@ POLICY_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "event_types": ["remediations_generated"],
         "cases": ["registration_storm", "retransmission_spike", "network_degradation"],
         "action_summary": "Execute the rate_limit_pcscf remediation through the control-plane automation API.",
+        "controller_template_key": "eda_execute_incident_action",
     },
 }
 
@@ -64,6 +68,7 @@ def bootstrap_resources() -> Dict[str, Any]:
     project_id = _ensure_project(organization_id)
     _sync_project(project_id)
     decision_environment_id = _ensure_decision_environment(organization_id)
+    awx_token_id = _ensure_awx_token_id()
     rulebooks = _rulebooks_by_name(project_id)
 
     policies: List[Dict[str, Any]] = []
@@ -78,6 +83,7 @@ def bootstrap_resources() -> Dict[str, Any]:
             organization_id=organization_id,
             decision_environment_id=decision_environment_id,
             rulebook_id=int(rulebook["id"]),
+            awx_token_id=awx_token_id,
         )
         policies.append(
             {
@@ -125,7 +131,14 @@ def status() -> Dict[str, Any]:
             "project_import_error": str((project or {}).get("import_error") or ""),
             "decision_environment_name": _decision_environment_name(),
             "decision_environment_exists": decision_environment is not None,
-            "bootstrapped": bool(project) and bool(decision_environment) and all(item.get("activation_exists") for item in policies),
+            "bootstrapped": bool(project)
+            and bool(decision_environment)
+            and all(
+                item.get("activation_exists")
+                and item.get("enabled")
+                and str(item.get("status") or "").lower() not in {"failed", "missing"}
+                for item in policies
+            ),
             "policies": policies,
         }
     except Exception as exc:  # noqa: BLE001
@@ -304,6 +317,47 @@ def _event_source_url(policy_key: str) -> str:
     return os.getenv(f"EDA_POLICY_{policy_key.upper()}_SOURCE_URL", f"eda://{policy_key}").strip() or f"eda://{policy_key}"
 
 
+def _controller_url() -> str:
+    return (
+        os.getenv("AAP_CONTROLLER_URL", "").strip()
+        or "http://aap-controller-service.aap.svc.cluster.local"
+    ).rstrip("/")
+
+
+def _controller_username() -> str:
+    return os.getenv("AAP_CONTROLLER_USERNAME", "admin").strip() or "admin"
+
+
+def _controller_password() -> str:
+    explicit = os.getenv("AAP_CONTROLLER_PASSWORD", "").strip()
+    if explicit:
+        return explicit
+    namespace = os.getenv("AAP_CONTROLLER_PASSWORD_SECRET_NAMESPACE", "aap").strip() or "aap"
+    name = os.getenv("AAP_CONTROLLER_PASSWORD_SECRET_NAME", "aap-controller-admin-password").strip() or "aap-controller-admin-password"
+    key = os.getenv("AAP_CONTROLLER_PASSWORD_SECRET_KEY", "password").strip() or "password"
+    return _read_kubernetes_secret_key(namespace, name, key)
+
+
+def _controller_verify() -> bool | str:
+    if _controller_url().startswith("http://"):
+        return False
+    verify_ssl = os.getenv("AAP_CONTROLLER_VERIFY_SSL", "").strip().lower()
+    if verify_ssl in {"false", "0", "no"}:
+        return False
+    ca_path = os.getenv("AAP_CONTROLLER_CA_PATH", "").strip()
+    if ca_path:
+        return ca_path
+    return True
+
+
+def _controller_organization_name() -> str:
+    return os.getenv("AAP_ORGANIZATION", "Default").strip() or "Default"
+
+
+def _controller_token_name() -> str:
+    return os.getenv("EDA_CONTROLLER_TOKEN_NAME", "IMS EDA Controller Token").strip() or "IMS EDA Controller Token"
+
+
 def _project_payload(organization_id: int) -> Dict[str, Any]:
     return {
         "name": _project_name(),
@@ -405,8 +459,12 @@ def _ensure_activation(
     organization_id: int,
     decision_environment_id: int,
     rulebook_id: int,
+    awx_token_id: int,
 ) -> Dict[str, Any]:
     definition = POLICY_DEFINITIONS[policy_key]
+    controller_template_key = str(definition.get("controller_template_key") or "").strip()
+    if not controller_template_key:
+        raise EDAAutomationError(f"EDA policy '{policy_key}' does not declare a controller callback template.")
     desired = {
         "name": definition["name"],
         "description": definition["description"],
@@ -416,6 +474,7 @@ def _ensure_activation(
         "organization_id": organization_id,
         "restart_policy": "always",
         "log_level": "info",
+        "awx_token_id": awx_token_id,
         "extra_var": json.dumps(
             {
                 "control_plane_url": _control_plane_url(),
@@ -424,6 +483,8 @@ def _ensure_activation(
                 "source_url": _event_source_url(policy_key),
                 "policy_key": policy_key,
                 "policy_name": definition["name"],
+                "controller_job_template_name": controller_callback_template_name(controller_template_key),
+                "controller_organization_name": _controller_organization_name(),
             }
         ),
     }
@@ -442,13 +503,20 @@ def _ensure_activation(
         "organization_id": organization.get("id"),
         "restart_policy": existing.get("restart_policy"),
         "log_level": existing.get("log_level"),
+        "awx_token_id": existing.get("awx_token_id"),
         "extra_var": existing.get("extra_var"),
     }
     for field, current in comparisons.items():
         if current != desired[field]:
             patch[field] = desired[field]
     if patch:
-        _request("PATCH", f"/api/eda/v1/activations/{existing['id']}/", expected_status=(200,), json=patch)
+        try:
+            _request("PATCH", f"/api/eda/v1/activations/{existing['id']}/", expected_status=(200,), json=patch)
+        except EDAAutomationError as exc:
+            if ": 409 " not in str(exc):
+                raise
+            _replace_activation(int(existing["id"]), desired)
+            return _find_named_item("/api/eda/v1/activations/", str(definition["name"])) or {}
     if not bool(existing.get("is_enabled")):
         _request("POST", f"/api/eda/v1/activations/{existing['id']}/enable/", expected_status=(200, 201, 202))
     return _request("GET", f"/api/eda/v1/activations/{existing['id']}/")
@@ -472,6 +540,83 @@ def _policy_status() -> List[Dict[str, Any]]:
             }
         )
     return policies
+
+
+def _controller_request(
+    method: str,
+    path: str,
+    expected_status: tuple[int, ...] = (200,),
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    response = requests.request(
+        method,
+        f"{_controller_url()}{path}",
+        auth=(_controller_username(), _controller_password()),
+        verify=_controller_verify(),
+        timeout=float(os.getenv("AAP_CONTROLLER_TIMEOUT_SECONDS", "30")),
+        headers={"Content-Type": "application/json", **kwargs.pop("headers", {})},
+        **kwargs,
+    )
+    if response.status_code not in expected_status:
+        raise EDAAutomationError(
+            f"Controller request failed for {method} {path}: {response.status_code} {response.text[:400]}"
+        )
+    if not response.text.strip():
+        return {}
+    try:
+        return response.json()
+    except ValueError as exc:  # pragma: no cover - defensive
+        raise EDAAutomationError(f"Controller returned non-JSON content for {method} {path}.") from exc
+
+
+def _ensure_awx_token_id() -> int:
+    name = _controller_token_name()
+    payload = _request("GET", "/api/eda/v1/users/me/awx-tokens/", params={"page_size": 200})
+    for item in payload.get("results", []):
+        if str(item.get("name") or "") == name:
+            return int(item["id"])
+
+    controller_user = _controller_request("GET", "/api/v2/me/")
+    results = controller_user.get("results") if isinstance(controller_user.get("results"), list) else []
+    if not results:
+        raise EDAAutomationError("AAP controller did not return the current user needed to create an EDA controller token.")
+    controller_user_id = int(results[0]["id"])
+
+    existing_tokens = _controller_request(
+        "GET",
+        f"/api/v2/users/{controller_user_id}/personal_tokens/",
+        params={"page_size": 200},
+    )
+    for item in existing_tokens.get("results", []):
+        if str(item.get("description") or "") == name:
+            _controller_request("DELETE", f"/api/v2/tokens/{item['id']}/", expected_status=(204,))
+
+    created_token = _controller_request(
+        "POST",
+        f"/api/v2/users/{controller_user_id}/personal_tokens/",
+        expected_status=(200, 201),
+        json={"description": name, "application": None, "scope": "write"},
+    )
+    token_value = str(created_token.get("token") or "").strip()
+    if not token_value:
+        raise EDAAutomationError("AAP controller did not return a token value for Event-Driven Ansible.")
+
+    created_awx_token = _request(
+        "POST",
+        "/api/eda/v1/users/me/awx-tokens/",
+        expected_status=(200, 201),
+        json={
+            "name": name,
+            "description": "Controller token used by EDA run_job_template actions for IMS incident automation.",
+            "token": token_value,
+        },
+    )
+    return int(created_awx_token["id"])
+
+
+def _replace_activation(activation_id: int, desired: Dict[str, Any]) -> None:
+    _request("DELETE", f"/api/eda/v1/activations/{activation_id}/", expected_status=(200, 202, 204))
+    _request("POST", "/api/eda/v1/activations/", expected_status=(200, 201), json=desired)
 
 
 def _activation_event_stream_urls(activation_id: int, activation: Dict[str, Any] | None = None) -> List[str]:

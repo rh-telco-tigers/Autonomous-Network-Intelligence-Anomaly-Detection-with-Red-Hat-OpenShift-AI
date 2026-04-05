@@ -13,16 +13,18 @@
         event.payload.anomaly_type in ["authentication_failure", "server_internal_error", "network_degradation"] and
         event.payload.status not in ["ESCALATED", "VERIFIED", "CLOSED"]
       action:
-        run_playbook:
-          name: automation/eda/playbooks/transition-incident-state.yml
-          extra_vars:
-            control_plane_url: "{{ control_plane_url }}"
-            control_plane_api_key: "{{ control_plane_api_key }}"
-            incident_id: "{{ event.payload.incident_id }}"
-            approved_by: "{{ approved_by }}"
-            target_state: ESCALATED
-            source_url: "{{ source_url }}"
-            notes: >-
-              EDA policy {{ policy_name | default('critical_incident_escalation') }}
-              escalated {{ event.payload.anomaly_type }} because RCA is attached
-              and the incident remains critical.
+        run_job_template:
+          name: "{{ controller_job_template_name }}"
+          organization: "{{ controller_organization_name }}"
+          job_args:
+            extra_vars:
+              control_plane_url: "{{ control_plane_url }}"
+              control_plane_api_key: "{{ control_plane_api_key }}"
+              incident_id: "{{ event.payload.incident_id }}"
+              approved_by: "{{ approved_by }}"
+              target_state: ESCALATED
+              source_url: "{{ source_url }}"
+              notes: >-
+                EDA policy {{ policy_name | default('critical_incident_escalation') }}
+                escalated {{ event.payload.anomaly_type }} because RCA is attached
+                and the incident remains critical.

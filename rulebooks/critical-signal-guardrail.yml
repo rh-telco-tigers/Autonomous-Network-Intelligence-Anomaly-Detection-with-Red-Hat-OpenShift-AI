@@ -14,15 +14,17 @@
         event.payload.anomaly_type in ["registration_storm", "retransmission_spike", "network_degradation"] and
         event.payload.status not in ["EXECUTING", "EXECUTED", "VERIFIED", "CLOSED"]
       action:
-        run_playbook:
-          name: automation/eda/playbooks/execute-incident-action.yml
-          extra_vars:
-            control_plane_url: "{{ control_plane_url }}"
-            control_plane_api_key: "{{ control_plane_api_key }}"
-            incident_id: "{{ event.payload.incident_id }}"
-            action_ref: rate_limit_pcscf
-            approved_by: "{{ approved_by }}"
-            notes: >-
-              EDA policy {{ policy_name | default('critical_signal_guardrail') }}
-              auto-applied the low-risk P-CSCF guardrail after ranked remediations
-              were generated for a critical {{ event.payload.anomaly_type }} incident.
+        run_job_template:
+          name: "{{ controller_job_template_name }}"
+          organization: "{{ controller_organization_name }}"
+          job_args:
+            extra_vars:
+              control_plane_url: "{{ control_plane_url }}"
+              control_plane_api_key: "{{ control_plane_api_key }}"
+              incident_id: "{{ event.payload.incident_id }}"
+              action_ref: rate_limit_pcscf
+              approved_by: "{{ approved_by }}"
+              notes: >-
+                EDA policy {{ policy_name | default('critical_signal_guardrail') }}
+                auto-applied the low-risk P-CSCF guardrail after ranked remediations
+                were generated for a critical {{ event.payload.anomaly_type }} incident.

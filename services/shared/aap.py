@@ -35,6 +35,19 @@ ACTION_DEFINITIONS: Dict[str, Dict[str, str]] = {
     },
 }
 
+CALLBACK_TEMPLATE_DEFINITIONS: Dict[str, Dict[str, str]] = {
+    "eda_transition_incident_state": {
+        "job_template_name": "IMS EDA Transition Incident State",
+        "playbook": "automation/eda/playbooks/transition-incident-state.yml",
+        "description": "Call the control-plane transition endpoint from Event-Driven Ansible.",
+    },
+    "eda_execute_incident_action": {
+        "job_template_name": "IMS EDA Execute Incident Action",
+        "playbook": "automation/eda/playbooks/execute-incident-action.yml",
+        "description": "Call the control-plane automation execution endpoint from Event-Driven Ansible.",
+    },
+}
+
 TERMINAL_JOB_STATUSES = {"successful", "failed", "error", "canceled"}
 
 
@@ -58,6 +71,12 @@ def action_catalog() -> List[Dict[str, Any]]:
     return items
 
 
+def controller_callback_template_name(template_key: str) -> str:
+    if template_key not in CALLBACK_TEMPLATE_DEFINITIONS:
+        raise AAPAutomationError(f"AAP callback template '{template_key}' is not defined.")
+    return _job_template_name(template_key)
+
+
 def bootstrap_resources() -> Dict[str, Any]:
     if not _enabled():
         return {"configured": False, "mode": "disabled", "actions": []}
@@ -68,7 +87,8 @@ def bootstrap_resources() -> Dict[str, Any]:
     _sync_project(project_id)
     kubernetes_credential_id = _ensure_kubernetes_credential(organization_id)
     actions: List[Dict[str, Any]] = []
-    for action, definition in ACTION_DEFINITIONS.items():
+    callback_templates: List[Dict[str, Any]] = []
+    for action, definition in _controller_template_definitions().items():
         template_id = _ensure_job_template(
             organization_id=organization_id,
             inventory_id=inventory_id,
@@ -78,14 +98,16 @@ def bootstrap_resources() -> Dict[str, Any]:
             playbook=definition["playbook"],
             description=definition["description"],
         )
-        actions.append(
-            {
-                "action": action,
-                "name": _job_template_name(action),
-                "job_template_id": template_id,
-                "playbook": definition["playbook"],
-            }
-        )
+        item = {
+            "action": action,
+            "name": _job_template_name(action),
+            "job_template_id": template_id,
+            "playbook": definition["playbook"],
+        }
+        if action in ACTION_DEFINITIONS:
+            actions.append(item)
+        else:
+            callback_templates.append(item)
     return {
         "configured": True,
         "mode": "controller-api",
@@ -97,6 +119,7 @@ def bootstrap_resources() -> Dict[str, Any]:
         "kubernetes_credential_name": _kubernetes_credential_name(),
         "kubernetes_credential_id": kubernetes_credential_id,
         "actions": actions,
+        "callback_templates": callback_templates,
     }
 
 
@@ -269,6 +292,18 @@ def controller_status() -> Dict[str, Any]:
         for item in action_catalog():
             template_id = existing_templates.get(str(item["name"]))
             actions.append(item | {"template_exists": bool(template_id), "job_template_id": template_id})
+        callback_templates = []
+        for template_key, definition in CALLBACK_TEMPLATE_DEFINITIONS.items():
+            name = _job_template_name(template_key)
+            callback_templates.append(
+                {
+                    "template_key": template_key,
+                    "name": name,
+                    "playbook": definition["playbook"],
+                    "template_exists": bool(existing_templates.get(name)),
+                    "job_template_id": existing_templates.get(name),
+                }
+            )
         return {
             "configured": True,
             "mode": "controller-api",
@@ -280,8 +315,12 @@ def controller_status() -> Dict[str, Any]:
             "kubernetes_credential_name": _kubernetes_credential_name(),
             "kubernetes_credential_exists": credential_exists,
             "project_exists": project_exists,
-            "bootstrapped": project_exists and credential_exists and all(bool(item["template_exists"]) for item in actions),
+            "bootstrapped": project_exists
+            and credential_exists
+            and all(bool(item["template_exists"]) for item in actions)
+            and all(bool(item["template_exists"]) for item in callback_templates),
             "actions": actions,
+            "callback_templates": callback_templates,
         }
     except Exception as exc:  # noqa: BLE001
         return {
@@ -409,8 +448,12 @@ def _runner_image() -> str:
     )
 
 
+def _controller_template_definitions() -> Dict[str, Dict[str, str]]:
+    return ACTION_DEFINITIONS | CALLBACK_TEMPLATE_DEFINITIONS
+
+
 def _job_template_name(action: str) -> str:
-    definition = ACTION_DEFINITIONS.get(action) or {}
+    definition = _controller_template_definitions().get(action) or {}
     env_name = f"AAP_JOB_TEMPLATE_{action.upper()}"
     return os.getenv(env_name, definition.get("job_template_name", action)).strip() or action
 
