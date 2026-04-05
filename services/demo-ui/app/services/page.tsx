@@ -16,6 +16,8 @@ function buildRouteLinks(origin: string, integrations: Record<string, Integratio
   const replaceHost = (from: string, to: string) => (origin.includes(from) ? origin.replace(from, to) : "");
   const aapIntegration = integrations.aap ?? {};
   const aapRoute = String(aapIntegration.controller_url ?? "").trim();
+  const edaIntegration = integrations.eda ?? {};
+  const edaRoute = String(edaIntegration.eda_url ?? "").trim();
   const planeIntegration = integrations.plane ?? {};
   const planeRoute = String(planeIntegration.app_url ?? process.env.NEXT_PUBLIC_PLANE_URL ?? "").trim();
   return [
@@ -26,6 +28,10 @@ function buildRouteLinks(origin: string, integrations: Record<string, Integratio
     {
       label: "AAP Controller",
       url: Boolean(aapIntegration.live_configured) && isExternalUrl(aapRoute) ? aapRoute : "",
+    },
+    {
+      label: "AAP EDA",
+      url: Boolean(edaIntegration.live_configured) && isExternalUrl(edaRoute) ? edaRoute : "",
     },
     {
       label: "Plane",
@@ -51,6 +57,10 @@ export default function ServicesPage() {
 
   const routeLinks = buildRouteLinks(origin, data.integrations);
   const configuredLinks = routeLinks.filter((item) => isExternalUrl(item.url));
+  const aapIntegration = (data.integrations.aap ?? {}) as IntegrationStatus;
+  const edaIntegration = (data.integrations.eda ?? {}) as IntegrationStatus;
+  const controllerActions = asIntegrationItems(aapIntegration.actions);
+  const edaPolicies = asIntegrationItems(edaIntegration.policies);
 
   return (
     <div className="space-y-8">
@@ -82,6 +92,63 @@ export default function ServicesPage() {
               <div className="mt-3 text-sm text-[var(--text-secondary)]">{service.endpoint}</div>
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Automation delivery</CardTitle>
+          <CardDescription>Manual incident actions stay in the incident workflow, while selected low-risk cases can also run through Event-Driven Ansible.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 xl:grid-cols-2">
+          <div className="space-y-3">
+            <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Manual from incident UI</div>
+            {controllerActions.length ? (
+              controllerActions.map((item) => (
+                <div key={String(item.action ?? item.name ?? "action")} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-[var(--text-strong)]">{String(item.name ?? item.action ?? "AAP template")}</div>
+                      <div className="mt-1 text-sm text-[var(--text-secondary)]">{String(item.description ?? item.playbook ?? "Controller-backed manual remediation.")}</div>
+                    </div>
+                    <StatusBadge value={item.template_exists ? "Ready" : "Pending"} />
+                  </div>
+                  <div className="mt-3 text-xs text-[var(--text-subtle)]">
+                    {renderCases(item.cases)}{item.playbook ? ` · ${String(item.playbook)}` : ""}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-[var(--text-subtle)]">No controller-backed manual actions are being reported yet.</div>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Event-Driven Ansible</div>
+            {edaPolicies.length ? (
+              edaPolicies.map((item) => (
+                <div key={String(item.policy_key ?? item.name ?? "policy")} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-[var(--text-strong)]">{String(item.name ?? "EDA policy")}</div>
+                      <div className="mt-1 text-sm text-[var(--text-secondary)]">
+                        {String(item.action_summary ?? item.description ?? "Event-driven policy")}
+                      </div>
+                    </div>
+                    <StatusBadge value={String(item.status ?? (item.activation_exists ? "Ready" : "Pending"))} />
+                  </div>
+                  <div className="mt-3 text-xs text-[var(--text-subtle)]">
+                    Events: {renderList(item.event_types)} · Cases: {renderCases(item.cases)}
+                  </div>
+                  <div className="mt-1 text-xs text-[var(--text-subtle)]">
+                    {item.activation_exists ? "Activation present in EDA." : "Activation has not been bootstrapped yet."}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-[var(--text-subtle)]">No event-driven policies are being reported yet.</div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -154,4 +221,20 @@ function ServiceMetric({ label, value }: { label: string; value: string }) {
       </CardHeader>
     </Card>
   );
+}
+
+function asIntegrationItems(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null) : [];
+}
+
+function renderList(value: unknown) {
+  if (!Array.isArray(value) || !value.length) {
+    return "n/a";
+  }
+  return value.map((item) => String(item)).join(", ");
+}
+
+function renderCases(value: unknown) {
+  const rendered = renderList(value);
+  return rendered === "n/a" ? "Cases not declared" : rendered.replace(/_/g, " ");
 }

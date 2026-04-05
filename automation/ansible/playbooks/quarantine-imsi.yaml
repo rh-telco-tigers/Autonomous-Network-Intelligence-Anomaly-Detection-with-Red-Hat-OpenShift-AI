@@ -3,9 +3,101 @@
   hosts: localhost
   gather_facts: false
   vars:
-    imsi: "001010000000001"
+    target_namespace: "{{ target_namespace | default('ims-demo-lab') }}"
+    target_configmap: "{{ target_configmap | default('ims-remediation-state') }}"
+    quarantine_key: "{{ quarantine_key | default('quarantined_imsi') }}"
+    imsi: "{{ imsi | default('001010000000001') }}"
+    quarantine_reason: "{{ quarantine_reason | default('event_or_operator_request') }}"
+    kubernetes_api_token: >-
+      {{
+        lookup('env', 'K8S_AUTH_API_KEY')
+        if (lookup('env', 'K8S_AUTH_API_KEY') | default('', true) | length) > 0
+        else lookup('file', '/var/run/secrets/kubernetes.io/serviceaccount/token')
+      }}
+    kubernetes_api_url: >-
+      {{
+        lookup('env', 'K8S_AUTH_HOST')
+        if (lookup('env', 'K8S_AUTH_HOST') | default('', true) | length) > 0
+        else 'https://' ~
+          (lookup('env', 'KUBERNETES_SERVICE_HOST') | default('kubernetes.default.svc', true)) ~
+          ':' ~
+          (lookup('env', 'KUBERNETES_SERVICE_PORT_HTTPS') | default('443', true))
+      }}
+    kubernetes_ca_cert: >-
+      {{
+        lookup('env', 'K8S_AUTH_SSL_CA_CERT')
+        if (lookup('env', 'K8S_AUTH_SSL_CA_CERT') | default('', true) | length) > 0
+        else '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
+      }}
+    kubernetes_verify_ssl: "{{ (lookup('env', 'K8S_AUTH_VERIFY_SSL') | default('true', true) | lower) not in ['false', '0', 'no'] }}"
+    configmap_endpoint: >-
+      {{ kubernetes_api_url }}/api/v1/namespaces/{{ target_namespace }}/configmaps/{{ target_configmap }}
+    quarantine_entry: >-
+      {{ imsi }} | reason={{ quarantine_reason }} | incident={{ incident_id | default('incident') }} |
+      actor={{ approved_by | default('operator') }}
   tasks:
+    - name: Read the current quarantine state configmap
+      ansible.builtin.uri:
+        url: "{{ configmap_endpoint }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ kubernetes_api_token }}"
+          Accept: application/json
+        ca_path: "{{ kubernetes_ca_cert }}"
+        validate_certs: "{{ kubernetes_verify_ssl | bool }}"
+        return_content: true
+        status_code:
+          - 200
+          - 404
+      register: current_quarantine_state
+
+    - name: Create the quarantine state configmap when it does not exist
+      ansible.builtin.uri:
+        url: "{{ kubernetes_api_url }}/api/v1/namespaces/{{ target_namespace }}/configmaps"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ kubernetes_api_token }}"
+          Accept: application/json
+          Content-Type: application/json
+        ca_path: "{{ kubernetes_ca_cert }}"
+        validate_certs: "{{ kubernetes_verify_ssl | bool }}"
+        body_format: raw
+        body: >-
+          {{
+            {
+              'apiVersion': 'v1',
+              'kind': 'ConfigMap',
+              'metadata': {'name': target_configmap, 'namespace': target_namespace},
+              'data': {quarantine_key: quarantine_entry}
+            } | to_json
+          }}
+        return_content: true
+        status_code:
+          - 200
+          - 201
+      when: current_quarantine_state.status == 404
+      register: created_quarantine_state
+
+    - name: Update the quarantine state configmap when it already exists
+      ansible.builtin.uri:
+        url: "{{ configmap_endpoint }}"
+        method: PATCH
+        headers:
+          Authorization: "Bearer {{ kubernetes_api_token }}"
+          Accept: application/json
+          Content-Type: application/merge-patch+json
+        ca_path: "{{ kubernetes_ca_cert }}"
+        validate_certs: "{{ kubernetes_verify_ssl | bool }}"
+        body_format: raw
+        body: "{{ {'data': {quarantine_key: quarantine_entry}} | to_json }}"
+        return_content: true
+        status_code: 200
+      when: current_quarantine_state.status == 200
+      register: updated_quarantine_state
+
     - name: Emit a quarantine marker for the IMSI
       ansible.builtin.debug:
-        msg: "Quarantine requested for IMSI {{ imsi }}"
+        msg: >-
+          Recorded {{ quarantine_key }}={{ quarantine_entry }} in
+          {{ target_namespace }}/{{ target_configmap }}.
 

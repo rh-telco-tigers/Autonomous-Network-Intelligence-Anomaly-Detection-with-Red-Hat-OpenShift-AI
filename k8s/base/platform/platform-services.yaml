@@ -22,6 +22,11 @@ stringData:
         "subject": "demo-viewer",
         "projects": ["ims-demo"],
         "roles": ["viewer"]
+      },
+      "eda-token": {
+        "subject": "eda-automation",
+        "projects": ["ims-demo"],
+        "roles": ["operator", "automation"]
       }
     }
 ---
@@ -92,7 +97,7 @@ spec:
             claimName: control-plane-data
       containers:
         - name: control-plane
-          image: control-plane:latest
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/control-plane:latest
           ports:
             - containerPort: 8080
           env:
@@ -177,6 +182,26 @@ spec:
                 configMapKeyRef:
                   name: aap-automation-config
                   key: AAP_JOB_POLL_SECONDS
+            - name: AAP_KUBERNETES_CREDENTIAL_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_KUBERNETES_CREDENTIAL_NAME
+            - name: AAP_KUBERNETES_SERVICE_ACCOUNT_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_KUBERNETES_SERVICE_ACCOUNT_NAMESPACE
+            - name: AAP_KUBERNETES_SERVICE_ACCOUNT_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_KUBERNETES_SERVICE_ACCOUNT_NAME
+            - name: AAP_KUBERNETES_TOKEN_EXPIRATION_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_KUBERNETES_TOKEN_EXPIRATION_SECONDS
             - name: AAP_RUNNER_NAMESPACE
               valueFrom:
                 configMapKeyRef:
@@ -207,6 +232,136 @@ spec:
                 configMapKeyRef:
                   name: aap-automation-config
                   key: AAP_SCALE_SCSCF_REPLICAS
+            - name: AAP_JOB_TEMPLATE_RATE_LIMIT_PCSCF
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_JOB_TEMPLATE_RATE_LIMIT_PCSCF
+            - name: AAP_JOB_TEMPLATE_QUARANTINE_IMSI
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_JOB_TEMPLATE_QUARANTINE_IMSI
+            - name: AAP_RATE_LIMIT_PCSCF_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_RATE_LIMIT_PCSCF_NAMESPACE
+            - name: AAP_RATE_LIMIT_PCSCF_DEPLOYMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_RATE_LIMIT_PCSCF_DEPLOYMENT
+            - name: AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY
+            - name: AAP_RATE_LIMIT_PCSCF_ANNOTATION_VALUE
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_RATE_LIMIT_PCSCF_ANNOTATION_VALUE
+            - name: AAP_QUARANTINE_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_QUARANTINE_NAMESPACE
+            - name: AAP_QUARANTINE_CONFIGMAP
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_QUARANTINE_CONFIGMAP
+            - name: AAP_QUARANTINE_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_QUARANTINE_KEY
+            - name: AAP_QUARANTINE_DEFAULT_IMSI
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AAP_QUARANTINE_DEFAULT_IMSI
+            - name: EDA_AUTOMATION_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: EDA_AUTOMATION_ENABLED
+            - name: EDA_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: EDA_API_URL
+            - name: EDA_APP_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: EDA_APP_URL
+            - name: EDA_ORGANIZATION
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: EDA_ORGANIZATION
+            - name: EDA_PROJECT_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: EDA_PROJECT_NAME
+            - name: EDA_PROJECT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: EDA_PROJECT_URL
+            - name: EDA_PROJECT_BRANCH
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: EDA_PROJECT_BRANCH
+            - name: EDA_DECISION_ENVIRONMENT_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: EDA_DECISION_ENVIRONMENT_NAME
+            - name: EDA_DECISION_ENVIRONMENT_IMAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: EDA_DECISION_ENVIRONMENT_IMAGE
+            - name: EDA_CONTROL_PLANE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: EDA_CONTROL_PLANE_URL
+            - name: EDA_CONTROL_PLANE_API_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: EDA_CONTROL_PLANE_API_KEY
+            - name: EDA_AUTOMATION_ACTOR
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: EDA_AUTOMATION_ACTOR
+            - name: EDA_EVENT_VERIFY_SSL
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: EDA_EVENT_VERIFY_SSL
+            - name: AUTOMATION_BOOTSTRAP_ON_STARTUP
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AUTOMATION_BOOTSTRAP_ON_STARTUP
+            - name: AUTOMATION_BOOTSTRAP_RETRY_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AUTOMATION_BOOTSTRAP_RETRY_SECONDS
+            - name: AUTOMATION_BOOTSTRAP_MAX_ATTEMPTS
+              valueFrom:
+                configMapKeyRef:
+                  name: aap-automation-config
+                  key: AUTOMATION_BOOTSTRAP_MAX_ATTEMPTS
             - name: DEMO_INTEGRATIONS_ENABLED
               value: "true"
             - name: CONSOLE_CLUSTER_NAME
@@ -264,10 +419,14 @@ spec:
             httpGet:
               path: /healthz
               port: 8080
+            initialDelaySeconds: 20
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /healthz
               port: 8080
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
           resources:
             requests:
               cpu: 100m
@@ -612,7 +771,7 @@ spec:
     spec:
       containers:
         - name: demo-ui
-          image: demo-ui:latest
+          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/demo-ui:latest
           ports:
             - containerPort: 8080
           env:

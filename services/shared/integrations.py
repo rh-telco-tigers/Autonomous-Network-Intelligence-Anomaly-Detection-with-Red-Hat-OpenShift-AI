@@ -5,6 +5,7 @@ from typing import Dict
 import requests
 
 from shared.aap import controller_status
+from shared.eda import status as eda_status
 from shared.tickets import ticketing_status
 
 
@@ -16,6 +17,7 @@ def integration_status() -> Dict[str, Dict[str, object]]:
     slack_configured = bool(os.getenv("SLACK_WEBHOOK_URL", "").strip())
     return {
         "aap": controller_status(),
+        "eda": eda_status(),
         "slack": {
             "configured": slack_configured or _demo_integrations_enabled(),
             "mode": "webhook" if slack_configured else "demo-relay",

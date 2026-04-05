@@ -2,16 +2,69 @@
 - name: Apply a constrained demo response to the P-CSCF path
   hosts: localhost
   gather_facts: false
+  vars:
+    target_namespace: "{{ target_namespace | default('ims-demo-lab') }}"
+    target_deployment: "{{ target_deployment | default('openimss-pcscf') }}"
+    annotation_key: "{{ annotation_key | default('ims.demo/rate-limit-review') }}"
+    annotation_value: "{{ annotation_value | default('approved') }}"
+    kubernetes_api_token: >-
+      {{
+        lookup('env', 'K8S_AUTH_API_KEY')
+        if (lookup('env', 'K8S_AUTH_API_KEY') | default('', true) | length) > 0
+        else lookup('file', '/var/run/secrets/kubernetes.io/serviceaccount/token')
+      }}
+    kubernetes_api_url: >-
+      {{
+        lookup('env', 'K8S_AUTH_HOST')
+        if (lookup('env', 'K8S_AUTH_HOST') | default('', true) | length) > 0
+        else 'https://' ~
+          (lookup('env', 'KUBERNETES_SERVICE_HOST') | default('kubernetes.default.svc', true)) ~
+          ':' ~
+          (lookup('env', 'KUBERNETES_SERVICE_PORT_HTTPS') | default('443', true))
+      }}
+    kubernetes_ca_cert: >-
+      {{
+        lookup('env', 'K8S_AUTH_SSL_CA_CERT')
+        if (lookup('env', 'K8S_AUTH_SSL_CA_CERT') | default('', true) | length) > 0
+        else '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
+      }}
+    kubernetes_verify_ssl: "{{ (lookup('env', 'K8S_AUTH_VERIFY_SSL') | default('true', true) | lower) not in ['false', '0', 'no'] }}"
+    deployment_endpoint: >-
+      {{ kubernetes_api_url }}/apis/apps/v1/namespaces/{{ target_namespace }}/deployments/{{ target_deployment }}
   tasks:
-    - name: Annotate the P-CSCF deployment for manual traffic-governance review
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: openimss-pcscf
-            namespace: ims-demo-lab
-            annotations:
-              ims.demo/rate-limit-review: "approved"
+    - name: Read the current P-CSCF deployment
+      ansible.builtin.uri:
+        url: "{{ deployment_endpoint }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ kubernetes_api_token }}"
+          Accept: application/json
+        ca_path: "{{ kubernetes_ca_cert }}"
+        validate_certs: "{{ kubernetes_verify_ssl | bool }}"
+        return_content: true
+        status_code: 200
+      register: current_deployment
+
+    - name: Apply the ingress rate-limit review annotation
+      ansible.builtin.uri:
+        url: "{{ deployment_endpoint }}"
+        method: PATCH
+        headers:
+          Authorization: "Bearer {{ kubernetes_api_token }}"
+          Accept: application/json
+          Content-Type: application/merge-patch+json
+        ca_path: "{{ kubernetes_ca_cert }}"
+        validate_certs: "{{ kubernetes_verify_ssl | bool }}"
+        body_format: raw
+        body: "{{ {'metadata': {'annotations': {annotation_key: annotation_value}}} | to_json }}"
+        return_content: true
+        status_code: 200
+      register: updated_deployment
+
+    - name: Emit a concise remediation summary
+      ansible.builtin.debug:
+        msg: >-
+          Marked {{ target_namespace }}/{{ target_deployment }} with
+          {{ annotation_key }}={{ annotation_value }} to signal the
+          temporary ingress guardrail path.
 

@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -19,12 +20,18 @@ import requests
 from shared.aap import (
     AAPAutomationError,
     action_supported as aap_action_supported,
+    bootstrap_resources as aap_bootstrap_resources,
     launch_action as aap_launch_action,
     launch_runner_job as aap_launch_runner_job,
     wait_for_job as aap_wait_for_job,
     wait_for_runner_job as aap_wait_for_runner_job,
 )
 from shared.cors import install_cors
+from shared.eda import (
+    EDAAutomationError,
+    bootstrap_resources as eda_bootstrap_resources,
+    publish_event as eda_publish_event,
+)
 from shared.db import (
     attach_rca,
     create_ticket_resolution_extract,
@@ -122,6 +129,8 @@ from shared.workflow import (
 
 logger = logging.getLogger(__name__)
 RELATED_CONTEXT_COLLECTIONS = [name for name in DEFAULT_MILVUS_COLLECTIONS if name != RUNBOOK_COLLECTION]
+_AUTOMATION_BOOTSTRAP_LOCK = threading.Lock()
+_AUTOMATION_BOOTSTRAP_STARTED = False
 
 
 class IncidentCreate(BaseModel):
@@ -213,6 +222,12 @@ class RemediationDecisionRequest(BaseModel):
     notes: str = ""
 
 
+class AutomationActionTriggerRequest(BaseModel):
+    approved_by: str
+    notes: str = ""
+    source_of_action: str = "event_driven_policy"
+
+
 class RemediationRejectRequest(BaseModel):
     rejected_by: str
     notes: str = ""
@@ -261,6 +276,34 @@ def _positive_int_from_env(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
+def _non_negative_int_from_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+def _bool_from_env(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name, "true" if default else "false").strip().lower()
+    return raw_value in {"1", "true", "yes", "on"}
+
+
+def _string_from_env(name: str, default: str) -> str:
+    return os.getenv(name, default).strip() or default
+
+
+def _safe_imsi_for_automation(incident: Dict[str, object]) -> str:
+    feature_snapshot = incident.get("feature_snapshot")
+    if isinstance(feature_snapshot, dict):
+        for key in ("imsi", "subscriber_imsi", "subscriber_id", "source_id"):
+            candidate = str(feature_snapshot.get(key) or "").strip()
+            if candidate:
+                return candidate
+    return _string_from_env("AAP_QUARANTINE_DEFAULT_IMSI", "001010000000001")
+
+
 CONSOLE_SCENARIOS = set(console_scenario_names())
 CONSOLE_CLUSTER_NAME = os.getenv("CONSOLE_CLUSTER_NAME", "ims-demo-lab")
 CONSOLE_AUTO_REFRESH_SECONDS = _positive_int_from_env("CONSOLE_AUTO_REFRESH_SECONDS", 5)
@@ -280,6 +323,72 @@ PREDICTIVE_SERVICE_URL = (
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    _start_automation_bootstrap_worker()
+
+
+def _automation_bootstrap_on_startup() -> bool:
+    return _bool_from_env("AUTOMATION_BOOTSTRAP_ON_STARTUP", True)
+
+
+def _automation_bootstrap_retry_seconds() -> int:
+    return _positive_int_from_env("AUTOMATION_BOOTSTRAP_RETRY_SECONDS", 15)
+
+
+def _automation_bootstrap_max_attempts() -> int:
+    return _non_negative_int_from_env("AUTOMATION_BOOTSTRAP_MAX_ATTEMPTS", 0)
+
+
+def _bootstrap_automation_once() -> bool:
+    component_errors: List[str] = []
+    for component_name, bootstrap in (
+        ("aap", aap_bootstrap_resources),
+        ("eda", eda_bootstrap_resources),
+    ):
+        try:
+            bootstrap()
+            record_integration(component_name, "bootstrapped")
+        except (AAPAutomationError, EDAAutomationError) as exc:
+            component_errors.append(f"{component_name}: {exc}")
+            record_integration(component_name, "bootstrap_failed")
+            logger.warning("Automatic %s bootstrap attempt failed: %s", component_name.upper(), exc)
+        except Exception as exc:  # noqa: BLE001
+            component_errors.append(f"{component_name}: {exc}")
+            record_integration(component_name, "bootstrap_failed")
+            logger.exception("Unexpected automatic %s bootstrap failure", component_name.upper())
+    if component_errors:
+        logger.warning("Automatic automation bootstrap incomplete: %s", " | ".join(component_errors))
+        return False
+    logger.info("Automatic automation bootstrap completed successfully.")
+    return True
+
+
+def _automation_bootstrap_worker() -> None:
+    max_attempts = _automation_bootstrap_max_attempts()
+    retry_seconds = _automation_bootstrap_retry_seconds()
+    attempt = 0
+    while True:
+        attempt += 1
+        if _bootstrap_automation_once():
+            return
+        if max_attempts > 0 and attempt >= max_attempts:
+            logger.warning(
+                "Automatic automation bootstrap exhausted %s attempts without full success.",
+                max_attempts,
+            )
+            return
+        time.sleep(retry_seconds)
+
+
+def _start_automation_bootstrap_worker() -> None:
+    global _AUTOMATION_BOOTSTRAP_STARTED
+    if not _automation_bootstrap_on_startup():
+        return
+    with _AUTOMATION_BOOTSTRAP_LOCK:
+        if _AUTOMATION_BOOTSTRAP_STARTED:
+            return
+        _AUTOMATION_BOOTSTRAP_STARTED = True
+    thread = threading.Thread(target=_automation_bootstrap_worker, name="automation-bootstrap", daemon=True)
+    thread.start()
 
 
 def _now_iso() -> str:
@@ -416,6 +525,15 @@ def _generate_and_store_remediations(incident_id: str, actor: str = "control-pla
             },
             incident_id=incident_id,
         )
+        _publish_eda_event_best_effort(
+            "remediations_generated",
+            get_incident(incident_id) or incident,
+            extra={
+                "remediation_count": len(remediations),
+                "top_remediation_title": str(suggestions[0].get("title") or ""),
+            },
+            remediations=remediations,
+        )
         if previous_state != REMEDIATION_SUGGESTED:
             record_workflow_transition(previous_state, REMEDIATION_SUGGESTED)
             record_audit(
@@ -448,6 +566,18 @@ def _find_matching_remediation(incident_id: str, action_ref: str) -> Dict[str, o
             return remediation
         if str(remediation.get("playbook_ref") or "") == normalized_action:
             return remediation
+    return None
+
+
+def _latest_action_for_ref(incident_id: str, action_ref: str) -> Dict[str, object] | None:
+    normalized_action = str(action_ref or "").strip()
+    if not normalized_action:
+        return None
+    for action in list_incident_actions(incident_id):
+        result_json = action.get("result_json") if isinstance(action.get("result_json"), dict) else {}
+        result_action = str(result_json.get("action_ref") or "")
+        if result_action == normalized_action:
+            return action
     return None
 
 
@@ -984,6 +1114,9 @@ def _list_automation_actions() -> List[Dict[str, object]]:
     actions = []
     for name, playbook in PLAYBOOKS.items():
         uses_aap = aap_action_supported(name)
+        trigger_modes = ["manual_ui"]
+        if name == "rate_limit_pcscf":
+            trigger_modes.append("event_driven")
         actions.append(
             {
                 "action": name,
@@ -991,6 +1124,7 @@ def _list_automation_actions() -> List[Dict[str, object]]:
                 "exists": os.path.exists(playbook),
                 "automation_mode": "aap" if uses_aap else mode,
                 "automation_enabled": uses_aap or mode in {"simulate", "execute"},
+                "trigger_modes": trigger_modes,
             }
         )
     return actions
@@ -1016,6 +1150,21 @@ def _aap_extra_vars_for_action(
             "target_namespace": os.getenv("AAP_SCALE_SCSCF_NAMESPACE", "ims-demo-lab"),
             "target_deployment": os.getenv("AAP_SCALE_SCSCF_DEPLOYMENT", "ims-scscf"),
             "target_replicas": _positive_int_from_env("AAP_SCALE_SCSCF_REPLICAS", 2),
+        }
+    if action_ref == "rate_limit_pcscf":
+        return base | {
+            "target_namespace": _string_from_env("AAP_RATE_LIMIT_PCSCF_NAMESPACE", "ims-demo-lab"),
+            "target_deployment": _string_from_env("AAP_RATE_LIMIT_PCSCF_DEPLOYMENT", "openimss-pcscf"),
+            "annotation_key": _string_from_env("AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY", "ims.demo/rate-limit-review"),
+            "annotation_value": _string_from_env("AAP_RATE_LIMIT_PCSCF_ANNOTATION_VALUE", "approved"),
+        }
+    if action_ref == "quarantine_imsi":
+        return base | {
+            "target_namespace": _string_from_env("AAP_QUARANTINE_NAMESPACE", "ims-demo-lab"),
+            "target_configmap": _string_from_env("AAP_QUARANTINE_CONFIGMAP", "ims-remediation-state"),
+            "quarantine_key": _string_from_env("AAP_QUARANTINE_KEY", "quarantined_imsi"),
+            "quarantine_reason": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
+            "imsi": _safe_imsi_for_automation(incident),
         }
     return base
 
@@ -1080,6 +1229,52 @@ def _launch_aap_automation(
             "requested_vars": extra_vars,
             "launch_summary": launch_summary,
         }
+
+
+def _eda_event_payload(
+    event_type: str,
+    incident: Dict[str, object],
+    extra: Dict[str, object] | None = None,
+    remediations: List[Dict[str, object]] | None = None,
+) -> Dict[str, object]:
+    remediation_items = remediations or []
+    action_refs = {str(item.get("action_ref") or "") for item in remediation_items}
+    payload = {
+        "event_type": event_type,
+        "timestamp": _now_iso(),
+        "incident_id": str(incident.get("id") or ""),
+        "project": str(incident.get("project") or "ims-demo"),
+        "anomaly_type": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
+        "severity": str(incident.get("severity") or severity_from_score(_coerce_float(incident.get("anomaly_score")))),
+        "status": normalize_workflow_state(str(incident.get("status") or NEW)),
+        "workflow_revision": int(incident.get("workflow_revision") or 1),
+        "anomaly_score": _coerce_float(incident.get("anomaly_score")),
+        "recommendation": str(incident.get("recommendation") or ""),
+        "top_action_ref": str((remediation_items[0] or {}).get("action_ref") or "") if remediation_items else "",
+        "available_actions": [item for item in sorted(action_refs) if item],
+        "rate_limit_pcscf_available": "rate_limit_pcscf" in action_refs,
+        "scale_scscf_available": "scale_scscf" in action_refs,
+        "quarantine_imsi_available": "quarantine_imsi" in action_refs,
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+def _publish_eda_event_best_effort(
+    event_type: str,
+    incident: Dict[str, object],
+    *,
+    extra: Dict[str, object] | None = None,
+    remediations: List[Dict[str, object]] | None = None,
+) -> None:
+    try:
+        deliveries = eda_publish_event(_eda_event_payload(event_type, incident, extra=extra, remediations=remediations))
+        if deliveries:
+            record_integration("eda", "published")
+    except Exception as exc:
+        logger.warning("EDA event publish failed for %s on incident %s: %s", event_type, incident.get("id"), exc)
+        record_integration("eda", "failed")
 
 
 def _finalize_aap_automation(
@@ -1531,6 +1726,7 @@ def _timeline_title(event_type: str) -> str:
         "workflow_transition": "Workflow transitioned",
         "incident_approved": "Action approved",
         "action_executed": "Action executed",
+        "eda_policy_triggered": "EDA policy triggered",
         "verification_recorded": "Verification recorded",
         "slack_notified": "Slack notified",
         "jira_created": "Jira ticket created",
@@ -1577,6 +1773,10 @@ def _timeline_detail(event: Dict[str, object]) -> str:
         action = payload.get("action", payload.get("action_ref", "action"))
         status = payload.get("execution_status", "unknown")
         return f"{_titleize(str(action))} recorded with status {status}."
+    if event_type == "eda_policy_triggered":
+        action = payload.get("action_ref", "action")
+        status = payload.get("execution_status", "unknown")
+        return f"Event-driven policy launched {_titleize(str(action))} with status {status}."
     if event_type == "verification_recorded":
         status = payload.get("verification_status", "unknown")
         return f"Verification outcome recorded as {_titleize(str(status))}."
@@ -2089,6 +2289,7 @@ def post_incident(
     record_audit("incident_created", "anomaly-service", incident, incident_id=incident["id"])
     record_incident(incident["project"], incident["anomaly_type"], incident["status"])
     set_active_incidents(list_incidents(project=incident["project"]))
+    background_tasks.add_task(_publish_eda_event_best_effort, "incident_created", incident)
     if payload.auto_generate_rca:
         background_tasks.add_task(
             _auto_generate_incident_rca,
@@ -2174,6 +2375,7 @@ def post_rca(incident_id: str, payload: RCAAttach, auth: AuthContext | None = De
     record_audit("rca_attached", "rca-service", payload.model_dump(), incident_id=incident_id)
     refreshed = get_incident(incident_id) or incident
     _publish_rca_reasoning_record(refreshed, payload.model_dump())
+    _publish_eda_event_best_effort("rca_attached", refreshed)
     _generate_and_store_remediations(incident_id, actor="rca-service")
     refreshed = get_incident(incident_id)
     set_active_incidents(list_incidents(project=incident["project"]))
@@ -2500,6 +2702,64 @@ def execute_remediation(
         auth,
         background_tasks,
     )
+
+
+@app.post("/incidents/{incident_id}/automation/actions/{action_ref}/execute")
+def execute_automation_action(
+    incident_id: str,
+    action_ref: str,
+    payload: AutomationActionTriggerRequest,
+    background_tasks: BackgroundTasks,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    ensure_role(auth, "automation")
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+
+    remediation = _find_matching_remediation(incident_id, action_ref)
+    if not remediation and isinstance(incident.get("rca_payload"), dict) and incident.get("rca_payload"):
+        _generate_and_store_remediations(incident_id, actor=auth.subject if auth else payload.approved_by)
+        remediation = _find_matching_remediation(incident_id, action_ref)
+    if remediation is None and action_ref not in PLAYBOOKS:
+        raise HTTPException(status_code=404, detail=f"Automation action '{action_ref}' is not available for this incident")
+
+    latest_action = _latest_action_for_ref(incident_id, action_ref)
+    if payload.source_of_action == "event_driven_policy" and latest_action:
+        if str(latest_action.get("execution_status") or "").lower() in {"executing", "executed"}:
+            return {
+                "skipped": True,
+                "reason": "Action already launched for this incident.",
+                "action": latest_action,
+                "workflow": _workflow_payload(get_incident(incident_id) or incident),
+            }
+
+    response = _execute_incident_action(
+        incident_id,
+        RemediationActionRequest(
+            remediation_id=int(remediation["id"]) if remediation and remediation.get("id") else None,
+            action=action_ref,
+            approved_by=payload.approved_by,
+            notes=payload.notes,
+            execute=True,
+            source_of_action=payload.source_of_action,
+        ),
+        auth,
+        background_tasks,
+    )
+    if payload.source_of_action == "event_driven_policy":
+        record_audit(
+            "eda_policy_triggered",
+            payload.approved_by,
+            {
+                "action_ref": action_ref,
+                "notes": payload.notes,
+                "execution_status": str(((response.get("action") or {}).get("execution_status")) or "unknown"),
+            },
+            incident_id=incident_id,
+        )
+    return response
 
 
 @app.post("/incidents/{incident_id}/remediation/{remediation_id}/reject")
@@ -3064,6 +3324,18 @@ def integrations_status(auth: AuthContext | None = Depends(require_api_key)):
 def automation_actions(auth: AuthContext | None = Depends(require_api_key)):
     ensure_role(auth, "operator")
     return _list_automation_actions()
+
+
+@app.post("/automation/bootstrap")
+def bootstrap_automation(auth: AuthContext | None = Depends(require_api_key)):
+    ensure_role(auth, "admin")
+    try:
+        return {
+            "aap": aap_bootstrap_resources(),
+            "eda": eda_bootstrap_resources(),
+        }
+    except (AAPAutomationError, EDAAutomationError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/platform/status")

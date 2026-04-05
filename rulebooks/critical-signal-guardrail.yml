@@ -1,0 +1,28 @@
+---
+- name: Apply the guarded P-CSCF response for critical signaling incidents
+  hosts: localhost
+  sources:
+    - eda.builtin.webhook:
+        host: 0.0.0.0
+        port: 5001
+  rules:
+    - name: Execute the low-risk signaling guardrail
+      condition: >-
+        event.payload.event_type == "remediations_generated" and
+        event.payload.severity == "Critical" and
+        event.payload.rate_limit_pcscf_available == true and
+        event.payload.anomaly_type in ["registration_storm", "retransmission_spike", "network_degradation"] and
+        event.payload.status not in ["EXECUTING", "EXECUTED", "VERIFIED", "CLOSED"]
+      action:
+        run_playbook:
+          name: automation/eda/playbooks/execute-incident-action.yml
+          extra_vars:
+            control_plane_url: "{{ control_plane_url }}"
+            control_plane_api_key: "{{ control_plane_api_key }}"
+            incident_id: "{{ event.payload.incident_id }}"
+            action_ref: rate_limit_pcscf
+            approved_by: "{{ approved_by }}"
+            notes: >-
+              EDA policy {{ policy_name | default('critical_signal_guardrail') }}
+              auto-applied the low-risk P-CSCF guardrail after ranked remediations
+              were generated for a critical {{ event.payload.anomaly_type }} incident.

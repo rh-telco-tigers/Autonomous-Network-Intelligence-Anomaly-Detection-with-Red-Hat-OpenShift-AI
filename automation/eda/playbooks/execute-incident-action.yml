@@ -1,0 +1,32 @@
+---
+- name: Execute an incident action through the control-plane API
+  hosts: localhost
+  gather_facts: false
+  vars:
+    control_plane_url: "{{ control_plane_url | default('http://control-plane.ims-demo-lab.svc.cluster.local:8080') }}"
+    control_plane_api_key: "{{ control_plane_api_key | default('eda-token') }}"
+    approved_by: "{{ approved_by | default('eda-automation') }}"
+    notes: "{{ notes | default('EDA requested execution of the incident action.') }}"
+    source_of_action: event_driven_policy
+  tasks:
+    - name: Execute the named incident action in the control-plane
+      ansible.builtin.uri:
+        url: "{{ control_plane_url }}/incidents/{{ incident_id }}/automation/actions/{{ action_ref }}/execute"
+        method: POST
+        headers:
+          Content-Type: application/json
+          x-api-key: "{{ control_plane_api_key }}"
+        body_format: json
+        body:
+          approved_by: "{{ approved_by }}"
+          notes: "{{ notes }}"
+          source_of_action: "{{ source_of_action }}"
+        status_code: 200
+        return_content: true
+      register: action_result
+
+    - name: Emit a concise action summary
+      ansible.builtin.debug:
+        msg: >-
+          Executed {{ action_ref }} for incident {{ incident_id }}
+          through the control-plane API as {{ approved_by }}.

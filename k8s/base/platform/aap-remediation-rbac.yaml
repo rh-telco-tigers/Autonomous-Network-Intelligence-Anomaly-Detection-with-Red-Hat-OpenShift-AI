@@ -18,17 +18,47 @@ data:
   AAP_INVENTORY_NAME: IMS Incident Local Inventory
   AAP_INVENTORY_HOST: localhost
   AAP_PROJECT_NAME: IMS Incident Automation
-  AAP_PROJECT_SCM_URL: https://gitea-gitea.apps.ocp.4h2g6.sandbox195.opentlc.com/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+  AAP_PROJECT_SCM_URL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
   AAP_PROJECT_BRANCH: main
   AAP_JOB_TEMPLATE_SCALE_SCSCF: IMS Scale S-CSCF Path
+  AAP_JOB_TEMPLATE_RATE_LIMIT_PCSCF: IMS Rate Limit P-CSCF Ingress
+  AAP_JOB_TEMPLATE_QUARANTINE_IMSI: IMS Quarantine Subscriber or Source
   AAP_JOB_TIMEOUT_SECONDS: "300"
   AAP_JOB_POLL_SECONDS: "5"
+  AAP_KUBERNETES_CREDENTIAL_NAME: IMS OpenShift API Credential
+  AAP_KUBERNETES_SERVICE_ACCOUNT_NAMESPACE: aap
+  AAP_KUBERNETES_SERVICE_ACCOUNT_NAME: aap-controller
+  AAP_KUBERNETES_TOKEN_EXPIRATION_SECONDS: "3600"
   AAP_RUNNER_NAMESPACE: aap
   AAP_RUNNER_SERVICE_ACCOUNT: aap-controller
   AAP_EXECUTION_ENVIRONMENT_IMAGE: registry.redhat.io/ansible-automation-platform-26/ee-supported-rhel9@sha256:fe0982d489065a2a287fe076873cf1faa5410c0879def91bbc756280e924118d
   AAP_SCALE_SCSCF_NAMESPACE: ims-demo-lab
   AAP_SCALE_SCSCF_DEPLOYMENT: ims-scscf
   AAP_SCALE_SCSCF_REPLICAS: "2"
+  AAP_RATE_LIMIT_PCSCF_NAMESPACE: ims-demo-lab
+  AAP_RATE_LIMIT_PCSCF_DEPLOYMENT: openimss-pcscf
+  AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY: ims.demo/rate-limit-review
+  AAP_RATE_LIMIT_PCSCF_ANNOTATION_VALUE: eda-guardrail
+  AAP_QUARANTINE_NAMESPACE: ims-demo-lab
+  AAP_QUARANTINE_CONFIGMAP: ims-remediation-state
+  AAP_QUARANTINE_KEY: quarantined_imsi
+  AAP_QUARANTINE_DEFAULT_IMSI: "001010000000001"
+  EDA_AUTOMATION_ENABLED: "true"
+  EDA_API_URL: http://aap-eda-api.aap.svc.cluster.local:8000
+  EDA_APP_URL: https://aap-eda-aap.apps.ocp.4h2g6.sandbox195.opentlc.com
+  EDA_ORGANIZATION: Default
+  EDA_PROJECT_NAME: IMS Incident Event Policies
+  EDA_PROJECT_URL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+  EDA_PROJECT_BRANCH: main
+  EDA_DECISION_ENVIRONMENT_NAME: IMS Incident Decisions
+  EDA_DECISION_ENVIRONMENT_IMAGE: registry.redhat.io/ansible-automation-platform-26/de-minimal-rhel9:latest
+  EDA_CONTROL_PLANE_URL: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+  EDA_CONTROL_PLANE_API_KEY: eda-token
+  EDA_AUTOMATION_ACTOR: eda-automation
+  EDA_EVENT_VERIFY_SSL: "false"
+  AUTOMATION_BOOTSTRAP_ON_STARTUP: "true"
+  AUTOMATION_BOOTSTRAP_RETRY_SECONDS: "15"
+  AUTOMATION_BOOTSTRAP_MAX_ATTEMPTS: "0"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -58,6 +88,34 @@ roleRef:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
+  name: aap-remediation-runtime
+  namespace: ims-demo-lab
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["openimss-pcscf"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "get", "list", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aap-controller-remediation-runtime
+  namespace: ims-demo-lab
+subjects:
+  - kind: ServiceAccount
+    name: aap-controller
+    namespace: aap
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aap-remediation-runtime
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
   name: control-plane-read-aap-controller-password
   namespace: aap
 rules:
@@ -69,8 +127,15 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["secrets"]
-    resourceNames: ["aap-controller-admin-password"]
+    resourceNames: ["aap-controller-admin-password", "aap-eda-admin-password"]
     verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    resourceNames: ["aap-controller"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

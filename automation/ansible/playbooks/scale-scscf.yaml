@@ -6,8 +6,28 @@
     target_namespace: "{{ target_namespace | default('ims-demo-lab') }}"
     target_deployment: "{{ target_deployment | default('ims-scscf') }}"
     target_replicas: "{{ (target_replicas | default(2)) | int }}"
-    service_account_token: "{{ lookup('file', '/var/run/secrets/kubernetes.io/serviceaccount/token') }}"
-    kubernetes_api_url: "https://{{ lookup('env', 'KUBERNETES_SERVICE_HOST') | default('kubernetes.default.svc', true) }}:{{ lookup('env', 'KUBERNETES_SERVICE_PORT_HTTPS') | default('443', true) }}"
+    kubernetes_api_token: >-
+      {{
+        lookup('env', 'K8S_AUTH_API_KEY')
+        if (lookup('env', 'K8S_AUTH_API_KEY') | default('', true) | length) > 0
+        else lookup('file', '/var/run/secrets/kubernetes.io/serviceaccount/token')
+      }}
+    kubernetes_api_url: >-
+      {{
+        lookup('env', 'K8S_AUTH_HOST')
+        if (lookup('env', 'K8S_AUTH_HOST') | default('', true) | length) > 0
+        else 'https://' ~
+          (lookup('env', 'KUBERNETES_SERVICE_HOST') | default('kubernetes.default.svc', true)) ~
+          ':' ~
+          (lookup('env', 'KUBERNETES_SERVICE_PORT_HTTPS') | default('443', true))
+      }}
+    kubernetes_ca_cert: >-
+      {{
+        lookup('env', 'K8S_AUTH_SSL_CA_CERT')
+        if (lookup('env', 'K8S_AUTH_SSL_CA_CERT') | default('', true) | length) > 0
+        else '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
+      }}
+    kubernetes_verify_ssl: "{{ (lookup('env', 'K8S_AUTH_VERIFY_SSL') | default('true', true) | lower) not in ['false', '0', 'no'] }}"
     scale_endpoint: >-
       {{ kubernetes_api_url }}/apis/apps/v1/namespaces/{{ target_namespace }}/deployments/{{ target_deployment }}/scale
   tasks:
@@ -16,9 +36,10 @@
         url: "{{ scale_endpoint }}"
         method: GET
         headers:
-          Authorization: "Bearer {{ service_account_token }}"
+          Authorization: "Bearer {{ kubernetes_api_token }}"
           Accept: application/json
-        ca_path: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        ca_path: "{{ kubernetes_ca_cert }}"
+        validate_certs: "{{ kubernetes_verify_ssl | bool }}"
         return_content: true
         status_code: 200
       register: current_scale
@@ -28,10 +49,11 @@
         url: "{{ scale_endpoint }}"
         method: PATCH
         headers:
-          Authorization: "Bearer {{ service_account_token }}"
+          Authorization: "Bearer {{ kubernetes_api_token }}"
           Accept: application/json
           Content-Type: application/merge-patch+json
-        ca_path: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        ca_path: "{{ kubernetes_ca_cert }}"
+        validate_certs: "{{ kubernetes_verify_ssl | bool }}"
         body_format: raw
         body: "{{ {'spec': {'replicas': target_replicas | int}} | to_json }}"
         return_content: true
@@ -43,9 +65,10 @@
         url: "{{ scale_endpoint }}"
         method: GET
         headers:
-          Authorization: "Bearer {{ service_account_token }}"
+          Authorization: "Bearer {{ kubernetes_api_token }}"
           Accept: application/json
-        ca_path: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        ca_path: "{{ kubernetes_ca_cert }}"
+        validate_certs: "{{ kubernetes_verify_ssl | bool }}"
         return_content: true
         status_code: 200
       register: settled_scale

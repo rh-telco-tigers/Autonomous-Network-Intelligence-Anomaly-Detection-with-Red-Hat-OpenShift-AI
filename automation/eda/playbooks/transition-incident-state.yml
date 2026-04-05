@@ -1,0 +1,33 @@
+---
+- name: Transition an incident state through the control-plane API
+  hosts: localhost
+  gather_facts: false
+  vars:
+    control_plane_url: "{{ control_plane_url | default('http://control-plane.ims-demo-lab.svc.cluster.local:8080') }}"
+    control_plane_api_key: "{{ control_plane_api_key | default('eda-token') }}"
+    approved_by: "{{ approved_by | default('eda-automation') }}"
+    target_state: "{{ target_state | default('ESCALATED') }}"
+    source_url: "{{ source_url | default('eda://policy') }}"
+    notes: "{{ notes | default('EDA requested an incident workflow transition.') }}"
+  tasks:
+    - name: Transition the incident in the control-plane
+      ansible.builtin.uri:
+        url: "{{ control_plane_url }}/incidents/{{ incident_id }}/transition"
+        method: POST
+        headers:
+          Content-Type: application/json
+          x-api-key: "{{ control_plane_api_key }}"
+        body_format: json
+        body:
+          target_state: "{{ target_state }}"
+          notes: "{{ notes }}"
+          source_url: "{{ source_url }}"
+        status_code: 200
+        return_content: true
+      register: transition_result
+
+    - name: Emit a concise transition summary
+      ansible.builtin.debug:
+        msg: >-
+          Transitioned incident {{ incident_id }} to {{ target_state }}
+          through the control-plane API as {{ approved_by }}.

@@ -5,7 +5,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import requests
 
@@ -19,6 +19,19 @@ ACTION_DEFINITIONS: Dict[str, Dict[str, str]] = {
         "job_template_name": "IMS Scale S-CSCF Path",
         "playbook": "automation/ansible/playbooks/scale-scscf.yaml",
         "description": "Scale the S-CSCF deployment after operator approval.",
+        "cases": "registration_storm,call_setup_timeout,server_internal_error",
+    },
+    "rate_limit_pcscf": {
+        "job_template_name": "IMS Rate Limit P-CSCF Ingress",
+        "playbook": "automation/ansible/playbooks/rate-limit-pcscf.yaml",
+        "description": "Apply the low-risk P-CSCF ingress guardrail through AAP after approval.",
+        "cases": "registration_storm,retransmission_spike,network_degradation",
+    },
+    "quarantine_imsi": {
+        "job_template_name": "IMS Quarantine Subscriber or Source",
+        "playbook": "automation/ansible/playbooks/quarantine-imsi.yaml",
+        "description": "Record a quarantine request for the offending subscriber or traffic source.",
+        "cases": "authentication_failure,registration_failure,malformed_sip",
     },
 }
 
@@ -29,6 +42,64 @@ def action_supported(action: str) -> bool:
     return _enabled() and action in ACTION_DEFINITIONS
 
 
+def action_catalog() -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    for action, definition in ACTION_DEFINITIONS.items():
+        items.append(
+            {
+                "action": action,
+                "name": _job_template_name(action),
+                "playbook": definition["playbook"],
+                "description": definition["description"],
+                "cases": [item for item in str(definition.get("cases") or "").split(",") if item],
+                "trigger_modes": ["manual_ui"],
+            }
+        )
+    return items
+
+
+def bootstrap_resources() -> Dict[str, Any]:
+    if not _enabled():
+        return {"configured": False, "mode": "disabled", "actions": []}
+
+    organization_id = _require_object_id("/api/v2/organizations/", _organization_name(), "organization")
+    inventory_id = _ensure_inventory(organization_id)
+    project_id = _ensure_project(organization_id)
+    _sync_project(project_id)
+    kubernetes_credential_id = _ensure_kubernetes_credential(organization_id)
+    actions: List[Dict[str, Any]] = []
+    for action, definition in ACTION_DEFINITIONS.items():
+        template_id = _ensure_job_template(
+            organization_id=organization_id,
+            inventory_id=inventory_id,
+            project_id=project_id,
+            credential_id=kubernetes_credential_id,
+            action=action,
+            playbook=definition["playbook"],
+            description=definition["description"],
+        )
+        actions.append(
+            {
+                "action": action,
+                "name": _job_template_name(action),
+                "job_template_id": template_id,
+                "playbook": definition["playbook"],
+            }
+        )
+    return {
+        "configured": True,
+        "mode": "controller-api",
+        "organization": _organization_name(),
+        "inventory_name": _inventory_name(),
+        "inventory_id": inventory_id,
+        "project_name": _project_name(),
+        "project_id": project_id,
+        "kubernetes_credential_name": _kubernetes_credential_name(),
+        "kubernetes_credential_id": kubernetes_credential_id,
+        "actions": actions,
+    }
+
+
 def launch_action(action: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]:
     definition = ACTION_DEFINITIONS.get(action)
     if not definition:
@@ -37,10 +108,13 @@ def launch_action(action: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]:
     organization = _require_object_id("/api/v2/organizations/", _organization_name(), "organization")
     inventory_id = _ensure_inventory(organization)
     project_id = _ensure_project(organization)
+    _sync_project(project_id)
+    kubernetes_credential_id = _ensure_kubernetes_credential(organization)
     template_id = _ensure_job_template(
         organization_id=organization,
         inventory_id=inventory_id,
         project_id=project_id,
+        credential_id=kubernetes_credential_id,
         action=action,
         playbook=definition["playbook"],
         description=definition["description"],
@@ -178,15 +252,36 @@ def wait_for_runner_job(job_name: str, namespace: str, timeout_seconds: int = 30
 
 def controller_status() -> Dict[str, Any]:
     if not _enabled():
-        return {"configured": False, "mode": "disabled", "live_configured": False}
+        return {"configured": False, "mode": "disabled", "live_configured": False, "actions": []}
     try:
         payload = _request("GET", "/api/v2/ping/")
+        project_payload = _request("GET", "/api/v2/projects/", params={"name": _project_name(), "page_size": 200})
+        template_payload = _request("GET", "/api/v2/job_templates/", params={"page_size": 200})
+        credential_payload = _request("GET", "/api/v2/credentials/", params={"name": _kubernetes_credential_name(), "page_size": 200})
+        project_exists = any(str(item.get("name") or "") == _project_name() for item in project_payload.get("results", []))
+        credential_exists = any(
+            str(item.get("name") or "") == _kubernetes_credential_name() for item in credential_payload.get("results", [])
+        )
+        existing_templates = {
+            str(item.get("name") or ""): int(item.get("id") or 0) for item in template_payload.get("results", [])
+        }
+        actions = []
+        for item in action_catalog():
+            template_id = existing_templates.get(str(item["name"]))
+            actions.append(item | {"template_exists": bool(template_id), "job_template_id": template_id})
         return {
             "configured": True,
             "mode": "controller-api",
             "live_configured": True,
             "version": payload.get("version"),
             "controller_url": _controller_app_url() or _controller_url(),
+            "project_name": _project_name(),
+            "inventory_name": _inventory_name(),
+            "kubernetes_credential_name": _kubernetes_credential_name(),
+            "kubernetes_credential_exists": credential_exists,
+            "project_exists": project_exists,
+            "bootstrapped": project_exists and credential_exists and all(bool(item["template_exists"]) for item in actions),
+            "actions": actions,
         }
     except Exception as exc:  # noqa: BLE001
         return {
@@ -195,6 +290,10 @@ def controller_status() -> Dict[str, Any]:
             "live_configured": False,
             "error": str(exc),
             "controller_url": _controller_app_url() or _controller_url(),
+            "project_name": _project_name(),
+            "inventory_name": _inventory_name(),
+            "kubernetes_credential_name": _kubernetes_credential_name(),
+            "actions": action_catalog(),
         }
 
 
@@ -259,12 +358,40 @@ def _project_name() -> str:
 def _project_scm_url() -> str:
     return (
         os.getenv("AAP_PROJECT_SCM_URL", "").strip()
-        or "https://gitea-gitea.apps.ocp.4h2g6.sandbox195.opentlc.com/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git"
+        or "http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git"
     )
 
 
 def _project_branch() -> str:
     return os.getenv("AAP_PROJECT_BRANCH", "main").strip() or "main"
+
+
+def _kubernetes_credential_name() -> str:
+    return (
+        os.getenv("AAP_KUBERNETES_CREDENTIAL_NAME", "").strip()
+        or "IMS OpenShift API Credential"
+    )
+
+
+def _kubernetes_service_account_namespace() -> str:
+    return os.getenv("AAP_KUBERNETES_SERVICE_ACCOUNT_NAMESPACE", "aap").strip() or "aap"
+
+
+def _kubernetes_service_account_name() -> str:
+    return os.getenv("AAP_KUBERNETES_SERVICE_ACCOUNT_NAME", "aap-controller").strip() or "aap-controller"
+
+
+def _kubernetes_token_expiration_seconds() -> int:
+    raw_value = os.getenv("AAP_KUBERNETES_TOKEN_EXPIRATION_SECONDS", "3600").strip()
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return 3600
+    return value if value > 0 else 3600
+
+
+def _kubernetes_token_audience() -> str:
+    return os.getenv("AAP_KUBERNETES_TOKEN_AUDIENCE", "").strip()
 
 
 def _runner_namespace() -> str:
@@ -397,10 +524,113 @@ def _ensure_project(organization_id: int) -> int:
     return int(project["id"])
 
 
+def _sync_project(project_id: int) -> None:
+    payload = _request(
+        "POST",
+        f"/api/v2/projects/{project_id}/update/",
+        expected_status=(200, 202),
+        json={},
+    )
+    update_id = int(payload.get("project_update") or payload.get("id") or 0)
+    if update_id <= 0:
+        return
+
+    deadline = time.time() + float(os.getenv("AAP_PROJECT_SYNC_TIMEOUT_SECONDS", "120"))
+    while time.time() < deadline:
+        update = _request("GET", f"/api/v2/project_updates/{update_id}/")
+        status = str(update.get("status") or "").strip().lower()
+        if status == "successful":
+            return
+        if status in {"failed", "error", "canceled"}:
+            raise AAPAutomationError(
+                f"AAP project sync failed for '{_project_name()}': {update.get('result_traceback') or status}"
+            )
+        time.sleep(4)
+    raise AAPAutomationError(f"AAP project sync timed out for '{_project_name()}'.")
+
+
+def _kubernetes_credential_type_id() -> int:
+    payload = _request("GET", "/api/v2/credential_types/", params={"kind": "kubernetes", "page_size": 200})
+    for item in payload.get("results", []):
+        if str(item.get("kind") or "") == "kubernetes":
+            return int(item["id"])
+    raise AAPAutomationError("AAP does not expose the built-in Kubernetes credential type.")
+
+
+def _current_cluster_ca() -> str:
+    return Path("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt").read_text(encoding="utf-8").strip()
+
+
+def _issue_service_account_token() -> str:
+    spec: Dict[str, Any] = {"expirationSeconds": _kubernetes_token_expiration_seconds()}
+    audience = _kubernetes_token_audience()
+    if audience:
+        spec["audiences"] = [audience]
+    payload = _kubernetes_request(
+        "POST",
+        (
+            f"/api/v1/namespaces/{_kubernetes_service_account_namespace()}"
+            f"/serviceaccounts/{_kubernetes_service_account_name()}/token"
+        ),
+        expected_status=(200, 201),
+        json={
+            "apiVersion": "authentication.k8s.io/v1",
+            "kind": "TokenRequest",
+            "spec": spec,
+        },
+    )
+    status = payload.get("status") if isinstance(payload.get("status"), dict) else {}
+    token = str(status.get("token") or "").strip()
+    if not token:
+        raise AAPAutomationError(
+            "Kubernetes did not return a bearer token for "
+            f"{_kubernetes_service_account_namespace()}/{_kubernetes_service_account_name()}."
+        )
+    return token
+
+
+def _ensure_kubernetes_credential(organization_id: int) -> int:
+    name = _kubernetes_credential_name()
+    payload = _request("GET", "/api/v2/credentials/", params={"name": name, "page_size": 200})
+    credential = next((item for item in payload.get("results", []) if str(item.get("name") or "") == name), None)
+    credential_type_id = _kubernetes_credential_type_id()
+    desired_inputs = {
+        "host": _kubernetes_api_url(),
+        "bearer_token": _issue_service_account_token(),
+        "verify_ssl": True,
+        "ssl_ca_cert": _current_cluster_ca(),
+    }
+    desired = {
+        "name": name,
+        "description": (
+            "Bearer-token credential for in-cluster automation jobs targeting the "
+            f"{_kubernetes_service_account_namespace()}/{_kubernetes_service_account_name()} service account."
+        ),
+        "organization": organization_id,
+        "credential_type": credential_type_id,
+        "inputs": desired_inputs,
+    }
+    if credential is None:
+        credential = _request("POST", "/api/v2/credentials/", expected_status=(200, 201), json=desired)
+        return int(credential["id"])
+    if int(credential.get("credential_type") or 0) not in {0, credential_type_id}:
+        raise AAPAutomationError(
+            f"AAP credential '{name}' already exists with an unexpected credential type."
+        )
+    patch: Dict[str, Any] = {"inputs": desired_inputs}
+    for field in ("description", "organization"):
+        if credential.get(field) != desired[field]:
+            patch[field] = desired[field]
+    if patch:
+        _request("PATCH", f"/api/v2/credentials/{credential['id']}/", json=patch)
+    return int(credential["id"])
+
+
 def _ensure_job_template(
     organization_id: int,
     inventory_id: int,
     project_id: int,
+    credential_id: int,
     action: str,
     playbook: str,
     description: str,
@@ -421,14 +651,31 @@ def _ensure_job_template(
     }
     if template is None:
         template = _request("POST", "/api/v2/job_templates/", expected_status=(200, 201), json=desired)
-        return int(template["id"])
+        template_id = int(template["id"])
+        _ensure_job_template_credential(template_id, credential_id)
+        return template_id
     patch: Dict[str, Any] = {}
     for field in ("description", "inventory", "project", "organization", "playbook", "ask_variables_on_launch", "verbosity"):
         if template.get(field) != desired[field]:
             patch[field] = desired[field]
     if patch:
         _request("PATCH", f"/api/v2/job_templates/{template['id']}/", json=patch)
-    return int(template["id"])
+    template_id = int(template["id"])
+    _ensure_job_template_credential(template_id, credential_id)
+    return template_id
+
+
+def _ensure_job_template_credential(template_id: int, credential_id: int) -> None:
+    payload = _request("GET", f"/api/v2/job_templates/{template_id}/credentials/", params={"page_size": 200})
+    for item in payload.get("results", []):
+        if int(item.get("id") or 0) == credential_id:
+            return
+    _request(
+        "POST",
+        f"/api/v2/job_templates/{template_id}/credentials/",
+        expected_status=(200, 201, 204),
+        json={"id": credential_id},
+    )
 
 
 def _kubernetes_api_url() -> str:
