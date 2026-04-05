@@ -42,7 +42,7 @@ function buildRouteLinks(origin: string, integrations: Record<string, Integratio
 }
 
 export default function ServicesPage() {
-  const { data, isLoading, error } = useConsoleStateQuery(10_000);
+  const { data, isLoading, error } = useConsoleStateQuery(30_000);
   const [origin, setOrigin] = React.useState("");
 
   React.useEffect(() => {

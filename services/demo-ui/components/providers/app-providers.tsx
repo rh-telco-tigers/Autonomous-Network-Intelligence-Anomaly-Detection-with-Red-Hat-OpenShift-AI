@@ -20,7 +20,9 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
         defaultOptions: {
           queries: {
             retry: 1,
+            staleTime: 15_000,
             refetchOnWindowFocus: false,
+            refetchOnReconnect: true,
           },
         },
       }),

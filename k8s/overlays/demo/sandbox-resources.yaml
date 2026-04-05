@@ -63,9 +63,11 @@ spec:
           resources:
             $patch: replace
             requests:
-              memory: 96Mi
-            limits:
+              cpu: 250m
               memory: 192Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -164,8 +166,12 @@ metadata:
   name: demo-ui
   namespace: ims-demo-lab
 spec:
+  replicas: 2
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   template:
     spec:
       containers:
@@ -173,9 +179,11 @@ spec:
           resources:
             $patch: replace
             requests:
-              memory: 128Mi
-            limits:
+              cpu: 200m
               memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
 ---
 apiVersion: apps/v1
 kind: Deployment

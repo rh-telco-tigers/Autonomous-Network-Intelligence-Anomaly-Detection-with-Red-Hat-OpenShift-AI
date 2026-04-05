@@ -36,7 +36,7 @@ function LiveTrafficPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const { data, isLoading, error } = useConsoleStateQuery(5_000);
+  const { data, isLoading, error } = useConsoleStateQuery(15_000);
 
   if (isLoading && !data) {
     return <div className="text-sm text-[var(--text-muted)]">Loading traffic stream...</div>;

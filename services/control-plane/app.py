@@ -79,7 +79,12 @@ from shared.incident_taxonomy import (
     normalize_scenario_name,
     scenario_definition,
 )
-from shared.integrations import create_jira_issue, integration_status, send_slack_notification
+from shared.integrations import (
+    clear_integration_status_cache,
+    create_jira_issue,
+    integration_status,
+    send_slack_notification,
+)
 from shared.metrics import (
     install_metrics,
     record_automation,
@@ -307,7 +312,10 @@ def _safe_imsi_for_automation(incident: Dict[str, object]) -> str:
 CONSOLE_SCENARIOS = set(console_scenario_names())
 CONSOLE_CLUSTER_NAME = os.getenv("CONSOLE_CLUSTER_NAME", "ims-demo-lab")
 CONSOLE_AUTO_REFRESH_SECONDS = _positive_int_from_env("CONSOLE_AUTO_REFRESH_SECONDS", 5)
+CONSOLE_RECENT_INCIDENT_LIMIT = _positive_int_from_env("CONSOLE_RECENT_INCIDENT_LIMIT", 24)
 UPSTREAM_TIMEOUT_SECONDS = float(os.getenv("CONSOLE_UPSTREAM_TIMEOUT_SECONDS", "20"))
+HEALTH_PROBE_TIMEOUT_SECONDS = float(os.getenv("CONSOLE_HEALTH_PROBE_TIMEOUT_SECONDS", "5"))
+SERVICE_SNAPSHOT_CACHE_SECONDS = float(os.getenv("CONSOLE_SERVICE_SNAPSHOT_CACHE_SECONDS", "10"))
 AAP_JOB_TIMEOUT_SECONDS = _positive_int_from_env("AAP_JOB_TIMEOUT_SECONDS", 300)
 AAP_JOB_POLL_SECONDS = _positive_int_from_env("AAP_JOB_POLL_SECONDS", 5)
 FEATURE_GATEWAY_URL = os.getenv("FEATURE_GATEWAY_URL", "http://feature-gateway.ims-demo-lab.svc.cluster.local:8080").rstrip("/")
@@ -318,6 +326,9 @@ PREDICTIVE_SERVICE_URL = (
     or os.getenv("PREDICTIVE_FS_SERVICE_URL", "").strip()
     or "http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080"
 ).rstrip("/")
+_SERVICE_SNAPSHOT_CACHE_LOCK = threading.Lock()
+_SERVICE_SNAPSHOT_CACHE: List[Dict[str, object]] | None = None
+_SERVICE_SNAPSHOT_CACHE_EXPIRES_AT = 0.0
 
 
 @app.on_event("startup")
@@ -1507,7 +1518,7 @@ def _wait_for_incident_rca(incident_id: str, timeout_seconds: float = 8.0, poll_
 def _probe_service(name: str, url: str, path: str = "/healthz") -> Dict[str, object]:
     endpoint = f"{url}{path}" if url else path
     try:
-        response = requests.get(endpoint, headers=outbound_headers(), timeout=UPSTREAM_TIMEOUT_SECONDS)
+        response = requests.get(endpoint, headers=outbound_headers(), timeout=HEALTH_PROBE_TIMEOUT_SECONDS)
         payload: Dict[str, object]
         raw = response.text.strip()
         try:
@@ -1539,7 +1550,20 @@ def _probe_service(name: str, url: str, path: str = "/healthz") -> Dict[str, obj
         }
 
 
+def _clear_service_snapshot_cache() -> None:
+    global _SERVICE_SNAPSHOT_CACHE, _SERVICE_SNAPSHOT_CACHE_EXPIRES_AT
+    with _SERVICE_SNAPSHOT_CACHE_LOCK:
+        _SERVICE_SNAPSHOT_CACHE = None
+        _SERVICE_SNAPSHOT_CACHE_EXPIRES_AT = 0.0
+
+
 def _service_snapshot() -> List[Dict[str, object]]:
+    global _SERVICE_SNAPSHOT_CACHE, _SERVICE_SNAPSHOT_CACHE_EXPIRES_AT
+    now = time.time()
+    if SERVICE_SNAPSHOT_CACHE_SECONDS > 0:
+        with _SERVICE_SNAPSHOT_CACHE_LOCK:
+            if _SERVICE_SNAPSHOT_CACHE is not None and now < _SERVICE_SNAPSHOT_CACHE_EXPIRES_AT:
+                return _SERVICE_SNAPSHOT_CACHE
     local_health = healthz()
     services = [
         {
@@ -1555,6 +1579,10 @@ def _service_snapshot() -> List[Dict[str, object]]:
     ]
     if PREDICTIVE_SERVICE_URL:
         services.append(_probe_service("Predictive Service", PREDICTIVE_SERVICE_URL, path="/v2/health/ready"))
+    if SERVICE_SNAPSHOT_CACHE_SECONDS > 0:
+        with _SERVICE_SNAPSHOT_CACHE_LOCK:
+            _SERVICE_SNAPSHOT_CACHE = services
+            _SERVICE_SNAPSHOT_CACHE_EXPIRES_AT = now + SERVICE_SNAPSHOT_CACHE_SECONDS
     return services
 
 
@@ -1911,7 +1939,11 @@ def _ticket_search_fragments(ticket: Dict[str, object]) -> List[str]:
     return [fragment for fragment in fragments if fragment]
 
 
-def _ticket_context(incident: Dict[str, object]) -> tuple[Dict[str, object] | None, str, int]:
+def _ticket_context(
+    incident: Dict[str, object],
+    *,
+    include_search_text: bool = False,
+) -> tuple[Dict[str, object] | None, str, int]:
     incident_id = str(incident.get("id") or "")
     if not incident_id:
         return None, "", 0
@@ -1926,26 +1958,27 @@ def _ticket_context(incident: Dict[str, object]) -> tuple[Dict[str, object] | No
         tickets[0],
     )
     search_fragments: List[str] = []
-    for ticket in tickets:
-        search_fragments.extend(_ticket_search_fragments(ticket))
-        ticket_id = ticket.get("id")
-        if ticket_id:
-            for comment in list_ticket_comments(int(ticket_id)):
-                search_fragments.extend(
-                    [
-                        str(comment.get("author") or ""),
-                        str(comment.get("body") or ""),
-                        str(comment.get("comment_type") or ""),
-                    ]
-                )
-            for event in list_ticket_sync_events(int(ticket_id)):
-                search_fragments.extend(
-                    [
-                        str(event.get("direction") or ""),
-                        str(event.get("event_type") or ""),
-                        str(event.get("status") or ""),
-                    ]
-                )
+    if include_search_text:
+        for ticket in tickets:
+            search_fragments.extend(_ticket_search_fragments(ticket))
+            ticket_id = ticket.get("id")
+            if ticket_id:
+                for comment in list_ticket_comments(int(ticket_id)):
+                    search_fragments.extend(
+                        [
+                            str(comment.get("author") or ""),
+                            str(comment.get("body") or ""),
+                            str(comment.get("comment_type") or ""),
+                        ]
+                    )
+                for event in list_ticket_sync_events(int(ticket_id)):
+                    search_fragments.extend(
+                        [
+                            str(event.get("direction") or ""),
+                            str(event.get("event_type") or ""),
+                            str(event.get("status") or ""),
+                        ]
+                    )
 
     return (
         {
@@ -1966,6 +1999,7 @@ def _incident_summary_view(
     incident: Dict[str, object],
     *,
     include_ticket_context: bool = False,
+    include_ticket_search: bool = False,
 ) -> Dict[str, object]:
     score = _coerce_float(incident.get("anomaly_score"))
     anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type", NORMAL_ANOMALY_TYPE)))
@@ -1984,11 +2018,11 @@ def _incident_summary_view(
     ticket_search_text = ""
     ticket_count = 0
     if include_ticket_context:
-        current_ticket_summary, ticket_search_text, ticket_count = _ticket_context(incident)
+        current_ticket_summary, ticket_search_text, ticket_count = _ticket_context(
+            incident,
+            include_search_text=include_ticket_search,
+        )
     workflow_state = normalize_workflow_state(str(incident.get("status") or incident.get("workflow_state") or NEW))
-    feature_snapshot = incident.get("feature_snapshot")
-    if not isinstance(feature_snapshot, dict):
-        feature_snapshot = {}
 
     return {
         "id": str(incident.get("id") or ""),
@@ -2001,15 +2035,11 @@ def _incident_summary_view(
         "anomaly_score": score,
         "anomaly_type": anomaly_type,
         "model_version": str(incident.get("model_version") or ""),
-        "feature_window_id": incident.get("feature_window_id"),
-        "feature_snapshot": feature_snapshot,
         "recommendation": recommendation,
         "created_at": str(incident.get("created_at") or ""),
         "updated_at": str(incident.get("updated_at") or incident.get("created_at") or ""),
         "subtitle": _incident_subtitle(anomaly_type),
         "impact": _incident_impact(incident),
-        "blast_radius": _blast_radius(anomaly_type),
-        "narrative": str(rca_payload.get("explanation") or rca_payload.get("root_cause") or _incident_subtitle(anomaly_type)),
         "plane_workflow_state": plane_state_for_workflow(workflow_state),
         "is_active": is_active_state(workflow_state),
         "current_ticket_summary": current_ticket_summary,
@@ -2039,7 +2069,17 @@ def _enrich_incident(
 ) -> Dict[str, object]:
     summary = _incident_summary_view(incident, include_ticket_context=include_ticket_context)
     anomaly_type = str(summary.get("anomaly_type") or NORMAL_ANOMALY_TYPE)
+    rca_payload = incident.get("rca_payload") or {}
+    if not isinstance(rca_payload, dict):
+        rca_payload = {}
+    feature_snapshot = incident.get("feature_snapshot")
+    if not isinstance(feature_snapshot, dict):
+        feature_snapshot = {}
     return summary | {
+        "feature_window_id": incident.get("feature_window_id"),
+        "feature_snapshot": feature_snapshot,
+        "blast_radius": _blast_radius(anomaly_type),
+        "narrative": str(rca_payload.get("explanation") or rca_payload.get("root_cause") or _incident_subtitle(anomaly_type)),
         "timeline": _timeline_for_incident(incident, audit_events),
         "evidence_sources": _evidence_sources(incident),
         "similar_incidents": _similar_incidents(incident, incidents),
@@ -2047,6 +2087,40 @@ def _enrich_incident(
         "payload_pretty": _payload_view(incident),
         "topology": _topology_for(anomaly_type),
     }
+
+
+def _matches_incident_filters(
+    summary: Dict[str, object],
+    *,
+    status_filter: str | None = None,
+    severity_filter: str | None = None,
+    query: str | None = None,
+) -> bool:
+    if status_filter and str(summary.get("status") or "") != status_filter:
+        return False
+    if severity_filter and str(summary.get("severity") or "") != severity_filter:
+        return False
+    normalized_query = str(query or "").strip().lower()
+    if not normalized_query:
+        return True
+    current_ticket_summary = summary.get("current_ticket_summary")
+    ticket = current_ticket_summary if isinstance(current_ticket_summary, dict) else {}
+    fragments = [
+        str(summary.get("id") or ""),
+        str(summary.get("anomaly_type") or ""),
+        str(summary.get("severity") or ""),
+        str(summary.get("status") or ""),
+        str(summary.get("subtitle") or ""),
+        str(summary.get("impact") or ""),
+        str(summary.get("recommendation") or ""),
+        str(ticket.get("provider") or ""),
+        str(ticket.get("external_key") or ""),
+        str(ticket.get("external_id") or ""),
+        str(ticket.get("title") or ""),
+        str(summary.get("ticket_search_text") or ""),
+    ]
+    haystack = " ".join(fragment for fragment in fragments if fragment).lower()
+    return normalized_query in haystack
 
 
 def _traffic_stream(project: str, audit_events: List[Dict[str, object]]) -> List[Dict[str, object]]:
@@ -2227,12 +2301,11 @@ def _active_incident_summary(open_incidents: List[Dict[str, object]]) -> Dict[st
 
 def _build_console_state(project: str) -> Dict[str, object]:
     incidents = list_incidents(project=project)
-    audit_events = list_audit_events(limit=100)
     scenario_audit_events = list_audit_events(limit=48, event_type="scenario_executed")
-    approvals = list_approvals(limit=100)
     services = _service_snapshot()
     registry = load_registry()
     incident_summaries = [_incident_summary_view(incident) for incident in incidents]
+    recent_incident_summaries = incident_summaries[:CONSOLE_RECENT_INCIDENT_LIMIT]
     latest_incident = incidents[0] if incidents else None
     latest_incident_summary = incident_summaries[0] if incident_summaries else None
     latest_scenario = None
@@ -2245,6 +2318,7 @@ def _build_console_state(project: str) -> Dict[str, object]:
     set_active_incidents(active_incidents)
     healthy_services = sum(1 for service in services if bool(service.get("ok")))
     traffic_stream = _traffic_stream(project, scenario_audit_events)
+    integrations = integration_status()
     active_scenario = (
         normalize_scenario_name(str(latest_scenario.get("scenario")))
         if latest_scenario
@@ -2290,15 +2364,10 @@ def _build_console_state(project: str) -> Dict[str, object]:
             "healthy_services": healthy_services,
             "service_count": len(services),
         },
-        "incidents": incident_summaries,
-        "audit": audit_events,
-        "approvals": approvals,
-        "models": registry,
+        "incidents": recent_incident_summaries,
         "services": services,
-        "integrations": integration_status(),
-        "automation_actions": _list_automation_actions(),
+        "integrations": integrations,
         "scenarios": console_scenario_catalog(),
-        "latest_scenario": latest_scenario,
         "traffic_stream": traffic_stream,
         "traffic_preview": traffic_preview,
     }
@@ -2311,7 +2380,6 @@ def healthz():
         "db_path": os.getenv("CONTROL_PLANE_DB_PATH", "/tmp/ims-demo-control-plane.db"),
         "ansible_available": shutil.which("ansible-playbook") is not None,
         "automation_mode": _automation_mode(),
-        "integrations": integration_status(),
         "registry_loaded": bool(load_registry().get("models")),
     }
 
@@ -2343,33 +2411,43 @@ def get_incidents(
     project: str | None = None,
     active_only: bool = False,
     include_details: bool = False,
+    status: str | None = None,
+    severity: str | None = None,
+    q: str | None = None,
     auth: AuthContext | None = Depends(require_api_key),
 ):
     if project:
         ensure_project_access(auth, project)
         incidents = list_incidents(project=project)
-        audit_events = list_audit_events(limit=200)
-        if include_details:
-            enriched = [_enrich_incident(incident, audit_events, incidents, include_ticket_context=True) for incident in incidents]
-        else:
-            enriched = [_incident_summary_view(incident, include_ticket_context=True) for incident in incidents]
-        if active_only:
-            enriched = [incident for incident in enriched if is_active_state(str(incident.get("status") or NEW))]
-        return enriched
-    if auth is None or "*" in auth.projects:
+    elif auth is None or "*" in auth.projects:
         incidents = list_incidents()
     else:
         incidents = []
         for allowed_project in auth.projects:
             incidents.extend(list_incidents(project=allowed_project))
         incidents.sort(key=lambda item: item["created_at"], reverse=True)
-    audit_events = list_audit_events(limit=200)
-    if include_details:
-        enriched = [_enrich_incident(incident, audit_events, incidents, include_ticket_context=True) for incident in incidents]
-    else:
-        enriched = [_incident_summary_view(incident, include_ticket_context=True) for incident in incidents]
-    if active_only:
-        enriched = [incident for incident in enriched if is_active_state(str(incident.get("status") or NEW))]
+    audit_events = list_audit_events(limit=200) if include_details else []
+    normalized_query = str(q or "").strip()
+    enriched: List[Dict[str, object]] = []
+    for incident in incidents:
+        summary = _incident_summary_view(
+            incident,
+            include_ticket_context=True,
+            include_ticket_search=bool(normalized_query),
+        )
+        if active_only and not bool(summary.get("is_active")):
+            continue
+        if not _matches_incident_filters(
+            summary,
+            status_filter=status,
+            severity_filter=severity,
+            query=normalized_query,
+        ):
+            continue
+        if include_details:
+            enriched.append(_enrich_incident(incident, audit_events, incidents, include_ticket_context=True))
+        else:
+            enriched.append(summary)
     return enriched
 
 
@@ -3376,10 +3454,13 @@ def automation_actions(auth: AuthContext | None = Depends(require_api_key)):
 def bootstrap_automation(auth: AuthContext | None = Depends(require_api_key)):
     ensure_role(auth, "admin")
     try:
-        return {
+        result = {
             "aap": aap_bootstrap_resources(),
             "eda": eda_bootstrap_resources(),
         }
+        clear_integration_status_cache()
+        _clear_service_snapshot_cache()
+        return result
     except (AAPAutomationError, EDAAutomationError) as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

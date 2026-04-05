@@ -66,7 +66,7 @@ export type IncidentRecord = {
   anomaly_type: string;
   model_version: string;
   feature_window_id?: string | null;
-  feature_snapshot: Record<string, number | string | boolean | null>;
+  feature_snapshot?: Record<string, number | string | boolean | null>;
   rca_payload?: RcaPayload | null;
   recommendation?: string | null;
   created_at: string;
@@ -116,11 +116,11 @@ export type ConsoleState = {
     service_count: number;
   };
   incidents: IncidentRecord[];
-  audit: AuditEvent[];
-  approvals: ApprovalRecord[];
+  audit?: AuditEvent[];
+  approvals?: ApprovalRecord[];
   services: ServiceSnapshot[];
   integrations: Record<string, Record<string, unknown>>;
-  automation_actions: Array<{
+  automation_actions?: Array<{
     action: string;
     playbook: string;
     exists: boolean;
@@ -136,6 +136,7 @@ export type ConsoleState = {
     is_nominal?: boolean;
   }>;
   latest_scenario?: TrafficStreamEvent | null;
+  models?: Record<string, unknown>;
   traffic_stream: TrafficStreamEvent[];
   traffic_preview: TrafficPreview;
 };

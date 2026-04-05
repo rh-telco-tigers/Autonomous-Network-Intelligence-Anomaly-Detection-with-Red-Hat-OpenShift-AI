@@ -367,7 +367,15 @@ spec:
             - name: CONSOLE_CLUSTER_NAME
               value: ims-demo-lab
             - name: CONSOLE_AUTO_REFRESH_SECONDS
+              value: "15"
+            - name: CONSOLE_RECENT_INCIDENT_LIMIT
+              value: "24"
+            - name: CONSOLE_HEALTH_PROBE_TIMEOUT_SECONDS
               value: "5"
+            - name: CONSOLE_SERVICE_SNAPSHOT_CACHE_SECONDS
+              value: "15"
+            - name: INTEGRATION_STATUS_CACHE_SECONDS
+              value: "20"
             - name: FEATURE_GATEWAY_URL
               value: http://feature-gateway.ims-demo-lab.svc.cluster.local:8080
             - name: ANOMALY_SERVICE_URL

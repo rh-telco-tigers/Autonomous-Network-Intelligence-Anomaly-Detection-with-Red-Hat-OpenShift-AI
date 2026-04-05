@@ -14,31 +14,58 @@ import type {
 } from "@/lib/types";
 
 const defaultProject = "ims-demo";
+const REQUEST_TIMEOUT_MS = 12_000;
 
 export async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": token,
-      ...(init?.headers ?? {}),
-    },
-  });
-  const raw = await response.text();
-  const payload = raw ? (JSON.parse(raw) as unknown) : null;
-  if (!response.ok) {
-    throw new Error(typeof payload === "string" ? payload : JSON.stringify(payload));
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(path, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": token,
+        ...(init?.headers ?? {}),
+      },
+    });
+    const raw = await response.text();
+    let payload: unknown = null;
+    if (raw) {
+      try {
+        payload = JSON.parse(raw) as unknown;
+      } catch {
+        payload = raw;
+      }
+    }
+    if (!response.ok) {
+      throw new Error(
+        typeof payload === "string"
+          ? payload || `Request failed with status ${response.status}`
+          : JSON.stringify(payload),
+      );
+    }
+    return payload as T;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`Request timed out after ${Math.round(REQUEST_TIMEOUT_MS / 1000)}s`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return payload as T;
 }
 
-export function useConsoleStateQuery(refetchInterval = 10_000) {
+export function useConsoleStateQuery(refetchInterval = 15_000) {
   const { token } = useApiToken();
   return useQuery({
     queryKey: ["console-state", defaultProject, token],
     queryFn: () => request<ConsoleState>(`/api/console/state?project=${encodeURIComponent(defaultProject)}`, token),
+    placeholderData: (previousData) => previousData,
     refetchInterval,
+    staleTime: Math.max(5_000, Math.floor(refetchInterval * 0.75)),
     retry: 2,
+    retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 8_000),
   });
 }
 
@@ -46,35 +73,24 @@ export function useIncidentsQuery(filters: { status?: string; severity?: string;
   const { token } = useApiToken();
   return useQuery({
     queryKey: ["incidents", defaultProject, filters, token],
-    queryFn: () => request<IncidentRecord[]>(`/api/incidents?project=${encodeURIComponent(defaultProject)}`, token),
-    select: (rows) => {
-      return rows.filter((row) => {
-        const statusMatch = filters.status ? row.status === filters.status : true;
-        const severityMatch = filters.severity ? row.severity === filters.severity : true;
-        const q = (filters.q ?? "").trim().toLowerCase();
-        const searchMatch = q
-          ? [
-              row.id,
-              row.anomaly_type,
-              row.severity,
-              row.status,
-              row.subtitle ?? "",
-              row.recommendation ?? "",
-              row.current_ticket_summary?.provider ?? "",
-              row.current_ticket_summary?.external_key ?? "",
-              row.current_ticket_summary?.external_id ?? "",
-              row.current_ticket_summary?.title ?? "",
-              row.ticket_search_text ?? "",
-            ]
-              .join(" ")
-              .toLowerCase()
-              .includes(q)
-          : true;
-        return statusMatch && severityMatch && searchMatch;
-      });
+    queryFn: () => {
+      const params = new URLSearchParams({ project: defaultProject });
+      if (filters.status) {
+        params.set("status", filters.status);
+      }
+      if (filters.severity) {
+        params.set("severity", filters.severity);
+      }
+      if (filters.q?.trim()) {
+        params.set("q", filters.q.trim());
+      }
+      return request<IncidentRecord[]>(`/api/incidents?${params.toString()}`, token);
     },
-    refetchInterval: 10_000,
+    placeholderData: (previousData) => previousData,
+    refetchInterval: 20_000,
+    staleTime: 10_000,
     retry: 2,
+    retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 8_000),
   });
 }
 
@@ -84,7 +100,9 @@ export function useIncidentWorkflowQuery(incidentId: string) {
     queryKey: ["incident-workflow", incidentId, token],
     queryFn: () => request<IncidentWorkflow>(`/api/incidents/${encodeURIComponent(incidentId)}`, token),
     enabled: Boolean(incidentId),
-    refetchInterval: 8_000,
+    refetchInterval: 12_000,
+    staleTime: 5_000,
+    retry: 2,
   });
 }
 
@@ -94,7 +112,9 @@ export function useTicketLookupQuery(provider: string, externalId: string) {
     queryKey: ["ticket-lookup", provider, externalId, token],
     queryFn: () => request<TicketLookupResponse>(`/api/tickets/${encodeURIComponent(provider)}/${encodeURIComponent(externalId)}`, token),
     enabled: Boolean(provider) && Boolean(externalId),
-    refetchInterval: 8_000,
+    refetchInterval: 15_000,
+    staleTime: 5_000,
+    retry: 2,
   });
 }
 

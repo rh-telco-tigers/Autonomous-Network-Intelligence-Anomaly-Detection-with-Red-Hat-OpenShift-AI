@@ -36,7 +36,7 @@ const chartTooltipLabelStyle = { color: "var(--chart-tooltip-label)", fontWeight
 const chartTooltipItemStyle = { color: "var(--chart-tooltip-text)" };
 
 export default function OverviewPage() {
-  const { data, isLoading, error } = useConsoleStateQuery();
+  const { data, isLoading, error } = useConsoleStateQuery(20_000);
 
   if (isLoading && !data) {
     return <div className="text-sm text-[var(--text-muted)]">Loading overview...</div>;

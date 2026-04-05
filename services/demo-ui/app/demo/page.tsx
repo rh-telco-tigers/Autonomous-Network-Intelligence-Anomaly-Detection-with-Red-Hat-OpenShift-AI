@@ -11,7 +11,7 @@ import { useConsoleStateQuery, useScenarioRunner } from "@/lib/api";
 import { formatRelativeNumber, formatTime, titleize } from "@/lib/utils";
 
 export default function DemoPage() {
-  const { data, isLoading, error } = useConsoleStateQuery(10_000);
+  const { data, isLoading, error } = useConsoleStateQuery(30_000);
   const scenarioRunner = useScenarioRunner();
 
   if (isLoading && !data) {

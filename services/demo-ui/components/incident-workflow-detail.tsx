@@ -35,12 +35,6 @@ import type {
 } from "@/lib/types";
 import { cn, formatRelativeNumber, formatTime, titleize } from "@/lib/utils";
 
-const actionSchema = z.object({
-  remediation_id: z.string().optional(),
-  approved_by: z.string().min(1),
-  notes: z.string().optional(),
-});
-
 const verificationSchema = z.object({
   action_id: z.string().optional(),
   verified_by: z.string().min(1),
@@ -181,6 +175,9 @@ export function IncidentWorkflowDetail() {
   const queryClient = useQueryClient();
   const [notice, setNotice] = React.useState<Notice>(null);
   const [currentPageUrl, setCurrentPageUrl] = React.useState("");
+  const [actionActor, setActionActor] = React.useState("demo-ui");
+  const [focusedRemediationId, setFocusedRemediationId] = React.useState<number | null>(null);
+  const [remediationNotes, setRemediationNotes] = React.useState<Record<number, string>>({});
 
   const evidenceRef = React.useRef<HTMLDivElement>(null);
   const rcaRef = React.useRef<HTMLDivElement>(null);
@@ -233,15 +230,6 @@ export function IncidentWorkflowDetail() {
   const scrollToSection = React.useCallback((ref: React.RefObject<HTMLDivElement | null>) => {
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
-
-  const actionForm = useForm<z.input<typeof actionSchema>, unknown, z.output<typeof actionSchema>>({
-    resolver: zodResolver(actionSchema),
-    defaultValues: {
-      remediation_id: "",
-      approved_by: "demo-ui",
-      notes: "",
-    },
-  });
 
   const verificationForm = useForm<z.input<typeof verificationSchema>, unknown, z.output<typeof verificationSchema>>({
     resolver: zodResolver(verificationSchema),
@@ -408,11 +396,6 @@ export function IncidentWorkflowDetail() {
     if (!data) {
       return;
     }
-    actionForm.reset({
-      remediation_id: String(preferredRemediation?.id ?? ""),
-      approved_by: actionForm.getValues("approved_by") || "demo-ui",
-      notes: "",
-    });
     verificationForm.reset({
       action_id: String(data.actions[0]?.id ?? ""),
       verified_by: verificationForm.getValues("verified_by") || "demo-ui",
@@ -422,15 +405,30 @@ export function IncidentWorkflowDetail() {
       metric_based: true,
       close_after_verify: true,
     });
-  }, [actionForm, data, preferredRemediation, verificationForm]);
+  }, [data, verificationForm]);
 
-  const selectedRemediationId = actionForm.watch("remediation_id");
+  React.useEffect(() => {
+    if (!data?.current_remediations.length) {
+      setFocusedRemediationId(null);
+      return;
+    }
+    setFocusedRemediationId((current) => {
+      if (current && data.current_remediations.some((item) => item.id === current)) {
+        return current;
+      }
+      return preferredRemediation?.id ?? data.current_remediations[0]?.id ?? null;
+    });
+  }, [data, preferredRemediation]);
+
   const selectedRemediation = React.useMemo(() => {
     if (!data) {
       return undefined;
     }
-    return data.current_remediations.find((item) => String(item.id) === selectedRemediationId) ?? preferredRemediation;
-  }, [data, preferredRemediation, selectedRemediationId]);
+    if (focusedRemediationId != null) {
+      return data.current_remediations.find((item) => item.id === focusedRemediationId) ?? preferredRemediation;
+    }
+    return preferredRemediation;
+  }, [data, focusedRemediationId, preferredRemediation]);
 
   const latestRca = data?.rca_history[0];
   const latestRcaGeneration = buildRcaGenerationInfo(latestRca);
@@ -450,39 +448,94 @@ export function IncidentWorkflowDetail() {
   }, [data]);
   const currentTicketHref = resolveTicketHref(currentTicket);
 
-  const submitRemediationAction = React.useCallback(
-    async (mode: "approve" | "execute" | "reject") => {
-      await actionForm.handleSubmit(async (values) => {
-        try {
-          const payload = await actionMutation.mutateAsync({
-            remediationId: values.remediation_id ? Number(values.remediation_id) : undefined,
-            actor: values.approved_by,
-            notes: values.notes,
-            mode,
-          });
-          const executionStatus = payload.action.execution_status;
-          setNotice({
-            kind: mode === "execute" && executionStatus === "failed" ? "error" : "success",
-            message:
-              mode === "reject"
-                ? "Remediation rejected."
-                : mode === "execute"
-                  ? executionStatus === "executing"
-                    ? "Remediation approved and launched in AAP."
-                    : executionStatus === "executed"
-                      ? "Remediation approved and executed."
-                      : payload.action.result_summary ?? "Remediation execution failed."
-                  : "Remediation approved.",
-          });
-        } catch (mutationError) {
-          setNotice({
-            kind: "error",
-            message: mutationError instanceof Error ? mutationError.message : "Remediation action failed.",
-          });
-        }
-      })();
+  const updateRemediationNote = React.useCallback((remediationId: number, value: string) => {
+    setRemediationNotes((current) => ({ ...current, [remediationId]: value }));
+  }, []);
+
+  const clearRemediationNote = React.useCallback((remediationId: number) => {
+    setRemediationNotes((current) => {
+      if (!(remediationId in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[remediationId];
+      return next;
+    });
+  }, []);
+
+  const remediationNote = React.useCallback(
+    (remediationId: number) => remediationNotes[remediationId] ?? "",
+    [remediationNotes],
+  );
+
+  const actorName = actionActor.trim() || "demo-ui";
+
+  const runRemediationAction = React.useCallback(
+    async (remediation: RemediationRecord, mode: "approve" | "execute" | "reject") => {
+      setFocusedRemediationId(remediation.id);
+      try {
+        const payload = await actionMutation.mutateAsync({
+          remediationId: remediation.id,
+          actor: actorName,
+          notes: remediationNote(remediation.id),
+          mode,
+        });
+        const executionStatus = payload.action.execution_status;
+        setNotice({
+          kind: mode === "execute" && executionStatus === "failed" ? "error" : "success",
+          message:
+            mode === "reject"
+              ? "Remediation rejected."
+              : mode === "execute"
+                ? executionStatus === "executing"
+                  ? "Remediation approved and launched in AAP."
+                  : executionStatus === "executed"
+                    ? "Remediation approved and executed."
+                    : payload.action.result_summary ?? "Remediation execution failed."
+                : "Remediation approved.",
+        });
+        clearRemediationNote(remediation.id);
+      } catch (mutationError) {
+        setNotice({
+          kind: "error",
+          message: mutationError instanceof Error ? mutationError.message : "Remediation action failed.",
+        });
+      }
     },
-    [actionForm, actionMutation],
+    [actionMutation, actorName, clearRemediationNote, remediationNote],
+  );
+
+  const escalateFromRemediation = React.useCallback(
+    async (remediation: RemediationRecord) => {
+      setFocusedRemediationId(remediation.id);
+      try {
+        const workflow = await escalateIncidentMutation.mutateAsync(
+          remediationNote(remediation.id) || `Operator escalated instead of executing "${remediation.title}".`,
+        );
+        scrollToSection(ticketRef);
+        setNotice({
+          kind: "warning",
+          message: workflow.current_ticket
+            ? "Incident escalated. Plane ticket is attached and ready for coordination."
+            : "Incident escalated. Open the ticket workflow to create or sync the Plane ticket.",
+        });
+        clearRemediationNote(remediation.id);
+      } catch (mutationError) {
+        setNotice({
+          kind: "error",
+          message: mutationError instanceof Error ? mutationError.message : "Escalation failed.",
+        });
+      }
+    },
+    [clearRemediationNote, escalateIncidentMutation, remediationNote, scrollToSection, ticketRef],
+  );
+
+  const reviewSimulation = React.useCallback(
+    (remediation: RemediationRecord) => {
+      setFocusedRemediationId(remediation.id);
+      scrollToSection(simulationRef);
+    },
+    [scrollToSection, simulationRef],
   );
 
   const handleGuideAction = React.useCallback(
@@ -519,7 +572,9 @@ export function IncidentWorkflowDetail() {
           }
           break;
         case "executeSelected":
-          await submitRemediationAction("execute");
+          if (selectedRemediation) {
+            await runRemediationAction(selectedRemediation, "execute");
+          }
           break;
         case "closeIncident":
           try {
@@ -569,8 +624,9 @@ export function IncidentWorkflowDetail() {
       knowledgeRef,
       rcaRef,
       remediationRef,
+      runRemediationAction,
       scrollToSection,
-      submitRemediationAction,
+      selectedRemediation,
       ticketRef,
       timelineRef,
       verificationRef,
@@ -614,29 +670,21 @@ export function IncidentWorkflowDetail() {
     ticketSyncMutation.isPending ||
     closeIncidentMutation.isPending;
 
-  const selectedRemediationMode = remediationMode(selectedRemediation);
-  const selectedRemediationPreview = selectedRemediation ? buildRemediationPreview(selectedRemediation) : "Choose a remediation to see its mapped action details.";
   const ticketAutoSyncHint = currentTicket
     ? `Operator notes entered in this workflow will also be posted to the current ${currentTicket.provider.toUpperCase()} ticket.`
     : "Create a Plane ticket here to mirror later operator updates automatically.";
   const currentTicketMetadata = (currentTicket?.metadata ?? {}) as Record<string, unknown>;
   const currentTicketSourceUrl = asStringValue(currentTicketMetadata.source_url);
   const incidentWorkspaceHref = currentPageUrl || currentTicketSourceUrl;
-  const commandCenterSummary = selectedRemediation ? selectedRemediationPreview : latestRcaRecommendation;
-  const decisionRisk = titleize(selectedRemediation?.risk_level ?? (incident.severity === "Critical" ? "medium" : "low"));
+  const primaryRemediation = preferredRemediation;
+  const headlineRemediation = primaryRemediation ?? selectedRemediation;
+  const headlineRemediationMode = remediationMode(headlineRemediation);
+  const commandCenterSummary = headlineRemediation ? buildRemediationPreview(headlineRemediation) : latestRcaRecommendation;
+  const decisionRisk = titleize(headlineRemediation?.risk_level ?? (incident.severity === "Critical" ? "medium" : "low"));
   const rcaConfidenceLabel = hasRca ? `${Math.round(Number(latestRca?.confidence ?? 0) * 100)}%` : "Pending";
   const simulationPreview = buildSimulationPreview(incident, selectedRemediation, latestRca);
   const translatedEvidence = buildHumanEvidenceSummary(incident, observedSignals);
-  const recommendedAlternatives = data.current_remediations.filter((item) => item.id !== selectedRemediation?.id).slice(0, 2);
-  const commandMode = !hasRca
-    ? "rca"
-    : !hasRemediations
-      ? "remediation"
-      : ["EXECUTED", "EXECUTING", "VERIFIED", "VERIFICATION_FAILED"].includes(incident.status)
-        ? "verification"
-        : ["CLOSED", "FALSE_POSITIVE"].includes(incident.status)
-          ? "review"
-          : "decision";
+  const alternativeRemediations = data.current_remediations.filter((item) => item.id !== primaryRemediation?.id);
 
   return (
     <div className="space-y-8">
@@ -686,7 +734,7 @@ export function IncidentWorkflowDetail() {
             <div>
               <div className="text-[11px] uppercase tracking-[0.35em] text-[var(--text-muted)]">Command center</div>
               <CardTitle className="mt-2 text-2xl sm:text-3xl">
-                {selectedRemediation?.title ?? flowGuide.title}
+                {headlineRemediation?.title ?? flowGuide.title}
               </CardTitle>
               <CardDescription className="mt-3 max-w-5xl text-sm leading-6">
                 {commandCenterSummary}
@@ -708,322 +756,56 @@ export function IncidentWorkflowDetail() {
             <SummaryItem label="Decision risk" value={decisionRisk} />
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="grid gap-6 xl:grid-cols-[1.45fr_0.95fr]">
-            <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/8 p-5">
-                  <div className="text-xs uppercase tracking-[0.2em] text-emerald-200/80">AI analysis</div>
-                  <div className="mt-3 text-lg font-semibold text-[var(--text-strong)]">
-                    {latestRca?.root_cause ?? "RCA is still being generated"}
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{latestRcaAnalysis}</p>
-                </div>
-                <div className="rounded-3xl border border-amber-500/20 bg-amber-500/8 p-5">
-                  <div className="text-xs uppercase tracking-[0.2em] text-amber-200/80">Operator takeaway</div>
-                  <div className="mt-3 text-lg font-semibold text-[var(--text-strong)]">
-                    {selectedRemediation?.title ?? latestRcaRecommendation}
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
-                    {selectedRemediation?.expected_outcome ??
-                      "Choose the safest action that reduces customer impact without widening the blast radius."}
-                  </p>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/8 p-5">
+              <div className="text-xs uppercase tracking-[0.2em] text-emerald-200/80">AI analysis</div>
+              <div className="mt-3 text-lg font-semibold text-[var(--text-strong)]">
+                {latestRca?.root_cause ?? "RCA is still being generated"}
+              </div>
+              <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{latestRcaAnalysis}</p>
+            </div>
+            <div className="rounded-3xl border border-amber-500/20 bg-amber-500/8 p-5">
+              <div className="text-xs uppercase tracking-[0.2em] text-amber-200/80">Operator takeaway</div>
+              <div className="mt-3 text-lg font-semibold text-[var(--text-strong)]">
+                {headlineRemediation?.title ?? latestRcaRecommendation}
+              </div>
+              <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
+                {headlineRemediation?.expected_outcome ??
+                  "Choose the safest action that reduces customer impact without widening the blast radius."}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Why this recommendation is on top</div>
+                <div className="mt-3 text-base font-semibold text-[var(--text-strong)]">
+                    {headlineRemediation ? headlineRemediation.title : "Recommendation pending"}
                 </div>
               </div>
-
-              <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Why this recommendation is on top</div>
-                    <div className="mt-3 text-base font-semibold text-[var(--text-strong)]">
-                      {selectedRemediation ? selectedRemediation.title : "Recommendation pending"}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
-                      RCA source: {latestRcaGeneration.sourceLabel}
-                    </div>
-                    <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
-                      Action type: {selectedRemediationMode}
-                    </div>
-                  </div>
+              <div className="flex flex-wrap gap-2">
+                <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                  RCA source: {latestRcaGeneration.sourceLabel}
                 </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-3">
-                  {flowGuide.helpers.map((helper) => (
-                    <div key={helper.title} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
-                      <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{helper.title}</div>
-                      <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{helper.text}</p>
-                    </div>
-                  ))}
+                <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                  Action type: {headlineRemediationMode}
                 </div>
               </div>
             </div>
-
-            <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Operator decision</div>
-                  <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">
-                    {commandMode === "verification"
-                      ? "Verify the outcome"
-                      : commandMode === "review"
-                        ? "Review and communicate outcome"
-                        : "Take the next safest step"}
-                  </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              {flowGuide.helpers.map((helper) => (
+                <div key={helper.title} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{helper.title}</div>
+                  <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{helper.text}</p>
                 </div>
-                <StatusBadge value={incident.status} />
-              </div>
-
-              {commandMode === "rca" ? (
-                <div className="mt-5 space-y-4">
-                  <p className="text-sm leading-6 text-[var(--text-secondary)]">
-                    RCA is the first gate. Generate a grounded explanation before ranking or executing any remediation.
-                  </p>
-                  <div className="flex flex-wrap gap-3">
-                    <Button onClick={() => handleGuideAction("generateRca")} disabled={pending}>
-                      {generateRcaMutation.isPending ? "Generating..." : "Generate RCA"}
-                    </Button>
-                    <Button variant="secondary" onClick={() => scrollToSection(evidenceRef)}>
-                      Review evidence first
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={async () => {
-                        try {
-                          const workflow = await escalateIncidentMutation.mutateAsync("Operator escalated before RCA approval.");
-                          scrollToSection(ticketRef);
-                          setNotice({
-                            kind: "warning",
-                            message: workflow.current_ticket
-                              ? "Incident escalated. Plane ticket created and linked to this incident."
-                              : "Incident escalated. Open the ticket workflow to create or sync the Plane ticket.",
-                          });
-                        } catch (mutationError) {
-                          setNotice({
-                            kind: "error",
-                            message: mutationError instanceof Error ? mutationError.message : "Escalation failed.",
-                          });
-                        }
-                      }}
-                      disabled={pending || escalateIncidentMutation.isPending}
-                    >
-                      Escalate
-                    </Button>
-                  </div>
-                </div>
-              ) : commandMode === "remediation" ? (
-                <div className="mt-5 space-y-4">
-                  <p className="text-sm leading-6 text-[var(--text-secondary)]">
-                    RCA is ready. Generate ranked remediations so the operator can compare impact, risk, and rollback cost from one place.
-                  </p>
-                  <div className="flex flex-wrap gap-3">
-                    <Button onClick={() => handleGuideAction("generateRemediations")} disabled={pending}>
-                      {generateRemediationsMutation.isPending ? "Generating..." : "Generate remediations"}
-                    </Button>
-                    <Button variant="secondary" onClick={() => scrollToSection(rcaRef)}>
-                      Review RCA
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={async () => {
-                        try {
-                          const workflow = await escalateIncidentMutation.mutateAsync("Operator escalated after RCA review.");
-                          scrollToSection(ticketRef);
-                          setNotice({
-                            kind: "warning",
-                            message: workflow.current_ticket
-                              ? "Incident escalated. Plane ticket is now attached for coordination."
-                              : "Incident escalated. Open the ticket workflow to create or sync the Plane ticket.",
-                          });
-                        } catch (mutationError) {
-                          setNotice({
-                            kind: "error",
-                            message: mutationError instanceof Error ? mutationError.message : "Escalation failed.",
-                          });
-                        }
-                      }}
-                      disabled={pending || escalateIncidentMutation.isPending}
-                    >
-                      Escalate
-                    </Button>
-                  </div>
-                </div>
-              ) : commandMode === "verification" ? (
-                <form
-                  className="mt-5 space-y-4"
-                  onSubmit={verificationForm.handleSubmit(async (values) => {
-                    try {
-                      await verificationMutation.mutateAsync(values);
-                      setNotice({ kind: "success", message: "Verification recorded." });
-                    } catch (mutationError) {
-                      setNotice({
-                        kind: "error",
-                        message: mutationError instanceof Error ? mutationError.message : "Verification failed.",
-                      });
-                    }
-                  })}
-                >
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <Label htmlFor="action_id">Related action</Label>
-                      <Select id="action_id" {...verificationForm.register("action_id")}>
-                        <option value="">No action selected</option>
-                        {data.actions.map((action) => (
-                          <option key={action.id} value={String(action.id)}>
-                            {action.id} · {action.result_summary ?? action.execution_status}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="verification_status">Outcome</Label>
-                      <Select id="verification_status" {...verificationForm.register("verification_status")}>
-                        <option value="verified">verified</option>
-                        <option value="failed">failed</option>
-                        <option value="false_positive">false_positive</option>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="verified_by">Actor</Label>
-                      <Input id="verified_by" {...verificationForm.register("verified_by")} />
-                    </div>
-                    <div className="rounded-2xl border border-sky-400/20 bg-sky-500/8 p-4 text-sm leading-6 text-[var(--text-secondary)]">
-                      {ticketAutoSyncHint}
-                    </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="verification_notes">Verification notes</Label>
-                    <Textarea id="verification_notes" placeholder="What changed after execution?" {...verificationForm.register("notes")} />
-                  </div>
-                  <div>
-                    <Label htmlFor="custom_resolution">Actual fix applied</Label>
-                    <Textarea
-                      id="custom_resolution"
-                      placeholder="Record the real operator fix so it can become reusable knowledge."
-                      {...verificationForm.register("custom_resolution")}
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-4 text-sm text-[var(--text-secondary)]">
-                    <label className="flex items-center gap-2">
-                      <input type="checkbox" {...verificationForm.register("metric_based")} />
-                      Evidence includes metric-based verification
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input type="checkbox" {...verificationForm.register("close_after_verify")} />
-                      Close the incident after successful verification
-                    </label>
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <Button type="submit" disabled={verificationMutation.isPending}>
-                      {verificationMutation.isPending ? "Saving..." : "Record verification"}
-                    </Button>
-                    <Button variant="secondary" type="button" onClick={() => scrollToSection(simulationRef)}>
-                      Review simulation
-                    </Button>
-                    <Button variant="outline" type="button" onClick={() => scrollToSection(ticketRef)}>
-                      Update Plane ticket
-                    </Button>
-                  </div>
-                </form>
-              ) : commandMode === "review" ? (
-                <div className="mt-5 space-y-4">
-                  <p className="text-sm leading-6 text-[var(--text-secondary)]">
-                    The workflow is complete. Keep the ticket synchronized, review the audit trail, and preserve the verified outcome for future incidents.
-                  </p>
-                  <div className="flex flex-wrap gap-3">
-                    <Button variant="secondary" onClick={() => scrollToSection(timelineRef)}>
-                      Review timeline
-                    </Button>
-                    <Button variant="secondary" onClick={() => scrollToSection(ticketRef)}>
-                      Open ticket workflow
-                    </Button>
-                    <Button variant="outline" onClick={() => scrollToSection(knowledgeRef)}>
-                      Review technical details
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-5 space-y-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <Label htmlFor="remediation_id">Primary action</Label>
-                      <Select id="remediation_id" {...actionForm.register("remediation_id")}>
-                        <option value="">Select remediation</option>
-                        {data.current_remediations.map((remediation) => (
-                          <option key={remediation.id} value={String(remediation.id)}>
-                            #{remediation.suggestion_rank} {remediation.title}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="approved_by">Actor</Label>
-                      <Input id="approved_by" {...actionForm.register("approved_by")} />
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="approval_notes">Operator note</Label>
-                    <Textarea
-                      id="approval_notes"
-                      placeholder="Why is this the safest next move right now?"
-                      {...actionForm.register("notes")}
-                    />
-                  </div>
-
-                  <div className="rounded-2xl border border-sky-400/20 bg-sky-500/8 p-4 text-sm leading-6 text-[var(--text-secondary)]">
-                    {ticketAutoSyncHint}
-                  </div>
-
-                  <div className="flex flex-wrap gap-3">
-                    <Button onClick={() => submitRemediationAction("execute")} disabled={pending || !selectedRemediation}>
-                      Approve & execute
-                    </Button>
-                    <Button variant="secondary" onClick={() => scrollToSection(simulationRef)} disabled={!selectedRemediation}>
-                      Simulate first
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={async () => {
-                        try {
-                          const workflow = await escalateIncidentMutation.mutateAsync(
-                            actionForm.getValues("notes") || "Operator escalated instead of executing the current remediation.",
-                          );
-                          scrollToSection(ticketRef);
-                          setNotice({
-                            kind: "warning",
-                            message: workflow.current_ticket
-                              ? "Incident escalated. Plane ticket is attached and ready for coordination."
-                              : "Incident escalated. Open the ticket workflow to create or sync the Plane ticket.",
-                          });
-                        } catch (mutationError) {
-                          setNotice({
-                            kind: "error",
-                            message: mutationError instanceof Error ? mutationError.message : "Escalation failed.",
-                          });
-                        }
-                      }}
-                      disabled={pending || escalateIncidentMutation.isPending}
-                    >
-                      Escalate
-                    </Button>
-                    <Button variant="ghost" onClick={() => submitRemediationAction("approve")} disabled={pending || !selectedRemediation}>
-                      Approve only
-                    </Button>
-                    <Button variant="danger" onClick={() => submitRemediationAction("reject")} disabled={pending || !selectedRemediation}>
-                      Reject selected
-                    </Button>
-                  </div>
-
-                  {!selectedRemediation ? (
-                    <InlineEmptyState
-                      title="Select one remediation"
-                      description="Choose the safest remediation first. This is the only action path that should be active at one time."
-                    />
-                  ) : null}
-                </div>
-              )}
+              ))}
             </div>
+          </div>
+
+          <div className="rounded-3xl border border-sky-400/20 bg-sky-500/8 p-5 text-sm leading-6 text-[var(--text-secondary)]">
+            Approve, simulate, escalate, and reject actions now live directly on each remediation card below. Verification stays in the execution section so the workflow remains on one page without a separate operator decision form.
           </div>
         </CardContent>
       </Card>
@@ -1175,7 +957,7 @@ export function IncidentWorkflowDetail() {
                 <div>
                   <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Action options</div>
                   <CardTitle className="mt-1">One primary action, alternatives kept nearby</CardTitle>
-                  <CardDescription>Operators should see the recommended action immediately without losing access to safer fallbacks.</CardDescription>
+                  <CardDescription>Operators should be able to add context and act directly from each remediation card without a separate decision form.</CardDescription>
                 </div>
                 {hasRca && !hasRemediations ? (
                   <Button variant="secondary" onClick={() => handleGuideAction("generateRemediations")} disabled={pending}>
@@ -1186,39 +968,62 @@ export function IncidentWorkflowDetail() {
               <CardContent className="space-y-4">
                 {hasRemediations ? (
                   <>
-                    <div className="rounded-3xl border border-cyan-400/25 bg-cyan-500/8 p-5">
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                        <div>
-                          <div className="text-xs uppercase tracking-[0.2em] text-cyan-200/80">Primary action</div>
-                          <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">
-                            {selectedRemediation?.title ?? "Select a remediation"}
-                          </div>
-                          <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{selectedRemediationPreview}</p>
-                        </div>
-                        {selectedRemediation ? <StatusBadge value={selectedRemediation.risk_level} /> : null}
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+                      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                        <Label htmlFor="remediation_actor">Operator</Label>
+                        <Input
+                          id="remediation_actor"
+                          value={actionActor}
+                          onChange={(event) => setActionActor(event.target.value)}
+                          placeholder="Who is taking the action?"
+                          className="mt-2"
+                        />
                       </div>
-                      <div className="mt-4 grid gap-4 md:grid-cols-4">
-                        <SummaryItem label="Action type" value={selectedRemediationMode} />
-                        <SummaryItem label="Rank score" value={formatRelativeNumber(selectedRemediation?.rank_score ?? 0, 3)} />
-                        <SummaryItem label="Automation" value={titleize(selectedRemediation?.automation_level ?? "pending")} />
-                        <SummaryItem label="Revision scope" value={`Revision ${selectedRemediation?.based_on_revision ?? incident.workflow_revision}`} />
+                      <div className="rounded-2xl border border-sky-400/20 bg-sky-500/8 p-4 text-sm leading-6 text-[var(--text-secondary)]">
+                        {ticketAutoSyncHint}
                       </div>
                     </div>
 
+                    {primaryRemediation ? (
+                      <RemediationActionCard
+                        remediation={primaryRemediation}
+                        titlePrefix="Primary action"
+                        description={buildRemediationPreview(primaryRemediation)}
+                        isPrimary
+                        isFocused={selectedRemediation?.id === primaryRemediation.id}
+                        actor={actorName}
+                        note={remediationNote(primaryRemediation.id)}
+                        pending={pending}
+                        onNoteChange={updateRemediationNote}
+                        onFocus={setFocusedRemediationId}
+                        onExecute={(remediation) => void runRemediationAction(remediation, "execute")}
+                        onApprove={(remediation) => void runRemediationAction(remediation, "approve")}
+                        onReject={(remediation) => void runRemediationAction(remediation, "reject")}
+                        onEscalate={(remediation) => void escalateFromRemediation(remediation)}
+                        onSimulate={(remediation) => reviewSimulation(remediation)}
+                      />
+                    ) : null}
+
                     <div className="grid gap-3">
-                      {recommendedAlternatives.length ? (
-                        recommendedAlternatives.map((remediation) => (
-                          <div key={remediation.id} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <div className="font-medium text-[var(--text-strong)]">
-                                  #{remediation.suggestion_rank} {remediation.title}
-                                </div>
-                                <div className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{remediation.description}</div>
-                              </div>
-                              <StatusBadge value={remediation.status || remediation.risk_level} />
-                            </div>
-                          </div>
+                      {alternativeRemediations.length ? (
+                        alternativeRemediations.map((remediation) => (
+                          <RemediationActionCard
+                            key={remediation.id}
+                            remediation={remediation}
+                            titlePrefix={`#${remediation.suggestion_rank}`}
+                            description={remediation.description}
+                            isFocused={selectedRemediation?.id === remediation.id}
+                            actor={actorName}
+                            note={remediationNote(remediation.id)}
+                            pending={pending}
+                            onNoteChange={updateRemediationNote}
+                            onFocus={setFocusedRemediationId}
+                            onExecute={(item) => void runRemediationAction(item, "execute")}
+                            onApprove={(item) => void runRemediationAction(item, "approve")}
+                            onReject={(item) => void runRemediationAction(item, "reject")}
+                            onEscalate={(item) => void escalateFromRemediation(item)}
+                            onSimulate={(item) => reviewSimulation(item)}
+                          />
                         ))
                       ) : (
                         <InlineEmptyState
@@ -1573,10 +1378,98 @@ export function IncidentWorkflowDetail() {
                   ) : (
                     <InlineEmptyState
                       title="Verification has not been recorded"
-                      description="Use the command center decision panel when the workflow reaches verification."
+                      description="Record the outcome here after execution completes."
                     />
                   )}
                 </div>
+
+                {verificationUnlocked ? (
+                  <form
+                    className="space-y-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4"
+                    onSubmit={verificationForm.handleSubmit(async (values) => {
+                      try {
+                        await verificationMutation.mutateAsync(values);
+                        setNotice({ kind: "success", message: "Verification recorded." });
+                      } catch (mutationError) {
+                        setNotice({
+                          kind: "error",
+                          message: mutationError instanceof Error ? mutationError.message : "Verification failed.",
+                        });
+                      }
+                    })}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Record verification</div>
+                        <div className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+                          Confirm whether the action actually resolved the incident before closing the loop.
+                        </div>
+                      </div>
+                      <Button variant="outline" type="button" size="sm" onClick={() => scrollToSection(ticketRef)}>
+                        Update Plane ticket
+                      </Button>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <Label htmlFor="action_id">Related action</Label>
+                        <Select id="action_id" {...verificationForm.register("action_id")}>
+                          <option value="">No action selected</option>
+                          {data.actions.map((action) => (
+                            <option key={action.id} value={String(action.id)}>
+                              {action.id} · {action.result_summary ?? action.execution_status}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="verification_status">Outcome</Label>
+                        <Select id="verification_status" {...verificationForm.register("verification_status")}>
+                          <option value="verified">verified</option>
+                          <option value="failed">failed</option>
+                          <option value="false_positive">false_positive</option>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="verified_by">Actor</Label>
+                        <Input id="verified_by" {...verificationForm.register("verified_by")} />
+                      </div>
+                      <div className="rounded-2xl border border-sky-400/20 bg-sky-500/8 p-4 text-sm leading-6 text-[var(--text-secondary)]">
+                        {ticketAutoSyncHint}
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="verification_notes">Verification notes</Label>
+                      <Textarea id="verification_notes" placeholder="What changed after execution?" {...verificationForm.register("notes")} />
+                    </div>
+                    <div>
+                      <Label htmlFor="custom_resolution">Actual fix applied</Label>
+                      <Textarea
+                        id="custom_resolution"
+                        placeholder="Record the real operator fix so it can become reusable knowledge."
+                        {...verificationForm.register("custom_resolution")}
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-4 text-sm text-[var(--text-secondary)]">
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" {...verificationForm.register("metric_based")} />
+                        Evidence includes metric-based verification
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" {...verificationForm.register("close_after_verify")} />
+                        Close the incident after successful verification
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      <Button type="submit" disabled={verificationMutation.isPending}>
+                        {verificationMutation.isPending ? "Saving..." : "Record verification"}
+                      </Button>
+                      <Button variant="secondary" type="button" onClick={() => scrollToSection(simulationRef)}>
+                        Review simulation
+                      </Button>
+                    </div>
+                  </form>
+                ) : null}
               </CardContent>
             </Card>
           </div>
@@ -1625,6 +1518,149 @@ export function IncidentWorkflowDetail() {
   );
 }
 
+function RemediationActionCard({
+  remediation,
+  titlePrefix,
+  description,
+  isPrimary = false,
+  isFocused = false,
+  actor,
+  note,
+  pending,
+  onNoteChange,
+  onFocus,
+  onExecute,
+  onApprove,
+  onReject,
+  onEscalate,
+  onSimulate,
+}: {
+  remediation: RemediationRecord;
+  titlePrefix: string;
+  description: string;
+  isPrimary?: boolean;
+  isFocused?: boolean;
+  actor: string;
+  note: string;
+  pending: boolean;
+  onNoteChange: (remediationId: number, value: string) => void;
+  onFocus: (remediationId: number) => void;
+  onExecute: (remediation: RemediationRecord) => void;
+  onApprove: (remediation: RemediationRecord) => void;
+  onReject: (remediation: RemediationRecord) => void;
+  onEscalate: (remediation: RemediationRecord) => void;
+  onSimulate: (remediation: RemediationRecord) => void;
+}) {
+  const noteId = `remediation-note-${remediation.id}`;
+
+  return (
+    <div
+      className={cn(
+        "rounded-3xl border p-5",
+        isPrimary ? "border-cyan-400/25 bg-cyan-500/8" : "border-[var(--border-subtle)] bg-[var(--surface-subtle)]",
+        isFocused && "ring-1 ring-[var(--accent-ring)]",
+      )}
+    >
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className={cn("text-xs uppercase tracking-[0.2em]", isPrimary ? "text-cyan-200/80" : "text-[var(--text-muted)]")}>
+            {titlePrefix}
+          </div>
+          <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">{remediation.title}</div>
+          <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{description}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {isFocused ? (
+            <div className="rounded-full border border-[var(--accent-ring)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+              Previewing
+            </div>
+          ) : null}
+          <StatusBadge value={remediation.status || remediation.risk_level} />
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-4">
+        <SummaryItem label="Action type" value={remediationMode(remediation)} />
+        <SummaryItem label="Rank score" value={formatRelativeNumber(remediation.rank_score ?? 0, 3)} />
+        <SummaryItem label="Automation" value={titleize(remediation.automation_level ?? "pending")} />
+        <SummaryItem label="Revision scope" value={`Revision ${remediation.based_on_revision ?? "current"}`} />
+      </div>
+
+      <div className="mt-4">
+        <Label htmlFor={noteId}>Operator note</Label>
+        <Textarea
+          id={noteId}
+          value={note}
+          onChange={(event) => {
+            onFocus(remediation.id);
+            onNoteChange(remediation.id, event.target.value);
+          }}
+          placeholder="Reason, guardrails, rollback note, or escalation context"
+          className="mt-2 min-h-[88px]"
+        />
+        <div className="mt-2 text-xs text-[var(--text-muted)]">Recorded as {actor}. Notes stay attached to this action path.</div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          onClick={() => {
+            onFocus(remediation.id);
+            onExecute(remediation);
+          }}
+          disabled={pending}
+        >
+          Approve & execute
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            onFocus(remediation.id);
+            onSimulate(remediation);
+          }}
+          disabled={pending}
+        >
+          Simulate first
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            onFocus(remediation.id);
+            onEscalate(remediation);
+          }}
+          disabled={pending}
+        >
+          Escalate
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            onFocus(remediation.id);
+            onApprove(remediation);
+          }}
+          disabled={pending}
+        >
+          Approve only
+        </Button>
+        <Button
+          size="sm"
+          variant="danger"
+          onClick={() => {
+            onFocus(remediation.id);
+            onReject(remediation);
+          }}
+          disabled={pending}
+        >
+          Reject
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function WorkflowStageDock({
   flowGuide,
   status,
@@ -1647,7 +1683,7 @@ function WorkflowStageDock({
             <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{flowGuide.subtext}</p>
           </div>
           <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-4 py-3 text-sm leading-6 text-[var(--text-secondary)] xl:max-w-md">
-            The command center below is the only active decision surface. Everything else is supporting context.
+            Use the inline remediation cards and verification controls below for live actions. Supporting evidence and history stay nearby.
           </div>
         </div>
 

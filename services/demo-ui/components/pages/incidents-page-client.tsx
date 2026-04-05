@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 
@@ -33,6 +33,7 @@ export function IncidentsPageClient({ initialFilters }: { initialFilters: Filter
     severity: searchParams.get("severity") ?? initialFilters.severity ?? "",
     q: searchParams.get("q") ?? initialFilters.q ?? "",
   };
+  const [searchValue, setSearchValue] = useState(filters.q);
   const page = parsePositiveInt(searchParams.get("page"), 1);
   const pageSize = normalizePageSize(searchParams.get("pageSize"), 10);
 
@@ -46,6 +47,20 @@ export function IncidentsPageClient({ initialFilters }: { initialFilters: Filter
     const start = (safePage - 1) * pageSize;
     return rows.slice(start, start + pageSize);
   }, [data, pageSize, safePage]);
+
+  useEffect(() => {
+    setSearchValue(filters.q);
+  }, [filters.q]);
+
+  useEffect(() => {
+    if (searchValue === filters.q) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      updateFilterParam("q", searchValue);
+    }, 350);
+    return () => window.clearTimeout(timeoutId);
+  }, [filters.q, searchValue]);
 
   const columns = useMemo<ColumnDef<IncidentRecord>[]>(
     () => [
@@ -155,8 +170,8 @@ export function IncidentsPageClient({ initialFilters }: { initialFilters: Filter
         <CardContent className="grid gap-4 md:grid-cols-3">
           <Input
             placeholder="Search incidents, tickets, comments..."
-            value={filters.q}
-            onChange={(event) => updateFilterParam("q", event.target.value)}
+            value={searchValue}
+            onChange={(event) => setSearchValue(event.target.value)}
           />
           <Select value={filters.status} onChange={(event) => updateFilterParam("status", event.target.value)}>
             <option value="">All workflow states</option>
