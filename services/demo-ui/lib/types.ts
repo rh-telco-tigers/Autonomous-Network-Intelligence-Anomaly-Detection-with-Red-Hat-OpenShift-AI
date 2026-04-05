@@ -176,6 +176,28 @@ export type RcaPayload = Record<string, unknown> & {
   retrieved_documents?: Array<Record<string, unknown>>;
 };
 
+export type RelatedDocument = {
+  title: string;
+  reference: string;
+  content: string;
+  doc_type: string;
+  collection: string;
+  score: number;
+  stage?: string;
+  category?: string;
+  incident_id?: string;
+  knowledge_weight?: number;
+};
+
+export type RelatedRecords = {
+  incident_id: string;
+  documents: RelatedDocument[];
+  evidence: RelatedDocument[];
+  reasoning: RelatedDocument[];
+  resolution: RelatedDocument[];
+  knowledge: RelatedDocument[];
+};
+
 export type RemediationRecord = {
   id: number;
   incident_id: string;
@@ -303,6 +325,10 @@ export type IncidentWorkflow = {
 export type TicketLookupResponse = {
   ticket: TicketRecord;
   workflow: IncidentWorkflow;
+};
+
+export type KnowledgeArticleResponse = {
+  article: RelatedDocument;
 };
 
 export type TrafficStreamEvent = {

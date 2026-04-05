@@ -1,0 +1,145 @@
+{
+  "category": "validation",
+  "articles": [
+    {
+      "slug": "quarantine-malformed-source",
+      "title": "Quarantine the malformed traffic source before tuning the parser",
+      "summary": "Start by isolating the bad sender when malformed SIP comes from a known generator or peer.",
+      "anomaly_types": ["malformed_sip"],
+      "knowledge_weight": 0.99,
+      "content": [
+        "When to use: INVITE or REGISTER validation errors are concentrated around one user agent, lab source, or ingress peer.",
+        "Action: Rate-limit, isolate, or block the offending sender while preserving clean traffic from trusted sources.",
+        "Why it works: Removing the bad source lowers immediate noise and protects healthy SIP flows while deeper analysis continues.",
+        "Verify: Parser rejects fall sharply and remaining traffic shows the expected header and body structure.",
+        "Operator hint: Save a representative malformed payload so later RCA output can reference the exact defect class."
+      ]
+    },
+    {
+      "slug": "enforce-sipp-payload-validation",
+      "title": "Enforce SIPp payload validation in synthetic scenarios",
+      "summary": "Bad scenario templates can repeatedly create malformed requests that look like production parser issues.",
+      "anomaly_types": ["malformed_sip"],
+      "knowledge_weight": 0.97,
+      "content": [
+        "When to use: Validation failures began after a scenario update or a new SIPp payload template was introduced.",
+        "Action: Compare the current generator template to a known-good message, then fix header order, required fields, and content formatting.",
+        "Why it works: Correcting the source template removes the malformed wave without touching stable platform controls.",
+        "Verify: Newly generated requests pass schema checks and the reject pattern disappears from the same scenario.",
+        "Documentation: Tag the broken template revision in the incident so future knowledge retrieval can rank it quickly."
+      ]
+    },
+    {
+      "slug": "normalize-content-length-and-sdp",
+      "title": "Normalize Content-Length and SDP formatting on malformed INVITE paths",
+      "summary": "Content length, line ending, and SDP shape errors are common causes of 4xx validation bursts.",
+      "anomaly_types": ["malformed_sip"],
+      "knowledge_weight": 0.96,
+      "content": [
+        "When to use: INVITE requests reach the parser but fail during body validation or SDP parsing.",
+        "Action: Verify Content-Length, line endings, MIME boundaries, and SDP section integrity against a known-good sample.",
+        "Why it works: Many malformed SIP incidents come from body formatting issues rather than missing top-level headers.",
+        "Verify: The same payload family begins passing validation and 4xx response concentration drops for INVITE traffic.",
+        "Guardrail: Fix the source message first rather than relaxing validation rules globally."
+      ]
+    },
+    {
+      "slug": "inspect-sbc-header-rewrites",
+      "title": "Inspect SBC or edge header rewrites that are corrupting messages",
+      "summary": "A rewrite rule can turn valid messages into malformed traffic after they leave the source.",
+      "anomaly_types": ["malformed_sip"],
+      "knowledge_weight": 0.94,
+      "content": [
+        "When to use: The source claims to send valid SIP, but captures at the validator show missing or mutated headers.",
+        "Action: Audit the rewrite rules on the edge proxy or SBC and compare ingress and egress copies of the same message.",
+        "Why it works: Catching the transformation point prevents teams from blaming the wrong system and broadening the incident unnecessarily.",
+        "Verify: The corrupted header pattern disappears after the rewrite rule is fixed or bypassed.",
+        "Evidence: Attach both pre-rewrite and post-rewrite samples to the incident article set."
+      ]
+    },
+    {
+      "slug": "tighten-parser-observability",
+      "title": "Tighten parser observability so malformed classes are obvious",
+      "summary": "Granular parser errors help separate malformed headers, bad bodies, and policy rejects.",
+      "anomaly_types": ["malformed_sip"],
+      "knowledge_weight": 0.92,
+      "content": [
+        "When to use: Operators can see a 4xx burst but cannot tell whether the validator failed on syntax, policy, or body content.",
+        "Action: Expose error labels or counters that bucket malformed traffic into header, body, schema, and policy categories.",
+        "Why it works: Better observability shortens RCA time and prevents over-broad mitigations like disabling validation.",
+        "Verify: The incident dashboard shows a dominant malformed class instead of one opaque error bucket.",
+        "Follow-up: Use the top malformed class as a retrieval hint for future knowledge articles."
+      ]
+    },
+    {
+      "slug": "reject-oversized-sip-bodies",
+      "title": "Reject oversized SIP bodies at the edge instead of burdening core validators",
+      "summary": "Huge malformed bodies can consume parser resources before they are safely rejected.",
+      "anomaly_types": ["malformed_sip"],
+      "knowledge_weight": 0.9,
+      "content": [
+        "When to use: Malformed SIP includes abnormally large bodies or attachments that inflate parsing latency.",
+        "Action: Apply sane size limits at the edge and ensure oversized traffic is rejected before it reaches the central validation path.",
+        "Why it works: Early rejection protects parser capacity for well-formed traffic and reduces latency amplification.",
+        "Verify: Validation latency drops and oversized requests are rejected consistently at the ingress boundary.",
+        "Risk: Confirm the size ceiling still allows legitimate use cases such as standard SDP offers."
+      ]
+    },
+    {
+      "slug": "verify-codec-and-media-lines",
+      "title": "Verify codec declarations and media lines in malformed session offers",
+      "summary": "Malformed SDP often hides in codec lists or inconsistent media descriptions.",
+      "anomaly_types": ["malformed_sip"],
+      "knowledge_weight": 0.89,
+      "content": [
+        "When to use: Calls fail during INVITE processing after the validator reaches the SDP section.",
+        "Action: Check media ports, codec declarations, payload numbers, and required SDP line order against a passing call sample.",
+        "Why it works: SDP structure issues can look like generic SIP validation failures until the offer-answer details are reviewed.",
+        "Verify: The corrected offer passes validation and session setup moves past the previous failure point.",
+        "Note: Keep one good and one bad SDP example linked to the same incident for future similarity search."
+      ]
+    },
+    {
+      "slug": "rollback-bad-template-change",
+      "title": "Rollback a bad message-template change when malformed traffic started after deployment",
+      "summary": "If malformed SIP began right after a rollout, stabilize first by restoring the previous template.",
+      "anomaly_types": ["malformed_sip"],
+      "knowledge_weight": 0.88,
+      "content": [
+        "When to use: A deployment changed message generation or normalization logic and malformed SIP started immediately afterward.",
+        "Action: Restore the last known-good template or formatter revision, then compare the diffs offline.",
+        "Why it works: Validation incidents caused by template regressions are often eliminated faster by rollback than by live patching.",
+        "Verify: The malformed signature disappears on the prior revision and healthy traffic resumes normal success rates.",
+        "Aftercare: Add a regression sample to pre-release validation so the same template bug cannot recur unnoticed."
+      ]
+    },
+    {
+      "slug": "block-untrusted-user-agent",
+      "title": "Block or degrade traffic from an untrusted user agent fingerprint",
+      "summary": "A single bad client build can flood the validator with malformed messages.",
+      "anomaly_types": ["malformed_sip"],
+      "knowledge_weight": 0.87,
+      "content": [
+        "When to use: Malformed requests all share the same User-Agent, source range, or peer signature.",
+        "Action: Apply a temporary block, quarantine policy, or low-rate lane for that fingerprint while investigating the source build.",
+        "Why it works: Fingerprint-based isolation protects the rest of the platform without relaxing core SIP validation.",
+        "Verify: The dominant malformed signature disappears and the remaining traffic has a normal parser success rate.",
+        "Escalate: Work with the sender owner to fix the client build before re-enabling normal traffic."
+      ]
+    },
+    {
+      "slug": "compare-good-vs-bad-invite-samples",
+      "title": "Compare one passing INVITE and one failing INVITE side by side",
+      "summary": "Side-by-side comparison is often the fastest way to isolate the exact malformed field.",
+      "anomaly_types": ["malformed_sip"],
+      "knowledge_weight": 0.86,
+      "content": [
+        "When to use: Generic logs say the request is malformed, but operators cannot see which field actually differs.",
+        "Action: Compare one known-good message and one failing message field by field, including headers, ordering, and body formatting.",
+        "Why it works: The diff often reveals a single missing header, invalid delimiter, or body mismatch that broad monitoring cannot show.",
+        "Verify: The corrected message shape passes validation in the same path where it previously failed.",
+        "Operator tip: Preserve the sanitized diff as a reusable knowledge artifact for future incidents."
+      ]
+    }
+  ]
+}

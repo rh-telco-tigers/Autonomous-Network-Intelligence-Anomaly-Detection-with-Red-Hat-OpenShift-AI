@@ -309,7 +309,32 @@ State ownership rules:
 
 Use separate collections, not separate Milvus instances.
 
-### A. `incident_evidence`
+### A. `ims_runbooks`
+
+Purpose: stable reusable operator knowledge and category-specific incident articles.
+
+Suggested fields:
+
+- `id`
+- `reference`
+- `title`
+- `doc_type = knowledge_article | runbook`
+- `stage = runbooks`
+- `category`
+- `status = seeded`
+- `embedding_text`
+- `content`
+- `knowledge_weight`
+- `vector`
+
+Notes:
+
+- This collection is the reusable background knowledge layer, not an incident lifecycle record.
+- Category-specific bundles should exist for the primary anomaly categories used by the demo.
+- The control plane may retrieve up to ten category-matched articles from this collection for incident detail UX.
+- These articles should be bootstrap-seeded so a fresh cluster starts demo-ready.
+
+### B. `incident_evidence`
 
 Purpose: raw semantic incident memory.
 
@@ -335,7 +360,7 @@ Notes:
 - Contains original, stable evidence only.
 - Avoid later semantic mutation.
 
-### B. `incident_reasoning`
+### C. `incident_reasoning`
 
 Purpose: RCA records and remediation suggestions.
 
@@ -361,7 +386,7 @@ Notes:
 - One RCA record per generation/version.
 - One remediation record per suggestion.
 
-### C. `incident_resolution`
+### D. `incident_resolution`
 
 Purpose: human-validated final outcomes.
 
@@ -385,6 +410,14 @@ Notes:
 
 - This collection is the most important for future retrieval.
 - `knowledge_weight` should rank verified resolutions highest.
+
+### Collection Interaction Rules
+
+- `ims_runbooks` is the stable curated knowledge layer
+- `incident_evidence`, `incident_reasoning`, and `incident_resolution` are append-oriented semantic incident history
+- RCA generation may retrieve a small mixed set across collections
+- operator-facing incident detail may retrieve a larger category-scoped article set from `ims_runbooks`
+- verified resolutions should outrank reasoning records for future remediation ranking, but they do not replace curated KB articles
 
 ---
 

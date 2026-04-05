@@ -1,0 +1,145 @@
+{
+  "category": "session",
+  "articles": [
+    {
+      "slug": "trace-call-setup-timer-b",
+      "title": "Trace Timer B and downstream progress when call setup times out",
+      "summary": "Call setup timeout incidents usually need timer-aware tracing rather than generic restarts.",
+      "anomaly_types": ["call_setup_timeout"],
+      "knowledge_weight": 0.99,
+      "content": [
+        "When to use: INVITE requests are accepted but the session stalls until the caller hits a setup timeout.",
+        "Action: Trace the call against Timer B or the equivalent setup watchdog and identify the first hop that stops returning progress.",
+        "Why it works: Timeout incidents are defined by where progress stops, so timer-aware tracing narrows the broken stage quickly.",
+        "Verify: After remediation, provisional responses and final answers arrive before the watchdog expires.",
+        "Evidence: Capture the exact hop and timer value that caused the timeout for future retrieval."
+      ]
+    },
+    {
+      "slug": "verify-session-refresh-handling",
+      "title": "Verify session refresh handling for mid-call stability issues",
+      "summary": "Mid-session drops often come from failed refresh or re-INVITE handling rather than transport failure alone.",
+      "anomaly_types": ["call_drop_mid_session"],
+      "knowledge_weight": 0.97,
+      "content": [
+        "When to use: Calls establish successfully but drop later around a refresh interval or re-INVITE event.",
+        "Action: Check session timer negotiation, refresh ownership, and whether the refresh message actually completes on time.",
+        "Why it works: Broken refresh handling can terminate otherwise healthy sessions at predictable intervals.",
+        "Verify: Calls survive beyond the previous drop window and refresh transactions complete consistently.",
+        "Guardrail: Keep both endpoints aligned on supported session timer behavior before changing global defaults."
+      ]
+    },
+    {
+      "slug": "inspect-busy-destination-capacity",
+      "title": "Inspect destination capacity before treating busy responses as user behavior",
+      "summary": "A busy-destination spike can indicate overloaded application resources rather than normal callee unavailability.",
+      "anomaly_types": ["busy_destination"],
+      "knowledge_weight": 0.95,
+      "content": [
+        "When to use: Busy or congestion responses spike across many calls or one destination group at the same time.",
+        "Action: Check downstream application capacity, queue depth, and any per-destination admission controls before accepting the busy signal at face value.",
+        "Why it works: Platform congestion can create artificial busy responses that need infrastructure remediation, not user retrial advice.",
+        "Verify: Busy ratios return to normal as capacity or admission pressure is relieved.",
+        "Documentation: Preserve the affected destination group or service cluster in the incident notes."
+      ]
+    },
+    {
+      "slug": "stabilize-media-anchor-allocation",
+      "title": "Stabilize media-anchor allocation for calls that fail after setup",
+      "summary": "If media resources are exhausted or slow to allocate, sessions may establish and then fail quickly.",
+      "anomaly_types": ["call_setup_timeout", "call_drop_mid_session"],
+      "knowledge_weight": 0.93,
+      "content": [
+        "When to use: SIP signaling reaches the expected stage, but media anchoring or allocation lags cause late failure.",
+        "Action: Review media-anchor capacity, allocation latency, and any shared port or relay pool exhaustion.",
+        "Why it works: Session stability depends on both signaling and media readiness, especially in anchored deployments.",
+        "Verify: Calls complete setup with media in place and no longer drop during the early active phase.",
+        "Risk: Moving media anchors under load can affect active calls, so prefer incremental capacity relief."
+      ]
+    },
+    {
+      "slug": "tune-nat-keepalive-intervals",
+      "title": "Tune NAT keepalive intervals when established sessions disappear unexpectedly",
+      "summary": "Aggressive NAT expiry can drop otherwise healthy mid-session traffic.",
+      "anomaly_types": ["call_drop_mid_session"],
+      "knowledge_weight": 0.92,
+      "content": [
+        "When to use: Calls drop after a period of silence or reduced traffic and the path crosses NAT or firewall state.",
+        "Action: Compare keepalive cadence to the actual state timeout on the path and adjust it so bindings remain fresh.",
+        "Why it works: The session may be healthy at the SIP layer while network state silently expires underneath it.",
+        "Verify: Calls remain stable through the prior idle window and no longer show the same post-idle drop signature.",
+        "Operator hint: Keep the NAT timeout evidence with the incident so network and session teams share the same context."
+      ]
+    },
+    {
+      "slug": "compare-early-media-negotiation",
+      "title": "Compare early-media negotiation on successful and failing calls",
+      "summary": "Early-media mismatches can delay answer handling or create one-way session failures.",
+      "anomaly_types": ["call_setup_timeout", "call_drop_mid_session"],
+      "knowledge_weight": 0.9,
+      "content": [
+        "When to use: Some calls stall during ringing or fail immediately after early media is offered.",
+        "Action: Compare SDP and signaling around provisional responses to see whether early media expectations diverge between endpoints.",
+        "Why it works: Early-media defects are subtle and often look like generic timeout or drop events in high-level metrics.",
+        "Verify: Calls progress normally through provisional media phases and answer timing returns to normal.",
+        "Follow-up: Preserve one passing and one failing early-media trace for retrieval quality."
+      ]
+    },
+    {
+      "slug": "review-admission-control-thresholds",
+      "title": "Review admission-control thresholds before scaling everything",
+      "summary": "Overly strict session thresholds can create artificial busy or timeout behavior.",
+      "anomaly_types": ["busy_destination", "call_setup_timeout"],
+      "knowledge_weight": 0.89,
+      "content": [
+        "When to use: Busy or timeout symptoms appear at load levels that should be sustainable for the platform.",
+        "Action: Inspect session admission limits, concurrency caps, and protection thresholds on the path handling the calls.",
+        "Why it works: Conservative guardrails may trip long before the infrastructure is truly saturated.",
+        "Verify: Adjusted thresholds allow healthy calls through without creating new overload elsewhere.",
+        "Risk: Raise limits carefully and pair the change with close monitoring of downstream service health."
+      ]
+    },
+    {
+      "slug": "capture-mid-call-bye-loss",
+      "title": "Capture BYE or teardown loss when calls end unexpectedly",
+      "summary": "Unexpected call drops often correlate with missing BYE handling or broken teardown signaling.",
+      "anomaly_types": ["call_drop_mid_session"],
+      "knowledge_weight": 0.88,
+      "content": [
+        "When to use: Calls terminate abruptly and logs suggest a missing or late teardown sequence.",
+        "Action: Trace BYE, CANCEL, and error paths to see whether the session is closing cleanly or being abandoned after network loss.",
+        "Why it works: Understanding teardown behavior separates genuine drops from controlled session release.",
+        "Verify: The teardown path becomes complete and unexpected drop counts fall.",
+        "Evidence: Keep one full teardown sequence attached to the incident for reuse."
+      ]
+    },
+    {
+      "slug": "validate-codec-offer-answer",
+      "title": "Validate codec offer-answer compatibility on unstable session paths",
+      "summary": "Codec mismatch can surface as timeout, early failure, or mid-call instability.",
+      "anomaly_types": ["call_setup_timeout", "call_drop_mid_session"],
+      "knowledge_weight": 0.87,
+      "content": [
+        "When to use: Calls fail around answer processing or drop shortly after setup on specific endpoint pairings.",
+        "Action: Compare offered and accepted codecs, payload types, and media directions between successful and failing calls.",
+        "Why it works: Some session incidents are really interoperability problems hidden behind generic SIP symptoms.",
+        "Verify: The corrected codec policy eliminates the failure on the affected endpoint pairing.",
+        "Guardrail: Avoid broad codec removals without checking wider subscriber compatibility."
+      ]
+    },
+    {
+      "slug": "shift-load-away-from-degraded-session-pool",
+      "title": "Shift load away from a degraded session-processing pool",
+      "summary": "Session incidents can localize to one overloaded pool even when aggregate health looks acceptable.",
+      "anomaly_types": ["busy_destination", "call_setup_timeout", "call_drop_mid_session"],
+      "knowledge_weight": 0.86,
+      "content": [
+        "When to use: Failures align with one service pool, node group, or region while peers remain mostly healthy.",
+        "Action: Drain or deprioritize the degraded pool and steer new sessions to healthier capacity.",
+        "Why it works: Localized session pressure creates uneven user impact and can be mitigated faster than a full-stack change.",
+        "Verify: Failure volume follows the pool out of service and healthy pools absorb the traffic without new saturation.",
+        "Risk: Confirm the destination pools have enough headroom before shifting live session load."
+      ]
+    }
+  ]
+}

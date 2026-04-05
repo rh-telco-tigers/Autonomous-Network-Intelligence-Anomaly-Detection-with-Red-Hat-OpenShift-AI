@@ -2,8 +2,9 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
-from typing import Dict, Iterator, List, Tuple
+from typing import Any, Dict, Iterator, List, Sequence, Tuple
 
 import requests
 
@@ -20,6 +21,8 @@ LEGACY_MILVUS_COLLECTIONS = ("ims_incidents",)
 VECTOR_DIMENSION = 64
 MAX_CONTENT_LENGTH = 16384
 MAX_EMBEDDING_TEXT_LENGTH = 4096
+RUNBOOK_COLLECTION = "ims_runbooks"
+KNOWLEDGE_ARTICLE_DOC_TYPE = "knowledge_article"
 LOCAL_COLLECTION_DIRS = {
     "ims_runbooks": "runbooks",
     "incident_evidence": "incidents",
@@ -38,6 +41,16 @@ COLLECTION_DOC_TYPE_DEFAULTS = {
     "incident_reasoning": "incident_reasoning",
     "incident_resolution": "verified_resolution",
 }
+MILVUS_OUTPUT_FIELDS = [
+    "title",
+    "reference",
+    "content",
+    "doc_type",
+    "stage",
+    "incident_id",
+    "category",
+    "knowledge_weight",
+]
 
 
 def _rag_root_dir() -> Path:
@@ -82,6 +95,32 @@ def _coerce_float(value: object, default: float = 0.0) -> float:
         return default
 
 
+def _slugify(value: object) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", str(value or "").strip().lower()).strip("-")
+    return slug or "article"
+
+
+def _collection_root(collection_name: str) -> Path:
+    return _rag_root_dir() / LOCAL_COLLECTION_DIRS[collection_name]
+
+
+def _collection_reference(path: Path, collection_name: str) -> str:
+    try:
+        return path.relative_to(_collection_root(collection_name)).as_posix()
+    except ValueError:
+        return f"{path.parent.name}/{path.name}"
+
+
+def _collection_category(path: Path, collection_name: str) -> str:
+    if collection_name != RUNBOOK_COLLECTION:
+        return ""
+    try:
+        relative = path.relative_to(_collection_root(collection_name))
+    except ValueError:
+        return ""
+    return "" if len(relative.parts) < 2 else relative.parts[0]
+
+
 def _collection_stage(collection_name: str) -> str:
     return COLLECTION_STAGE_DEFAULTS.get(collection_name, collection_name.removeprefix("ims_"))
 
@@ -94,6 +133,10 @@ def _content_to_text(content: str | Dict[str, object]) -> str:
     if isinstance(content, str):
         return content
     return json.dumps(content, indent=2, sort_keys=True)
+
+
+def _normalize_category(value: object) -> str:
+    return str(value or "").strip().lower()
 
 
 def hash_embedding(text: str, size: int = VECTOR_DIMENSION) -> List[float]:
@@ -183,6 +226,22 @@ def build_semantic_record(
         "embedding_text": embedding_source,
         "embedding": hash_embedding(embedding_source, size=VECTOR_DIMENSION),
     }
+
+
+def _normalize_retrieved_entity(collection_name: str, entity: Dict[str, object], score: float | None = None) -> Dict[str, object]:
+    document = {
+        "title": str(entity.get("title") or ""),
+        "reference": str(entity.get("reference") or ""),
+        "content": str(entity.get("content") or ""),
+        "doc_type": str(entity.get("doc_type") or _default_doc_type(collection_name)),
+        "collection": collection_name,
+        "stage": str(entity.get("stage") or _collection_stage(collection_name)),
+        "incident_id": str(entity.get("incident_id") or ""),
+        "category": str(entity.get("category") or ""),
+        "knowledge_weight": _coerce_float(entity.get("knowledge_weight"), 1.0),
+        "score": round(score if score is not None else 0.0, 4),
+    }
+    return document
 
 
 def publish_semantic_record(
@@ -324,13 +383,64 @@ def _historical_incident_seed(reference: str, title: str, payload: Dict[str, obj
     )
 
 
-def build_local_seed_record(path: Path, collection_name: str) -> Dict[str, object]:
-    reference = f"{path.parent.name}/{path.name}"
+def _build_runbook_bundle_records(path: Path, payload: Dict[str, Any]) -> List[Dict[str, object]]:
+    category = _normalize_category(payload.get("category") or path.stem)
+    articles = payload.get("articles")
+    if not isinstance(articles, list):
+        return []
+
+    records: List[Dict[str, object]] = []
+    for index, article in enumerate(articles, start=1):
+        if not isinstance(article, dict):
+            continue
+        title = str(article.get("title") or f"{category or 'knowledge'} article {index}").strip()
+        summary = str(article.get("summary") or "").strip()
+        slug = _slugify(article.get("slug") or title)
+        anomaly_types = article.get("anomaly_types") or []
+        if not isinstance(anomaly_types, list):
+            anomaly_types = []
+        anomaly_labels = [str(item).strip() for item in anomaly_types if str(item).strip()]
+        article_category = _normalize_category(article.get("category") or category)
+        raw_content = article.get("content") or ""
+        if isinstance(raw_content, list):
+            content = "\n".join(str(item) for item in raw_content).strip()
+        else:
+            content = str(raw_content).strip()
+        body = content if content.startswith("#") else f"# {title}\n\n{content}".strip()
+        embedding_parts = [title, summary, body]
+        if anomaly_labels:
+            embedding_parts.append(f"anomaly_types: {', '.join(anomaly_labels)}")
+        reference = f"knowledge/{article_category or 'general'}/{slug}.md"
+        records.append(
+            build_semantic_record(
+                RUNBOOK_COLLECTION,
+                reference,
+                title,
+                body,
+                doc_type=str(article.get("doc_type") or KNOWLEDGE_ARTICLE_DOC_TYPE),
+                embedding_text="\n\n".join(part for part in embedding_parts if part),
+                metadata={
+                    "stage": _collection_stage(RUNBOOK_COLLECTION),
+                    "status": "seeded",
+                    "category": article_category,
+                    "knowledge_weight": _coerce_float(article.get("knowledge_weight"), 0.95),
+                },
+            )
+        )
+    return records
+
+
+def build_local_seed_records(path: Path, collection_name: str) -> List[Dict[str, object]]:
+    reference = _collection_reference(path, collection_name)
     if path.suffix == ".json":
         payload = json.loads(path.read_text())
         title = str(payload.get("title") or payload.get("incident_id") or path.stem)
         if collection_name in {"incident_evidence", "incident_reasoning", "incident_resolution"}:
-            return _historical_incident_seed(reference, title, payload, collection_name)
+            return [_historical_incident_seed(reference, title, payload, collection_name)]
+        if collection_name == RUNBOOK_COLLECTION and isinstance(payload, dict) and isinstance(payload.get("articles"), list):
+            bundle_records = _build_runbook_bundle_records(path, payload)
+            if bundle_records:
+                return bundle_records
         content = payload
     else:
         content = path.read_text()
@@ -340,19 +450,30 @@ def build_local_seed_record(path: Path, collection_name: str) -> Dict[str, objec
             if stripped:
                 title = stripped
                 break
-    return build_semantic_record(
-        collection_name,
-        reference,
-        title,
-        content,
-        doc_type=_default_doc_type(collection_name),
-        embedding_text=f"{title}\n{_content_to_text(content)}",
-        metadata={
-            "stage": _collection_stage(collection_name),
-            "status": "seeded",
-            "knowledge_weight": 0.85,
-        },
-    )
+
+    metadata = {
+        "stage": _collection_stage(collection_name),
+        "status": "seeded",
+        "knowledge_weight": 0.85,
+    }
+    category = _collection_category(path, collection_name)
+    if category:
+        metadata["category"] = category
+    return [
+        build_semantic_record(
+            collection_name,
+            reference,
+            title,
+            content,
+            doc_type=_default_doc_type(collection_name),
+            embedding_text=f"{title}\n{_content_to_text(content)}",
+            metadata=metadata,
+        )
+    ]
+
+
+def build_local_seed_record(path: Path, collection_name: str) -> Dict[str, object]:
+    return build_local_seed_records(path, collection_name)[0]
 
 
 def _iter_local_documents() -> Iterator[Tuple[str, Dict[str, object]]]:
@@ -361,24 +482,38 @@ def _iter_local_documents() -> Iterator[Tuple[str, Dict[str, object]]]:
         base_dir = root / directory
         if not base_dir.exists():
             continue
-        for path in sorted(base_dir.glob("*")):
-            if path.is_file():
-                payload = build_local_seed_record(path, collection)
+        for path in sorted(base_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            for payload in build_local_seed_records(path, collection):
                 yield collection, {
                     "title": payload["title"],
                     "reference": payload["reference"],
                     "content": payload["content"],
                     "doc_type": payload["doc_type"],
                     "stage": payload["stage"],
+                    "category": payload.get("category", ""),
                     "knowledge_weight": payload["knowledge_weight"],
                     "embedding_text": payload["embedding_text"],
                 }
 
 
-def local_retrieve(query: str, limit: int = 3) -> List[Dict[str, object]]:
+def local_retrieve(
+    query: str,
+    limit: int = 3,
+    *,
+    collections: Sequence[str] | None = None,
+    category: str | None = None,
+) -> List[Dict[str, object]]:
     query_embedding = hash_embedding(query)
+    selected_collections = set(collections or [])
+    required_category = _normalize_category(category)
     docs = []
     for collection, doc in _iter_local_documents():
+        if selected_collections and collection not in selected_collections:
+            continue
+        if required_category and _normalize_category(doc.get("category")) != required_category:
+            continue
         similarity = _cosine(query_embedding, hash_embedding(str(doc["embedding_text"])))
         weighted_score = similarity * max(_coerce_float(doc.get("knowledge_weight"), 1.0), 0.25)
         docs.append(
@@ -392,56 +527,121 @@ def local_retrieve(query: str, limit: int = 3) -> List[Dict[str, object]]:
     return docs[:limit]
 
 
-def milvus_retrieve(query: str, limit: int = 3) -> List[Dict[str, object]]:
+def _milvus_filter_literal(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def milvus_retrieve(
+    query: str,
+    limit: int = 3,
+    *,
+    collections: Sequence[str] | None = None,
+    category: str | None = None,
+) -> List[Dict[str, object]]:
     client = milvus_client()
     if client is None:
         return []
 
     docs = []
-    for collection in _milvus_collections():
+    selected_collections = list(collections or _milvus_collections())
+    required_category = _normalize_category(category)
+    for collection in selected_collections:
+        search_kwargs: Dict[str, object] = {
+            "collection_name": collection,
+            "data": [hash_embedding(query)],
+            "output_fields": list(MILVUS_OUTPUT_FIELDS),
+            "limit": limit,
+        }
+        if required_category:
+            search_kwargs["filter"] = f'category == "{_milvus_filter_literal(required_category)}"'
         try:
-            results = client.search(
-                collection_name=collection,
-                data=[hash_embedding(query)],
-                output_fields=[
-                    "title",
-                    "reference",
-                    "content",
-                    "doc_type",
-                    "stage",
-                    "incident_id",
-                    "knowledge_weight",
-                ],
-                limit=limit,
-            )
+            results = client.search(**search_kwargs)
         except Exception:
-            continue
+            if "filter" not in search_kwargs:
+                continue
+            try:
+                fallback_kwargs = dict(search_kwargs)
+                fallback_kwargs.pop("filter", None)
+                results = client.search(**fallback_kwargs)
+            except Exception:
+                continue
         for hit in results[0]:
             entity = hit["entity"]
+            if required_category and _normalize_category(entity.get("category")) != required_category:
+                continue
             knowledge_weight = _coerce_float(entity.get("knowledge_weight"), 1.0)
             weighted_score = float(hit["distance"]) * max(knowledge_weight, 0.25)
-            docs.append(
-                {
-                    "title": entity["title"],
-                    "reference": entity["reference"],
-                    "content": entity["content"],
-                    "doc_type": entity.get("doc_type", _default_doc_type(collection)),
-                    "collection": collection,
-                    "stage": entity.get("stage", _collection_stage(collection)),
-                    "incident_id": entity.get("incident_id", ""),
-                    "knowledge_weight": knowledge_weight,
-                    "score": round(weighted_score, 4),
-                }
-            )
+            docs.append(_normalize_retrieved_entity(collection, entity, score=weighted_score))
     docs.sort(key=lambda item: item["score"], reverse=True)
     return docs[:limit]
 
 
-def retrieve_context(query: str, limit: int = 3) -> List[Dict[str, object]]:
-    docs = milvus_retrieve(query, limit=limit)
+def local_document_by_reference(reference: str, collection_name: str | None = None) -> Dict[str, object] | None:
+    selected_collections = {collection_name} if collection_name else None
+    for collection, document in _iter_local_documents():
+        if selected_collections and collection not in selected_collections:
+            continue
+        if str(document.get("reference") or "") == reference:
+            return {
+                "title": str(document.get("title") or ""),
+                "reference": str(document.get("reference") or ""),
+                "content": str(document.get("content") or ""),
+                "doc_type": str(document.get("doc_type") or _default_doc_type(collection)),
+                "collection": collection,
+                "stage": str(document.get("stage") or _collection_stage(collection)),
+                "incident_id": "",
+                "category": str(document.get("category") or ""),
+                "knowledge_weight": _coerce_float(document.get("knowledge_weight"), 1.0),
+                "score": 0.0,
+            }
+    return None
+
+
+def milvus_document_by_reference(reference: str, collection_name: str | None = None) -> Dict[str, object] | None:
+    client = milvus_client()
+    if client is None:
+        return None
+    selected_collections = [collection_name] if collection_name else _milvus_collections()
+    filter_expression = f'reference == "{_milvus_filter_literal(reference)}"'
+    for collection in selected_collections:
+        try:
+            results = client.query(
+                collection_name=collection,
+                filter=filter_expression,
+                output_fields=list(MILVUS_OUTPUT_FIELDS),
+            )
+        except Exception:
+            continue
+        if not results:
+            continue
+        entity = results[0]
+        if isinstance(entity, dict):
+            return _normalize_retrieved_entity(collection, entity)
+    return None
+
+
+def get_document_by_reference(reference: str, collection_name: str | None = None) -> Dict[str, object] | None:
+    document = milvus_document_by_reference(reference, collection_name=collection_name)
+    if document:
+        return document
+    return local_document_by_reference(reference, collection_name=collection_name)
+
+
+def retrieve_context(
+    query: str,
+    limit: int = 3,
+    *,
+    collections: Sequence[str] | None = None,
+    category: str | None = None,
+) -> List[Dict[str, object]]:
+    docs = milvus_retrieve(query, limit=limit, collections=collections, category=category)
     if docs:
         return docs
-    return local_retrieve(query, limit=limit)
+    return local_retrieve(query, limit=limit, collections=collections, category=category)
+
+
+def retrieve_knowledge_articles(query: str, category: str | None = None, limit: int = 10) -> List[Dict[str, object]]:
+    return retrieve_context(query, limit=limit, collections=[RUNBOOK_COLLECTION], category=category)
 
 
 def build_prompt(incident_context: Dict[str, object], documents: List[Dict[str, object]]) -> str:

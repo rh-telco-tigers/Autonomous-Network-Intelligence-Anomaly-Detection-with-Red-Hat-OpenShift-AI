@@ -1,0 +1,145 @@
+{
+  "category": "signaling",
+  "articles": [
+    {
+      "slug": "scale-pcscf-registration-workers",
+      "title": "Scale P-CSCF registration workers during REGISTER surges",
+      "summary": "Use horizontal scale-out when REGISTER queues, retry storms, and high P-CSCF CPU all rise together.",
+      "anomaly_types": ["registration_storm", "registration_failure"],
+      "knowledge_weight": 0.99,
+      "content": [
+        "When to use: REGISTER volume rises faster than the edge can absorb and the queue depth grows on the P-CSCF path.",
+        "Action: Add replicas on the registration-facing P-CSCF deployment, verify the service endpoints refresh, and spread traffic evenly before accepting more load.",
+        "Why it works: Scaling the first saturated SIP hop reduces request queuing and shortens the time window where UEs decide to retransmit.",
+        "Verify: REGISTER latency, retransmission count, and 401 or 202 backlog should drop within one refresh cycle.",
+        "Rollback: Scale down only after the registration curve stays flat and retry amplification is gone."
+      ]
+    },
+    {
+      "slug": "tame-register-retry-amplification",
+      "title": "Tame REGISTER retry amplification before it becomes a storm",
+      "summary": "Reduce the retry loop by checking timers, challenge pacing, and scenario-generator rate limits.",
+      "anomaly_types": ["registration_storm", "registration_failure"],
+      "knowledge_weight": 0.97,
+      "content": [
+        "When to use: The retransmission counter climbs much faster than the unique subscriber count and the same Call-ID patterns repeat.",
+        "Action: Confirm whether the load is synthetic, lower the traffic generator rate if needed, and verify UE retry timers are not overly aggressive for the observed latency.",
+        "Why it works: Many registration incidents are sustained by retries rather than fresh subscribers, so damping the retry loop restores stability faster than scaling alone.",
+        "Verify: Duplicate REGISTER attempts per subscriber decline and 401 to 200 conversion improves.",
+        "Operator note: Capture a few repeating Call-ID samples so the RCA can tie the incident to retry amplification instead of organic growth."
+      ]
+    },
+    {
+      "slug": "throttle-synthetic-registration-burst",
+      "title": "Throttle the synthetic registration burst at the traffic source",
+      "summary": "If the surge is caused by SIPp or another generator, slow the injector before changing production settings.",
+      "anomaly_types": ["registration_storm"],
+      "knowledge_weight": 0.94,
+      "content": [
+        "When to use: A scenario runner or test harness is intentionally driving the registration path beyond steady-state capacity.",
+        "Action: Reduce the request rate, lower the subscriber fan-out, and stagger start times so the platform can finish challenge-response cycles.",
+        "Why it works: Removing the burst source preserves realistic behavior and avoids hiding a generator problem behind infrastructure changes.",
+        "Verify: Incoming REGISTER rate tracks the new throttle settings and the queue drains without emergency scaling.",
+        "Follow-up: Record the safe traffic envelope so the same lab profile does not recreate the storm later."
+      ]
+    },
+    {
+      "slug": "validate-auth-challenge-cache",
+      "title": "Validate the authentication challenge cache on the registration path",
+      "summary": "Challenge cache misses can make a normal spike look like a registration failure wave.",
+      "anomaly_types": ["registration_failure", "registration_storm"],
+      "knowledge_weight": 0.92,
+      "content": [
+        "When to use: Many REGISTER requests oscillate between 401 and another retry without progressing to a stable 200 response.",
+        "Action: Inspect whether challenge state is being lost across replicas, confirm sticky behavior where required, and check that challenge TTL values match the expected transaction duration.",
+        "Why it works: Lost authentication state turns one registration into several incomplete attempts, multiplying load and confusing the RCA signal.",
+        "Verify: The ratio of repeated 401 responses per subscriber should fall and successful registrations should complete in fewer hops.",
+        "Rollback: Revert challenge-cache changes if they introduce stale authorization data or cross-subscriber leakage."
+      ]
+    },
+    {
+      "slug": "rebalance-sip-edge-load-balancer",
+      "title": "Rebalance the SIP edge load balancer when one registration shard is hot",
+      "summary": "Uneven edge distribution can overload one shard even when overall capacity looks healthy.",
+      "anomaly_types": ["registration_storm", "registration_failure"],
+      "knowledge_weight": 0.91,
+      "content": [
+        "When to use: A subset of P-CSCF pods is saturated while peers remain mostly idle and REGISTER failures cluster by ingress endpoint.",
+        "Action: Review the SIP load-balancing policy, endpoint health, and any stale target list so new traffic fans out evenly across healthy pods.",
+        "Why it works: Registration storms often begin as localized hot spots before the rest of the control plane shows distress.",
+        "Verify: Per-pod request distribution normalizes and the hottest pod no longer dominates latency or retransmission graphs.",
+        "Evidence to capture: Endpoint counts, pod-level request rates, and the active load-balancer policy revision."
+      ]
+    },
+    {
+      "slug": "review-registration-expiry-values",
+      "title": "Review registration expiry values that are forcing premature renewals",
+      "summary": "Overly short expiry windows can create a self-inflicted registration storm.",
+      "anomaly_types": ["registration_storm"],
+      "knowledge_weight": 0.9,
+      "content": [
+        "When to use: Registrations succeed, but they return again too quickly and the platform cycles subscribers through the same path repeatedly.",
+        "Action: Compare the configured registration expiry, refresh margin, and UE expectations so the system is not requesting renewals too frequently.",
+        "Why it works: A bad expiry policy can generate sustained high REGISTER rates even when the network and application are otherwise healthy.",
+        "Verify: Subscriber refresh spacing lengthens and steady-state REGISTER rate returns to the normal envelope.",
+        "Guardrail: Apply expiry changes gradually because some clients react poorly to abrupt policy shifts."
+      ]
+    },
+    {
+      "slug": "isolate-broken-subscriber-batch",
+      "title": "Isolate a broken subscriber batch that is poisoning the registration flow",
+      "summary": "A bad import or credential batch can create repeat registration failures that mimic a platform outage.",
+      "anomaly_types": ["registration_failure"],
+      "knowledge_weight": 0.89,
+      "content": [
+        "When to use: Registration rejects are concentrated around one subscriber segment, one test batch, or one recently imported profile set.",
+        "Action: Correlate failing public identities or IMSIs, quarantine the affected batch, and verify the rest of the subscriber population can still register cleanly.",
+        "Why it works: Removing the bad cohort quickly reduces noise and separates subscriber-data defects from core signaling failures.",
+        "Verify: The 4xx ratio falls for unaffected subscribers and new incidents stop clustering around the same identity family.",
+        "Escalate if: Multiple batches fail after the same policy or HSS change, which points to a broader control-plane issue."
+      ]
+    },
+    {
+      "slug": "drain-stuck-pcscf-pod",
+      "title": "Drain and replace a stuck P-CSCF pod that is holding bad registration state",
+      "summary": "Long-lived stale state on one pod can keep rejecting or delaying requests after the root cause is gone.",
+      "anomaly_types": ["registration_failure", "registration_storm"],
+      "knowledge_weight": 0.88,
+      "content": [
+        "When to use: Registration failures stay pinned to one instance even after traffic pressure falls or after upstream dependencies recover.",
+        "Action: Remove the suspect pod from service, let in-flight transactions drain if possible, and start a clean replacement with the same revision.",
+        "Why it works: A stateful defect in one worker can keep replaying the failure pattern while healthy peers behave normally.",
+        "Verify: The incident follows the pod out of rotation and new replicas show normal transaction completion.",
+        "Risk: Draining the wrong pod during peak load can shift traffic onto already stressed peers, so confirm residual capacity first."
+      ]
+    },
+    {
+      "slug": "verify-scscf-capacity-path",
+      "title": "Verify the downstream S-CSCF capacity path before blaming the edge",
+      "summary": "Registration symptoms seen on the P-CSCF edge can be caused by downstream S-CSCF saturation.",
+      "anomaly_types": ["registration_storm", "registration_failure"],
+      "knowledge_weight": 0.87,
+      "content": [
+        "When to use: Edge latency is high but the strongest pressure appears after the request is forwarded to the S-CSCF or service-logic tier.",
+        "Action: Compare P-CSCF ingress volume with S-CSCF processing latency, worker saturation, and queue depth before applying another edge-only fix.",
+        "Why it works: The first visible failure is not always the first overloaded hop, and scaling the wrong tier can prolong the incident.",
+        "Verify: End-to-end registration timing improves only when the downstream bottleneck is relieved.",
+        "Operator hint: Pair this check with topology or service metrics so the RCA can show where the delay actually formed."
+      ]
+    },
+    {
+      "slug": "capture-register-reject-codes",
+      "title": "Capture the dominant REGISTER reject codes before changing policy",
+      "summary": "Registration failures should be grouped by the real reject code, not treated as one generic symptom.",
+      "anomaly_types": ["registration_failure"],
+      "knowledge_weight": 0.86,
+      "content": [
+        "When to use: The platform is returning mixed 401, 403, 408, or 5xx responses and operators are considering a broad policy rollback.",
+        "Action: Bucket failures by SIP status code, map them to their responsible service, and confirm which failure class actually dominates the incident window.",
+        "Why it works: Fixes for authentication rejects, transport timeouts, and capacity overloads are different even though they all present as registration failure.",
+        "Verify: The chosen remediation targets the dominant failure bucket and the incident narrative reflects that narrower diagnosis.",
+        "Documentation: Attach the top reject-code distribution to the incident so future knowledge articles can rank more precisely."
+      ]
+    }
+  ]
+}

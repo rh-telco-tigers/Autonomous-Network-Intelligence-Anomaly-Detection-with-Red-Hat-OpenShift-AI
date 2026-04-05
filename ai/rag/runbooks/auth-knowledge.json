@@ -1,0 +1,145 @@
+{
+  "category": "auth",
+  "articles": [
+    {
+      "slug": "validate-hss-auth-vectors",
+      "title": "Validate HSS authentication vectors before changing SIP policy",
+      "summary": "Many authentication failures come from bad or stale vectors rather than front-end SIP logic.",
+      "anomaly_types": ["authentication_failure"],
+      "knowledge_weight": 0.99,
+      "content": [
+        "When to use: REGISTER requests are stuck in repeated 401 or 407 exchanges and subscribers never advance to a stable registration.",
+        "Action: Confirm the HSS or UDM is returning fresh AKA vectors for the affected users and verify the vector cache is not serving stale material.",
+        "Why it works: Without valid vectors, every downstream SIP retry is just replaying a challenge that cannot succeed.",
+        "Verify: Successful challenge completion rises and repeated challenge loops per subscriber drop quickly.",
+        "Capture: Example public identities, vector age, and the dependency path between the SIP tier and the subscriber store."
+      ]
+    },
+    {
+      "slug": "correct-nonce-expiration-drift",
+      "title": "Correct nonce expiration drift across authentication nodes",
+      "summary": "Time drift or mismatched nonce TTL values can invalidate otherwise good credentials.",
+      "anomaly_types": ["authentication_failure"],
+      "knowledge_weight": 0.97,
+      "content": [
+        "When to use: Clients respond to a challenge, but the next hop still rejects the response as stale or invalid.",
+        "Action: Compare nonce lifetime settings and time synchronization across the nodes participating in the challenge flow.",
+        "Why it works: Authentication depends on strict timing and replay windows, so drift between nodes can break the exchange without any credential error.",
+        "Verify: Fresh challenges remain valid across retries and authentication failures stop clustering around stale nonce messages.",
+        "Guardrail: Fix the clock or TTL mismatch first instead of extending nonce lifetime beyond acceptable security limits."
+      ]
+    },
+    {
+      "slug": "restore-diameter-connectivity",
+      "title": "Restore Diameter connectivity for the authentication backend",
+      "summary": "Authentication loops often begin when the SIP tier loses a clean path to Diameter or subscriber services.",
+      "anomaly_types": ["authentication_failure"],
+      "knowledge_weight": 0.96,
+      "content": [
+        "When to use: The SIP edge challenges correctly, but backend lookups time out or fail when fetching subscriber state.",
+        "Action: Check connectivity, TLS state, and peer health for the Diameter or backend subscriber path used by the auth service.",
+        "Why it works: SIP challenge loops persist when the frontend cannot complete the backend lookup needed to validate the subscriber.",
+        "Verify: Backend lookup latency falls and authentication completions recover without forcing a mass restart.",
+        "Escalate if: Multiple backend peers are degraded, which suggests a broader platform or network incident."
+      ]
+    },
+    {
+      "slug": "repair-subscriber-credentials",
+      "title": "Repair incorrect subscriber credentials or profile state",
+      "summary": "A bad subscriber profile can look like a system-wide auth outage if it affects a large imported batch.",
+      "anomaly_types": ["authentication_failure"],
+      "knowledge_weight": 0.94,
+      "content": [
+        "When to use: Authentication failures cluster around a specific subscriber group or after a recent import or sync event.",
+        "Action: Compare the failing subscriber records with a known-good profile, then correct keys, realm data, or service entitlements as needed.",
+        "Why it works: Fixing the data defect removes the repeated challenge loop without destabilizing the shared auth service.",
+        "Verify: The corrected cohort registers normally and failure volume for unaffected users remains low.",
+        "Documentation: Record which profile field was wrong so future RCA output can distinguish data issues from platform faults."
+      ]
+    },
+    {
+      "slug": "rotate-stale-auth-secrets",
+      "title": "Rotate stale authentication secrets after a controlled verification",
+      "summary": "Stale or partially rolled secrets can break challenge validation across replicas.",
+      "anomaly_types": ["authentication_failure"],
+      "knowledge_weight": 0.92,
+      "content": [
+        "When to use: Authentication failures start immediately after a secret update, config rollout, or certificate replacement.",
+        "Action: Verify all replicas are reading the same secret revision, then rotate or roll back the auth secret in a coordinated way.",
+        "Why it works: Mixed secret state across nodes produces intermittent failures that are hard to explain from SIP traces alone.",
+        "Verify: Errors stop correlating with one pod or one revision and challenge success normalizes across the fleet.",
+        "Risk: Secret rotation changes a security boundary, so apply it with a clear rollback and audit trail."
+      ]
+    },
+    {
+      "slug": "inspect-aka-challenge-loop",
+      "title": "Inspect the AKA challenge loop instead of retrying the same REGISTER flow",
+      "summary": "Repeated AKA failures usually reveal a deterministic mismatch that retries will not fix.",
+      "anomaly_types": ["authentication_failure"],
+      "knowledge_weight": 0.91,
+      "content": [
+        "When to use: The same subscriber repeatedly cycles through challenge and reject responses with no sign of progress.",
+        "Action: Trace one end-to-end AKA exchange, compare the challenge material to the response, and identify where the loop diverges from the expected sequence.",
+        "Why it works: One precise trace often exposes the mismatch faster than broad platform changes or generic scaling.",
+        "Verify: The traced failure mode is eliminated after the fix and new attempts no longer repeat the same challenge pair.",
+        "Operator hint: Keep one sanitized example exchange attached to the incident for future retrieval."
+      ]
+    },
+    {
+      "slug": "verify-time-sync-on-auth-nodes",
+      "title": "Verify time synchronization on authentication and subscriber nodes",
+      "summary": "Clock skew can invalidate signatures, tokens, or nonce windows during registration.",
+      "anomaly_types": ["authentication_failure"],
+      "knowledge_weight": 0.9,
+      "content": [
+        "When to use: Authentication failures began after node maintenance, a restart, or an infrastructure event affecting time sync.",
+        "Action: Compare time offset across auth service pods, subscriber backends, and any security gateway in the path.",
+        "Why it works: Even small skew can break challenge validation or token freshness checks in tightly bounded auth flows.",
+        "Verify: Offsets return to acceptable limits and the authentication error rate drops without another app-level change.",
+        "Follow-up: Add node time drift to incident evidence because it is easy to overlook in SIP-only analysis."
+      ]
+    },
+    {
+      "slug": "clear-cached-401-state",
+      "title": "Clear stale cached 401 state after the backend fault is fixed",
+      "summary": "Some auth incidents persist because one cache keeps serving an old reject state.",
+      "anomaly_types": ["authentication_failure"],
+      "knowledge_weight": 0.88,
+      "content": [
+        "When to use: The subscriber backend has recovered, but one gateway or service replica still behaves as if credentials are invalid.",
+        "Action: Invalidate the stale auth cache or replace the affected pod so a fresh subscriber lookup can occur.",
+        "Why it works: Clearing stale reject state lets the system observe the recovered backend instead of replaying old failures.",
+        "Verify: Successful registrations appear immediately after cache eviction and no longer depend on landing on a different replica.",
+        "Risk: Avoid global cache flushes during peak traffic unless you know the backend can handle the refill load."
+      ]
+    },
+    {
+      "slug": "confirm-auth-policy-routing",
+      "title": "Confirm authentication policy routing and realm selection",
+      "summary": "A realm or policy misroute can send valid users through the wrong auth path.",
+      "anomaly_types": ["authentication_failure"],
+      "knowledge_weight": 0.87,
+      "content": [
+        "When to use: Authentication rejects correlate with a specific realm, domain, or onboarding path after a config change.",
+        "Action: Validate realm mapping, policy routing, and tenant selection so the request reaches the correct authentication backend.",
+        "Why it works: Correct credentials still fail if the request is evaluated against the wrong policy or subscriber domain.",
+        "Verify: Failures disappear for the affected realm without changing subscriber data or scaling the service.",
+        "Rollback trigger: A recent policy map or routing rule update that changed which backend owns the realm."
+      ]
+    },
+    {
+      "slug": "rollback-recent-auth-config",
+      "title": "Rollback the recent authentication configuration change when the blast radius is broad",
+      "summary": "A wide auth outage after a rollout is often best stabilized by a quick targeted rollback.",
+      "anomaly_types": ["authentication_failure"],
+      "knowledge_weight": 0.86,
+      "content": [
+        "When to use: Failure volume jumps immediately after an auth service rollout and affects multiple subscriber groups at once.",
+        "Action: Compare the current and prior revision, roll back the smallest suspect change set, and keep evidence of the failing config for later review.",
+        "Why it works: Authentication changes often sit on the critical path, so fast rollback minimizes operator guesswork during a live incident.",
+        "Verify: The reject rate returns to baseline on the prior revision and new challenge loops stop forming.",
+        "Aftercare: Reproduce the failed change in a lower-risk environment before attempting another rollout."
+      ]
+    }
+  ]
+}

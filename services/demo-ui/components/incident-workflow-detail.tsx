@@ -24,6 +24,7 @@ import type {
   IncidentActionRecord,
   IncidentRecord,
   IncidentWorkflow,
+  RelatedRecords,
   RcaPayload,
   RcaRecord,
   RemediationRecord,
@@ -69,24 +70,6 @@ type RcaGenerationInfo = {
   llmUsed: boolean;
   llmConfigured: boolean;
   provenanceLabel: string;
-};
-
-type RelatedDocument = {
-  title: string;
-  reference: string;
-  content: string;
-  doc_type: string;
-  collection: string;
-  score: number;
-  stage?: string;
-};
-
-type RelatedRecords = {
-  incident_id: string;
-  documents: RelatedDocument[];
-  evidence: RelatedDocument[];
-  reasoning: RelatedDocument[];
-  resolution: RelatedDocument[];
 };
 
 type SimulationPreview = {
@@ -232,7 +215,7 @@ export function IncidentWorkflowDetail() {
     queryFn: () =>
       request<RelatedRecords>(`/api/incidents/${encodeURIComponent(incidentId)}/related`, token, {
         method: "POST",
-        body: JSON.stringify({ limit: 6 }),
+        body: JSON.stringify({ limit: 6, knowledge_limit: 10 }),
       }),
     enabled: Boolean(incidentId),
     refetchInterval: 15_000,
@@ -1250,10 +1233,11 @@ export function IncidentWorkflowDetail() {
                 <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
                   <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Explainability and retrieved knowledge</summary>
                   <div className="mt-4 space-y-4">
-                    <div className="grid gap-3 md:grid-cols-3">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                       <SummaryItem label="Evidence matches" value={String(relatedData?.evidence.length ?? 0)} />
                       <SummaryItem label="Reasoning matches" value={String(relatedData?.reasoning.length ?? 0)} />
                       <SummaryItem label="Resolution matches" value={String(relatedData?.resolution.length ?? 0)} />
+                      <SummaryItem label="Knowledge articles" value={String(relatedData?.knowledge.length ?? 0)} />
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
                       {(incident.explainability ?? []).slice(0, 4).map((item) => (
@@ -1265,23 +1249,70 @@ export function IncidentWorkflowDetail() {
                     </div>
                     {relatedQuery.isLoading ? (
                       <div className="text-sm text-[var(--text-muted)]">Loading retrieved context...</div>
-                    ) : relatedData?.documents.length ? (
-                      relatedData.documents.map((document) => (
-                        <div key={`${document.collection}-${document.reference}`} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="font-medium text-[var(--text-strong)]">{document.title}</div>
-                            <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
-                              {titleize(document.collection)}
-                            </div>
-                          </div>
-                          <div className="mt-1 text-sm text-[var(--text-secondary)]">{truncateText(document.content, 180)}</div>
-                        </div>
-                      ))
                     ) : (
-                      <InlineEmptyState
-                        title="No related knowledge yet"
-                        description="The platform will surface similar evidence, reasoning, and verified outcomes after retrieval completes."
-                      />
+                      <div className="space-y-4">
+                        {relatedData?.documents.length ? (
+                          <div className="space-y-3">
+                            <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Retrieved context</div>
+                            {relatedData.documents.map((document) => (
+                              <div
+                                key={`${document.collection}-${document.reference}`}
+                                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4"
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="font-medium text-[var(--text-strong)]">{document.title}</div>
+                                  <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                                    {titleize(document.collection)}
+                                  </div>
+                                </div>
+                                <div className="mt-1 text-sm text-[var(--text-secondary)]">{truncateText(document.content, 180)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {relatedData?.knowledge.length ? (
+                          <div className="space-y-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Knowledge articles</div>
+                                <div className="mt-1 text-sm text-[var(--text-secondary)]">
+                                  Category-matched remediation articles stored in Milvus for this incident type.
+                                </div>
+                              </div>
+                              <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                                {relatedData.knowledge.length} available
+                              </div>
+                            </div>
+                            {relatedData.knowledge.map((article) => (
+                              <div
+                                key={`${article.collection}-${article.reference}`}
+                                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4"
+                              >
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="font-medium text-[var(--text-strong)]">{article.title}</div>
+                                    <div className="mt-1 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                                      {titleize(article.category ?? "knowledge")} · score {formatRelativeNumber(article.score, 2)}
+                                    </div>
+                                  </div>
+                                  <Button asChild variant="secondary" className="shrink-0">
+                                    <Link href={knowledgeArticleHref(incident.id, article.reference)}>View article</Link>
+                                  </Button>
+                                </div>
+                                <div className="mt-2 text-sm text-[var(--text-secondary)]">{truncateText(article.content, 220)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {!relatedData?.documents.length && !relatedData?.knowledge.length ? (
+                          <InlineEmptyState
+                            title="No related knowledge yet"
+                            description="The platform will surface similar evidence, reasoning, verified outcomes, and category articles after retrieval completes."
+                          />
+                        ) : null}
+                      </div>
                     )}
                   </div>
                 </details>
@@ -2448,4 +2479,12 @@ function truncateText(value: string | null | undefined, limit: number) {
     return text;
   }
   return `${text.slice(0, limit - 1)}...`;
+}
+
+function knowledgeArticleHref(incidentId: string, reference: string) {
+  const encodedReference = reference
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return `/incidents/${encodeURIComponent(incidentId)}/knowledge/${encodedReference}`;
 }

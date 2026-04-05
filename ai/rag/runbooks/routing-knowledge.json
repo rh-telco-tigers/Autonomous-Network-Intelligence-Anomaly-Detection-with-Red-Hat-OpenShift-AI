@@ -1,0 +1,145 @@
+{
+  "category": "routing",
+  "articles": [
+    {
+      "slug": "validate-dns-srv-records",
+      "title": "Validate DNS and SRV records on the routing path",
+      "summary": "Bad DNS or SRV data can make the call-routing layer fail even when SIP services are healthy.",
+      "anomaly_types": ["routing_error"],
+      "knowledge_weight": 0.99,
+      "content": [
+        "When to use: Calls fail to route after a domain or peer lookup and the error follows one destination realm.",
+        "Action: Verify DNS A, AAAA, and SRV records, TTL values, and any cached stale answers on the routing nodes.",
+        "Why it works: Routing defects often begin with name-resolution drift rather than a failure in the SIP application itself.",
+        "Verify: The correct next hop is selected again and route lookup latency returns to baseline.",
+        "Guardrail: Purge stale cache only after confirming the authoritative data is correct."
+      ]
+    },
+    {
+      "slug": "inspect-initial-filter-criteria",
+      "title": "Inspect initial filter criteria and service-chain routing logic",
+      "summary": "Misapplied iFC or service-routing policy can send traffic down the wrong IMS path.",
+      "anomaly_types": ["routing_error"],
+      "knowledge_weight": 0.97,
+      "content": [
+        "When to use: Requests enter the platform but are routed to the wrong application server or service chain.",
+        "Action: Compare the active iFC or equivalent policy set with a known-good subscriber and confirm the trigger conditions are still correct.",
+        "Why it works: Routing rules are often data driven, so one misordered or overly broad policy can change the entire call path.",
+        "Verify: The expected service chain is selected again for the affected subscriber or realm.",
+        "Capture: Save the matched rule or trigger block that caused the misroute for future RCA grounding."
+      ]
+    },
+    {
+      "slug": "repair-route-header-normalization",
+      "title": "Repair Route and Record-Route normalization between peers",
+      "summary": "Broken route headers can make otherwise valid requests loop or terminate on the wrong hop.",
+      "anomaly_types": ["routing_error"],
+      "knowledge_weight": 0.95,
+      "content": [
+        "When to use: Requests loop, hit the wrong upstream, or arrive without the expected route context.",
+        "Action: Check Route and Record-Route handling across proxies, especially after topology-hiding or interconnect policy changes.",
+        "Why it works: Header normalization problems often masquerade as generic routing errors until message traces are compared hop by hop.",
+        "Verify: The request follows the intended path and loop indicators disappear from the trace.",
+        "Risk: Inconsistent header rewriting across peers can reintroduce the issue after only a partial fix."
+      ]
+    },
+    {
+      "slug": "verify-realm-and-domain-maps",
+      "title": "Verify realm and domain mappings after onboarding changes",
+      "summary": "Routing incidents commonly follow a bad realm or domain map update.",
+      "anomaly_types": ["routing_error"],
+      "knowledge_weight": 0.93,
+      "content": [
+        "When to use: One destination domain or tenant suddenly stops routing after a policy or onboarding change.",
+        "Action: Audit domain mapping tables, peer selections, and any default route fallback used for unknown realms.",
+        "Why it works: A single wrong map entry can redirect all traffic for that domain into a dead or unauthorized path.",
+        "Verify: Requests for the affected realm match the intended route policy again and no longer use the fallback path.",
+        "Aftercare: Add a targeted route validation check for newly onboarded realms."
+      ]
+    },
+    {
+      "slug": "rebalance-upstream-trunk-priorities",
+      "title": "Rebalance upstream trunk priorities when the preferred route is degraded",
+      "summary": "A degraded preferred trunk can cause widespread routing failures until priorities are adjusted.",
+      "anomaly_types": ["routing_error"],
+      "knowledge_weight": 0.92,
+      "content": [
+        "When to use: The platform still has alternative trunks, but policy keeps steering traffic to the degraded preferred route.",
+        "Action: Lower the priority or temporarily disable the unhealthy route so traffic can shift to healthy peers.",
+        "Why it works: Controlled rerouting restores service without requiring a full routing-policy redesign during the incident.",
+        "Verify: Call attempts begin succeeding through the backup path and route error volume drops quickly.",
+        "Risk: Backup trunks may have capacity or cost constraints, so monitor both service success and new load."
+      ]
+    },
+    {
+      "slug": "restore-enum-or-lcr-data",
+      "title": "Restore ENUM or least-cost-routing data before touching SIP servers",
+      "summary": "If external route data is stale, SIP servers may be healthy but still unable to select a valid destination.",
+      "anomaly_types": ["routing_error"],
+      "knowledge_weight": 0.9,
+      "content": [
+        "When to use: Route selection fails during number translation or external policy lookup rather than inside the proxy itself.",
+        "Action: Validate ENUM records, least-cost-routing tables, or any external translation dataset used by the route engine.",
+        "Why it works: Routing data defects are often upstream of the SIP application, so server restarts do not address the real cause.",
+        "Verify: The correct route candidate list repopulates and translation lookups return expected next hops.",
+        "Documentation: Note which dataset version was active so future incidents can correlate to the same external dependency."
+      ]
+    },
+    {
+      "slug": "audit-topology-hiding-rules",
+      "title": "Audit topology-hiding rules that may strip required routing context",
+      "summary": "Topology-hiding changes can accidentally remove headers the next hop still needs.",
+      "anomaly_types": ["routing_error"],
+      "knowledge_weight": 0.89,
+      "content": [
+        "When to use: Routing errors began after a security or topology-hiding policy change on the edge.",
+        "Action: Review which headers are removed, rewritten, or encrypted and confirm the next hop still has enough context to route correctly.",
+        "Why it works: Security-focused header handling can unintentionally break downstream routing assumptions.",
+        "Verify: Calls route normally once the required context is preserved or restored.",
+        "Guardrail: Keep the minimum necessary visibility while preserving the privacy goals of topology hiding."
+      ]
+    },
+    {
+      "slug": "confirm-peer-gateway-health",
+      "title": "Confirm peer gateway health before concluding the route table is wrong",
+      "summary": "Routing may be correct while the selected peer gateway is simply unhealthy.",
+      "anomaly_types": ["routing_error"],
+      "knowledge_weight": 0.88,
+      "content": [
+        "When to use: Requests are routed to the expected peer, but the peer fails to respond or rejects calls unexpectedly.",
+        "Action: Check peer gateway health, admission state, and maintenance flags before rewriting routing policy.",
+        "Why it works: Good routing data still fails if the chosen peer is unavailable, saturated, or administratively blocked.",
+        "Verify: Peer health returns or traffic is shifted to a healthy alternative and route failures decline.",
+        "Evidence: Attach the peer health snapshot to the incident for future retrieval."
+      ]
+    },
+    {
+      "slug": "clear-stale-routing-cache",
+      "title": "Clear stale routing cache after authoritative data has been corrected",
+      "summary": "Old route cache entries can keep misrouting traffic after the source of truth is fixed.",
+      "anomaly_types": ["routing_error"],
+      "knowledge_weight": 0.87,
+      "content": [
+        "When to use: The routing dataset is fixed, but requests continue to follow the previous bad route on one or more nodes.",
+        "Action: Refresh or invalidate route caches in a controlled order so all nodes consume the corrected data.",
+        "Why it works: Routing cache lag creates a long tail of failures even after the original issue is resolved.",
+        "Verify: Nodes converge on the same route decision and the old bad next hop disappears from new traces.",
+        "Risk: Cache invalidation can spike upstream lookups, so stagger the operation if the dataset backend is fragile."
+      ]
+    },
+    {
+      "slug": "rollback-routing-policy-change",
+      "title": "Rollback the recent routing-policy change when blast radius is immediate",
+      "summary": "Broad route failures right after a policy rollout usually justify a fast rollback.",
+      "anomaly_types": ["routing_error"],
+      "knowledge_weight": 0.86,
+      "content": [
+        "When to use: Routing errors begin immediately after a policy or route-table rollout and affect multiple destinations.",
+        "Action: Restore the prior policy revision, confirm route selection normalizes, and capture the failing diff for later analysis.",
+        "Why it works: Rollback stabilizes the core call path quickly and reduces speculation during a live outage.",
+        "Verify: Success rate returns on the previous revision and new routing failures stop appearing.",
+        "Aftercare: Recreate the failure in a test environment with the captured diff before reattempting deployment."
+      ]
+    }
+  ]
+}

@@ -85,7 +85,14 @@ from shared.metrics import (
     set_active_incidents,
 )
 from shared.model_registry import get_model, list_datasets, list_feature_schemas, load_registry, promote_model
-from shared.rag import publish_semantic_record, retrieve_context
+from shared.rag import (
+    DEFAULT_MILVUS_COLLECTIONS,
+    RUNBOOK_COLLECTION,
+    get_document_by_reference,
+    publish_semantic_record,
+    retrieve_context,
+    retrieve_knowledge_articles,
+)
 from shared.security import AuthContext, ensure_project_access, ensure_role, outbound_headers, require_api_key
 from shared.tickets import TicketProviderError, get_ticket_provider
 from shared.workflow import (
@@ -114,6 +121,7 @@ from shared.workflow import (
 
 
 logger = logging.getLogger(__name__)
+RELATED_CONTEXT_COLLECTIONS = [name for name in DEFAULT_MILVUS_COLLECTIONS if name != RUNBOOK_COLLECTION]
 
 
 class IncidentCreate(BaseModel):
@@ -211,6 +219,7 @@ class RemediationRejectRequest(BaseModel):
 
 class RelatedRecordsRequest(BaseModel):
     limit: int = Field(default=6, ge=1, le=24)
+    knowledge_limit: int = Field(default=10, ge=1, le=20)
 
 
 app = FastAPI(title="control-plane", version="0.1.0")
@@ -534,6 +543,12 @@ def _feature_signal_summary(features: Dict[str, object]) -> str:
     return ", ".join(fragments[:8]) or "no summarized feature signals"
 
 
+def _incident_category(incident: Dict[str, object]) -> str:
+    anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE))
+    definition = scenario_definition(anomaly_type)
+    return str(definition.get("category") or "").strip().lower()
+
+
 def _related_context_query(incident: Dict[str, object]) -> str:
     features = incident.get("feature_snapshot") or {}
     if not isinstance(features, dict):
@@ -773,6 +788,7 @@ def _categorize_related_documents(documents: List[Dict[str, object]]) -> Dict[st
         "evidence": [],
         "reasoning": [],
         "resolution": [],
+        "knowledge": [],
     }
     for document in documents:
         collection = str(document.get("collection") or "")
@@ -782,6 +798,8 @@ def _categorize_related_documents(documents: List[Dict[str, object]]) -> Dict[st
             related["reasoning"].append(document)
         elif collection == "incident_resolution":
             related["resolution"].append(document)
+        elif collection == RUNBOOK_COLLECTION:
+            related["knowledge"].append(document)
     return related
 
 
@@ -2590,13 +2608,30 @@ def related_incident_records(
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
     ensure_project_access(auth, incident["project"])
-    documents = retrieve_context(_related_context_query(incident), limit=payload.limit)
+    query = _related_context_query(incident)
+    documents = retrieve_context(query, limit=payload.limit, collections=RELATED_CONTEXT_COLLECTIONS)
+    knowledge_articles = retrieve_knowledge_articles(
+        query,
+        category=_incident_category(incident),
+        limit=payload.knowledge_limit,
+    )
     categorized = _categorize_related_documents(documents)
+    if knowledge_articles:
+        categorized["knowledge"] = knowledge_articles
     return {
         "incident_id": incident_id,
         "documents": documents,
         **categorized,
     }
+
+
+@app.get("/knowledge/articles/{reference:path}")
+def knowledge_article(reference: str, auth: AuthContext | None = Depends(require_api_key)):
+    ensure_role(auth, "operator")
+    article = get_document_by_reference(reference, collection_name=RUNBOOK_COLLECTION)
+    if not article:
+        raise HTTPException(status_code=404, detail="Knowledge article not found")
+    return {"article": article}
 
 
 @app.get("/incidents/{incident_id}/tickets")

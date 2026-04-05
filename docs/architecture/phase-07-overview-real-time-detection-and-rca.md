@@ -41,7 +41,7 @@ This phase uses multiple embedding layers rather than treating all text as one g
 
 | Collection | What gets embedded | Why it exists |
 | --- | --- | --- |
-| `ims_runbooks` | curated operational guidance and known procedures | gives the retrieval layer stable operator-authored background knowledge |
+| `ims_runbooks` | curated operational guidance, stable runbooks, and category-specific KB articles | gives the retrieval layer stable operator-authored background knowledge and ensures each incident category has reusable demo-ready guidance |
 | `incident_evidence` | incident facts, feature patterns, and evidence summaries | supports diagnosis from concrete observed signals |
 | `incident_reasoning` | normalized RCA reasoning and explanation text | supports similarity across RCA narratives |
 | `incident_resolution` | verified fixes, outcomes, and resolution summaries | supports remediation ranking and learning from successful outcomes |
@@ -52,6 +52,7 @@ This phase uses multiple embedding layers rather than treating all text as one g
 - anomaly scores and model metadata
 - incident context from the control plane
 - retrieved evidence and runbooks
+- category-matched KB articles from Milvus
 
 ## Outputs
 
@@ -59,6 +60,16 @@ This phase uses multiple embedding layers rather than treating all text as one g
 - incident records
 - RCA payloads with evidence and recommendation fields
 - retrieval context that can be shown back to operators
+- clickable knowledge article links in the incident UI
+
+## Demo and Cluster Readiness
+
+The Milvus knowledge base is now part of the bootstrap path, not a manual demo-prep step.
+
+- `ai/rag/runbooks/*-knowledge.json` provides category-based KB bundles
+- the `rca-service` image carries the corpus into the cluster
+- `milvus-bootstrap` loads the corpus into Milvus for a fresh environment
+- the incident UI can request category-scoped articles and open the full article content directly
 
 ## Current Repo Touchpoints
 

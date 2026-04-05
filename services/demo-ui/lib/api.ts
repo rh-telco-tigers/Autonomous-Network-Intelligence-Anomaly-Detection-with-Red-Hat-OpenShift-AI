@@ -3,7 +3,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApiToken } from "@/components/providers/app-providers";
-import type { ConsoleState, IncidentRecord, IncidentWorkflow, ScenarioRunResponse, TicketLookupResponse } from "@/lib/types";
+import type {
+  ConsoleState,
+  IncidentRecord,
+  IncidentWorkflow,
+  KnowledgeArticleResponse,
+  ScenarioRunResponse,
+  TicketLookupResponse,
+} from "@/lib/types";
 
 const defaultProject = "ims-demo";
 
@@ -73,6 +80,19 @@ export function useTicketLookupQuery(provider: string, externalId: string) {
     queryFn: () => request<TicketLookupResponse>(`/api/tickets/${encodeURIComponent(provider)}/${encodeURIComponent(externalId)}`, token),
     enabled: Boolean(provider) && Boolean(externalId),
     refetchInterval: 8_000,
+  });
+}
+
+export function useKnowledgeArticleQuery(reference: string) {
+  const { token } = useApiToken();
+  const normalizedReference = reference
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return useQuery({
+    queryKey: ["knowledge-article", reference, token],
+    queryFn: () => request<KnowledgeArticleResponse>(`/api/knowledge/articles/${normalizedReference}`, token),
+    enabled: Boolean(reference),
   });
 }
 

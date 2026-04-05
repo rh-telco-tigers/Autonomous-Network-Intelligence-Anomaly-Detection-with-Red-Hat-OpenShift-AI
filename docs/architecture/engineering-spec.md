@@ -265,7 +265,7 @@ flowchart LR
   TrainingDir --> TrainSteps["training step implementation"]
   ModelsDir --> TritonFiles["served Triton files"]
   RegistryDir --> RegistryMeta["model registry metadata"]
-  RagDir --> RagCorpus["Milvus bootstrap corpus"]
+  RagDir --> RagCorpus["Milvus bootstrap corpus and category KB bundles"]
 ```
 
 ### 3.2 Core Domain Entities
@@ -765,16 +765,16 @@ Milvus is the retrieval layer for RCA. It stores semantic knowledge that helps e
 
 Primary source categories:
 
-- runbooks
-- vendor documentation
+- curated operational knowledge articles and runbooks
 - historical incident records and incident logs
 - topology metadata
 - SIP traces and signaling patterns
 
 Operational guidance for indexed content:
 
-- runbooks are stored as chunked operational procedures and troubleshooting steps
-- vendor documentation is stored as chunked reference material for IMS behavior, error handling, and configuration guidance
+- `ims_runbooks` stores stable operator-authored knowledge, including category-specific KB articles for signaling, authentication, validation, routing, session, server, and network incidents
+- the category KB is seeded from `ai/rag/runbooks/*-knowledge.json`, with at least ten articles per incident category so the demo can always surface relevant operational guidance
+- legacy markdown runbooks remain valid seed input and are still embedded into `ims_runbooks`
 - historical incidents are stored as symptom, root cause, and resolution narratives with incident metadata
 - topology metadata is stored as dependency-aware service relationships and path context
 - logs and SIP traces are stored as selective extracted snippets or summarized patterns, not as full raw streams
@@ -819,33 +819,53 @@ For the demo profile, the Milvus corpus should remain intentionally small and pr
 
 Recommended logical collections:
 
-- `runbooks`
-- `incidents`
-- `topology`
+- `ims_runbooks`
+- `incident_evidence`
+- `incident_reasoning`
+- `incident_resolution`
+- `ims_topology`
+- `ims_signal_patterns`
 
-Optional collections:
+The practical retrieval split is:
 
-- `log-snippets`
-- `sip-patterns`
-- `vendor-docs`
+- `ims_runbooks`: reusable category-based KB articles and stable operator-authored runbooks
+- `incident_evidence`: normalized observed incident facts and feature summaries
+- `incident_reasoning`: RCA and remediation reasoning records
+- `incident_resolution`: verified outcomes that should rank highest for future reuse
+- `ims_topology` and `ims_signal_patterns`: smaller supporting context collections for path and pattern grounding
+
+### 5.2.1 Bootstrap and New Cluster Readiness
+
+The demo must load KB content automatically when a new cluster is created.
+
+Current bootstrap contract:
+
+- the `rca-service` image contains the `ai/rag` corpus, including the category KB bundles
+- `k8s/base/milvus/milvus-stack.yaml` defines a `milvus-bootstrap` job that waits for Milvus readiness and runs `python ai/rag/bootstrap_knowledge.py`
+- the bootstrap job recreates the expected collections and seeds the corpus into Milvus
+- a fresh cluster is demo-ready only after the latest `rca-service` image and the Milvus bootstrap job have both run successfully
+
+This means the KB is not a manual post-install content load. It is part of the platform bootstrap path and should be treated as a required demo dependency.
 
 ### 5.3 Processing Flow
 
 ```text
 1. anomaly detected
 2. incident created
-3. RCA query built from node_id, error patterns, and feature deviations
-4. query embedded
-5. Milvus searched
-6. supporting context retrieved
-7. prompt assembled
-8. LLM inference executed
-9. structured RCA output returned
+3. incident category resolved from anomaly taxonomy
+4. RCA query built from incident facts, feature deviations, and recommendation context
+5. Milvus searched for stage-specific evidence, reasoning, and verified resolution records
+6. `ims_runbooks` searched for category-matched KB articles
+7. supporting context retrieved and ranked
+8. prompt assembled
+9. LLM inference executed
+10. structured RCA output returned
+11. control-plane exposes related knowledge back to the UI
 ```
 
 Retrieved context should preferentially include:
 
-- operational runbooks
+- category-matched operational knowledge articles and runbooks
 - similar historical incidents
 - topology relationships
 - selective supporting logs or SIP patterns
@@ -857,6 +877,7 @@ Prompt construction includes:
 - alarm and incident data
 - runtime context
 - topology relationships
+- incident-category KB articles from `ims_runbooks`
 - retrieved reference material
 
 The output must be grounded in retrieved evidence and returned in a structured schema.
@@ -908,6 +929,7 @@ The UI is a thin orchestration layer. It should expose system state and operator
 - RCA output
 - evidence set
 - recommended action
+- related knowledge articles that operators can open directly from the incident workflow
 
 #### 3. MLOps View
 

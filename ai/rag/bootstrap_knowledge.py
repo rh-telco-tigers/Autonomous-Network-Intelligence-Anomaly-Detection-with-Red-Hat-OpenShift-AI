@@ -12,7 +12,7 @@ try:
         DEFAULT_MILVUS_COLLECTIONS,
         LEGACY_MILVUS_COLLECTIONS,
         LOCAL_COLLECTION_DIRS,
-        build_local_seed_record,
+        build_local_seed_records,
         ensure_milvus_collection,
         milvus_client,
     )
@@ -21,7 +21,7 @@ except ModuleNotFoundError:
         DEFAULT_MILVUS_COLLECTIONS,
         LEGACY_MILVUS_COLLECTIONS,
         LOCAL_COLLECTION_DIRS,
-        build_local_seed_record,
+        build_local_seed_records,
         ensure_milvus_collection,
         milvus_client,
     )
@@ -45,10 +45,10 @@ def main():
         directory_name = LOCAL_COLLECTION_DIRS[collection_name]
         source_dir = rag_root / directory_name
         docs = []
-        for path in sorted(source_dir.glob("*")):
+        for path in sorted(source_dir.rglob("*")):
             if not path.is_file():
                 continue
-            docs.append(build_local_seed_record(path, collection_name))
+            docs.extend(build_local_seed_records(path, collection_name))
 
         if client.has_collection(collection_name=collection_name):
             client.drop_collection(collection_name=collection_name)

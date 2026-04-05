@@ -1,0 +1,145 @@
+{
+  "category": "server",
+  "articles": [
+    {
+      "slug": "scale-scscf-worker-pool",
+      "title": "Scale the S-CSCF worker pool when server-side latency and 5xx errors rise together",
+      "summary": "Server internal errors often start with worker saturation on the serving call-control path.",
+      "anomaly_types": ["server_internal_error"],
+      "knowledge_weight": 0.99,
+      "content": [
+        "When to use: Server-side latency, queueing, and 5xx responses all rise on the S-CSCF or equivalent control-plane tier.",
+        "Action: Add capacity to the overloaded worker pool, then verify requests are redistributed across the new replicas.",
+        "Why it works: Scaling the saturated tier reduces queueing pressure and shortens the window for cascading internal errors.",
+        "Verify: Error rate, queue depth, and per-pod CPU normalize within the affected service tier.",
+        "Follow-up: Capture the scaling threshold that stabilized the service so it can guide future remediation ranking."
+      ]
+    },
+    {
+      "slug": "clear-stuck-hss-connection-pool",
+      "title": "Clear a stuck HSS or database connection pool causing internal failures",
+      "summary": "A degraded dependency pool can generate server errors even when application code is unchanged.",
+      "anomaly_types": ["server_internal_error"],
+      "knowledge_weight": 0.97,
+      "content": [
+        "When to use: Internal errors spike after backend latency grows and one service shows many stalled dependency connections.",
+        "Action: Inspect the connection pool, drain bad connections, and confirm the backend is accepting new healthy sessions.",
+        "Why it works: Connection pool exhaustion traps the app in timeouts or failed retries that present as generic 5xx errors.",
+        "Verify: New backend calls complete normally and server error volume drops without another app rollout.",
+        "Risk: Reconnecting too aggressively can overwhelm a recovering backend, so stagger if necessary."
+      ]
+    },
+    {
+      "slug": "rollback-failing-config-push",
+      "title": "Rollback a failing config push that widened the server error blast radius",
+      "summary": "If internal errors begin immediately after deployment, a targeted rollback is often the safest first action.",
+      "anomaly_types": ["server_internal_error"],
+      "knowledge_weight": 0.96,
+      "content": [
+        "When to use: Error volume jumps right after a service config rollout, feature flag change, or policy push.",
+        "Action: Restore the last known-good revision, preserve the failing diff, and confirm the service recovers on the previous state.",
+        "Why it works: Rolling back narrows the troubleshooting surface and quickly stabilizes the control plane during a live incident.",
+        "Verify: The prior revision returns the service to normal latency and error levels.",
+        "Aftercare: Reproduce the issue offline with the captured diff before attempting another rollout."
+      ]
+    },
+    {
+      "slug": "inspect-memory-pressure-and-gc",
+      "title": "Inspect memory pressure and garbage-collection churn on overloaded server pods",
+      "summary": "Memory pressure can trigger latency spikes, crash loops, and internal error bursts.",
+      "anomaly_types": ["server_internal_error"],
+      "knowledge_weight": 0.94,
+      "content": [
+        "When to use: Pods remain running but latency rises sharply and restarts or GC pauses correlate with internal errors.",
+        "Action: Compare heap growth, memory limits, and garbage-collection behavior against a healthy baseline for the same service.",
+        "Why it works: Internal failures may be a symptom of resource starvation rather than a functional defect.",
+        "Verify: Memory behavior stabilizes and error spikes stop following GC or OOM events.",
+        "Guardrail: Raising limits alone can hide leaks, so pair capacity relief with leak investigation."
+      ]
+    },
+    {
+      "slug": "drain-crashing-pod-from-service",
+      "title": "Drain a crashing pod from service before it poisons more traffic",
+      "summary": "One unstable pod can create a disproportionate share of internal errors.",
+      "anomaly_types": ["server_internal_error"],
+      "knowledge_weight": 0.92,
+      "content": [
+        "When to use: Failures cluster on one pod or node while peers on the same revision remain healthy.",
+        "Action: Remove the unstable instance from the load-balancer path, replace it cleanly, and observe whether the incident follows the instance.",
+        "Why it works: Isolating a bad replica prevents localized failure from becoming a full fleet problem.",
+        "Verify: Errors stop hitting the drained instance and traffic succeeds on healthy peers.",
+        "Risk: Do not drain the pod unless the remaining pool has room to absorb the traffic."
+      ]
+    },
+    {
+      "slug": "verify-database-latency-guardrails",
+      "title": "Verify database latency guardrails before tuning the application",
+      "summary": "A slow persistence path can surface as generic server errors in upstream SIP services.",
+      "anomaly_types": ["server_internal_error"],
+      "knowledge_weight": 0.9,
+      "content": [
+        "When to use: The service emits internal errors while waiting on data reads or writes to complete.",
+        "Action: Compare backend database latency, timeout settings, and retry behavior with the application's current guardrails.",
+        "Why it works: Many server failures are really timeout-policy mismatches against a slowing data tier.",
+        "Verify: Database operations complete inside the configured budget and upstream 5xx rates fall.",
+        "Escalate if: Database latency is broadly elevated across unrelated services, which points to a larger platform problem."
+      ]
+    },
+    {
+      "slug": "raise-file-descriptor-limits",
+      "title": "Raise or restore file-descriptor limits when connection churn is high",
+      "summary": "Connection-heavy SIP workloads can hit OS limits and create server-side failures.",
+      "anomaly_types": ["server_internal_error"],
+      "knowledge_weight": 0.89,
+      "content": [
+        "When to use: Logs show socket or file-handle exhaustion during traffic surges or after scaling events.",
+        "Action: Confirm current descriptor limits, restore expected values, and check whether connection churn patterns recently changed.",
+        "Why it works: Server internal errors at the OS boundary often look like random app failures until resource ceilings are inspected.",
+        "Verify: New connections succeed under load and the service stops logging descriptor-related failures.",
+        "Guardrail: Address churn sources as well, otherwise the higher limit only delays recurrence."
+      ]
+    },
+    {
+      "slug": "isolate-noisy-neighbor-node",
+      "title": "Isolate a noisy-neighbor or degraded node affecting one service tier",
+      "summary": "Node-level contention can create server errors without any application code change.",
+      "anomaly_types": ["server_internal_error"],
+      "knowledge_weight": 0.88,
+      "content": [
+        "When to use: One node hosts pods with unusual CPU steal, disk wait, or network contention that matches the incident timeline.",
+        "Action: Move the affected workload to healthier nodes or drain the degraded node if the cluster has headroom.",
+        "Why it works: Removing hidden infrastructure contention often resolves unexplained latency and error bursts quickly.",
+        "Verify: Error rates follow the workload off the bad node and normalize on healthy infrastructure.",
+        "Evidence: Preserve node-level metrics so the issue is not misclassified as an application regression."
+      ]
+    },
+    {
+      "slug": "enable-circuit-breaker-on-failing-dependency",
+      "title": "Enable or tighten circuit breaking on a failing dependency path",
+      "summary": "A hard-failing dependency can cascade internal errors unless the app sheds that load quickly.",
+      "anomaly_types": ["server_internal_error"],
+      "knowledge_weight": 0.87,
+      "content": [
+        "When to use: One downstream dependency is clearly degraded and repeated retries are overwhelming the calling service.",
+        "Action: Tighten circuit-breaker or retry-budget settings so the service fails fast instead of saturating itself.",
+        "Why it works: Controlled failure protects the rest of the call-control path while the dependency is repaired.",
+        "Verify: Upstream latency and error amplification drop once the service stops retrying into the failing backend.",
+        "Risk: Failing fast changes the user-visible behavior, so document the trade-off in the incident record."
+      ]
+    },
+    {
+      "slug": "restore-cache-warm-path-after-restart",
+      "title": "Restore the cache warm path after a cold restart",
+      "summary": "Cold caches after restart can mimic a persistent server fault until the warm path is restored.",
+      "anomaly_types": ["server_internal_error"],
+      "knowledge_weight": 0.86,
+      "content": [
+        "When to use: Error rates spike after a restart even though the new pods are healthy and dependencies are available.",
+        "Action: Check whether caches, lookup tables, or service discovery data are repopulating too slowly for the live traffic rate.",
+        "Why it works: Warm-path gaps create temporary overload and timeout behavior that looks like a true regression.",
+        "Verify: Cache hit rate improves and the service exits the high-error state without further code changes.",
+        "Aftercare: Add a warm-up or readiness gate so new instances do not receive full traffic before they are prepared."
+      ]
+    }
+  ]
+}

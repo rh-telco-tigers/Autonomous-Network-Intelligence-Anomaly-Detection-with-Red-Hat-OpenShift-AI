@@ -1,0 +1,145 @@
+{
+  "category": "network",
+  "articles": [
+    {
+      "slug": "confirm-packet-loss-between-sip-hops",
+      "title": "Confirm packet loss between SIP hops before changing application behavior",
+      "summary": "Packet loss on the signaling path is a common root cause for retransmission spikes and degraded service.",
+      "anomaly_types": ["network_degradation", "retransmission_spike"],
+      "knowledge_weight": 0.99,
+      "content": [
+        "When to use: Retransmission count rises with latency and the same transactions succeed only after multiple attempts.",
+        "Action: Compare packet loss and error counters across the ingress, proxy, and downstream service hops involved in the incident.",
+        "Why it works: Loss between hops creates retry patterns that can be misread as application overload.",
+        "Verify: Retransmissions fall once the lossy segment is repaired or bypassed.",
+        "Evidence: Keep the hop-level loss comparison with the incident for future similarity search."
+      ]
+    },
+    {
+      "slug": "validate-mtu-and-fragmentation",
+      "title": "Validate MTU and fragmentation after sudden transport instability",
+      "summary": "MTU mismatches can trigger intermittent signaling loss and odd parser behavior.",
+      "anomaly_types": ["network_degradation", "retransmission_spike"],
+      "knowledge_weight": 0.97,
+      "content": [
+        "When to use: Larger SIP messages or media-related signaling paths fail more often than small control messages.",
+        "Action: Compare MTU settings across the path, inspect fragmentation counters, and test whether oversized packets are being dropped.",
+        "Why it works: Fragmentation defects create unpredictable delivery and can amplify retransmission storms.",
+        "Verify: Large message success improves and retransmissions no longer cluster around the same payload sizes.",
+        "Guardrail: Apply MTU changes consistently across the affected path instead of only one endpoint."
+      ]
+    },
+    {
+      "slug": "inspect-dns-latency-and-cache",
+      "title": "Inspect DNS latency and cache health on degraded network paths",
+      "summary": "Slow DNS can make signaling appear degraded even when the transport itself is fine.",
+      "anomaly_types": ["network_degradation"],
+      "knowledge_weight": 0.95,
+      "content": [
+        "When to use: Transaction latency rises during name lookup or peer resolution stages without clear packet loss.",
+        "Action: Measure DNS lookup time, cache hit ratio, and resolver availability for the services on the incident path.",
+        "Why it works: Name-resolution delays often look like generic network slowness until the lookup step is isolated.",
+        "Verify: End-to-end latency improves when resolver health or caching is restored.",
+        "Aftercare: Add DNS latency as a first-class incident signal for similar network degradations."
+      ]
+    },
+    {
+      "slug": "verify-qos-marking-priority",
+      "title": "Verify QoS marking and priority on the signaling path",
+      "summary": "Misclassified traffic can suffer avoidable jitter or drop during congestion.",
+      "anomaly_types": ["network_degradation", "retransmission_spike"],
+      "knowledge_weight": 0.94,
+      "content": [
+        "When to use: Network degradation appears during congestion windows and signaling competes poorly with less critical traffic.",
+        "Action: Check DSCP or equivalent QoS markings and confirm the network is honoring the expected priority for SIP signaling.",
+        "Why it works: Correct prioritization reduces delay and loss without changing application behavior.",
+        "Verify: Signaling latency and retransmission behavior improve during the same load profile.",
+        "Risk: Do not raise priority blindly if it would starve other critical control traffic."
+      ]
+    },
+    {
+      "slug": "move-traffic-off-saturated-node",
+      "title": "Move traffic off a saturated node or interface",
+      "summary": "Localized node or interface saturation can create network incidents with a narrow but intense blast radius.",
+      "anomaly_types": ["network_degradation", "retransmission_spike"],
+      "knowledge_weight": 0.92,
+      "content": [
+        "When to use: One node, NIC, or host path shows much worse throughput, drops, or queueing than the rest of the fleet.",
+        "Action: Drain the saturated path, rebalance traffic to healthy nodes, and inspect the constrained interface separately.",
+        "Why it works: Removing the hot spot restores service faster than broad application changes.",
+        "Verify: Retransmission spikes follow the bad path out of service and healthy paths absorb traffic cleanly.",
+        "Evidence: Preserve node and interface counters so the issue is not later attributed to the wrong layer."
+      ]
+    },
+    {
+      "slug": "compare-east-west-network-policy",
+      "title": "Compare east-west network policy after a connectivity regression",
+      "summary": "A network-policy change can block or delay service-to-service signaling within the cluster.",
+      "anomaly_types": ["network_degradation"],
+      "knowledge_weight": 0.9,
+      "content": [
+        "When to use: Degradation started after a platform security change and only certain service-to-service paths are affected.",
+        "Action: Review recent network-policy updates, confirm the allowed ports and namespaces, and compare failing and healthy paths.",
+        "Why it works: Cluster policy mistakes can look like random latency or timeout issues until the blocked flow is identified.",
+        "Verify: Connectivity returns on the affected path and transaction timing normalizes without another service rollout.",
+        "Rollback trigger: A specific policy revision that aligns with the incident start."
+      ]
+    },
+    {
+      "slug": "tune-retransmission-thresholds",
+      "title": "Tune retransmission thresholds only after confirming the path can sustain them",
+      "summary": "Overly aggressive retransmission behavior can magnify moderate network degradation into a larger incident.",
+      "anomaly_types": ["retransmission_spike"],
+      "knowledge_weight": 0.89,
+      "content": [
+        "When to use: Modest latency changes trigger disproportionately large retransmission waves from clients or peers.",
+        "Action: Review retransmission timers and thresholds together with the real latency envelope seen on the path.",
+        "Why it works: Better timer alignment reduces amplification while the underlying network issue is being stabilized.",
+        "Verify: Duplicate transaction volume drops and the path stops oscillating under moderate latency.",
+        "Guardrail: Do not mask a severe transport defect by stretching timers beyond safe user experience bounds."
+      ]
+    },
+    {
+      "slug": "confirm-load-balancer-health-checks",
+      "title": "Confirm load-balancer health checks are ejecting unhealthy endpoints",
+      "summary": "If health checks lag reality, traffic can keep flowing to degraded endpoints and create network symptoms.",
+      "anomaly_types": ["network_degradation", "retransmission_spike"],
+      "knowledge_weight": 0.88,
+      "content": [
+        "When to use: Network symptoms concentrate on one backend path even though the load balancer still reports it as healthy.",
+        "Action: Review health-check sensitivity, timeout values, and endpoint removal timing for the affected service.",
+        "Why it works: Fast and accurate health checks stop new traffic from hitting paths already known to be failing.",
+        "Verify: Traffic shifts away from the bad path and retransmission counts decrease on new transactions.",
+        "Risk: Overly aggressive health checks can flap, so tune them with observed path stability in mind."
+      ]
+    },
+    {
+      "slug": "inspect-jitter-on-media-gateway-path",
+      "title": "Inspect jitter and transport variance on media-gateway adjacent paths",
+      "summary": "High jitter can degrade signaling and session maintenance even without outright packet loss.",
+      "anomaly_types": ["network_degradation"],
+      "knowledge_weight": 0.87,
+      "content": [
+        "When to use: Latency variance is high, sessions feel unstable, and packet loss is not the dominant signal.",
+        "Action: Measure jitter and queueing behavior on the media-gateway and adjacent transport segments involved in the incident.",
+        "Why it works: Variance-driven degradation can trigger timeouts and poor session behavior before average latency looks critical.",
+        "Verify: Reduced jitter correlates with improved call stability and lower timeout volume.",
+        "Documentation: Include jitter evidence in the incident payload because average latency alone may hide the problem."
+      ]
+    },
+    {
+      "slug": "failover-to-healthy-az-or-rack",
+      "title": "Fail over to a healthy rack or zone when network degradation is localized",
+      "summary": "If the fault is isolated to one zone or rack, controlled failover can restore service quickly.",
+      "anomaly_types": ["network_degradation", "retransmission_spike"],
+      "knowledge_weight": 0.86,
+      "content": [
+        "When to use: Most errors originate from one rack, availability zone, or network segment while the rest of the platform remains stable.",
+        "Action: Shift traffic to a healthy segment and reduce dependency on the degraded zone until network repair is complete.",
+        "Why it works: Localized failover limits user impact without requiring immediate application-level changes.",
+        "Verify: Traffic succeeds through the healthy segment and incident metrics stop following the degraded zone.",
+        "Risk: Confirm destination capacity and cross-zone policy allowances before initiating failover."
+      ]
+    }
+  ]
+}
