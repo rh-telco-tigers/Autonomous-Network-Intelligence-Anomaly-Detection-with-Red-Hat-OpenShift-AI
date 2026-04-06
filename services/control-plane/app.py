@@ -3616,7 +3616,15 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
     if scenario_name not in CONSOLE_SCENARIOS:
         raise HTTPException(status_code=400, detail=f"Unsupported scenario {payload.scenario}")
 
-    feature_window = _request_json("GET", f"{FEATURE_GATEWAY_URL}/live-window/{scenario_name}")
+    trace_actor = auth.subject if auth else "console-ui"
+    feature_window_url = f"{FEATURE_GATEWAY_URL}/live-window/{scenario_name}"
+    feature_window_request_payload = {
+        "path_params": {"scenario": scenario_name},
+        "project": payload.project,
+    }
+    feature_window_request_timestamp = _now_iso()
+    feature_window = _request_json("GET", feature_window_url)
+    feature_window_response_timestamp = _now_iso()
     features = feature_window.get("features")
     if not isinstance(features, dict):
         raise HTTPException(status_code=502, detail="Feature gateway returned an invalid feature window payload")
@@ -3649,9 +3657,30 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
     )
 
     incident_id = str(score.get("incident_id") or "") or None
+    if incident_id:
+        _record_debug_trace_packets(
+            incident_id,
+            trace_actor,
+            interaction_trace_packets(
+                category="api",
+                service="control-plane",
+                target="feature-gateway",
+                method="GET",
+                endpoint=feature_window_url,
+                request_payload=feature_window_request_payload,
+                response_payload=feature_window,
+                request_timestamp=feature_window_request_timestamp,
+                response_timestamp=feature_window_response_timestamp,
+                metadata={
+                    "project": payload.project,
+                    "scenario_name": scenario_name,
+                    "feature_window_id": feature_window.get("window_id"),
+                },
+            ),
+        )
     record_audit(
         "scenario_executed",
-        auth.subject if auth else "console-ui",
+        trace_actor,
         {
             "project": payload.project,
             "scenario": scenario_name,
