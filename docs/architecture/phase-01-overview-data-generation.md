@@ -15,7 +15,8 @@ This is an active part of the current demo stack.
 - The active XML scenario catalog lives in `k8s/base/traffic/scenarios/`
 - `lab-assets/sipp/` is only a starter subset with three example XML files, not the full deployed catalog
 - Scenario execution is persisted as feature-window JSON that separates numeric features, execution context, and labels
-- The current schema carries the same nine numeric model inputs already used by training and serving: `register_rate`, `invite_rate`, `bye_rate`, `error_4xx_ratio`, `error_5xx_ratio`, `latency_p95`, `retransmission_count`, `inter_arrival_mean`, and `payload_variance`
+- The current contract exposes 9 numeric features, 1 binary label (`label`), and 12 normalized `anomaly_type` categories, while `contributing_conditions` stay as supporting tags rather than extra top-level labels
+- The nine numeric model inputs already used by training and serving are `register_rate`, `invite_rate`, `bye_rate`, `error_4xx_ratio`, `error_5xx_ratio`, `latency_p95`, `retransmission_count`, `inter_arrival_mean`, and `payload_variance`
 
 ## Stage Diagram
 
@@ -33,11 +34,11 @@ flowchart TD
 
 ## Current XML Scenario Catalog
 
-The deployed Phase 01 catalog currently contains 12 XML scenarios mounted through the `sipp-scenarios` ConfigMap:
+The deployed Phase 01 catalog currently contains 12 XML scenarios mounted through the `sipp-scenarios` ConfigMap. These scenarios map to 12 current normalized `anomaly_type` categories, including `normal_operation`:
 
 - `register-normal.xml` -> `normal_operation`
 - `register-storm.xml` -> `registration_storm`
-- `invite-malformed.xml` -> `malformed_invite`
+- `invite-malformed.xml` -> `malformed_sip`
 - `register-authentication-failure.xml` -> `authentication_failure`
 - `register-failure.xml` -> `registration_failure`
 - `invite-routing-error.xml` -> `routing_error`
@@ -50,9 +51,18 @@ The deployed Phase 01 catalog currently contains 12 XML scenarios mounted throug
 
 The lab walkthrough and `lab-assets/sipp/` still highlight only three representative examples for brevity, but the running platform uses the full catalog above.
 
+Most scenario names and normalized labels match directly. The main current exception is malformed INVITE traffic: the scenario name is `malformed_invite`, while the normalized primary label published in `anomaly_type` is `malformed_sip`.
+
 ## Persisted Feature Window Contract
 
 Every persisted window written by `services/sipp-runner/run_scenario.py` follows the same high-level shape so later phases do not need to rediscover semantics from raw SIP traces.
+
+### Current Count Summary
+
+- `9` numeric features used by the model contract
+- `1` binary label in `label`
+- `12` normalized `anomaly_type` categories, which means `11` anomaly categories plus `normal_operation`
+- `contributing_conditions` are multi-value support tags, not additional primary class labels
 
 ### Numeric Features
 
@@ -76,9 +86,9 @@ Every persisted window written by `services/sipp-runner/run_scenario.py` follows
 ### Labels
 
 - `label`: binary supervision target where `0` means normal and `1` means anomaly
-- `anomaly_type`: normalized scenario label from the active catalog above, such as `normal_operation`, `registration_storm`, `routing_error`, or `network_degradation`
+- `anomaly_type`: the primary categorical label with 12 current normalized values, including `normal_operation`
 - `label_confidence`: deterministic confidence assigned by the scenario pipeline
-- `contributing_conditions`: supporting conditions such as `retry_spike`, `4xx_burst`, `latency_high`, or `payload_anomaly`
+- `contributing_conditions`: supporting conditions such as `retry_spike`, `4xx_burst`, `latency_high`, or `payload_anomaly`; these are context tags, not additional primary labels
 - Nested `labels`: grouped label object containing `anomaly`, `anomaly_type`, and `contributing_conditions`
 
 ## Inputs
@@ -92,7 +102,7 @@ Every persisted window written by `services/sipp-runner/run_scenario.py` follows
 - Feature-window JSON persisted to the MinIO dataset store under dataset versions such as `live-sipp-v1`
 - The nine numeric model inputs in the `features` map
 - Scenario context and lineage fields needed for filtering, joins, and reproducibility
-- Binary and categorical labels plus contributing conditions derived from the scenario catalog
+- One binary label, one categorical `anomaly_type`, and supporting `contributing_conditions` derived from the scenario catalog
 - SIP response, latency, retry, and payload-derived runtime evidence for incident analysis
 - Optional control-plane incident inputs when scenario runs emit scoring and incident records
 

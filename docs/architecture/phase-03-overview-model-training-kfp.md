@@ -12,7 +12,7 @@ This phase is live today through the current MinIO-backed training path. A secon
 
 - load persisted training inputs from object storage or Feature Store offline retrieval
 - materialize training tables and labels
-- train one or more candidate model families
+- train the baseline path plus the current AutoGluon candidate path
 - evaluate metrics and select a winning artifact
 - keep the workflow automated and reproducible
 
@@ -55,6 +55,7 @@ This phase is the boundary between stored evidence and deployable intelligence. 
 ## Related Docs
 
 - [Architecture by phase](./README.md)
+- [AutoGluon training and model selection](./autogluon-training-and-model-selection.md)
 - [Engineering specification](./engineering-spec.md)
 - [Feature store training path](./feature-store-training-path.md)
 - [Incident release and offline training contract](./incident-release-corpus-and-offline-training.md)
