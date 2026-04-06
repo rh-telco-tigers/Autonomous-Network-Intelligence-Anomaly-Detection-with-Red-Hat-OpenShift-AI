@@ -10,18 +10,18 @@ Make sure the following items are ready:
 
 - the demo UI route is reachable
 - the IMS lab workloads are healthy
-- the `demo-incident-pulse` CronJob is present
+- the `demo-incident-pulse` and `sipp-*` CronJobs are present and healthy
 - the `live-sipp-v1` dataset exists in MinIO
 - a recent KFP workflow completed successfully
-- the predictive model is available through model serving
+- the feature-store predictive model is available through both Triton and MLServer serving
 
 Recommended checks:
 
 ```sh
 oc get deploy -n ims-demo-lab
-oc get cronjob -n ims-demo-lab
+oc get cronjob -n ims-demo-lab | rg 'demo-incident-pulse|sipp-'
 oc get workflow -n ims-demo-lab
-oc get inferenceservice -n ims-demo-lab
+oc get inferenceservice -n ims-demo-lab | rg 'ims-predictive-fs|ims-predictive-fs-mlserver'
 ```
 
 ## Demo Sequence
@@ -29,7 +29,7 @@ oc get inferenceservice -n ims-demo-lab
 1. Open the demo UI.
 2. Confirm the platform is healthy before generating new traffic.
 3. Confirm that the console shows auto refresh enabled and that the page is updating on its own.
-4. Explain that the `demo-incident-pulse` CronJob posts a scenario to the control-plane every three minutes, so the incident list can update without pressing a UI button.
+4. Explain that `demo-incident-pulse` posts a scenario to `/console/run-scenario` every three minutes, and that the `sipp-*` CronJobs also generate feature windows and incidents on their own schedules once model serving is ready.
 5. Show the IMS workloads in OpenShift:
 
 ```sh
@@ -41,45 +41,49 @@ oc get pods -n ims-demo-lab
 8. Either wait for the next background pulse or run a `registration_storm` scenario manually.
 9. Use the UI or scoring API to confirm that the anomaly is detected and an incident is created.
 10. Open the incident details and confirm that the record includes the feature window and model version.
-11. Open the RCA result and review the evidence and recommendation fields.
-12. Review the ranked remediation options and explain that execution stays human-approved.
-13. Approve and execute `Scale the S-CSCF path`.
-14. Confirm that the incident transitions through approval and execution states and that the action result shows AAP-backed execution.
-15. Show the latest workflow in OpenShift AI and confirm that the model-serving resources are present.
-16. If needed, open Attu and confirm that the `ims_runbooks`, `incident_evidence`, `incident_reasoning`, and `incident_resolution` collections are available.
-17. If you want to prove the runtime effect, show that the `ims-scscf` deployment replica count increased after the approved action.
+11. Open the detailed trace route and show the ordered feature-gateway, model, API, and RCA/LLM packets for the incident.
+12. Open the RCA result and review the evidence and recommendation fields.
+13. Review the ranked remediation options and explain that execution stays human-approved.
+14. Approve and execute `Scale the S-CSCF path`.
+15. Confirm that the incident transitions through approval and execution states and that the action result shows AAP-backed execution.
+16. Show the latest workflow in OpenShift AI and confirm that `ims-predictive-fs` and `ims-predictive-fs-mlserver` are present.
+17. If needed, open Attu and confirm that the `ims_runbooks`, `incident_evidence`, `incident_reasoning`, and `incident_resolution` collections are available.
+18. If you want to prove the runtime effect, show that the `ims-scscf` deployment replica count increased after the approved action.
 
 ## What To Verify During The Demo
 
 - a normal scenario produces a normal result
 - an anomaly scenario produces an anomaly result
 - the dashboard refreshes on its own without using the button
-- a new incident appears after the scheduled pulse or a manual trigger
+- a new incident appears after the scheduled pulse, a scheduled `sipp-*` run, or a manual trigger
 - the incident record includes the feature window ID
 - the incident record includes the model version
+- the detailed trace route shows the pre-model feature fetch, model infer payloads, and RCA/LLM activity
 - RCA is available for the incident
 - remediation options are generated from the RCA context
 - the approved `Scale the S-CSCF path` action updates the incident to `EXECUTING` and then `EXECUTED`
-- model-serving resources are ready in the cluster
+- `ims-predictive-fs` and `ims-predictive-fs-mlserver` are ready in the cluster
 
 ## Suggested Short Flow
 
 If you need a shorter run:
 
 1. Show the UI and cluster health.
-2. Point out that the dashboard refreshes automatically and that the background pulse is active.
+2. Point out that the dashboard refreshes automatically and that the background pulse and `sipp-*` schedules are active.
 3. Show one normal scenario if you need a clean baseline.
 4. Show one `registration_storm` scenario or wait for the next pulse-created incident.
 5. Show the created incident.
-6. Show the RCA result.
-7. Approve and execute `Scale the S-CSCF path`, then show the execution status on the same incident.
+6. Open the detailed trace route.
+7. Show the RCA result.
+8. Approve and execute `Scale the S-CSCF path`, then show the execution status on the same incident.
 
 ## Troubleshooting During The Demo
 
 - If the UI does not load, check the route and the backing pods.
-- If the dashboard is stale, confirm that auto refresh is enabled and that the `demo-incident-pulse` CronJob is running.
-- If no incident is created, confirm that model serving is ready and inspect the latest `demo-incident-pulse` Job logs.
+- If the dashboard is stale, confirm that auto refresh is enabled and that both `demo-incident-pulse` and the `sipp-*` CronJobs are healthy.
+- If no incident is created, confirm that model serving is ready and inspect the latest `demo-incident-pulse` and `sipp-*` Job logs.
 - If RCA is missing, confirm that the control-plane and retrieval services are healthy.
+- If the detailed trace route is missing packets, confirm that the latest control-plane, anomaly-service, and rca-service images were rolled out.
 - If the approved remediation stays in `EXECUTING`, inspect the control-plane logs and the AAP job or fallback runner job in the `aap` namespace.
 - If controller-backed AAP launch is blocked by license, the runner-job fallback is the expected behavior in this demo.
 - If the latest training run failed, open the failed workflow before retrying the demo.

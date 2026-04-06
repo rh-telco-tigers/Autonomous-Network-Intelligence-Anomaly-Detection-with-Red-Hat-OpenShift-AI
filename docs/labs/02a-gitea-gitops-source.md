@@ -63,10 +63,11 @@ http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-wi
 - The first push in this lab seeds the in-cluster GitOps source for Argo CD, but it does not build images yet.
 - After Argo CD has synced the `ims-demo-platform` application for `k8s/overlays/demo`, a later push to `main` triggers the Tekton build automatically.
 - If you need the first image build without adding another commit, run `make trigger-build-pipeline` to start a `PipelineRun` for `ims-demo-container-build`.
-- The same GitOps sync also creates the repo-managed Feature Store resources from `k8s/base/feature-store`, so you should not create a Feature Store manually in the OpenShift AI console.
+- The same GitOps sync does not create the repo-managed AI extras in `k8s/base/feature-store`, `k8s/base/kafka`, or `k8s/base/kfp`; apply those later in Lab 04 with `make apply-demo-ai-extras`.
+- Do not create a separate Feature Store manually in the OpenShift AI console; the repo-managed `FeatureStore/ims-featurestore` still comes from manifests, just not from the demo overlay itself.
 
 ## Why this flow exists
 
 - The demo becomes self-contained inside the OpenShift cluster.
 - Argo CD can continue reconciling even if external GitHub access is unavailable.
-- The same bootstrap pattern can be reused on a fresh sandbox cluster without changing the manifests.
+- The same bootstrap pattern can be reused on a fresh sandbox cluster after patching environment-specific integration defaults such as Plane URLs, LLM endpoints, and any model-registry service name differences.

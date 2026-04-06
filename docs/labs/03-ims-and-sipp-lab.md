@@ -18,18 +18,27 @@ Deploy the IMS lab, run SIP traffic scenarios, and confirm that the scenario out
   - `ims-icscf`
   - `ims-hss`
   - `openimss-webui`
+- `demo-incident-pulse` from `k8s/base/platform`, which calls the same `/console/run-scenario` path the UI uses
 - SIPp scenario jobs from `k8s/base/traffic`
 - Scenario files from `k8s/base/traffic/scenarios`
 - `feature-gateway` for on-demand feature-window generation
 
 ## Scenario Names Used In This Lab
 
+The current multiclass console and pulse catalog covers:
+
 - `normal`
-  - baseline traffic
 - `registration_storm`
-  - elevated REGISTER traffic
+- `registration_failure`
+- `authentication_failure`
 - `malformed_invite`
-  - malformed INVITE requests
+- `routing_error`
+- `busy_destination`
+- `call_setup_timeout`
+- `call_drop_mid_session`
+- `server_internal_error`
+- `network_degradation`
+- `retransmission_spike`
 
 ## Run The Lab
 
@@ -69,10 +78,10 @@ oc get deploy -n ims-demo-lab
 oc get svc -n ims-demo-lab | rg 'ims-|openimss'
 ```
 
-6. Verify the SIPp CronJobs exist:
+6. Verify the scheduled incident generators exist:
 
 ```sh
-oc get cronjob -n ims-demo-lab | rg 'sipp'
+make check-demo-incident-generators
 ```
 
 7. Trigger one traffic run manually if you do not want to wait for the next schedule:
@@ -122,10 +131,13 @@ After this lab:
 - SIPp can reach `ims-pcscf` on port `5060`
 - completed SIPp jobs write feature-window JSON documents to MinIO
 - the dataset version `live-sipp-v1` starts accumulating scenario output for training
+- once model serving is ready, `demo-incident-pulse` and the `sipp-*` jobs can create incidents through the same scoring path the demo UI uses
 
 ## Quick Troubleshooting
 
 - If `ims-demo-platform` is not synced, check the Argo CD application before debugging the workloads themselves.
 - If the IMS deployments are not ready, check `oc get pods -n ims-demo-lab`.
+- If `demo-incident-pulse` or a `sipp-*` CronJob is in `ImagePullBackOff`, rerun the first Tekton image build from Lab 03.
 - If a SIPp job fails, read the job logs before retrying.
 - If no `window_uri` is printed, confirm MinIO is reachable and the job has the storage credentials.
+- If a job writes a feature window but no incident appears, confirm the anomaly-service and predictive serving endpoints are healthy before retrying.

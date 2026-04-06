@@ -2,30 +2,39 @@
 
 ## Objective
 
-Understand the deployment layout before applying manifests to a cluster.
+Understand the deployment layout and the fresh-cluster bring-up sequence before applying manifests.
 
 ## Demo narrative
 
 The demo shows an IMS assurance workflow running natively on OpenShift:
 
 - IMS control-plane services emit traffic and operational signals
-- SIPp generates both nominal and anomalous scenarios
-- feature windows feed predictive anomaly scoring
+- SIPp and the background pulse generate both nominal and anomalous scenarios
+- feature windows feed multiclass predictive anomaly scoring
 - incidents trigger RCA enrichment backed by retrieval and LLM inference
-- the operator sees the complete workflow in a thin demo console
+- the operator can open a detailed execution trace from pre-model feature fetch through model and RCA/LLM packets
 
 ## Core stack
 
 - `k8s/base/ims`: IMS lab services and supporting data stores
-- `k8s/base/traffic`: SIPp runner and traffic scenarios
-- `k8s/base/rhoai`: OpenShift AI control-plane CRs
-- `k8s/base/serving`: KServe serving runtimes and inference services
-- `k8s/base/platform`: feature, anomaly, RCA, and UI services
+- `k8s/base/traffic`: SIPp runner and scheduled traffic scenarios
+- `k8s/base/platform`: control-plane, feature-gateway, anomaly-service, RCA service, and demo UI
+- `k8s/base/serving`: KServe serving runtimes and the feature-store-backed Triton and MLServer endpoints
 - `k8s/base/milvus`: standalone vector database for RCA evidence retrieval
+- `k8s/base/rhoai`: OpenShift AI control-plane CRs
+- `k8s/base/feature-store`: Feast Feature Store instance and bootstrap job
+- `k8s/base/kafka`: Kafka resources used by the release pipeline path
+- `k8s/base/kfp`: DSPA and KFP bootstrap assets
+
+## Fresh-Cluster Sequence
+
+- Labs 01-03 bring up the GitOps-managed core demo overlay and the internal image build pipeline.
+- Lab 04 applies the AI extras that are intentionally outside `k8s/overlays/demo`: `k8s/base/feature-store`, `k8s/base/kafka`, and `k8s/base/kfp`.
+- Lab 05 validates the live operator flow, including scheduled incident generation, multiclass scoring, detailed trace inspection, RCA, and remediation.
 
 ## What the customer should see
 
 - a clean separation between telecom simulation, AI, and operator experience
-- traceability from feature window to incident to RCA output
+- traceability from feature window to incident, model decision, and RCA output
 - an architecture that maps to standard OpenShift operational controls
 
