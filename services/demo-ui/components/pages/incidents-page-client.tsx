@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 
@@ -52,6 +52,51 @@ export function IncidentsPageClient({ initialFilters }: { initialFilters: Filter
     setSearchValue(filters.q);
   }, [filters.q]);
 
+  const replaceQuery = useCallback(
+    (next: URLSearchParams) => {
+      const queryString = next.toString();
+      router.replace(queryString ? `${pathname}?${queryString}` : pathname);
+    },
+    [pathname, router],
+  );
+
+  const updateFilterParam = useCallback(
+    (key: string, value: string) => {
+      const next = new URLSearchParams(searchParams.toString());
+      if (value) {
+        next.set(key, value);
+      } else {
+        next.delete(key);
+      }
+      next.delete("page");
+      replaceQuery(next);
+    },
+    [replaceQuery, searchParams],
+  );
+
+  const updatePage = useCallback(
+    (nextPage: number) => {
+      const next = new URLSearchParams(searchParams.toString());
+      if (nextPage <= 1) {
+        next.delete("page");
+      } else {
+        next.set("page", String(nextPage));
+      }
+      replaceQuery(next);
+    },
+    [replaceQuery, searchParams],
+  );
+
+  const updatePageSize = useCallback(
+    (nextPageSize: number) => {
+      const next = new URLSearchParams(searchParams.toString());
+      next.set("pageSize", String(nextPageSize));
+      next.delete("page");
+      replaceQuery(next);
+    },
+    [replaceQuery, searchParams],
+  );
+
   useEffect(() => {
     if (searchValue === filters.q) {
       return;
@@ -60,7 +105,7 @@ export function IncidentsPageClient({ initialFilters }: { initialFilters: Filter
       updateFilterParam("q", searchValue);
     }, 350);
     return () => window.clearTimeout(timeoutId);
-  }, [filters.q, searchValue]);
+  }, [filters.q, searchValue, updateFilterParam]);
 
   const columns = useMemo<ColumnDef<IncidentRecord>[]>(
     () => [
@@ -122,45 +167,12 @@ export function IncidentsPageClient({ initialFilters }: { initialFilters: Filter
     getCoreRowModel: getCoreRowModel(),
   });
 
-  function replaceQuery(next: URLSearchParams) {
-    const queryString = next.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
-  }
-
-  function updateFilterParam(key: string, value: string) {
-    const next = new URLSearchParams(searchParams.toString());
-    if (value) {
-      next.set(key, value);
-    } else {
-      next.delete(key);
-    }
-    next.delete("page");
-    replaceQuery(next);
-  }
-
-  function updatePage(nextPage: number) {
-    const next = new URLSearchParams(searchParams.toString());
-    if (nextPage <= 1) {
-      next.delete("page");
-    } else {
-      next.set("page", String(nextPage));
-    }
-    replaceQuery(next);
-  }
-
-  function updatePageSize(nextPageSize: number) {
-    const next = new URLSearchParams(searchParams.toString());
-    next.set("pageSize", String(nextPageSize));
-    next.delete("page");
-    replaceQuery(next);
-  }
-
   return (
     <div className="space-y-8">
       <PageHeader
         eyebrow="Incident operations"
         title="Incidents"
-        description="This page is the queue and entry point. Open an incident to review RCA, change workflow state, execute actions, sync tickets, and verify resolution."
+        description="Incident queue. Open an incident to review root cause analysis, take action, sync tickets, and verify resolution."
       />
 
       <Card>

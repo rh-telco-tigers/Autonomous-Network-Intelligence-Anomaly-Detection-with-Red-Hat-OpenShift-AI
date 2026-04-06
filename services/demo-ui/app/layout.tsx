@@ -8,7 +8,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "IMS Incident Workflow",
-  description: "Production-oriented incident workflow console for IMS anomaly operations.",
+  description: "Console for reviewing and managing IMS anomaly incidents.",
 };
 
 export const viewport: Viewport = {

@@ -69,7 +69,7 @@ export default function ServicesPage() {
       <PageHeader
         eyebrow="Platform connectivity"
         title="Services"
-        description="Service health, integration readiness, and direct navigation links when routes are exposed."
+        description="Service health, integration status, and direct links when they are available."
       />
       {showRefreshWarning ? (
         <TransientDataWarning>
@@ -163,7 +163,7 @@ export default function ServicesPage() {
         <Card>
           <CardHeader>
             <CardTitle>Integrations</CardTitle>
-            <CardDescription>Operational integrations and whether each one is live or still in demo relay mode.</CardDescription>
+            <CardDescription>Integration status and whether each one is active or using demo mode.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {Object.entries(data.integrations).map(([name, value]) => (
@@ -177,7 +177,7 @@ export default function ServicesPage() {
                 </div>
                 {name === "plane" && !value.live_configured ? (
                   <div className="mt-2 text-sm text-[var(--text-subtle)]">
-                    No standalone Plane route is exposed in demo-relay mode. Open Plane-linked tickets from the incident page instead.
+                    Plane is not exposed as a separate link in this setup. Open linked tickets from the incident page instead.
                   </div>
                 ) : null}
               </div>

@@ -98,7 +98,7 @@ function LiveTrafficPageContent() {
       <PageHeader
         eyebrow="Traffic stream"
         title="Live Traffic"
-        description="A dedicated traffic stream page for normal and anomalous windows. No remediation controls here."
+        description="Live and recent traffic. Open an incident to investigate or take action."
       />
       {showRefreshWarning ? (
         <TransientDataWarning>
@@ -110,7 +110,7 @@ function LiveTrafficPageContent() {
         <Card>
           <CardHeader>
             <CardTitle>Current scenario</CardTitle>
-            <CardDescription>The latest live traffic snapshot attached to the console state.</CardDescription>
+            <CardDescription>Latest traffic snapshot from the system.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-lg font-semibold text-[var(--text-strong)]">
@@ -143,7 +143,7 @@ function LiveTrafficPageContent() {
           <CardContent>
             <div className="text-lg font-semibold text-[var(--text-strong)]">{data.traffic_preview.stats.active_node}</div>
             <div className="mt-1 text-sm text-[var(--text-secondary)]">
-              {data.traffic_stream.length ? "Streaming event history available below." : "Showing the latest snapshot while the event stream refills."}
+              {data.traffic_stream.length ? "Traffic history is listed below." : "Showing the latest snapshot while more events arrive."}
             </div>
           </CardContent>
         </Card>
@@ -153,7 +153,7 @@ function LiveTrafficPageContent() {
         <Card>
           <CardHeader>
             <CardTitle>Traffic rate trend</CardTitle>
-            <CardDescription>Recent windows across normal and problematic traffic, regardless of incident state.</CardDescription>
+            <CardDescription>Recent traffic windows across normal and abnormal behavior.</CardDescription>
           </CardHeader>
           <CardContent className="h-72">
             {fallbackTrend.length ? (
@@ -179,7 +179,7 @@ function LiveTrafficPageContent() {
         <Card>
           <CardHeader>
             <CardTitle>Latest packet sample</CardTitle>
-            <CardDescription>The most recent traffic preview currently attached to the console state.</CardDescription>
+            <CardDescription>Most recent traffic sample from the current snapshot.</CardDescription>
           </CardHeader>
           <CardContent>
             <pre className="overflow-x-auto rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4 text-sm text-[var(--text-secondary)]">
@@ -192,7 +192,7 @@ function LiveTrafficPageContent() {
       <Card>
         <CardHeader>
           <CardTitle>Latest traffic snapshot</CardTitle>
-          <CardDescription>Shows the most recent preview even when no recent scenario-execution events are available.</CardDescription>
+          <CardDescription>Shows the most recent preview even when there are no recent traffic events below.</CardDescription>
         </CardHeader>
         <CardContent>
           {hasSnapshotRows ? (
@@ -231,7 +231,7 @@ function LiveTrafficPageContent() {
       <Card>
         <CardHeader>
           <CardTitle>Recent traffic windows</CardTitle>
-          <CardDescription>Normal and anomalous scenario windows are shown together as the operating stream.</CardDescription>
+          <CardDescription>Recent traffic windows from the live stream.</CardDescription>
         </CardHeader>
         <CardContent>
           {!data.traffic_stream.length ? (

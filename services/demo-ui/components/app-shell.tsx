@@ -75,7 +75,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 Apply token
               </Button>
               <p className="mt-3 text-xs text-[var(--text-subtle)]">
-                Kept locally for the same-origin control-plane proxy used by the UI.
+                Stored in this browser for API calls from this app.
               </p>
             </div>
           </div>

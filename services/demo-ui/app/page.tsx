@@ -69,7 +69,7 @@ export default function OverviewPage() {
       <PageHeader
         eyebrow="Operations summary"
         title="Overview"
-        description="High-level incident, traffic, and service posture without repeating incident workflow controls."
+        description="Summary of incidents, traffic, and service health."
       />
       {showRefreshWarning ? (
         <TransientDataWarning>
@@ -83,7 +83,7 @@ export default function OverviewPage() {
         <MetricCard
           label="Healthy services"
           value={`${formatInteger(data.summary.healthy_services)}/${formatInteger(data.summary.service_count)}`}
-          detail="Platform, traffic, anomaly, RCA, and serving path"
+          detail="Core platform services available"
         />
         <MetricCard
           label="Traffic windows"
@@ -151,7 +151,7 @@ export default function OverviewPage() {
         <Card>
           <CardHeader>
             <CardTitle>Recent anomaly score trend</CardTitle>
-            <CardDescription>Recent incident scores to spot when the serving path is seeing stronger anomalies.</CardDescription>
+            <CardDescription>Recent incident scores to show whether anomalies are getting worse.</CardDescription>
           </CardHeader>
           <CardContent className="h-72">
             {scoreTrend.length ? (
@@ -177,7 +177,7 @@ export default function OverviewPage() {
         <Card>
           <CardHeader>
             <CardTitle>Recent activity</CardTitle>
-            <CardDescription>Quick links into the incident workflow without repeating the full detail page here.</CardDescription>
+            <CardDescription>Quick links to recent incidents.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {data.incidents.slice(0, 5).map((incident) => (

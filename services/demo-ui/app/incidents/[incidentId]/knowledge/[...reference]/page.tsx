@@ -31,7 +31,7 @@ export default function KnowledgeArticlePage() {
       <PageHeader
         eyebrow="Knowledge article"
         title={article.title}
-        description="Category-matched operational guidance retrieved from the Milvus knowledge base for this incident."
+        description="Guidance matched to this incident from the knowledge base."
         actions={
           <Button asChild variant="secondary">
             <Link href={`/incidents/${encodeURIComponent(incidentId)}`}>Back to incident workflow</Link>
@@ -43,7 +43,7 @@ export default function KnowledgeArticlePage() {
         <Card>
           <CardHeader>
             <CardTitle>Article metadata</CardTitle>
-            <CardDescription>Milvus reference and retrieval context for the selected knowledge article.</CardDescription>
+            <CardDescription>Reference and match details for this article.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
             <SummaryItem label="Category" value={titleize(article.category ?? "knowledge")} />
@@ -56,8 +56,8 @@ export default function KnowledgeArticlePage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Operator usage</CardTitle>
-            <CardDescription>These articles are grounded by the incident category so operators can open deeper guidance without leaving the workflow.</CardDescription>
+            <CardTitle>How to use this article</CardTitle>
+            <CardDescription>Use this article to compare the current incident with known guidance.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm leading-7 text-[var(--text-secondary)]">
             <p>Use this article to compare the current incident to a known operational pattern before approving or executing remediation.</p>

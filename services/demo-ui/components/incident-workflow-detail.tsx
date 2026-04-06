@@ -119,23 +119,23 @@ type FlowGuide = {
 const GUIDE_STEP_TEMPLATES = [
   {
     title: "Generate RCA",
-    description: "Ground the incident in retrieved evidence before any remediation can be chosen.",
+    description: "Review the evidence-backed analysis before choosing a fix.",
   },
   {
     title: "Generate remediations",
-    description: "Map the RCA to ranked manual and automated actions with clear risk trade-offs.",
+    description: "Turn the analysis into ranked manual and automated fix options.",
   },
   {
-    title: "Approve exact action",
-    description: "Approval must match the selected remediation and the current workflow revision.",
+    title: "Approve a fix",
+    description: "Approval applies only to the selected fix and workflow version.",
   },
   {
     title: "Execute approved fix",
-    description: "Run automation or record a manual action outcome from the same workflow surface.",
+    description: "Run automation or record a manual action result here.",
   },
   {
-    title: "Verify and publish knowledge",
-    description: "Only verified outcomes should close the incident and become reusable knowledge.",
+    title: "Verify and close",
+    description: "Confirm the fix worked before closing the incident.",
   },
 ] as const;
 
@@ -550,8 +550,8 @@ export function IncidentWorkflowDetail() {
               message: generation.llmUsed
                 ? `RCA generated using ${generation.sourceLabel}${generation.model !== "Not recorded" ? ` with ${generation.model}` : ""}.`
                 : generation.llmConfigured
-                  ? "RCA generated using the local fallback path. The LLM was configured but did not produce the final answer for this run."
-                  : "RCA generated using the local fallback path because no LLM endpoint was configured.",
+                  ? "RCA generated using the built-in fallback process for this run."
+                  : "RCA generated using the built-in fallback process because no AI endpoint is configured.",
             });
           } catch (mutationError) {
             setNotice({
@@ -691,7 +691,7 @@ export function IncidentWorkflowDetail() {
       <PageHeader
         eyebrow="Incident workflow"
         title={titleize(incident.anomaly_type)}
-        description="Guide the operator through RCA, remediation, approval, execution, verification, and reusable knowledge capture from one state-driven surface."
+        description="Review the analysis, choose a fix, run it, verify the result, and close the incident from this page."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <div className={cn("rounded-full border px-3 py-1 text-xs font-medium", TONE_BADGE_CLASSES[flowGuide.tone])}>{flowGuide.badge}</div>
@@ -732,7 +732,7 @@ export function IncidentWorkflowDetail() {
         <CardHeader className="gap-6">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <div className="text-[11px] uppercase tracking-[0.35em] text-[var(--text-muted)]">Command center</div>
+              <div className="text-[11px] uppercase tracking-[0.35em] text-[var(--text-muted)]">Summary</div>
               <CardTitle className="mt-2 text-2xl sm:text-3xl">
                 {headlineRemediation?.title ?? flowGuide.title}
               </CardTitle>
@@ -766,13 +766,13 @@ export function IncidentWorkflowDetail() {
               <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{latestRcaAnalysis}</p>
             </div>
             <div className="rounded-3xl border border-amber-500/20 bg-amber-500/8 p-5">
-              <div className="text-xs uppercase tracking-[0.2em] text-amber-200/80">Operator takeaway</div>
+              <div className="text-xs uppercase tracking-[0.2em] text-amber-200/80">Recommended next step</div>
               <div className="mt-3 text-lg font-semibold text-[var(--text-strong)]">
                 {headlineRemediation?.title ?? latestRcaRecommendation}
               </div>
               <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
                 {headlineRemediation?.expected_outcome ??
-                  "Choose the safest action that reduces customer impact without widening the blast radius."}
+                  "Choose the action that reduces customer impact without increasing the scope of the issue."}
               </p>
             </div>
           </div>
@@ -780,7 +780,7 @@ export function IncidentWorkflowDetail() {
           <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Why this recommendation is on top</div>
+                <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Why this is recommended</div>
                 <div className="mt-3 text-base font-semibold text-[var(--text-strong)]">
                     {headlineRemediation ? headlineRemediation.title : "Recommendation pending"}
                 </div>
@@ -805,7 +805,7 @@ export function IncidentWorkflowDetail() {
           </div>
 
           <div className="rounded-3xl border border-sky-400/20 bg-sky-500/8 p-5 text-sm leading-6 text-[var(--text-secondary)]">
-            Approve, simulate, escalate, and reject actions now live directly on each remediation card below. Verification stays in the execution section so the workflow remains on one page without a separate operator decision form.
+            Use the cards below to add notes and approve, simulate, escalate, or reject a fix. Record the result in Execution and verification below.
           </div>
         </CardContent>
       </Card>
@@ -817,11 +817,11 @@ export function IncidentWorkflowDetail() {
               <CardHeader className="flex-row items-start justify-between gap-4">
                 <div>
                   <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">System evidence</div>
-                  <CardTitle className="mt-1">What changed in human terms</CardTitle>
-                  <CardDescription>Translate model and signal data into an operator-readable summary before going deeper.</CardDescription>
+                  <CardTitle className="mt-1">What we observed</CardTitle>
+                  <CardDescription>Summary of the model signals and service data before you open the detailed evidence.</CardDescription>
                 </div>
                 <Button variant="secondary" onClick={() => scrollToSection(timelineRef)}>
-                  What changed?
+                  View timeline
                 </Button>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
@@ -844,7 +844,7 @@ export function IncidentWorkflowDetail() {
                     <span>AI analysis</span>
                   </div>
                   <CardTitle className="mt-1">Root cause and recommendation</CardTitle>
-                  <CardDescription>The AI explanation is kept separate from raw system signals so operators can judge it clearly.</CardDescription>
+                  <CardDescription>Review the AI analysis and supporting evidence before deciding on a fix.</CardDescription>
                 </div>
                 {!hasRca ? (
                   <Button variant="secondary" onClick={() => handleGuideAction("generateRca")} disabled={pending}>
@@ -912,7 +912,7 @@ export function IncidentWorkflowDetail() {
                   <SummaryItem label="Confidence" value={rcaConfidenceLabel} />
                   <SummaryItem label="Runtime" value={latestRcaGeneration.runtime} />
                   <SummaryItem label="Model" value={latestRcaGeneration.model} />
-                  <SummaryItem label="Retrieved docs" value={String(latestRcaGeneration.retrievedDocumentCount)} />
+                  <SummaryItem label="Evidence docs" value={String(latestRcaGeneration.retrievedDocumentCount)} />
                 </div>
                 <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
                   <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Evidence references</div>
@@ -942,7 +942,7 @@ export function IncidentWorkflowDetail() {
                     ) : (
                       <InlineEmptyState
                         title="No evidence references yet"
-                        description="Generate or refresh RCA to attach the exact evidence references used by the reasoning flow."
+                        description="Generate or refresh RCA to attach the evidence used in the analysis."
                       />
                     )}
                   </div>
@@ -956,8 +956,8 @@ export function IncidentWorkflowDetail() {
               <CardHeader className="flex-row items-start justify-between gap-4">
                 <div>
                   <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Action options</div>
-                  <CardTitle className="mt-1">One primary action, alternatives kept nearby</CardTitle>
-                  <CardDescription>Operators should be able to add context and act directly from each remediation card without a separate decision form.</CardDescription>
+                  <CardTitle className="mt-1">Recommended fix and other options</CardTitle>
+                  <CardDescription>Add notes and approve, run, simulate, escalate, or reject a fix from the cards below.</CardDescription>
                 </div>
                 {hasRca && !hasRemediations ? (
                   <Button variant="secondary" onClick={() => handleGuideAction("generateRemediations")} disabled={pending}>
@@ -1028,7 +1028,7 @@ export function IncidentWorkflowDetail() {
                       ) : (
                         <InlineEmptyState
                           title="No alternative remediations"
-                          description="The current RCA produced only one safe remediation path for this workflow revision."
+                          description="Only one fix is currently recommended for this incident."
                         />
                       )}
                     </div>
@@ -1036,7 +1036,7 @@ export function IncidentWorkflowDetail() {
                 ) : (
                   <InlineEmptyState
                     title="No remediations generated yet"
-                    description="Generate ranked remediations from the current RCA so the operator can choose one exact action safely."
+                    description="Generate ranked fix options from the current RCA."
                   />
                 )}
               </CardContent>
@@ -1046,13 +1046,13 @@ export function IncidentWorkflowDetail() {
           <div ref={knowledgeRef}>
             <Card>
               <CardHeader>
-                <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Deep technical details</div>
-                <CardTitle className="mt-1">Expand when you need proof, not before</CardTitle>
-                <CardDescription>The core decision stays above. Detailed workflow, model, and retrieval context stays available on demand.</CardDescription>
+                <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Technical details</div>
+                <CardTitle className="mt-1">Workflow and system details</CardTitle>
+                <CardDescription>Open this section for IDs, scores, evidence links, and related records.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Workflow, model, and feature context</summary>
+                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Incident, model, and feature details</summary>
                   <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <SummaryItem label="Incident ID" value={incident.id} />
                     <SummaryItem label="Workflow revision" value={String(incident.workflow_revision)} />
@@ -1066,7 +1066,7 @@ export function IncidentWorkflowDetail() {
                 </details>
 
                 <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Explainability and retrieved knowledge</summary>
+                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Related evidence and knowledge</summary>
                   <div className="mt-4 space-y-4">
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                       <SummaryItem label="Evidence matches" value={String(relatedData?.evidence.length ?? 0)} />
@@ -1083,12 +1083,12 @@ export function IncidentWorkflowDetail() {
                       ))}
                     </div>
                     {relatedQuery.isLoading ? (
-                      <div className="text-sm text-[var(--text-muted)]">Loading retrieved context...</div>
+                      <div className="text-sm text-[var(--text-muted)]">Loading related evidence and articles...</div>
                     ) : (
                       <div className="space-y-4">
                         {relatedData?.documents.length ? (
                           <div className="space-y-3">
-                            <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Retrieved context</div>
+                            <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Related documents</div>
                             {relatedData.documents.map((document) => (
                               <div
                                 key={`${document.collection}-${document.reference}`}
@@ -1112,7 +1112,7 @@ export function IncidentWorkflowDetail() {
                               <div>
                                 <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Knowledge articles</div>
                                 <div className="mt-1 text-sm text-[var(--text-secondary)]">
-                                  Category-matched remediation articles stored in Milvus for this incident type.
+                                  Guidance articles matched to this incident type.
                                 </div>
                               </div>
                               <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
@@ -1144,7 +1144,7 @@ export function IncidentWorkflowDetail() {
                         {!relatedData?.documents.length && !relatedData?.knowledge.length ? (
                           <InlineEmptyState
                             title="No related knowledge yet"
-                            description="The platform will surface similar evidence, reasoning, verified outcomes, and category articles after retrieval completes."
+                            description="Related evidence, articles, and past resolutions will appear here when loading completes."
                           />
                         ) : null}
                       </div>
@@ -1153,7 +1153,7 @@ export function IncidentWorkflowDetail() {
                 </details>
 
                 <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Workflow step definitions</summary>
+                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Step details</summary>
                   <div className="mt-4">
                     <StepReferenceCard steps={flowGuide.steps} planeState={data.plane_workflow_state} />
                   </div>
@@ -1169,8 +1169,8 @@ export function IncidentWorkflowDetail() {
               <CardHeader className="flex-row items-start justify-between gap-4">
                 <div>
                   <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Incident timeline</div>
-                  <CardTitle className="mt-1">What changed?</CardTitle>
-                  <CardDescription>Operators trust the recommendation more when the sequence of events is explicit.</CardDescription>
+                  <CardTitle className="mt-1">Timeline</CardTitle>
+                  <CardDescription>Timeline of what happened and what changed during this incident.</CardDescription>
                 </div>
                 <Button variant="secondary" onClick={() => void refreshWorkflow()}>
                   Refresh
@@ -1204,7 +1204,7 @@ export function IncidentWorkflowDetail() {
               <CardHeader>
                 <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Simulation preview</div>
                 <CardTitle className="mt-1">Estimate impact before execution</CardTitle>
-                <CardDescription>This preview is derived from the current RCA confidence, remediation rank, and recorded risk level.</CardDescription>
+                <CardDescription>Estimated effect of the selected fix before you run it.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-3">
@@ -1261,7 +1261,7 @@ export function IncidentWorkflowDetail() {
                       {incidentWorkspaceHref ? (
                         <Button asChild variant="outline">
                           <a href={incidentWorkspaceHref} target="_blank" rel="noreferrer">
-                            Incident workspace
+                            Open incident page
                           </a>
                         </Button>
                       ) : null}
@@ -1446,7 +1446,7 @@ export function IncidentWorkflowDetail() {
                       <Label htmlFor="custom_resolution">Actual fix applied</Label>
                       <Textarea
                         id="custom_resolution"
-                        placeholder="Record the real operator fix so it can become reusable knowledge."
+                        placeholder="Record the actual fix that resolved the incident."
                         {...verificationForm.register("custom_resolution")}
                       />
                     </div>
@@ -1479,12 +1479,12 @@ export function IncidentWorkflowDetail() {
       <Card>
         <CardHeader>
           <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">History and knowledge</div>
-          <CardTitle className="mt-1">Audit, execution, and reusable outcomes</CardTitle>
-          <CardDescription>Kept collapsed by default so the operator can focus on the decision first and expand history when needed.</CardDescription>
+          <CardTitle className="mt-1">History and saved resolutions</CardTitle>
+          <CardDescription>Open this section to review execution history, verification records, and saved resolutions.</CardDescription>
         </CardHeader>
         <CardContent>
           <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-            <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Expand detailed history</summary>
+            <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Show history</summary>
             <div className="mt-4 grid gap-4 xl:grid-cols-3">
               <ListCard
                 title="Execution history"
@@ -1496,13 +1496,13 @@ export function IncidentWorkflowDetail() {
                 title="Verification records"
                 items={buildVerificationItems(data.verifications)}
                 emptyTitle="No verifications yet"
-                emptyDescription="Verification appears only after an operator records an outcome."
+                emptyDescription="Add a verification record to see entries here."
               />
               <ListCard
                 title="Verified knowledge"
                 items={buildResolutionItems(data.resolution_extracts)}
                 emptyTitle="No verified knowledge yet"
-                emptyDescription="Only verified resolutions should flow into reusable incident knowledge."
+                emptyDescription="Verified fixes are saved here for similar incidents later."
               />
             </div>
           </details>
@@ -1598,7 +1598,7 @@ function RemediationActionCard({
           placeholder="Reason, guardrails, rollback note, or escalation context"
           className="mt-2 min-h-[88px]"
         />
-        <div className="mt-2 text-xs text-[var(--text-muted)]">Recorded as {actor}. Notes stay attached to this action path.</div>
+        <div className="mt-2 text-xs text-[var(--text-muted)]">Recorded as {actor}. This note is sent with the selected action.</div>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
@@ -1683,7 +1683,7 @@ function WorkflowStageDock({
             <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{flowGuide.subtext}</p>
           </div>
           <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-4 py-3 text-sm leading-6 text-[var(--text-secondary)] xl:max-w-md">
-            Use the inline remediation cards and verification controls below for live actions. Supporting evidence and history stay nearby.
+            Use the remediation cards and verification section below. Evidence, ticket details, and history stay on this page.
           </div>
         </div>
 
@@ -1709,8 +1709,8 @@ function StepReferenceCard({ steps, planeState }: { steps: GuideStep[]; planeSta
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Workflow steps</CardTitle>
-        <CardDescription>One active step, previous steps completed, and the rest intentionally locked.</CardDescription>
+        <CardTitle>Steps</CardTitle>
+        <CardDescription>Completed steps are marked. Later steps unlock as you progress.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {steps.map((step) => {
@@ -1741,7 +1741,7 @@ function StepReferenceCard({ steps, planeState }: { steps: GuideStep[]; planeSta
         })}
 
         <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
-          Plane mirrors the workflow for collaboration. Current mirrored state: <span className="font-medium text-[var(--text-strong)]">{planeState}</span>.
+          Plane shows this workflow for collaboration. Current Plane state: <span className="font-medium text-[var(--text-strong)]">{planeState}</span>.
         </div>
       </CardContent>
     </Card>
@@ -1874,24 +1874,24 @@ function deriveFlowGuide({
         badge: "Step 1 of 5",
         title: "Generate RCA first",
         description:
-          "This incident is still new. RCA is generated automatically for new events, but remediation, ticketing, approval, and verification remain blocked until the first RCA is attached.",
-        subtext: "Use Generate RCA to retry or force the first RCA version for this workflow revision if auto-generation has not landed yet.",
+          "This incident is new. RCA is generated automatically for new events, but fixes and verification stay unavailable until the first analysis is ready.",
+        subtext: "If the automatic RCA has not appeared yet, generate it again for the current incident.",
         helpers: [
           {
             title: "Why now",
-            text: "RCA is the first gate. The system should not rank fixes or ask for approval without a grounded explanation.",
+            text: "Start with the analysis before choosing or approving a fix.",
           },
           {
             title: "Blocked until RCA",
-            text: "Remediation ranking, execution, and verification stay locked until RCA exists.",
+            text: "Fix options, execution, and verification stay unavailable until RCA exists.",
           },
           {
             title: "Expected output",
-            text: "Root cause summary, category, confidence, and evidence references tied to the workflow revision.",
+            text: "Root cause summary, confidence, and evidence references for this incident.",
           },
         ],
         ticketHint:
-          "Create a ticket only after RCA is generated or if escalation is required. Plane is used for collaboration, not decision-making.",
+          "Create a ticket after RCA is available, or earlier if you need to escalate.",
         primary: { label: "Generate RCA", action: "generateRca" },
         secondary: { label: "Open evidence", action: "openEvidence" },
         steps,
@@ -1900,26 +1900,26 @@ function deriveFlowGuide({
       return {
         tone: "info",
         badge: "Step 2 of 5",
-        title: "Generate remediations from the RCA",
+        title: "Generate fix options",
         description:
-          "RCA is now available. The next step is to map that explanation into ranked manual and automated remediation options.",
-        subtext: "Create ranked remediations before approval or execution is allowed.",
+          "Analysis is ready. Next, generate ranked manual and automated fix options.",
+        subtext: "Create fix options before approval or execution.",
         helpers: [
           {
             title: "What changed",
-            text: "The incident now has a grounded RCA and can move into remediation planning.",
+            text: "Analysis is available and you can move to fix planning.",
           },
           {
             title: "What stays blocked",
-            text: "Approval, execution, and verification remain locked until remediations are generated.",
+            text: "Approval, execution, and verification stay unavailable until fix options are generated.",
           },
           {
             title: "Expected output",
-            text: "Ranked remediation options, mapped playbooks where available, and revision-safe approval scope.",
+            text: "Ranked fix options, available playbooks, and approval scope for this incident.",
           },
         ],
         ticketHint:
-          "RCA exists now, so you can create or sync a Plane issue with useful context for collaboration if needed.",
+          "You can create or sync a Plane ticket now if other teams need context.",
         primary: { label: "Generate remediations", action: "generateRemediations", disabled: !hasRca },
         secondary: { label: "Review RCA", action: "reviewRca" },
         steps,
@@ -1929,27 +1929,27 @@ function deriveFlowGuide({
       return {
         tone: "info",
         badge: "Step 3 of 5",
-        title: "Choose and approve one remediation",
+        title: "Choose and approve a fix",
         description:
-          "The system has ranked remediation options. Review the trade-offs, select the safest action, and approve it for this exact revision.",
-        subtext: "Approval must match the selected remediation and the current workflow revision.",
+          "Review the ranked fix options, choose the safest one, and approve it for this incident version.",
+        subtext: "Approval applies only to the selected fix and current workflow version.",
         helpers: [
           {
             title: "What is ready",
-            text: "RCA exists and the platform has mapped ranked remediation options to it.",
+            text: "Analysis is ready and the platform has mapped ranked fix options to it.",
           },
           {
             title: "Approval rule",
-            text: "Only one exact remediation should be approved at a time, and the approval must match the current revision.",
+            text: "Approve one fix at a time, and only for the current workflow version.",
           },
           {
             title: "Expected output",
-            text: "One approved action that the platform can execute or record safely.",
+            text: "One approved fix that can be run or recorded safely.",
           },
         ],
         ticketHint: hasTicket
-          ? "A collaboration ticket already exists. Keep it synced while the platform remains source of truth."
-          : "You can create or sync a Plane issue now if you need collaboration or escalation context.",
+          ? "A collaboration ticket already exists. Keep it updated while incident status stays here."
+          : "You can create or sync a Plane ticket now if you need collaboration or escalation context.",
         primary: { label: "Review remediations", action: "focusRemediation", disabled: !hasRemediations },
         secondary: { label: hasTicket ? "Open ticket workflow" : "Create Plane ticket", action: "focusTicket" },
         steps,
@@ -1960,16 +1960,16 @@ function deriveFlowGuide({
         badge: "Step 4 of 5",
         title: "Run the approved fix",
         description:
-          "An exact remediation has been approved. The operator can now run the mapped Ansible job or record the approved manual action.",
-        subtext: "Run only the approved remediation that belongs to the current revision.",
+          "A fix is approved. You can now run the mapped Ansible job or record the manual action.",
+        subtext: "Run only the approved fix for the current workflow version.",
         helpers: [
           {
             title: "What is ready",
-            text: "Approval exists, the remediation is selected, and execution scope is clear.",
+            text: "Approval exists, the fix is selected, and execution scope is clear.",
           },
           {
             title: "Execution safety",
-            text: "Only the approved remediation should run. A revision change invalidates the approval.",
+            text: "Run only the approved fix. If the incident changes, review approval again.",
           },
           {
             title: "Expected output",
@@ -1977,7 +1977,7 @@ function deriveFlowGuide({
           },
         ],
         ticketHint:
-          "Plane can mirror the execution outcome, but execution approval still belongs to the platform workflow.",
+          "Plane can reflect the execution result, but run approval still happens here.",
         primary: { label: "Run approved action", action: "executeSelected", disabled: !selectedRemediation },
         secondary: { label: "Review remediation", action: "focusRemediation" },
         steps,
@@ -1988,16 +1988,16 @@ function deriveFlowGuide({
         badge: "Step 4 of 5",
         title: "Execution is in progress",
         description:
-          "The approved remediation is running now. Review the execution output and keep the ticket synchronized if collaboration is active.",
-        subtext: "Wait for execution output before moving into verification.",
+          "The approved fix is running. Review the execution output and keep the ticket updated if others are involved.",
+        subtext: "Wait for execution to finish before recording verification.",
         helpers: [
           {
             title: "What is happening",
-            text: "The platform is executing the approved remediation or recording the manual action outcome.",
+            text: "The platform is running the approved fix or recording the manual action result.",
           },
           {
             title: "What stays blocked",
-            text: "Verification should wait until execution finishes and the result summary is visible.",
+            text: "Wait for execution to finish and the result summary to appear before verifying.",
           },
           {
             title: "Expected output",
@@ -2016,8 +2016,8 @@ function deriveFlowGuide({
         badge: "Step 5 of 5",
         title: "Verify the outcome",
         description:
-          "Execution finished. The operator must confirm whether the incident is truly resolved before the outcome becomes reusable knowledge.",
-        subtext: "Record verification before closing the incident or learning from the result.",
+          "Execution finished. Confirm whether the issue is resolved before closing the incident.",
+        subtext: "Record verification before closing the incident.",
         helpers: [
           {
             title: "What is ready",
@@ -2029,7 +2029,7 @@ function deriveFlowGuide({
           },
           {
             title: "Expected output",
-            text: "A verified resolution or a clean loop back into RCA or remediation if the fix did not hold.",
+            text: "A verified result, or a clear next step if the fix did not hold.",
           },
         ],
         ticketHint:
@@ -2042,10 +2042,10 @@ function deriveFlowGuide({
       return {
         tone: "success",
         badge: "Step 5 of 5",
-        title: "Publish verified knowledge and close the incident",
+        title: "Close the incident",
         description:
-          "The incident is resolved. Capture the verified outcome as reusable knowledge and close the workflow cleanly.",
-        subtext: "Only verified outcomes should influence future RCA confidence and remediation ranking.",
+          "The issue is resolved. Record the verified outcome and close the incident.",
+        subtext: "Close the incident only after the result is verified.",
         helpers: [
           {
             title: "What is complete",
@@ -2053,11 +2053,11 @@ function deriveFlowGuide({
           },
           {
             title: "Why it matters",
-            text: "This verified outcome becomes high-value knowledge for future retrieval and ranking.",
+            text: "This verified outcome can help with similar incidents later.",
           },
           {
             title: "Expected output",
-            text: "Closed incident, verified resolution artifact, and stronger future retrieval signals.",
+            text: "Closed incident and a verified resolution record for similar cases.",
           },
         ],
         ticketHint: "Keep the ticket synchronized so collaborators see the final verified outcome before closure.",
@@ -2071,8 +2071,8 @@ function deriveFlowGuide({
         badge: "Workflow complete",
         title: "Incident closed",
         description:
-          "The workflow is complete. Review the captured knowledge, execution trail, and ticket history when you need to explain what happened later.",
-        subtext: "Verified outcomes remain available for RCA and remediation retrieval.",
+          "This incident is closed. Review the history, notes, and ticket updates whenever you need them.",
+        subtext: "Verified results remain available for future analysis.",
         helpers: [
           {
             title: "What remains useful",
@@ -2208,22 +2208,22 @@ function deriveFlowGuide({
       return {
         tone: "warning",
         badge: "Coordination required",
-        title: "Coordinate through Plane while the platform keeps state",
+        title: "Escalated for coordination",
         description:
-          "The incident needs human coordination or external ownership. Plane can carry collaboration, but the platform still owns execution and verification state.",
-        subtext: "Keep the ticket synchronized and use the incident record as the source of truth for workflow state.",
+          "This incident needs team coordination or external ownership. Use Plane for collaboration while incident status stays here.",
+        subtext: "Keep the ticket updated and use this incident record as the primary status record.",
         helpers: [
           {
             title: "What is ready",
-            text: "The incident record, RCA, and remediation context can all be mirrored into Plane for coordination.",
+            text: "The incident record, RCA, and fix context can all be shared in Plane for coordination.",
           },
           {
             title: "What stays true",
-            text: "Plane should not directly execute the remediation or move the incident through verification by itself.",
+            text: "Plane does not run fixes or move the incident through verification on its own.",
           },
           {
             title: "Expected output",
-            text: "Clear collaboration, explicit ownership, and a synchronized ticket without losing platform control.",
+            text: "Clear ownership, team coordination, and an updated ticket.",
           },
         ],
         ticketHint:
@@ -2344,10 +2344,10 @@ function buildRcaGenerationInfo(source?: RcaRecord | RcaPayload | null): RcaGene
   const sourceLabel =
     asStringValue(payload.generation_source_label) ||
     (generationMode === "llm-rag"
-      ? "LLM + RAG"
+      ? "AI + evidence"
       : generationMode === "local-rag"
-        ? "Local RAG fallback"
-        : "Generation source unavailable");
+        ? "Built-in fallback"
+        : "Source not available");
   const model = llmModel || "Not recorded";
   const runtime = asStringValue(payload.llm_runtime) || (llmUsed ? "Not recorded" : llmConfigured ? "Configured" : "Not configured");
   const retrievedDocuments = Array.isArray(payload.retrieved_documents)
@@ -2356,20 +2356,20 @@ function buildRcaGenerationInfo(source?: RcaRecord | RcaPayload | null): RcaGene
       ? source.retrieval_refs.length
       : 0;
 
-  let provenanceLabel = "Local summary";
+  let provenanceLabel = "System summary";
   let summary = "This RCA does not include generation metadata yet.";
   if (llmUsed) {
     provenanceLabel = "AI generated";
     summary =
-      `Generated by the AI reasoning service` +
+      `Generated by the AI service` +
       `${model !== "Not recorded" ? ` with ${model}` : ""}` +
       `${runtime !== "Not recorded" ? ` via ${runtime}` : ""}` +
-      `${retrievedDocuments ? ` and grounded with ${retrievedDocuments} retrieved evidence references.` : "."}`;
+      `${retrievedDocuments ? ` using ${retrievedDocuments} evidence references.` : "."}`;
   } else if (llmConfigured) {
     provenanceLabel = "Fallback summary";
-    summary = "This RCA used the local fallback path for this run even though an AI runtime was configured.";
+    summary = "This RCA used the built-in fallback process for this run even though an AI service was configured.";
   } else {
-    summary = "This RCA used the local fallback path because no AI runtime was configured for the service.";
+    summary = "This RCA used the built-in fallback process because no AI service was configured.";
   }
 
   return {
@@ -2403,14 +2403,14 @@ function buildRcaAnalysis(source: RcaRecord | undefined, incident?: IncidentReco
     .filter(Boolean)
     .slice(0, 2);
 
-  let analysis = rootCause || "Grounded RCA details are not available yet.";
+  let analysis = rootCause || "Analysis details are not available yet.";
   if (analysis && !/[.!?]$/.test(analysis)) {
     analysis = `${analysis}.`;
   }
   const anomalyType = asStringValue(source?.category) || asStringValue(incident?.anomaly_type) || "current";
   analysis += ` This aligns with the ${titleize(anomalyType)} incident pattern.`;
   if (docRefs.length) {
-    analysis += ` Supporting context was retrieved from ${docRefs.join(" and ")}.`;
+    analysis += ` Supporting evidence includes ${docRefs.join(" and ")}.`;
   }
   return analysis;
 }

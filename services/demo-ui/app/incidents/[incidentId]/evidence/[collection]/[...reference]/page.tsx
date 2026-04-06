@@ -32,7 +32,7 @@ export default function EvidenceDocumentPage() {
       <PageHeader
         eyebrow="Evidence reference"
         title={document.title}
-        description="Full retrieved document content referenced by the RCA workflow."
+        description="Full evidence document referenced by the incident analysis."
         actions={
           <Button asChild variant="secondary">
             <Link href={`/incidents/${encodeURIComponent(incidentId)}`}>Back to incident workflow</Link>
@@ -44,7 +44,7 @@ export default function EvidenceDocumentPage() {
         <Card>
           <CardHeader>
             <CardTitle>Document metadata</CardTitle>
-            <CardDescription>Stored retrieval metadata for the selected evidence reference.</CardDescription>
+            <CardDescription>Reference and match details for this evidence document.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
             <SummaryItem label="Collection" value={titleize(document.collection)} />

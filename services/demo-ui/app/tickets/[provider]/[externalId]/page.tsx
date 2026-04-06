@@ -34,7 +34,7 @@ export default function TicketDetailPage() {
       <PageHeader
         eyebrow="Ticket detail"
         title={ticket.title ?? `${titleize(ticket.provider)} ticket`}
-        description="OpenShift-hosted ticket detail for demo-relay mode. When a live provider URL exists, you can jump to it from here."
+        description="Ticket details for this environment. Open the provider directly when a link is available."
         actions={<StatusBadge value={ticket.sync_state ?? "synced"} />}
       />
 
@@ -57,7 +57,7 @@ export default function TicketDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle>Incident context</CardTitle>
-            <CardDescription>This keeps the ticket page focused without duplicating the full incident workspace.</CardDescription>
+            <CardDescription>Summary only. Open the incident for the full workflow.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">

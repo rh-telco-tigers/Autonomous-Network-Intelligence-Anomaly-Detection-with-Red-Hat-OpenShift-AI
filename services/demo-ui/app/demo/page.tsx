@@ -29,7 +29,7 @@ export default function DemoPage() {
       <PageHeader
         eyebrow="Demo operations"
         title="Run Scenarios"
-        description="This page is the only place for on-demand scenario execution. It is intentionally separated from overview and incident workflow."
+        description="Run test scenarios to generate traffic and sample incidents."
       />
       {showRefreshWarning ? (
         <TransientDataWarning>
@@ -41,7 +41,7 @@ export default function DemoPage() {
         <Card>
           <CardHeader>
             <CardTitle>Scenario catalog</CardTitle>
-            <CardDescription>Run normal and anomalous scenarios on demand against the current platform path.</CardDescription>
+            <CardDescription>Run normal and anomalous scenarios on demand.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2">
             {data.scenarios.map((scenario) => (
@@ -64,7 +64,7 @@ export default function DemoPage() {
         <Card>
           <CardHeader>
             <CardTitle>Latest execution</CardTitle>
-            <CardDescription>Immediate result for the last scenario run from this UI session.</CardDescription>
+            <CardDescription>Most recent result from a scenario run in this browser session.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {latest ? (
@@ -88,8 +88,8 @@ export default function DemoPage() {
             )}
             <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm text-[var(--text-secondary)]">
               {scenarioRunner.isPending
-                ? "Executing scenario through feature generation, anomaly scoring, RCA, and workflow updates."
-                : "Scenario execution updates the incident queue and traffic stream without polluting overview controls."}
+                ? "Running scenario: generating features, scoring the anomaly, creating analysis, and updating the incident."
+                : "Scenario execution updates the incident queue and traffic view."}
             </div>
           </CardContent>
         </Card>
