@@ -4,5 +4,4 @@ metadata:
   name: openshift-serverless-og
   namespace: openshift-serverless
 spec:
-  targetNamespaces:
-    - openshift-serverless
+  {}
