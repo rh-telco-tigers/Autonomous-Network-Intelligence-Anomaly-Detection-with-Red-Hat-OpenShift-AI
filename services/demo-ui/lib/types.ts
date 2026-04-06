@@ -32,6 +32,11 @@ export type IncidentTicketSummary = {
   status?: string;
 };
 
+export type TopClassPrediction = {
+  anomaly_type: string;
+  probability: number;
+};
+
 export type IncidentRecord = {
   id: string;
   project: string;
@@ -42,6 +47,9 @@ export type IncidentRecord = {
   severity_tone?: string;
   anomaly_score: number;
   anomaly_type: string;
+  predicted_confidence: number;
+  top_classes?: TopClassPrediction[];
+  class_probabilities?: Record<string, number>;
   model_version: string;
   feature_window_id?: string | null;
   feature_snapshot?: Record<string, number | string | boolean | null>;
@@ -89,6 +97,7 @@ export type ConsoleState = {
     active_incidents_by_model: Array<{ model_version: string; count: number; anomaly_types: string[] }>;
     workflow_state_distribution: WorkflowDistribution[];
     latest_score: number;
+    latest_confidence: number;
     healthy_services: number;
     service_count: number;
   };

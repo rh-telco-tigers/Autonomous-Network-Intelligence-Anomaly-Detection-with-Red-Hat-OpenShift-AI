@@ -58,12 +58,32 @@ deploymentSpec:
         - python
         - ai/training/featurestore_train.py
         env:
+        - name: HOME
+          value: /tmp
         - name: CONTROL_PLANE_URL
           value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
         - name: CONTROL_PLANE_API_KEY
           value: demo-token
+        - name: DATASET_STORE_MODE
+          value: s3
+        - name: DATASET_STORE_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: DATASET_STORE_BUCKET
+          value: ims-models
+        - name: DATASET_STORE_ACCESS_KEY
+          value: minioadmin
+        - name: DATASET_STORE_SECRET_KEY
+          value: minioadmin
         - name: DATASET_STORE_PREFIX
           value: pipelines/ims-demo-lab/datasets
+        - name: MINIO_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: MINIO_BUCKET
+          value: ims-models
+        - name: MINIO_ACCESS_KEY
+          value: minioadmin
+        - name: MINIO_SECRET_KEY
+          value: minioadmin
         - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
           value: 'true'
         image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
@@ -82,12 +102,32 @@ deploymentSpec:
         - python
         - ai/training/featurestore_train.py
         env:
+        - name: HOME
+          value: /tmp
         - name: CONTROL_PLANE_URL
           value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
         - name: CONTROL_PLANE_API_KEY
           value: demo-token
+        - name: DATASET_STORE_MODE
+          value: s3
+        - name: DATASET_STORE_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: DATASET_STORE_BUCKET
+          value: ims-models
+        - name: DATASET_STORE_ACCESS_KEY
+          value: minioadmin
+        - name: DATASET_STORE_SECRET_KEY
+          value: minioadmin
         - name: DATASET_STORE_PREFIX
           value: pipelines/ims-demo-lab/datasets
+        - name: MINIO_ENDPOINT
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        - name: MINIO_BUCKET
+          value: ims-models
+        - name: MINIO_ACCESS_KEY
+          value: minioadmin
+        - name: MINIO_SECRET_KEY
+          value: minioadmin
         - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
           value: 'true'
         image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest

@@ -127,6 +127,7 @@ from shared.workflow import (
     normalize_workflow_state,
     plane_state_for_workflow,
     resolution_quality,
+    severity_from_prediction,
     severity_from_score,
 )
 
@@ -142,6 +143,10 @@ class IncidentCreate(BaseModel):
     project: str = "ims-demo"
     anomaly_score: float
     anomaly_type: str
+    predicted_confidence: float = 0.0
+    class_probabilities: Dict[str, float] = Field(default_factory=dict)
+    top_classes: List[Dict[str, object]] = Field(default_factory=list)
+    is_anomaly: bool = True
     model_version: str
     feature_window_id: Optional[str] = None
     feature_snapshot: Dict[str, object] = Field(default_factory=dict)
@@ -721,7 +726,7 @@ def _publish_incident_evidence_record(incident: Dict[str, object]) -> None:
     if not isinstance(features, dict):
         features = {}
     anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE))
-    severity = str(incident.get("severity") or severity_from_score(float(incident.get("anomaly_score") or 0.0)))
+    severity = _incident_severity_label(incident)
     scenario_name = str(features.get("scenario_name") or "")
     contributing_conditions = _string_list(features.get("contributing_conditions"))
     signal_summary = _feature_signal_summary(features)
@@ -736,6 +741,8 @@ def _publish_incident_evidence_record(incident: Dict[str, object]) -> None:
         "contributing_conditions": contributing_conditions,
         "feature_window_id": incident.get("feature_window_id"),
         "feature_snapshot": features,
+        "predicted_confidence": _incident_confidence(incident),
+        "top_classes": incident.get("top_classes") or [],
     }
     embedding_text = (
         f"Evidence incident {incident_id}. "
@@ -1255,10 +1262,12 @@ def _eda_event_payload(
         "incident_id": str(incident.get("id") or ""),
         "project": str(incident.get("project") or "ims-demo"),
         "anomaly_type": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
-        "severity": str(incident.get("severity") or severity_from_score(_coerce_float(incident.get("anomaly_score")))),
+        "severity": _incident_severity_label(incident),
         "status": normalize_workflow_state(str(incident.get("status") or NEW)),
         "workflow_revision": int(incident.get("workflow_revision") or 1),
         "anomaly_score": _coerce_float(incident.get("anomaly_score")),
+        "predicted_confidence": _incident_confidence(incident),
+        "top_classes": incident.get("top_classes") or [],
         "recommendation": str(incident.get("recommendation") or ""),
         "top_action_ref": str((remediation_items[0] or {}).get("action_ref") or "") if remediation_items else "",
         "available_actions": [item for item in sorted(action_refs) if item],
@@ -1585,12 +1594,28 @@ def _service_snapshot() -> List[Dict[str, object]]:
     return services
 
 
-def _severity_from_score(score: float) -> Dict[str, str]:
-    if score >= 0.95:
+def _severity_tone(severity: str) -> Dict[str, str]:
+    normalized = str(severity or "Medium")
+    if normalized == "Critical":
         return {"label": "Critical", "tone": "rose"}
-    if score >= 0.8:
+    if normalized == "Warning":
         return {"label": "Warning", "tone": "amber"}
+    if normalized == "Low":
+        return {"label": "Low", "tone": "emerald"}
     return {"label": "Medium", "tone": "sky"}
+
+
+def _incident_confidence(incident: Dict[str, object]) -> float:
+    return _coerce_float(incident.get("predicted_confidence"))
+
+
+def _incident_severity_label(incident: Dict[str, object]) -> str:
+    anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE))
+    return str(
+        incident.get("severity")
+        or severity_from_prediction(anomaly_type, _incident_confidence(incident))
+        or severity_from_score(_coerce_float(incident.get("anomaly_score")))
+    )
 
 
 def _incident_subtitle(anomaly_type: str) -> str:
@@ -1757,8 +1782,8 @@ def _timeline_detail(event: Dict[str, object]) -> str:
         return f"{_titleize(str(scenario))} window generated from {source}."
     if event_type == "incident_created":
         anomaly_type = payload.get("anomaly_type", "unknown")
-        score = _coerce_float(payload.get("anomaly_score"))
-        return f"{_titleize(str(anomaly_type))} raised with score {score:.2f}."
+        confidence = _coerce_float(payload.get("predicted_confidence"))
+        return f"{_titleize(str(anomaly_type))} predicted with confidence {confidence:.2f}."
     if event_type == "rca_attached":
         confidence = _coerce_float(payload.get("confidence"))
         return f"RCA attached with confidence {confidence:.2f}."
@@ -1892,7 +1917,7 @@ def _similar_incidents(incident: Dict[str, object], incidents: List[Dict[str, ob
             {
                 "title": f"incident/{str(candidate.get('id', 'unknown'))[:12]}...",
                 "detail": (
-                    f"score {_coerce_float(candidate.get('anomaly_score')):.2f} "
+                    f"confidence {_coerce_float(candidate.get('predicted_confidence')):.2f} "
                     f"· {_titleize(str(candidate.get('anomaly_type', 'unknown')))}"
                 ),
             }
@@ -1980,8 +2005,9 @@ def _incident_summary_view(
 ) -> Dict[str, object]:
     score = _coerce_float(incident.get("anomaly_score"))
     anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type", NORMAL_ANOMALY_TYPE)))
-    severity_label = str(incident.get("severity") or severity_from_score(score))
-    severity = _severity_from_score(score if severity_label == "Medium" else 0.95 if severity_label == "Critical" else 0.85)
+    predicted_confidence = _incident_confidence(incident)
+    severity_label = _incident_severity_label(incident)
+    severity = _severity_tone(severity_label)
     rca_payload = incident.get("rca_payload") or {}
     if not isinstance(rca_payload, dict):
         rca_payload = {}
@@ -2011,6 +2037,9 @@ def _incident_summary_view(
         "severity_tone": severity["tone"],
         "anomaly_score": score,
         "anomaly_type": anomaly_type,
+        "predicted_confidence": predicted_confidence,
+        "top_classes": incident.get("top_classes") or [],
+        "class_probabilities": incident.get("class_probabilities") or {},
         "model_version": str(incident.get("model_version") or ""),
         "recommendation": recommendation,
         "created_at": str(incident.get("created_at") or ""),
@@ -2188,6 +2217,7 @@ def _build_console_state(project: str) -> Dict[str, object]:
             "active_incidents_by_model": active_summary["models"],
             "workflow_state_distribution": _workflow_state_counts(incident_summaries),
             "latest_score": _coerce_float(latest_incident_summary.get("anomaly_score")) if latest_incident_summary else 0.0,
+            "latest_confidence": _coerce_float(latest_incident_summary.get("predicted_confidence")) if latest_incident_summary else 0.0,
             "healthy_services": healthy_services,
             "service_count": len(services),
         },
@@ -2802,7 +2832,7 @@ def notify_slack(incident_id: str, auth: AuthContext | None = Depends(require_ap
         raise HTTPException(status_code=404, detail="Incident not found")
     ensure_project_access(auth, incident["project"])
     result = send_slack_notification(
-        f"IMS incident {incident_id}: {incident['anomaly_type']} score={incident['anomaly_score']} status={incident['status']}"
+        f"IMS incident {incident_id}: {incident['anomaly_type']} confidence={_incident_confidence(incident):.2f} status={incident['status']}"
     )
     record_audit("slack_notified", "operator", result, incident_id=incident_id)
     record_integration("slack", result.get("status", "unknown"))
@@ -2817,7 +2847,11 @@ def notify_jira(incident_id: str, auth: AuthContext | None = Depends(require_api
     ensure_project_access(auth, incident["project"])
     result = create_jira_issue(
         summary=f"IMS incident {incident_id}",
-        description=f"Anomaly type: {incident['anomaly_type']}\nScore: {incident['anomaly_score']}",
+        description=(
+            f"Anomaly type: {incident['anomaly_type']}\n"
+            f"Predicted confidence: {_incident_confidence(incident):.2f}\n"
+            f"Anomaly score: {incident['anomaly_score']}"
+        ),
     )
     record_audit("jira_created", "operator", result, incident_id=incident_id)
     record_integration("jira", result.get("status", "unknown"))

@@ -2,38 +2,40 @@
 
 ## Purpose
 
-This document explains how the training pipeline uses AutoGluon, how the pipeline decides whether the AutoGluon candidate should beat the baseline model, and why the final serving artifact is not the same thing as AutoGluon's internal best model.
+This document explains how the Phase 3 training pipeline builds a dataset, trains the baseline and AutoGluon candidate models, evaluates both on the same held-out split for direct 12-class incident classification, selects a source model version, and then hands that decision off to a serving-friendly runtime artifact.
 
 ## Status
 
-AutoGluon is the current candidate-model engine in the training code. The serving path still exports a serving-friendly runtime artifact after selection instead of deploying the raw AutoGluon predictor directly.
+AutoGluon remains the candidate-model engine in the training code, but the preferred cluster workflow is now the feature-store KFP path: `ims-feature-bundle-publish` prepares the bundle, `ims-featurestore-train-and-register` retrieves the training frame through Feature Store, compares the baseline and AutoGluon on canonical `anomaly_type`, and then exports serving-friendly multiclass runtime artifacts for Triton and MLServer instead of deploying the raw AutoGluon predictor directly.
 
-## What This Doc Covers
-
-- how the training frame is built for AutoGluon
-- how AutoGluon chooses candidate algorithms
-- how the baseline and AutoGluon candidate are compared
-- why `best_model`, `selected_model_version`, and `deployed_model_version` are different concepts
-- what the checked-in repo currently shows as the selected and deployed model state
-
-## Selection Flow
+## End-To-End Flow
 
 ```mermaid
 flowchart TD
-  Data["training records<br/>9 numeric features + label"] --> Base["train baseline model"]
-  Data --> AG["train AutoGluon candidate"]
-  AG --> AGBest["AutoGluon internal best model<br/>predictor.model_best"]
-  Base --> Eval["evaluate on eval split"]
+  Data["published bundle version<br/>and Feature Store offline retrieval"] --> Normalize["normalize feature records"]
+  Normalize --> Split["split into train and eval"]
+  Split --> Base["train baseline model"]
+  Split --> AG["train AutoGluon candidate"]
+  Base --> Eval["evaluate both models<br/>on same eval split"]
   AG --> Eval
-  Eval --> Gate["promotion gate<br/>precision, FPR, latency, stability"]
-  Gate --> Select["select baseline or candidate"]
-  Select --> Serve["train serving logistic regression"]
-  Serve --> Export["export Triton or MLServer artifact"]
+  Eval --> Gate["apply promotion gate"]
+  Gate --> Select["select source model version"]
+  Select --> Serve["train serving runtime model"]
+  Serve --> Export["export Triton and MLServer artifacts"]
+  Export --> Registry["publish registry and deployment metadata"]
 ```
 
-## AutoGluon Training Inputs
+## Training Data Source
 
-The current AutoGluon path trains on the same nine numeric features used by the anomaly contract:
+The preferred cluster pipeline starts from a published `bundle_version`, syncs the Feature Store repo, and retrieves the training frame through Feast using feature service `ims_anomaly_scoring_v1`.
+
+Current behavior:
+
+- the feature-store KFP path trains from persisted bundle data retrieved through the Feature Store offline store
+- the feature-store KFP path requires the full 12-class taxonomy to meet minimum per-class coverage and fails fast if a class is missing or underfilled
+- the older MinIO-backed trainer can still fall back to a synthetic 12-class bootstrap dataset for local or bootstrap-oriented runs
+
+The model contract uses the same nine numeric features throughout training and scoring:
 
 - `register_rate`
 - `invite_rate`
@@ -45,145 +47,205 @@ The current AutoGluon path trains on the same nine numeric features used by the 
 - `inter_arrival_mean`
 - `payload_variance`
 
-The supervised target is the binary `label` field:
+The supervised target is canonical `anomaly_type`:
 
-- `0` = normal
-- `1` = anomaly
+- `normal_operation`
+- `registration_storm`
+- `registration_failure`
+- `authentication_failure`
+- `malformed_sip`
+- `routing_error`
+- `busy_destination`
+- `call_setup_timeout`
+- `call_drop_mid_session`
+- `server_internal_error`
+- `network_degradation`
+- `retransmission_spike`
 
-The current trainer calls AutoGluon as a binary tabular problem:
+The binary `label` field is still retained as a derived convenience field, but runtime incident creation now uses `predicted_anomaly_type != normal_operation` instead of a threshold crossing against a binary model.
 
-- `problem_type="binary"`
+## First Training Run
+
+There are now two distinct first-run behaviors.
+
+For the feature-store KFP path:
+
+- publish or refresh a bundle
+- retrieve the training frame through Feature Store
+- require every canonical class to meet the minimum coverage rule
+- fail fast if taxonomy coverage is incomplete instead of silently inventing labels
+
+For the legacy MinIO-backed helper path:
+
+- if the live dataset is too small, bootstrap synthetic rows can still be generated
+- baseline and AutoGluon are then compared on that same train and eval split
+
+This distinction matters because the current cluster-native workflow is intentionally stricter than the local and bootstrap helper path.
+
+## Dataset Split And Evaluation Frame
+
+The pipeline creates one training split and one evaluation split before either model is trained.
+
+Current split behavior:
+
+- records are grouped by `anomaly_type`
+- each group is shuffled independently
+- each group is split approximately `70%` train and `30%` eval
+- if a group has only one record, that record stays in train
+- the combined train and eval sets are shuffled again before training and evaluation
+
+This matters because both models are evaluated on the same held-out data rather than on separate or ad hoc samples.
+
+## Baseline Model Path
+
+The baseline model is the first reference model in the pipeline. It is not a previous champion model from production.
+
+The current baseline implementation is `baseline_multiclass_logistic_regression`.
+
+Conceptually it works like this:
+
+- train a multinomial logistic-regression classifier directly on canonical `anomaly_type`
+- scale the nine numeric features with `StandardScaler`
+- emit a full 12-class probability vector for each feature window
+- derive `predicted_anomaly_type`, `predicted_confidence`, and `anomaly_score = 1 - P(normal_operation)`
+
+The baseline serves two roles:
+
+- provide a deterministic first comparison point
+- remain available as a fallback if the AutoGluon candidate does not justify promotion
+
+## AutoGluon Candidate Path
+
+The AutoGluon candidate is trained from the same train split used by the baseline model.
+
+The current trainer invokes AutoGluon as a multiclass tabular task with:
+
+- `problem_type="multiclass"`
+- `eval_metric="f1_macro"`
 - `IMS_AUTOGLUON_PRESET`, default `medium_quality`
 - `IMS_AUTOGLUON_TIME_LIMIT`, default `180`
 
-Important current behavior:
+The current implementation still lets AutoGluon decide which tabular model families to try inside the selected preset and time budget. The internal winner of that search is recorded in `best_model`.
 
-- the code does not pass an explicit `hyperparameters` map
-- the code does not pass an explicit AutoGluon `eval_metric`
-- AutoGluon therefore chooses which tabular model families to try within the preset and time budget
+This means the AutoGluon candidate path is an AutoML search process, not a fixed single algorithm hardcoded by the repo.
 
-## How AutoGluon Chooses The Algorithm
+## Evaluation Metrics
 
-The pipeline does not pin AutoGluon to one algorithm such as XGBoost, Random Forest, or KNN. Instead, `TabularPredictor.fit()` runs the AutoML search and records the internal winner in `predictor.model_best`.
+After training, both the baseline artifact and the AutoGluon artifact are evaluated on the same held-out eval split.
 
-That means the AutoGluon answer to "which algorithm won?" is:
+Each artifact produces a multiclass probability distribution. The evaluation step converts that into `predicted_anomaly_type`, `predicted_confidence`, and a derived `anomaly_score`, then compares predictions against the held-out canonical label.
 
-- whatever model or ensemble AutoGluon ranked highest inside that run
+The current evaluation manifest records:
 
-In the current checked-in candidate artifact, the stored AutoGluon winner is:
+- macro precision
+- macro recall
+- macro F1
+- weighted F1
+- balanced accuracy
+- per-class precision and recall
+- confusion matrix
+- normal-operation false alarm rate
+- multiclass log loss and average predicted confidence
+- latency p95
+- stability score
 
-- `best_model = WeightedEnsemble_L2`
+Current implementation note:
 
-The stored leaderboard also shows other attempted model entries such as:
+- class metrics, confusion output, and calibration summaries are computed from the eval split
+- `latency_p95_ms` is measured from the local evaluation loop
+- `stability_score` is derived from how evenly per-class recall holds up across the taxonomy
 
-- `KNeighbors`
-- `RandomForest`
-- `ExtraTrees`
+## Promotion Gate And Winner Selection
 
-So the current AutoGluon candidate is best understood as:
+The pipeline does not automatically promote the AutoGluon candidate just because AutoGluon found an internal best model.
 
-- an AutoGluon tabular run
-- with an internal winner of `WeightedEnsemble_L2`
-- not a single hand-picked fixed algorithm hardcoded by the repo
+The current promotion gate checks:
 
-## Pipeline Selection After AutoGluon
-
-AutoGluon winning its own leaderboard is only the first decision. The pipeline then compares:
-
-- a baseline threshold model
-- an AutoGluon candidate model
-
-The promotion gate currently checks:
-
-- precision >= `0.8`
-- false positive rate <= `0.2`
+- macro F1 >= `0.65`
+- weighted F1 >= `0.75`
+- balanced accuracy >= `0.65`
+- minimum per-class recall >= `0.45`
+- normal-operation false alarm rate <= `0.2`
+- multiclass log loss <= `2.5`
 - latency p95 <= `50 ms`
 - stability score >= `0.85`
 
-The selection rule is:
+The current winner-selection rule is:
 
-- choose the AutoGluon candidate only if it passes the promotion gate and its `f1` is at least as good as the baseline
-- otherwise keep the baseline
+- keep the baseline by default
+- promote the AutoGluon candidate only if it passes the promotion gate and its `macro_f1` is at least as good as the baseline, with `weighted_f1` used as the tie-breaker
+- otherwise retain the baseline
 
-So the pipeline answer to "which model won?" is:
+A verified feature-store KFP run already exercised this logic and kept the baseline because the AutoGluon candidate failed the latency and stability gate checks even though its aggregate quality metrics were slightly higher.
 
-- whichever artifact satisfies the gate and wins the baseline-versus-candidate comparison
+The practical comparison is therefore:
 
-## Serving Export After Selection
+- baseline model trained in the current run
+- versus AutoGluon candidate trained in the current run
+- on the same eval split
 
-The repo has one more step after winner selection that is easy to miss.
+## Serving Handoff After Selection
 
-After the pipeline selects the source model version, it trains a separate serving model using:
+Model selection does not immediately deploy the winning training artifact as-is.
+
+After the pipeline chooses a source model version, it trains a separate serving-oriented multinomial logistic runtime using:
 
 - `StandardScaler`
 - `LogisticRegression`
 
-That serving model is then exported as:
+That serving runtime is exported as:
 
-- a Triton repository in the legacy path
-- a Triton or MLServer serving bundle in the feature-store path
+- a Triton repository for `ims-predictive-fs`
+- an MLServer sklearn bundle for `ims-predictive-fs-mlserver`
 
-This means the deployed runtime artifact is not the raw AutoGluon predictor. The selected AutoGluon candidate is treated as the winning source model for promotion metadata, but the served artifact is a separate serving-oriented model package.
+Both exports are published to versioned storage paths and stable `current` aliases. The selected source model version remains the lineage parent recorded in metadata and the model registry.
 
-## Three Layers To Keep Separate
+## Model Identity Terms
 
-There are three different answers to "which model are we using?":
+The training and deployment lifecycle uses several related identifiers.
 
-### 1. AutoGluon Internal Winner
+### `best_model`
 
-This is AutoGluon's own best model inside the candidate run:
+The internal winner reported by AutoGluon inside one candidate training run.
 
-- field: `best_model`
-- current checked-in value: `WeightedEnsemble_L2`
+### `selected_model_version`
 
-### 2. Pipeline-Selected Source Model
+The source model version chosen by the pipeline after evaluation and promotion-gate checks.
 
-This is the training winner chosen by the evaluation and promotion gate:
+### `deployment_source_model_version`
 
-- field: `selected_model_version`
-- current checked-in repo value: `candidate-v1`
+The selected source version recorded as the lineage parent of the serving export.
 
-### 3. Deployed Runtime Artifact
+### `deployed_model_version`
 
-This is the artifact actually exported for serving:
+The runtime artifact version actually exported for serving and referenced by deployment metadata.
 
-- field: `deployed_model_version`
-- current checked-in repo value: `predictive-serving-v1`
-- runtime kind: `triton_python_logistic_regression`
+## Current Bootstrap And Cluster Snapshot
 
-## Current Checked-In Repo Snapshot
+The repo still carries the older bootstrap artifacts for `ims-predictive`, including checked-in `baseline-v1` and `predictive-serving-v1` entries. Those remain useful for local bootstrap and compatibility checks.
 
-The checked-in repo currently shows the following legacy registry state:
+The live feature-store rollout adds a separate cluster-native path:
 
-- `selected_model_version = candidate-v1`
-- `deployment_source_model_version = candidate-v1`
-- `deployed_model_version = predictive-serving-v1`
+- model registry name `ims-anomaly-featurestore`
+- Triton serving target `ims-predictive-fs`
+- MLServer serving target `ims-predictive-fs-mlserver`
+- versioned object-store exports under `predictive-featurestore/...` and `predictive-featurestore-mlserver/...`
 
-The corresponding model entries show:
-
-- `candidate-v1` -> `autogluon_tabular`
-- `candidate-v1.best_model` -> `WeightedEnsemble_L2`
-- `predictive-serving-v1` -> `triton_python_logistic_regression`
-- `predictive-serving-v1.source_model_version` -> `candidate-v1`
-
-Interpretation:
-
-- the AutoGluon candidate currently wins the training selection in the checked-in registry snapshot
-- the deployed legacy runtime artifact is still a Triton logistic regression serving package
-
-One more rollout detail matters: the repo also contains the newer `ims-predictive-fs` serving path for the feature-store rollout. That serving target name is a deployment concern and should not be confused with the AutoGluon selection logic itself.
+Treat those serving target names as deployment topology. They are not the same thing as `best_model`, `selected_model_version`, or the raw AutoGluon predictor identity.
 
 ## Repo Touchpoints
 
 - `ai/training/train_and_register.py`
 - `ai/training/featurestore_train.py`
-- `ai/models/artifacts/candidate-v1.json`
+- `ai/pipelines/ims_featurestore_pipeline.py`
+- `ai/models/artifacts/baseline-v1.json`
+- `ai/models/serving/predictive/ims-predictive/1/weights.json`
 - `ai/registry/model_registry.json`
 - `services/shared/model_store.py`
 
 ## Why It Matters
 
-Without separating these layers, it is easy to assume that "AutoGluon chose WeightedEnsemble_L2" means "that exact ensemble is what Triton is serving in production." In this repo, those are related but different lifecycle stages.
+This separation between baseline training, AutoGluon candidate search, pipeline-level selection, and serving export keeps the first training run understandable and keeps later promotion decisions auditable. Without that separation, it is easy to confuse AutoGluon's internal winner with the artifact actually used by the serving runtime.
 
 ## Related Docs
 

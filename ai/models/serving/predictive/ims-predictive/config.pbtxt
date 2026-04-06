@@ -10,6 +10,11 @@ input [
 ]
 output [
   {
+    name: "class_probabilities"
+    data_type: TYPE_FP32
+    dims: [12]
+  },
+  {
     name: "anomaly_score"
     data_type: TYPE_FP32
     dims: [1]

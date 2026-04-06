@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 import zipfile
 from datetime import datetime, timezone
@@ -17,6 +18,17 @@ from botocore.client import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from control_plane_export import export_control_plane_history
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SERVICES_ROOT = REPO_ROOT / "services"
+if str(SERVICES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICES_ROOT))
+
+from shared.incident_taxonomy import (
+    NORMAL_ANOMALY_TYPE,
+    canonical_anomaly_type as shared_canonical_anomaly_type,
+    canonical_anomaly_types as shared_canonical_anomaly_types,
+)
 
 
 DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000"
@@ -43,7 +55,7 @@ DEFAULT_BLOCKING_MAX_NON_AUTHORITATIVE_TRAINING_RATIO = 0.50
 DEFAULT_BLOCKING_MIN_NONZERO_VARIANCE_FEATURES = 3
 
 FEATURE_SCHEMA_VERSION = "feature_schema_v1"
-LABEL_TAXONOMY_VERSION = "label_taxonomy_v1"
+LABEL_TAXONOMY_VERSION = "ims_incident_taxonomy_v2"
 SPLIT_POLICY_VERSION = "split_policy_v1"
 PRIVACY_POLICY_VERSION = "privacy_policy_v1"
 MODEL_CONTRACT_VERSION = "model_contract_v1"
@@ -68,27 +80,17 @@ NON_AUTHORITATIVE_FEATURE_SOURCES = {
     "scenario-fallback",
     "synthetic",
 }
-NORMAL_ANOMALY_TYPE = "normal_operation"
+CANONICAL_ANOMALY_TYPES = tuple(shared_canonical_anomaly_types())
 
+# Seed the full 12-label canonical contract first, then layer legacy aliases on top.
 LABEL_NORMALIZATION = {
+    label: label for label in CANONICAL_ANOMALY_TYPES
+} | {
     "normal": NORMAL_ANOMALY_TYPE,
-    "normal_operation": NORMAL_ANOMALY_TYPE,
-    "registration_storm": "registration_storm",
-    "registration_failure": "registration_failure",
-    "authentication_failure": "authentication_failure",
     "register_storm": "registration_storm",
-    "malformed_invite": "malformed_sip",
-    "malformed_sip": "malformed_sip",
-    "routing_error": "routing_error",
-    "busy_destination": "busy_destination",
-    "call_setup_timeout": "call_setup_timeout",
-    "call_drop_mid_session": "call_drop_mid_session",
-    "server_internal_error": "server_internal_error",
-    "network_degradation": "network_degradation",
-    "retransmission_spike": "retransmission_spike",
-    "service_degradation": "service_degradation",
-    "hss_latency": "service_degradation",
-    "hss_overload": "service_degradation",
+    "hss_latency": "network_degradation",
+    "hss_overload": "network_degradation",
+    "service_degradation": "network_degradation",
 }
 
 PUBLIC_FIELD_MAPPING = [
@@ -731,7 +733,7 @@ def _canonical_anomaly_type(payload: dict[str, Any]) -> str:
         or "normal",
         default="normal",
     )
-    return LABEL_NORMALIZATION.get(raw, raw)
+    return shared_canonical_anomaly_type(LABEL_NORMALIZATION.get(raw, raw))
 
 
 def _is_normal_anomaly_type(anomaly_type: str) -> bool:
@@ -1689,7 +1691,7 @@ def normalize_release(
             ):
                 continue
             source_anomaly_type = _slug(incident.get("anomaly_type") or "normal")
-            anomaly_type = LABEL_NORMALIZATION.get(source_anomaly_type, source_anomaly_type)
+            anomaly_type = shared_canonical_anomaly_type(LABEL_NORMALIZATION.get(source_anomaly_type, source_anomaly_type))
             windows.append(
                 {
                     "window_id": feature_window_id,
@@ -1722,7 +1724,7 @@ def normalize_release(
     for incident in sorted(incidents, key=lambda item: (str(item.get("created_at") or ""), str(item.get("id") or ""))):
         incident_id = str(incident.get("id") or "")
         source_anomaly_type = _slug(incident.get("anomaly_type") or "unknown")
-        anomaly_type = LABEL_NORMALIZATION.get(source_anomaly_type, source_anomaly_type)
+        anomaly_type = shared_canonical_anomaly_type(LABEL_NORMALIZATION.get(source_anomaly_type, source_anomaly_type))
         feature_window_id = str(
             incident.get("feature_window_id")
             or (incident.get("feature_snapshot") or {}).get("feature_window_id")
@@ -1895,7 +1897,7 @@ def normalize_release(
         )
         feature_window_public_id = _public_id("win", release_version, feature_window_id)
         source_anomaly_type = _slug(window.get("anomaly_type") or "normal")
-        anomaly_type = LABEL_NORMALIZATION.get(source_anomaly_type, source_anomaly_type)
+        anomaly_type = shared_canonical_anomaly_type(LABEL_NORMALIZATION.get(source_anomaly_type, source_anomaly_type))
         scenario_family = _normalized_scenario_family(window, fallback=source_anomaly_type)
         split_group_id = _stable_hash(
             linked_incident.get("id") if linked_incident is not None else feature_window_id,
@@ -1970,16 +1972,24 @@ def normalize_release(
     else:
         balanced_training_df = balanced_training_df[balanced_columns]
 
-    label_dictionary_records = sorted(
-        {
-            (
-                str(row.get("source_anomaly_type") or ""),
-                str(row.get("anomaly_type") or ""),
-                LABEL_TAXONOMY_VERSION,
-            )
-            for row in incident_records + training_records
-        }
-    )
+    canonical_label_records = {
+        (label, label, LABEL_TAXONOMY_VERSION)
+        for label in CANONICAL_ANOMALY_TYPES
+    }
+    supported_alias_records = {
+        (source_label, normalized_label, LABEL_TAXONOMY_VERSION)
+        for source_label, normalized_label in LABEL_NORMALIZATION.items()
+        if source_label != normalized_label
+    }
+    observed_label_records = {
+        (
+            str(row.get("source_anomaly_type") or ""),
+            str(row.get("anomaly_type") or ""),
+            LABEL_TAXONOMY_VERSION,
+        )
+        for row in incident_records + training_records
+    }
+    label_dictionary_records = sorted(canonical_label_records | supported_alias_records | observed_label_records)
     label_dictionary_df = pd.DataFrame(
         label_dictionary_records,
         columns=["source_anomaly_type", "anomaly_type", "label_taxonomy_version"],
@@ -2026,7 +2036,7 @@ def normalize_release(
             "status": join_coverage_status,
         },
         drift={"previous_release_reference": os.getenv("PREVIOUS_RELEASE_VERSION", "").strip() or None},
-        normalized_labels=sorted(label_dictionary_df["anomaly_type"].dropna().unique().tolist()),
+        normalized_labels=list(CANONICAL_ANOMALY_TYPES),
     )
 
     quality_report = {
@@ -2131,6 +2141,7 @@ def validate_release(*, normalized_manifest_ref: str) -> dict[str, Any]:
     balanced_df = _read_parquet_reference(manifest["artifacts"]["training_examples_balanced_parquet"])
     split_manifest = _load_json_payload(manifest["artifacts"]["split_manifest_json"])
     quality_report = _load_json_reference(manifest["artifacts"]["quality_report"])
+    label_dictionary_df = pd.read_csv(manifest["artifacts"]["label_dictionary_csv"])
     quality_enforcement_mode = _release_quality_enforcement_mode()
     advisory_quality_mode = quality_enforcement_mode == "advisory"
 
@@ -2152,6 +2163,17 @@ def validate_release(*, normalized_manifest_ref: str) -> dict[str, Any]:
     expected_balanced_columns = set(manifest["public_columns"]["training_examples_balanced"])
     if set(balanced_df.columns) != expected_balanced_columns:
         validation_errors.append("Balanced training columns drifted from the allowlist")
+
+    canonical_label_rows = label_dictionary_df[
+        (label_dictionary_df["source_anomaly_type"] == label_dictionary_df["anomaly_type"])
+        & label_dictionary_df["anomaly_type"].isin(CANONICAL_ANOMALY_TYPES)
+    ]
+    published_canonical_labels = set(canonical_label_rows["anomaly_type"].dropna().tolist())
+    missing_canonical_labels = [label for label in CANONICAL_ANOMALY_TYPES if label not in published_canonical_labels]
+    if missing_canonical_labels:
+        validation_errors.append(
+            "Label dictionary is missing canonical anomaly labels: " + ", ".join(missing_canonical_labels)
+        )
 
     if incident_df["incident_public_id"].duplicated().any():
         validation_errors.append("Duplicate incident_public_id values detected")

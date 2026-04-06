@@ -72,8 +72,9 @@ export default function DemoPage() {
                 <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
                   <div className="font-medium text-[var(--text-strong)]">{titleize(latest.scenario)}</div>
                   <div className="mt-1 text-sm text-[var(--text-secondary)]">
-                    Score {formatRelativeNumber(Number(latest.score.anomaly_score ?? 0))} ·{" "}
-                    {String(latest.score.is_anomaly ? "Anomaly detected" : "No incident")}
+                    {titleize(String(latest.score.predicted_anomaly_type ?? latest.score.anomaly_type ?? latest.scenario))} ·{" "}
+                    Confidence {formatRelativeNumber(Number(latest.score.predicted_confidence ?? 0))} ·{" "}
+                    {String(latest.score.is_anomaly ? "Incident predicted" : "Normal predicted")}
                   </div>
                   <div className="mt-2 text-xs text-[var(--text-subtle)]">{formatTime(new Date().toISOString())}</div>
                 </div>

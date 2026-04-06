@@ -324,14 +324,30 @@ class ReleaseRuntimeTests(unittest.TestCase):
             training_df = pd.read_parquet(manifest["artifacts"]["training_examples_parquet"])
             balanced_df = pd.read_parquet(manifest["artifacts"]["training_examples_balanced_parquet"])
             incident_df = pd.read_parquet(manifest["artifacts"]["incident_history_parquet"])
+            label_dictionary_df = pd.read_csv(manifest["artifacts"]["label_dictionary_csv"])
             split_manifest = json.loads(Path(manifest["artifacts"]["split_manifest_json"]).read_text())
             quality_report = json.loads(Path(manifest["artifacts"]["quality_report"]).read_text())
+            dataset_card_text = Path(manifest["artifacts"]["dataset_card_md"]).read_text()
 
             self.assertEqual(validation["validation_results"]["status"], "passed")
+            self.assertEqual(manifest["label_taxonomy_version"], release_runtime.LABEL_TAXONOMY_VERSION)
+            self.assertEqual(release_runtime.LABEL_TAXONOMY_VERSION, "ims_incident_taxonomy_v2")
             self.assertEqual(len(balanced_df), 10)
             self.assertTrue((balanced_df["training_eligibility_status"] == "eligible").all())
             self.assertNotIn("reconstructed_from_incident_snapshot", set(training_df["linkage_status"]))
             self.assertIn("normal_operation", set(training_df["anomaly_type"]))
+            canonical_identity_labels = set(
+                label_dictionary_df.loc[
+                    (label_dictionary_df["source_anomaly_type"] == label_dictionary_df["anomaly_type"])
+                    & label_dictionary_df["anomaly_type"].isin(release_runtime.CANONICAL_ANOMALY_TYPES),
+                    "anomaly_type",
+                ].dropna().tolist()
+            )
+            self.assertEqual(canonical_identity_labels, set(release_runtime.CANONICAL_ANOMALY_TYPES))
+            self.assertIn("register_storm", set(label_dictionary_df["source_anomaly_type"]))
+            self.assertIn("service_degradation", set(label_dictionary_df["source_anomaly_type"]))
+            for label in release_runtime.CANONICAL_ANOMALY_TYPES:
+                self.assertIn(f"`{label}`", dataset_card_text)
             storm_conditions = json.loads(
                 training_df.loc[training_df["scenario_name"] == "registration_storm", "contributing_conditions"].iloc[0]
             )

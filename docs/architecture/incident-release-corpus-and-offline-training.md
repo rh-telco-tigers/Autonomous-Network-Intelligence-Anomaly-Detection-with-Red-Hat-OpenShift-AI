@@ -267,7 +267,7 @@ Recommended structure:
   "generated_at": "2026-04-01T12:42:17Z",
   "git_commit": "abc1234",
   "feature_schema_version": "feature_schema_v1",
-  "label_taxonomy_version": "label-taxonomy-v1",
+  "label_taxonomy_version": "ims_incident_taxonomy_v2",
   "split_policy_version": "split-policy-v1",
   "privacy_policy_version": "privacy-allowlist-v1",
   "model_contract_version": "offline-model-contract-v1",
@@ -540,7 +540,7 @@ Rules:
 
 The release pipeline must normalize labels from the current platform taxonomy.
 
-At minimum, the normalized taxonomy must support current observed values such as:
+The canonical release taxonomy is the same 12-label contract used by training and serving, even if a particular snapshot only observes a subset of those labels:
 
 - `normal_operation`
 - `registration_storm`
@@ -561,6 +561,7 @@ Rules:
 - publish the normalized label in `anomaly_type`
 - publish `contributing_conditions` as JSON metadata for overlapping or supporting causes
 - ship a `label_dictionary.csv` with all mappings
+- always enumerate the full 12 canonical labels in both `label_dictionary.csv` and `dataset_card.md`, even when the current release snapshot contains fewer observed classes
 - version the mapping with `label_taxonomy_version`
 - never expose generation-only helper fields as model features
 - if no deterministic mapping exists, preserve the raw label, set `training_eligibility_status = ineligible_ambiguous_label`, and exclude the row from split manifests

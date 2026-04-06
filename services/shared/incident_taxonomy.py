@@ -681,11 +681,37 @@ SCENARIO_ALIASES = {
 ANOMALY_ALIASES = {
     NORMAL_SCENARIO_NAME: NORMAL_ANOMALY_TYPE,
     NORMAL_ANOMALY_TYPE: NORMAL_ANOMALY_TYPE,
-    "service_degradation": "service_degradation",
+    "service_degradation": "network_degradation",
+    "register_storm": "registration_storm",
+    "hss_latency": "network_degradation",
+    "hss_overload": "network_degradation",
 }
 for _scenario_name, _definition in SCENARIO_DEFINITIONS.items():
     ANOMALY_ALIASES[_scenario_name] = _definition["anomaly_type"]
     ANOMALY_ALIASES[_definition["anomaly_type"]] = _definition["anomaly_type"]
+
+CANONICAL_ANOMALY_TYPES: List[str] = []
+for _definition in SCENARIO_DEFINITIONS.values():
+    _anomaly_type = str(_definition["anomaly_type"])
+    if _anomaly_type not in CANONICAL_ANOMALY_TYPES:
+        CANONICAL_ANOMALY_TYPES.append(_anomaly_type)
+
+ANOMALY_INDEX: Dict[str, int] = {anomaly_type: index for index, anomaly_type in enumerate(CANONICAL_ANOMALY_TYPES)}
+
+DEFAULT_SEVERITY_BY_ANOMALY_TYPE: Dict[str, str] = {
+    NORMAL_ANOMALY_TYPE: "Low",
+    "registration_storm": "Critical",
+    "registration_failure": "Warning",
+    "authentication_failure": "Warning",
+    "malformed_sip": "Warning",
+    "routing_error": "Warning",
+    "busy_destination": "Warning",
+    "call_setup_timeout": "Critical",
+    "call_drop_mid_session": "Warning",
+    "server_internal_error": "Critical",
+    "network_degradation": "Critical",
+    "retransmission_spike": "Critical",
+}
 
 
 def console_scenario_names() -> List[str]:
@@ -717,6 +743,28 @@ def canonical_anomaly_type(value: str | None) -> str:
     if definition:
         return str(definition["anomaly_type"])
     return raw_value
+
+
+def canonical_anomaly_types() -> List[str]:
+    return list(CANONICAL_ANOMALY_TYPES)
+
+
+def anomaly_index(value: str | None) -> int:
+    normalized = canonical_anomaly_type(value)
+    if normalized not in ANOMALY_INDEX:
+        raise KeyError(f"Unknown anomaly type {value!r}")
+    return ANOMALY_INDEX[normalized]
+
+
+def anomaly_type_from_index(index: int) -> str:
+    if index < 0 or index >= len(CANONICAL_ANOMALY_TYPES):
+        raise IndexError(f"Anomaly index {index} is out of range")
+    return CANONICAL_ANOMALY_TYPES[index]
+
+
+def severity_for_anomaly_type(value: str | None) -> str:
+    normalized = canonical_anomaly_type(value)
+    return DEFAULT_SEVERITY_BY_ANOMALY_TYPE.get(normalized, "Warning")
 
 
 def is_nominal(value: str | None) -> bool:

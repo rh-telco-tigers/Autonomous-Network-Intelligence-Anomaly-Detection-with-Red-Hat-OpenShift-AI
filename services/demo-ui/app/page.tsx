@@ -56,12 +56,12 @@ export default function OverviewPage() {
     }
     return acc;
   }, []);
-  const scoreTrend = data.incidents
+  const confidenceTrend = data.incidents
     .slice(0, 12)
     .reverse()
     .map((incident) => ({
       name: incident.id.slice(0, 6),
-      score: Number(incident.anomaly_score ?? 0),
+      confidence: Number(incident.predicted_confidence ?? 0),
     }));
 
   return (
@@ -86,9 +86,9 @@ export default function OverviewPage() {
           detail="Core platform services available"
         />
         <MetricCard
-          label="Total incidents"
-          value={formatInteger(data.summary.incident_count)}
-          detail="All incidents currently retained by the platform"
+          label="Latest confidence"
+          value={formatRelativeNumber(data.summary.latest_confidence)}
+          detail="Confidence of the most recent predicted class"
         />
       </div>
 
@@ -150,13 +150,13 @@ export default function OverviewPage() {
       <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Recent anomaly score trend</CardTitle>
-            <CardDescription>Recent incident scores to show whether anomalies are getting worse.</CardDescription>
+            <CardTitle>Recent prediction confidence</CardTitle>
+            <CardDescription>Shows how confident the multiclass model has been on recent incidents.</CardDescription>
           </CardHeader>
           <CardContent className="h-72">
-            {scoreTrend.length ? (
+            {confidenceTrend.length ? (
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={scoreTrend}>
+                <LineChart data={confidenceTrend}>
                   <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
                   <XAxis dataKey="name" tick={chartTickStyle} />
                   <YAxis tick={chartTickStyle} domain={[0, 1]} />
@@ -165,11 +165,11 @@ export default function OverviewPage() {
                     labelStyle={chartTooltipLabelStyle}
                     itemStyle={chartTooltipItemStyle}
                   />
-                  <Line type="monotone" dataKey="score" stroke="#f97316" strokeWidth={3} dot={false} />
+                  <Line type="monotone" dataKey="confidence" stroke="#f97316" strokeWidth={3} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <EmptyState title="No score trend yet" description="Run a scenario or wait for incidents to build a score timeline." />
+              <EmptyState title="No confidence trend yet" description="Run a scenario or wait for incidents to build a prediction timeline." />
             )}
           </CardContent>
         </Card>
@@ -196,7 +196,7 @@ export default function OverviewPage() {
                   <StatusBadge value={incident.status} />
                 </div>
                 <div className="mt-3 flex items-center justify-between text-xs text-[var(--text-subtle)]">
-                  <span>Score {formatRelativeNumber(incident.anomaly_score)}</span>
+                  <span>Confidence {formatRelativeNumber(incident.predicted_confidence)}</span>
                   <span>{formatTime(incident.updated_at)}</span>
                 </div>
               </Link>

@@ -2,17 +2,17 @@
 
 ## Purpose
 
-This phase records which trained model exists, where its artifact lives, which dataset and schema produced it, and whether it is suitable for promotion.
+This phase records which trained model exists, where its artifacts live, which dataset and schema produced it, and whether it is suitable for promotion and serving handoff.
 
 ## Status
 
-This phase is in transition. The current demo uses repo-managed metadata plus MinIO-backed artifacts, while the target architecture adds Red Hat OpenShift AI Model Registry as the stronger system of record.
+This phase is live in the feature-store KFP path. The cluster now registers model versions in Red Hat OpenShift AI Model Registry, while the repo-managed JSON metadata remains as a compatibility bridge for older bootstrap and local paths.
 
 ## What This Phase Covers
 
 - register trained model versions
 - attach lineage to dataset, schema, and training run
-- persist performance and compatibility metadata
+- persist multiclass performance, calibration, compatibility, and serving-runtime metadata
 - distinguish candidate models from promoted models
 - support promotion decisions without forcing automatic deployment
 
@@ -31,25 +31,27 @@ flowchart TD
 ## Inputs
 
 - selected model artifact from training
-- evaluation metrics
-- release, schema, and split lineage
+- evaluation metrics, confusion outputs, and calibration summaries
+- release, schema, split, and label-taxonomy lineage
 
 ## Outputs
 
-- model version records
+- OpenShift AI Model Registry records
 - lineage metadata
-- promotion-ready registry entries
-- serving handoff metadata
+- promotion-ready registry entries with class labels, normal-class identity, and runtime format
+- serving handoff metadata for deployment manifests and stable aliases
 
 ## Current Repo Touchpoints
 
 - `ai/registry/model_registry.json`
+- `ai/training/featurestore_train.py`
 - `services/shared/model_registry.py`
+- `k8s/base/rhoai/`
 - `docs/architecture/feature-store-training-path.md`
 
 ## Why It Matters
 
-The registry is where model lifecycle discipline becomes visible. It prevents the platform from treating a trained artifact as self-explanatory and creates the metadata bridge between training, serving, and auditability.
+The registry is where model lifecycle discipline becomes visible. It prevents the platform from treating a trained artifact as self-explanatory and creates the metadata bridge between training, serving, deployment automation, and auditability.
 
 ## Related Docs
 

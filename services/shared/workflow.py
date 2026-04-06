@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict, Iterable, List
 
-from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type
+from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type, severity_for_anomaly_type
 
 NEW = "NEW"
 RCA_GENERATED = "RCA_GENERATED"
@@ -57,6 +57,8 @@ ACTIVE_STATES = {
     ESCALATED,
 }
 
+# Keep these aligned with the default Plane workflow states provisioned for the demo
+# project so the UI and outbound syncs refer to the same labels.
 PLANE_STATE_MAP = {
     NEW: "Todo",
     RCA_GENERATED: "Todo",
@@ -65,13 +67,13 @@ PLANE_STATE_MAP = {
     APPROVED: "In Progress",
     EXECUTING: "In Progress",
     EXECUTED: "In Progress",
-    ESCALATED: "Blocked",
-    EXECUTION_FAILED: "Blocked",
-    VERIFICATION_FAILED: "Blocked",
+    ESCALATED: "In Progress",
+    EXECUTION_FAILED: "In Progress",
+    VERIFICATION_FAILED: "In Progress",
     VERIFIED: "Done",
     CLOSED: "Done",
-    FALSE_POSITIVE: "Done",
-    RCA_REJECTED: "Blocked",
+    FALSE_POSITIVE: "Cancelled",
+    RCA_REJECTED: "In Progress",
 }
 
 ALLOWED_TRANSITIONS = {
@@ -396,6 +398,21 @@ def plane_state_for_workflow(value: str | None) -> str:
 
 def titleize_state(value: str | None) -> str:
     return normalize_workflow_state(value).replace("_", " ").title()
+
+
+def severity_from_prediction(anomaly_type: str | None, confidence: float | None) -> str:
+    normalized_type = canonical_anomaly_type(anomaly_type)
+    if normalized_type == NORMAL_ANOMALY_TYPE:
+        return "Low"
+    base_severity = severity_for_anomaly_type(normalized_type)
+    numeric_confidence = max(0.0, min(float(confidence or 0.0), 1.0))
+    if numeric_confidence < 0.45:
+        return "Medium"
+    if numeric_confidence < 0.7 and base_severity == "Critical":
+        return "Warning"
+    if numeric_confidence < 0.7 and base_severity == "Warning":
+        return "Medium"
+    return base_severity
 
 
 def severity_from_score(score: float) -> str:

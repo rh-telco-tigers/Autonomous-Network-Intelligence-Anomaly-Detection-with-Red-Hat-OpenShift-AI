@@ -6,5 +6,6 @@ COPY incident-release/requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY incident-release incident-release
+COPY services/shared services/shared
 
 CMD ["python", "incident-release/python/release_cli.py", "--help"]

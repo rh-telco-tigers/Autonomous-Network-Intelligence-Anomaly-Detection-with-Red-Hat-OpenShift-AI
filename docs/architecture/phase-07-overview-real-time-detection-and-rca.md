@@ -6,13 +6,13 @@ This phase detects anomalies from live traffic, retrieves relevant prior knowled
 
 ## Status
 
-This is an active part of the current platform and one of the primary differentiators of the demo.
+This is an active part of the current platform and one of the primary differentiators of the demo. `anomaly-service` now scores through KServe V2 against the deployed multiclass feature-store serving path and persists the returned class probabilities with each incident.
 
 ## What This Phase Covers
 
 - simulate or collect live traffic behavior
-- score live windows against the deployed anomaly model
-- create incidents when anomaly thresholds are exceeded
+- score live windows against the deployed multiclass anomaly model through remote KServe inference
+- create incidents when the predicted class is not `normal_operation`
 - retrieve similar evidence and prior outcomes from Milvus
 - generate RCA using deterministic evidence plus LLM-assisted reasoning
 
@@ -49,15 +49,16 @@ This phase uses multiple embedding layers rather than treating all text as one g
 ## Inputs
 
 - live feature windows
-- anomaly scores and model metadata
+- predicted class, predicted confidence, class probabilities, top alternatives, and model metadata
 - incident context from the control plane
 - retrieved evidence and runbooks
 - category-matched KB articles from Milvus
 
 ## Outputs
 
-- anomaly decisions
+- multiclass incident predictions
 - incident records
+- per-incident confidence and class-probability context
 - RCA payloads with evidence and recommendation fields
 - retrieval context that can be shown back to operators
 - clickable knowledge article links in the incident UI

@@ -1012,15 +1012,6 @@ export function IncidentWorkflowDetail() {
                   </div>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-3">
-                  {flowGuide.helpers.map((helper) => (
-                    <div key={helper.title} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                      <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{helper.title}</div>
-                      <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{helper.text}</p>
-                    </div>
-                  ))}
-                </div>
-
                 <div className="grid gap-4 md:grid-cols-4">
                   <SummaryItem label="Confidence" value={rcaConfidenceLabel} />
                   <SummaryItem label="Runtime" value={latestRcaGeneration.runtime} />
@@ -1074,19 +1065,6 @@ export function IncidentWorkflowDetail() {
                 ) : null}
               </CardContent>
             </Card>
-          </div>
-
-          <div className="rounded-3xl border border-sky-400/20 bg-sky-500/8 p-6 shadow-sm">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-sky-700 dark:text-sky-200">Ticket-centric workflow</div>
-                <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">Every stage updates the same incident ticket</div>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--text-secondary)]">{ticketAutoSyncHint}</p>
-              </div>
-              <Button variant="secondary" onClick={() => void handleGuideAction("focusTicket")}>
-                {currentTicket ? "Open ticket workflow" : "Create or preview ticket"}
-              </Button>
-            </div>
           </div>
 
           <div ref={remediationRef}>
@@ -1372,7 +1350,8 @@ export function IncidentWorkflowDetail() {
                     <SummaryItem label="Feature window" value={incident.feature_window_id ?? "Unavailable"} />
                     <SummaryItem label="Plane state" value={data.plane_workflow_state} />
                     <SummaryItem label="Workflow state" value={<StatusBadge value={incident.status} />} />
-                    <SummaryItem label="Anomaly score" value={formatRelativeNumber(incident.anomaly_score)} />
+                    <SummaryItem label="Prediction confidence" value={formatRelativeNumber(incident.predicted_confidence)} />
+                    <SummaryItem label="Top alternatives" value={formatTopClassPredictions(incident.top_classes ?? [])} />
                     <SummaryItem label="Updated" value={formatTime(incident.updated_at)} />
                   </div>
                 </details>
@@ -2559,7 +2538,9 @@ function buildObservedSignals(incident: IncidentRecord): string[] {
     signals.push(`Feature window: ${incident.feature_window_id}`);
   }
   if (!signals.length) {
-    signals.push(`Model ${incident.model_version} raised ${incident.anomaly_type} with score ${formatRelativeNumber(incident.anomaly_score)}.`);
+    signals.push(
+      `Model ${incident.model_version} predicted ${incident.anomaly_type} with confidence ${formatRelativeNumber(incident.predicted_confidence)}.`,
+    );
   }
   return signals;
 }
@@ -2570,6 +2551,16 @@ function asStringList(value: unknown): string[] {
   }
   const text = String(value ?? "").trim();
   return text ? [text] : [];
+}
+
+function formatTopClassPredictions(topClasses: Array<{ anomaly_type: string; probability: number }>): string {
+  if (!topClasses.length) {
+    return "Unavailable";
+  }
+  return topClasses
+    .slice(0, 3)
+    .map((item) => `${titleize(item.anomaly_type)} ${Math.round(Number(item.probability ?? 0) * 100)}%`)
+    .join(" · ");
 }
 
 function asStringValue(value: unknown): string {
@@ -2743,7 +2734,7 @@ function buildSimulationPreview(
   remediation: RemediationRecord | undefined,
   latestRca: RcaRecord | undefined,
 ): SimulationPreview {
-  const baseConfidence = Number(latestRca?.confidence ?? incident.anomaly_score ?? 0.5);
+  const baseConfidence = Number(latestRca?.confidence ?? incident.predicted_confidence ?? 0.5);
   if (!remediation) {
     return {
       effectiveness: "Pending selection",

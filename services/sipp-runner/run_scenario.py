@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -17,6 +18,13 @@ import boto3
 import requests
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SERVICES_ROOT = REPO_ROOT / "services"
+if str(SERVICES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICES_ROOT))
+
+from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type, normalize_scenario_name, scenario_definition
 
 
 FEATURE_SCHEMA_VERSION = "feature_schema_v1"
@@ -46,36 +54,6 @@ SHORTMSG_CALL_ID_INDEX = 4
 SHORTMSG_CSEQ_INDEX = 5
 SHORTMSG_SUMMARY_INDEX = 6
 PAYLOAD_RE = re.compile(r"UDP message (?:sent \((\d+) bytes\)|received \[(\d+)\] bytes)")
-NORMAL_ANOMALY_TYPE = "normal_operation"
-SCENARIO_ANOMALY_TYPES = {
-    "normal": NORMAL_ANOMALY_TYPE,
-    "normal_operation": NORMAL_ANOMALY_TYPE,
-    "registration_storm": "registration_storm",
-    "registration_failure": "registration_failure",
-    "authentication_failure": "authentication_failure",
-    "malformed_invite": "malformed_sip",
-    "routing_error": "routing_error",
-    "busy_destination": "busy_destination",
-    "call_setup_timeout": "call_setup_timeout",
-    "call_drop_mid_session": "call_drop_mid_session",
-    "server_internal_error": "server_internal_error",
-    "network_degradation": "network_degradation",
-    "retransmission_spike": "retransmission_spike",
-}
-SCENARIO_BASE_CONDITIONS = {
-    NORMAL_ANOMALY_TYPE: [],
-    "registration_storm": ["traffic_surge", "retry_spike"],
-    "registration_failure": ["registration_reject", "auth_challenge_loop"],
-    "authentication_failure": ["auth_challenge_loop", "retry_spike"],
-    "malformed_sip": ["payload_anomaly", "4xx_burst"],
-    "routing_error": ["route_unreachable", "4xx_burst"],
-    "busy_destination": ["destination_busy", "retry_spike"],
-    "call_setup_timeout": ["session_setup_delay", "latency_high", "retry_spike"],
-    "call_drop_mid_session": ["session_drop", "retry_spike"],
-    "server_internal_error": ["dependency_instability", "5xx_burst"],
-    "network_degradation": ["latency_high", "retry_spike", "packet_loss_suspected"],
-    "retransmission_spike": ["retry_spike", "packet_loss_suspected"],
-}
 
 
 def _now() -> str:
@@ -232,11 +210,27 @@ def _emit_control_plane_incident(window: dict[str, Any]) -> dict[str, Any] | Non
     if int(window.get("label", 0)) == 0 and not _env_flag("SIPP_EMIT_NORMAL_INCIDENT", False):
         return None
 
+    predicted_confidence = float(window.get("label_confidence") or 0.95)
+    anomaly_type = str(window.get("anomaly_type") or NORMAL_ANOMALY_TYPE)
+    if anomaly_type == NORMAL_ANOMALY_TYPE:
+        class_probabilities = {NORMAL_ANOMALY_TYPE: 1.0}
+    else:
+        class_probabilities = {
+            NORMAL_ANOMALY_TYPE: round(max(0.0, 1.0 - predicted_confidence), 6),
+            anomaly_type: round(predicted_confidence, 6),
+        }
     payload = {
         "incident_id": str(uuid.uuid4()),
         "project": os.getenv("CONTROL_PLANE_PROJECT", "ims-demo").strip() or "ims-demo",
         "anomaly_score": float(os.getenv("CONTROL_PLANE_INCIDENT_SCORE", "0.99" if int(window.get("label", 0)) else "0.05")),
-        "anomaly_type": str(window.get("anomaly_type") or NORMAL_ANOMALY_TYPE),
+        "anomaly_type": anomaly_type,
+        "predicted_confidence": predicted_confidence,
+        "class_probabilities": class_probabilities,
+        "top_classes": [
+            {"anomaly_type": label, "probability": probability}
+            for label, probability in sorted(class_probabilities.items(), key=lambda item: (-item[1], item[0]))
+        ][:3],
+        "is_anomaly": anomaly_type != NORMAL_ANOMALY_TYPE,
         "model_version": os.getenv("CONTROL_PLANE_INCIDENT_MODEL_VERSION", "sipp-scenario-labeler-v1").strip()
         or "sipp-scenario-labeler-v1",
         "feature_window_id": str(window.get("window_id") or ""),
@@ -272,8 +266,10 @@ def _percentile(values: list[float], percentile: float) -> float:
 
 
 def _scenario_anomaly_type(scenario_name: str) -> str:
-    normalized_name = str(scenario_name or "").strip()
-    return SCENARIO_ANOMALY_TYPES.get(normalized_name, normalized_name or "unknown")
+    normalized_name = normalize_scenario_name(scenario_name)
+    if not str(scenario_name or "").strip():
+        return "unknown"
+    return canonical_anomaly_type(normalized_name)
 
 
 def _normalize_condition_name(value: object) -> str:
@@ -300,7 +296,7 @@ def _derive_contributing_conditions(
     retransmissions: float,
 ) -> list[str]:
     conditions: list[str] = []
-    for value in SCENARIO_BASE_CONDITIONS.get(anomaly_type, []):
+    for value in scenario_definition(anomaly_type).get("base_conditions", []):
         _append_condition(conditions, value)
 
     if _is_normal_anomaly_type(anomaly_type):

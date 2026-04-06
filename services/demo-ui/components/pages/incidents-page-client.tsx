@@ -139,9 +139,9 @@ export function IncidentsPageClient({ initialFilters }: { initialFilters: Filter
         cell: ({ row }) => <StatusBadge value={row.original.status} />,
       },
       {
-        accessorKey: "anomaly_score",
-        header: "Score",
-        cell: ({ row }) => formatRelativeNumber(row.original.anomaly_score),
+        accessorKey: "predicted_confidence",
+        header: "Confidence",
+        cell: ({ row }) => formatRelativeNumber(row.original.predicted_confidence),
       },
       {
         accessorKey: "updated_at",

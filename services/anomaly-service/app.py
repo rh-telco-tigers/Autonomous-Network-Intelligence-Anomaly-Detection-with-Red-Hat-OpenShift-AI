@@ -62,7 +62,8 @@ def score(request: ScoreRequest, auth: AuthContext | None = Depends(require_api_
 
     anomaly_score = float(result["anomaly_score"])
     is_anomaly = bool(result["is_anomaly"])
-    anomaly_type = str(result["anomaly_type"])
+    anomaly_type = str(result["predicted_anomaly_type"])
+    predicted_confidence = float(result.get("predicted_confidence") or 0.0)
     model_version = str(result["model_version"])
     incident_id = str(uuid.uuid4()) if is_anomaly else None
     created_at = datetime.now(tz=timezone.utc).isoformat()
@@ -74,6 +75,10 @@ def score(request: ScoreRequest, auth: AuthContext | None = Depends(require_api_
                 "feature_window_id": request.feature_window_id,
                 "anomaly_score": anomaly_score,
                 "anomaly_type": anomaly_type,
+                "predicted_confidence": predicted_confidence,
+                "class_probabilities": result.get("class_probabilities", {}),
+                "top_classes": result.get("top_classes", []),
+                "is_anomaly": is_anomaly,
                 "model_version": model_version,
                 "feature_snapshot": stored_features,
                 "created_at": created_at,
@@ -84,6 +89,10 @@ def score(request: ScoreRequest, auth: AuthContext | None = Depends(require_api_
         "is_anomaly": is_anomaly,
         "incident_id": incident_id,
         "anomaly_type": anomaly_type,
+        "predicted_anomaly_type": anomaly_type,
+        "predicted_confidence": predicted_confidence,
+        "class_probabilities": result.get("class_probabilities", {}),
+        "top_classes": result.get("top_classes", []),
         "model_version": model_version,
         "scoring_mode": result["scoring_mode"],
         "created_at": created_at,

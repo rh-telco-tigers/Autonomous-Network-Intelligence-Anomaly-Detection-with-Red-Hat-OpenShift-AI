@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import html
 import os
+import time
 import uuid
 from typing import Any, Dict, List
 
 import requests
 
 from shared.workflow import plane_priority_for_severity, plane_state_for_workflow, ticket_creation_exclusion_reason
+
+
+PLANE_STATE_CACHE_TTL_SECONDS = 60.0
+_PLANE_STATE_CACHE: dict[tuple[str, str, str], tuple[float, List[Dict[str, Any]]]] = {}
 
 
 class TicketProviderError(RuntimeError):
@@ -43,6 +48,64 @@ def _comment_html(note: str) -> str:
 
 def _html_text(value: object) -> str:
     return html.escape(str(value or ""), quote=False)
+
+
+def _plane_api_headers(api_key: str) -> Dict[str, str]:
+    return {"X-API-Key": api_key, "Content-Type": "application/json"}
+
+
+def _normalize_plane_label(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _fetch_plane_project_states(base_url: str, workspace_slug: str, project_id: str, api_key: str) -> List[Dict[str, Any]]:
+    cache_key = (base_url, workspace_slug, project_id)
+    now = time.time()
+    cached = _PLANE_STATE_CACHE.get(cache_key)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    response = requests.get(
+        f"{base_url}/api/v1/workspaces/{workspace_slug}/projects/{project_id}/states/",
+        headers=_plane_api_headers(api_key),
+        timeout=15,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    results = payload.get("results") if isinstance(payload, dict) else payload
+    states = [item for item in results if isinstance(item, dict)] if isinstance(results, list) else []
+    _PLANE_STATE_CACHE[cache_key] = (now + PLANE_STATE_CACHE_TTL_SECONDS, states)
+    return states
+
+
+def _resolve_plane_state(states: List[Dict[str, Any]], desired_name: str) -> Dict[str, Any] | None:
+    normalized_desired = _normalize_plane_label(desired_name)
+    if not normalized_desired:
+        return None
+
+    for state in states:
+        if _normalize_plane_label(state.get("name")) == normalized_desired:
+            return state
+
+    aliases = {
+        "todo": (("Todo", "Backlog"), ("unstarted", "backlog")),
+        "in progress": (("In Progress",), ("started",)),
+        "done": (("Done",), ("completed",)),
+        "cancelled": (("Cancelled", "Canceled"), ("cancelled",)),
+        "blocked": (("In Progress", "Todo", "Backlog"), ("started", "unstarted", "backlog")),
+    }
+    candidate_names, candidate_groups = aliases.get(normalized_desired, ((desired_name,), ()))
+    for candidate_name in candidate_names:
+        normalized_candidate = _normalize_plane_label(candidate_name)
+        for state in states:
+            if _normalize_plane_label(state.get("name")) == normalized_candidate:
+                return state
+    for candidate_group in candidate_groups:
+        normalized_group = _normalize_plane_label(candidate_group)
+        for state in states:
+            if _normalize_plane_label(state.get("group")) == normalized_group:
+                return state
+    return None
 
 
 def _rca_payload(record: Dict[str, Any]) -> Dict[str, Any]:
@@ -103,6 +166,7 @@ def build_ticket_description_html(incident: Dict[str, Any], workflow: Dict[str, 
         f"<h3>{_html_text(_ticket_title(ticket_incident))}</h3>"
         f"{incident_link}"
         f"<p><strong>Workflow state:</strong> {_html_text(ticket_incident.get('status'))}</p>"
+        f"<p><strong>Predicted confidence:</strong> {_html_text(ticket_incident.get('predicted_confidence'))}</p>"
         f"<p><strong>Anomaly score:</strong> {_html_text(ticket_incident.get('anomaly_score'))}</p>"
         f"<p><strong>Severity:</strong> {_html_text(ticket_incident.get('severity'))}</p>"
         f"<p><strong>Impact:</strong> {_html_text(ticket_incident.get('impact') or ticket_incident.get('subtitle') or '')}</p>"
@@ -157,6 +221,24 @@ class PlaneTicketProvider(TicketProvider):
     def _live_configured(self) -> bool:
         return all([self.base_url, self.api_key, self.workspace_slug, self.project_id])
 
+    def _headers(self) -> Dict[str, str]:
+        return _plane_api_headers(self.api_key)
+
+    def _target_state(self, incident: Dict[str, Any]) -> Dict[str, str]:
+        desired_name = plane_state_for_workflow(str(incident.get("status") or ""))
+        if not self._live_configured():
+            return {"id": "", "name": desired_name}
+        resolved = _resolve_plane_state(
+            _fetch_plane_project_states(self.base_url, self.workspace_slug, self.project_id, self.api_key),
+            desired_name,
+        )
+        if not resolved:
+            return {"id": "", "name": desired_name}
+        return {
+            "id": str(resolved.get("id") or ""),
+            "name": str(resolved.get("name") or desired_name),
+        }
+
     def status(self) -> Dict[str, object]:
         live = self._live_configured()
         return {
@@ -180,6 +262,7 @@ class PlaneTicketProvider(TicketProvider):
         exclusion = ticket_creation_exclusion_reason(incident)
         if exclusion and not force:
             return {"status": "skipped", "provider": "plane", "reason": exclusion}
+        plane_state = self._target_state(incident)
 
         if not self._live_configured():
             if not _demo_integrations_enabled():
@@ -197,6 +280,7 @@ class PlaneTicketProvider(TicketProvider):
                 "workspace_id": self.workspace_slug or "demo-workspace",
                 "project_id": self.project_id or "demo-project",
                 "title": _ticket_title(incident),
+                "ticket_status": str(plane_state.get("name") or plane_state_for_workflow(str(incident.get("status") or ""))),
                 "source_url": source_url,
                 "comment": {
                     "external_comment_id": comment_id,
@@ -208,27 +292,33 @@ class PlaneTicketProvider(TicketProvider):
                 else None,
             }
 
+        create_payload = {
+            "name": _ticket_title(incident),
+            "description_html": build_ticket_description_html(incident, workflow, incident_url=source_url),
+            "priority": plane_priority_for_severity(str(incident.get("severity") or "medium")),
+            "external_source": "ims-demo",
+            "external_id": str(incident.get("id") or ""),
+        }
+        plane_state_id = str(plane_state.get("id") or "")
+        if plane_state_id:
+            create_payload["state"] = plane_state_id
         response = requests.post(
             f"{self.base_url}/api/v1/workspaces/{self.workspace_slug}/projects/{self.project_id}/work-items/",
-            headers={"X-API-Key": self.api_key, "Content-Type": "application/json"},
-            json={
-                "name": _ticket_title(incident),
-                "description_html": build_ticket_description_html(incident, workflow, incident_url=source_url),
-                "priority": plane_priority_for_severity(str(incident.get("severity") or "medium")),
-                "external_source": "ims-demo",
-                "external_id": str(incident.get("id") or ""),
-            },
+            headers=self._headers(),
+            json=create_payload,
             timeout=15,
         )
         response.raise_for_status()
         payload = response.json()
         external_id = str(payload.get("id") or "")
+        payload_state = payload.get("state_detail") if isinstance(payload, dict) else {}
+        ticket_status = str((payload_state or {}).get("name") or plane_state.get("name") or "")
         sequence = payload.get("sequence_id")
         comment_payload: Dict[str, Any] | None = None
         if note.strip() and external_id:
             comment_response = requests.post(
                 f"{self.base_url}/api/v1/workspaces/{self.workspace_slug}/projects/{self.project_id}/work-items/{external_id}/comments/",
-                headers={"X-API-Key": self.api_key, "Content-Type": "application/json"},
+                headers=self._headers(),
                 json={
                     "comment_html": _comment_html(note.strip()),
                     "external_source": "ims-demo",
@@ -248,7 +338,7 @@ class PlaneTicketProvider(TicketProvider):
             "workspace_id": self.workspace_slug,
             "project_id": self.project_id,
             "title": str(payload.get("name") or _ticket_title(incident)),
-            "ticket_status": plane_state_for_workflow(str(incident.get("status") or "")),
+            "ticket_status": ticket_status,
             "source_url": source_url,
             "raw": payload,
             "comment": {
@@ -273,6 +363,7 @@ class PlaneTicketProvider(TicketProvider):
         external_id = str(ticket.get("external_id") or "")
         if not external_id:
             raise TicketProviderError("Plane ticket is missing an external id")
+        plane_state = self._target_state(incident)
 
         if not self._live_configured():
             if not _demo_integrations_enabled():
@@ -286,7 +377,7 @@ class PlaneTicketProvider(TicketProvider):
                 "external_key": ticket.get("external_key") or external_id,
                 "url": "",
                 "title": _ticket_title(incident),
-                "ticket_status": plane_state_for_workflow(str(incident.get("status") or "")),
+                "ticket_status": str(plane_state.get("name") or plane_state_for_workflow(str(incident.get("status") or ""))),
                 "source_url": source_url,
                 "comment": {
                     "external_comment_id": comment_id,
@@ -299,23 +390,29 @@ class PlaneTicketProvider(TicketProvider):
             }
 
         description_html = build_ticket_description_html(incident, workflow, incident_url=source_url)
+        patch_payload = {
+            "name": _ticket_title(incident),
+            "description_html": description_html,
+            "priority": plane_priority_for_severity(str(incident.get("severity") or "medium")),
+        }
+        plane_state_id = str(plane_state.get("id") or "")
+        if plane_state_id:
+            patch_payload["state"] = plane_state_id
         response = requests.patch(
             f"{self.base_url}/api/v1/workspaces/{self.workspace_slug}/projects/{self.project_id}/work-items/{external_id}/",
-            headers={"X-API-Key": self.api_key, "Content-Type": "application/json"},
-            json={
-                "name": _ticket_title(incident),
-                "description_html": description_html,
-                "priority": plane_priority_for_severity(str(incident.get("severity") or "medium")),
-            },
+            headers=self._headers(),
+            json=patch_payload,
             timeout=15,
         )
         response.raise_for_status()
         payload = response.json()
+        payload_state = payload.get("state_detail") if isinstance(payload, dict) else {}
+        ticket_status = str((payload_state or {}).get("name") or plane_state.get("name") or "")
         comment_payload: Dict[str, Any] | None = None
         if note.strip():
             comment_response = requests.post(
                 f"{self.base_url}/api/v1/workspaces/{self.workspace_slug}/projects/{self.project_id}/work-items/{external_id}/comments/",
-                headers={"X-API-Key": self.api_key, "Content-Type": "application/json"},
+                headers=self._headers(),
                 json={
                     "comment_html": _comment_html(note.strip()),
                     "external_source": "ims-demo",
@@ -333,7 +430,7 @@ class PlaneTicketProvider(TicketProvider):
             "external_key": str(payload.get("sequence_id") or ticket.get("external_key") or external_id),
             "url": f"{self.app_url}/{self.workspace_slug}/projects/{self.project_id}/issues/{external_id}",
             "title": str(payload.get("name") or _ticket_title(incident)),
-            "ticket_status": plane_state_for_workflow(str(incident.get("status") or "")),
+            "ticket_status": ticket_status,
             "source_url": source_url,
             "raw": payload,
             "comment": {

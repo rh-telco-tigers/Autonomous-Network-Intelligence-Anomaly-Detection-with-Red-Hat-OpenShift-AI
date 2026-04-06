@@ -3,20 +3,34 @@ import json
 import os
 import random
 import shutil
+import sys
 import tempfile
 import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from statistics import mean, pstdev
 from typing import Any, Callable, Dict, List, Tuple
 
 import boto3
 from botocore.config import Config
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import balanced_accuracy_score, confusion_matrix, log_loss, precision_recall_fscore_support
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SERVICES_ROOT = REPO_ROOT / "services"
+if str(SERVICES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICES_ROOT))
+
+from shared.incident_taxonomy import (
+    NORMAL_ANOMALY_TYPE,
+    canonical_anomaly_type,
+    canonical_anomaly_types,
+    normalize_scenario_name,
+    scenario_definition,
+)
 
 
 FEATURES = [
@@ -34,11 +48,16 @@ FEATURE_SCHEMA_VERSION = "feature_schema_v1"
 DEFAULT_DATASET_VERSION = "live-sipp-v1"
 DEFAULT_MIN_REAL_WINDOWS = 9
 DEFAULT_MAX_REAL_WINDOWS = 200
+DEFAULT_MIN_WINDOWS_PER_CLASS = 3
 TRITON_MODEL_NAME = "ims-predictive"
 TRITON_MODEL_VERSION = "1"
 PROMOTION_GATE = {
-    "min_precision": 0.8,
-    "max_false_positive_rate": 0.2,
+    "min_macro_f1": 0.65,
+    "min_weighted_f1": 0.75,
+    "min_balanced_accuracy": 0.65,
+    "min_class_recall": 0.45,
+    "max_normal_false_alarm_rate": 0.2,
+    "max_multiclass_log_loss": 2.5,
     "max_latency_p95_ms": 50,
     "min_stability_score": 0.85,
 }
@@ -46,6 +65,7 @@ DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-demo-lab.svc.cl
 DEFAULT_DATASET_STORE_BUCKET = "ims-models"
 DEFAULT_DATASET_STORE_PREFIX = "pipelines/ims-demo-lab/datasets"
 _AUTOGLUON_PREDICTOR_CACHE: Dict[str, Any] = {}
+CANONICAL_LABELS = canonical_anomaly_types()
 
 
 def _now() -> str:
@@ -255,13 +275,124 @@ def _coerce_float(value: Any) -> float:
         return 0.0
 
 
+def _percentile(values: List[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    if len(values) == 1:
+        return float(values[0])
+    sorted_values = sorted(float(value) for value in values)
+    rank = (len(sorted_values) - 1) * percentile
+    lower = int(rank)
+    upper = min(lower + 1, len(sorted_values) - 1)
+    weight = rank - lower
+    return (sorted_values[lower] * (1.0 - weight)) + (sorted_values[upper] * weight)
+
+
 def _normalize_anomaly_type(raw_value: Any, label: int) -> str:
     candidate = str(raw_value or "").strip()
     if not candidate:
-        return "normal" if label == 0 else "unknown"
-    if candidate == "malformed_invite":
-        return "malformed_sip"
-    return candidate
+        return NORMAL_ANOMALY_TYPE if label == 0 else "unknown"
+    if candidate == "unknown" and label == 0:
+        return NORMAL_ANOMALY_TYPE
+    return canonical_anomaly_type(candidate)
+
+
+def _derive_binary_label(anomaly_type: str) -> int:
+    return 0 if canonical_anomaly_type(anomaly_type) == NORMAL_ANOMALY_TYPE else 1
+
+
+def _canonical_record(features: Dict[str, float], anomaly_type: str) -> Dict[str, Any]:
+    normalized_type = canonical_anomaly_type(anomaly_type)
+    return {
+        "features": {feature: float(features.get(feature, 0.0) or 0.0) for feature in FEATURES},
+        "label": _derive_binary_label(normalized_type),
+        "anomaly_type": normalized_type,
+    }
+
+
+def _count_by_anomaly_type(records: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = {label: 0 for label in CANONICAL_LABELS}
+    for record in records:
+        counts[canonical_anomaly_type(record.get("anomaly_type"))] = counts.get(
+            canonical_anomaly_type(record.get("anomaly_type")),
+            0,
+        ) + 1
+    return counts
+
+
+def _multiclass_training_guard(records: List[Dict[str, Any]], min_per_class: int) -> Dict[str, Any]:
+    counts = _count_by_anomaly_type(records)
+    missing = [label for label in CANONICAL_LABELS if counts.get(label, 0) < min_per_class]
+    return {
+        "class_counts": counts,
+        "min_per_class": min_per_class,
+        "all_classes_present": not missing,
+        "missing_or_underfilled_classes": missing,
+    }
+
+
+def _softmax(logits: List[float]) -> List[float]:
+    if not logits:
+        return []
+    max_logit = max(logits)
+    exponents = [pow(2.718281828459045, logit - max_logit) for logit in logits]
+    total = sum(exponents) or 1.0
+    return [value / total for value in exponents]
+
+
+def _top_class_predictions(probabilities: Dict[str, float], limit: int = 3) -> List[Dict[str, Any]]:
+    ordered = sorted(
+        ((canonical_anomaly_type(label), float(score)) for label, score in probabilities.items()),
+        key=lambda item: (-item[1], item[0]),
+    )
+    return [
+        {
+            "anomaly_type": label,
+            "probability": round(score, 6),
+        }
+        for label, score in ordered[:limit]
+    ]
+
+
+def _prediction_payload(probabilities: Dict[str, float]) -> Dict[str, Any]:
+    normalized_probabilities = {
+        label: round(float(probabilities.get(label, 0.0)), 6)
+        for label in CANONICAL_LABELS
+    }
+    predicted_anomaly_type = max(
+        normalized_probabilities.items(),
+        key=lambda item: (item[1], -CANONICAL_LABELS.index(item[0])),
+    )[0]
+    predicted_confidence = float(normalized_probabilities.get(predicted_anomaly_type, 0.0))
+    normal_probability = float(normalized_probabilities.get(NORMAL_ANOMALY_TYPE, 0.0))
+    return {
+        "predicted_anomaly_type": predicted_anomaly_type,
+        "predicted_confidence": round(predicted_confidence, 6),
+        "class_probabilities": normalized_probabilities,
+        "top_classes": _top_class_predictions(normalized_probabilities),
+        "anomaly_score": round(max(0.0, min(1.0, 1.0 - normal_probability)), 6),
+        "is_anomaly": predicted_anomaly_type != NORMAL_ANOMALY_TYPE,
+    }
+
+
+def _linear_model_probabilities(sample: Dict[str, float], artifact: Dict[str, Any]) -> Dict[str, float]:
+    mean_values = [float(value) for value in artifact.get("scaler_mean", [0.0 for _ in FEATURES])]
+    scale_values = [max(float(value), 1e-9) for value in artifact.get("scaler_scale", [1.0 for _ in FEATURES])]
+    coefficients = [
+        [float(value) for value in row]
+        for row in artifact.get("coefficients", [])
+    ]
+    intercepts = [float(value) for value in artifact.get("intercepts", [])]
+    class_labels = [canonical_anomaly_type(label) for label in artifact.get("class_labels", CANONICAL_LABELS)]
+    if not coefficients or not intercepts or len(class_labels) != len(coefficients):
+        raise ValueError("Linear multiclass artifact is missing classifier weights")
+    values = [float(sample.get(feature, 0.0) or 0.0) for feature in FEATURES]
+    normalized = [(value - mean_value) / scale_value for value, mean_value, scale_value in zip(values, mean_values, scale_values)]
+    logits = []
+    for row, intercept in zip(coefficients, intercepts):
+        logits.append(sum(weight * feature_value for weight, feature_value in zip(row, normalized)) + intercept)
+    probabilities = _softmax(logits)
+    return {label: probability for label, probability in zip(class_labels, probabilities)}
 
 
 def _normalize_live_window(window: Dict[str, Any], dataset_version: str, index: int) -> Dict[str, Any]:
@@ -276,7 +407,7 @@ def _normalize_live_window(window: Dict[str, Any], dataset_version: str, index: 
         "window_id": str(window.get("window_id") or f"{dataset_version}-{index}"),
         "schema_version": str(window.get("schema_version") or FEATURE_SCHEMA_VERSION),
         "features": {feature: _coerce_float(features.get(feature, 0.0)) for feature in FEATURES},
-        "label": label,
+        "label": _derive_binary_label(anomaly_type),
         "anomaly_type": anomaly_type,
     }
 
@@ -336,7 +467,9 @@ class TritonPythonModel:
         self.mean = np.asarray(weights["scaler_mean"], dtype=np.float32)
         self.scale = np.asarray(weights["scaler_scale"], dtype=np.float32)
         self.coefficients = np.asarray(weights["coefficients"], dtype=np.float32)
-        self.intercept = float(weights["intercept"])
+        self.intercepts = np.asarray(weights["intercepts"], dtype=np.float32)
+        self.class_labels = list(weights["class_labels"])
+        self.normal_index = self.class_labels.index(weights["normal_class_label"])
 
     def execute(self, requests):
         responses = []
@@ -346,10 +479,19 @@ class TritonPythonModel:
             if values.ndim == 1:
                 values = values.reshape(1, -1)
             normalized = (values - self.mean) / safe_scale
-            logits = normalized @ self.coefficients + self.intercept
-            probabilities = 1.0 / (1.0 + np.exp(-logits))
-            output = pb_utils.Tensor("anomaly_score", probabilities.astype(np.float32).reshape(-1, 1))
-            responses.append(pb_utils.InferenceResponse(output_tensors=[output]))
+            logits = normalized @ self.coefficients.T + self.intercepts
+            logits = logits - np.max(logits, axis=1, keepdims=True)
+            probabilities = np.exp(logits)
+            probabilities = probabilities / np.sum(probabilities, axis=1, keepdims=True)
+            anomaly_scores = 1.0 - probabilities[:, [self.normal_index]]
+            responses.append(
+                pb_utils.InferenceResponse(
+                    output_tensors=[
+                        pb_utils.Tensor("class_probabilities", probabilities.astype(np.float32)),
+                        pb_utils.Tensor("anomaly_score", anomaly_scores.astype(np.float32)),
+                    ]
+                )
+            )
         return responses
 """
 
@@ -365,6 +507,11 @@ input [
   }}
 ]
 output [
+  {{
+    name: "class_probabilities"
+    data_type: TYPE_FP32
+    dims: [{class_count}]
+  }},
   {{
     name: "anomaly_score"
     data_type: TYPE_FP32
@@ -385,67 +532,74 @@ version_policy: {{
 """
 
 
-def normal_sample() -> Dict[str, float]:
-    return {
-        "register_rate": random.uniform(0.1, 0.6),
-        "invite_rate": random.uniform(0.1, 0.4),
-        "bye_rate": random.uniform(0.05, 0.2),
-        "error_4xx_ratio": random.uniform(0.0, 0.05),
-        "error_5xx_ratio": random.uniform(0.0, 0.02),
-        "latency_p95": random.uniform(18.0, 45.0),
-        "retransmission_count": random.uniform(0.0, 2.0),
-        "inter_arrival_mean": random.uniform(4.0, 8.0),
-        "payload_variance": random.uniform(8.0, 25.0),
+def _jitter_feature(feature: str, value: float) -> float:
+    spread = max(abs(value) * 0.12, 0.02)
+    jittered = max(0.0, random.gauss(value, spread))
+    if feature in {"error_4xx_ratio", "error_5xx_ratio"}:
+        return round(max(0.0, min(jittered, 1.0)), 6)
+    return round(jittered, 6)
+
+
+def _synthetic_sample_for_label(anomaly_type: str) -> Dict[str, float]:
+    definition = scenario_definition(anomaly_type)
+    profiles = list(definition.get("event_profiles", []))
+    method_counts = {"REGISTER": 0.0, "INVITE": 0.0, "BYE": 0.0}
+    error_4xx_count = 0.0
+    error_5xx_count = 0.0
+    response_count = 0.0
+    latency_samples: List[float] = []
+    payload_extremes: List[float] = []
+    retransmission_count = 0.0
+
+    for profile in profiles:
+        count = float(profile.get("count", 0.0) or 0.0)
+        method = str(profile.get("method", "")).upper()
+        if method in method_counts:
+            method_counts[method] += count
+        response_code = int(profile.get("response_code", 0) or 0)
+        if not (response_code == 401 and method == "REGISTER"):
+            response_count += count
+            if 400 <= response_code < 500:
+                error_4xx_count += count
+            if response_code >= 500:
+                error_5xx_count += count
+        latency_ms = float(profile.get("latency_ms", 0.0) or 0.0)
+        latency_step = float(profile.get("latency_step", 0.0) or 0.0)
+        latency_samples.append(latency_ms + (latency_step * max(count * 0.95, 1.0)))
+        payload_size = float(profile.get("payload_size", 0.0) or 0.0)
+        payload_step = float(profile.get("payload_step", 0.0) or 0.0)
+        payload_extremes.extend([payload_size, payload_size + (payload_step * max(count - 1.0, 0.0))])
+        retransmission_every = float(profile.get("retransmission_every", 0.0) or 0.0)
+        if retransmission_every > 0:
+            retransmission_count += count / retransmission_every
+
+    total_events = sum(method_counts.values()) or 1.0
+    default_rate = max(float(definition.get("default_rate", 1.0) or 1.0), 0.25)
+    duration_seconds = max(total_events / default_rate, 8.0)
+    response_count = max(response_count, 1.0)
+    payload_variance = max(payload_extremes) - min(payload_extremes) if payload_extremes else 0.0
+    base_features = {
+        "register_rate": method_counts["REGISTER"] / duration_seconds,
+        "invite_rate": method_counts["INVITE"] / duration_seconds,
+        "bye_rate": method_counts["BYE"] / duration_seconds,
+        "error_4xx_ratio": error_4xx_count / response_count,
+        "error_5xx_ratio": error_5xx_count / response_count,
+        "latency_p95": max(latency_samples) if latency_samples else 0.0,
+        "retransmission_count": retransmission_count,
+        "inter_arrival_mean": duration_seconds / total_events,
+        "payload_variance": payload_variance,
     }
-
-
-def registration_storm_sample() -> Dict[str, float]:
-    sample = normal_sample()
-    sample.update(
-        {
-            "register_rate": random.uniform(3.5, 7.0),
-            "latency_p95": random.uniform(60.0, 200.0),
-            "retransmission_count": random.uniform(8.0, 35.0),
-            "inter_arrival_mean": random.uniform(0.2, 1.2),
-            "payload_variance": random.uniform(12.0, 35.0),
-        }
-    )
-    return sample
-
-
-def malformed_invite_sample() -> Dict[str, float]:
-    sample = normal_sample()
-    sample.update(
-        {
-            "invite_rate": random.uniform(1.0, 3.5),
-            "error_4xx_ratio": random.uniform(0.35, 0.85),
-            "latency_p95": random.uniform(120.0, 260.0),
-            "payload_variance": random.uniform(30.0, 90.0),
-        }
-    )
-    return sample
-
-
-def hss_latency_sample() -> Dict[str, float]:
-    sample = normal_sample()
-    sample.update(
-        {
-            "latency_p95": random.uniform(280.0, 640.0),
-            "error_5xx_ratio": random.uniform(0.12, 0.35),
-            "retransmission_count": random.uniform(3.0, 12.0),
-            "register_rate": random.uniform(0.9, 2.2),
-        }
-    )
-    return sample
+    return {
+        feature: _jitter_feature(feature, float(base_features.get(feature, 0.0)))
+        for feature in FEATURES
+    }
 
 
 def generate_dataset(size_per_class: int = 120) -> List[Dict[str, Any]]:
     records: List[Dict[str, Any]] = []
     for _ in range(size_per_class):
-        records.append({"features": normal_sample(), "label": 0, "anomaly_type": "normal"})
-        records.append({"features": registration_storm_sample(), "label": 1, "anomaly_type": "registration_storm"})
-        records.append({"features": malformed_invite_sample(), "label": 1, "anomaly_type": "malformed_sip"})
-        records.append({"features": hss_latency_sample(), "label": 1, "anomaly_type": "service_degradation"})
+        for anomaly_type in CANONICAL_LABELS:
+            records.append(_canonical_record(_synthetic_sample_for_label(anomaly_type), anomaly_type))
     random.shuffle(records)
     return records
 
@@ -476,9 +630,12 @@ def ingest_dataset(dataset_version: str, workspace_root: str, size_per_class: in
     workspace = _workspace_root(workspace_root)
     live_windows = _load_live_feature_windows(dataset_version, workspace_root)
     min_live_windows = max(int(os.getenv("IMS_MIN_REAL_WINDOWS", str(DEFAULT_MIN_REAL_WINDOWS))), 1)
-    live_labels = {window["label"] for window in live_windows}
+    min_per_class = max(int(os.getenv("IMS_MIN_WINDOWS_PER_CLASS", str(DEFAULT_MIN_WINDOWS_PER_CLASS))), 1)
+    allow_bootstrap = os.getenv("IMS_ALLOW_BOOTSTRAP_DATASET", "true").strip().lower() in {"1", "true", "yes", "on"}
+    live_guard = _multiclass_training_guard(live_windows, min_per_class)
+    minimum_live_records = max(min_live_windows, len(CANONICAL_LABELS) * min_per_class)
 
-    if len(live_windows) >= min_live_windows and live_labels == {0, 1}:
+    if len(live_windows) >= minimum_live_records and live_guard["all_classes_present"]:
         records_path = _write_json_reference(
             live_windows,
             f"datasets/{dataset_version}/features/{dataset_version}-{FEATURE_SCHEMA_VERSION}.json",
@@ -492,8 +649,17 @@ def ingest_dataset(dataset_version: str, workspace_root: str, size_per_class: in
             "feature_schema_version": FEATURE_SCHEMA_VERSION,
             "created_at": _now(),
             "source": "openims-sipp-lab",
-            "labels": sorted({record["anomaly_type"] for record in live_windows}),
+            "labels": sorted({canonical_anomaly_type(record["anomaly_type"]) for record in live_windows}),
+            "class_counts": live_guard["class_counts"],
+            "label_taxonomy_version": "ims_incident_taxonomy_v2",
         }
+
+    if not allow_bootstrap:
+        raise ValueError(
+            "Live multiclass dataset does not meet minimum class coverage. "
+            f"Required at least {min_per_class} record(s) for each class; "
+            f"missing or underfilled classes: {live_guard['missing_or_underfilled_classes']}"
+        )
 
     records = generate_dataset(size_per_class=size_per_class)
     records_path = _write_json_reference(records, f"datasets/{dataset_version}/raw/records.json", _raw_dataset_path(workspace, dataset_version))
@@ -504,9 +670,11 @@ def ingest_dataset(dataset_version: str, workspace_root: str, size_per_class: in
         "record_count": len(records),
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "created_at": _now(),
-        "source": "synthetic-ims-lab",
+        "source": "synthetic-ims-lab-multiclass",
         "labels": sorted({record["anomaly_type"] for record in records}),
         "live_record_count": len(live_windows),
+        "live_class_counts": live_guard["class_counts"],
+        "label_taxonomy_version": "ims_incident_taxonomy_v2",
     }
     return manifest
 
@@ -521,13 +689,14 @@ def materialize_feature_windows(dataset_manifest_path: str, workspace_root: str)
             windows.append(_normalize_live_window(window, dataset_version=dataset_manifest["dataset_version"], index=index))
     else:
         for index, record in enumerate(records):
+            anomaly_type = canonical_anomaly_type(record["anomaly_type"])
             windows.append(
                 {
                     "window_id": f"{dataset_manifest['dataset_version']}-{index}",
                     "schema_version": FEATURE_SCHEMA_VERSION,
                     "features": record["features"],
-                    "label": record["label"],
-                    "anomaly_type": record["anomaly_type"],
+                    "label": _derive_binary_label(anomaly_type),
+                    "anomaly_type": anomaly_type,
                 }
             )
 
@@ -571,10 +740,13 @@ def generate_labels(feature_manifest_path: str, workspace_root: str) -> Dict[str
     return {
         "dataset_version": feature_manifest["dataset_version"],
         "feature_schema_version": feature_manifest["feature_schema_version"],
+        "label_taxonomy_version": "ims_incident_taxonomy_v2",
         "train_path": train_path,
         "eval_path": eval_path,
         "train_count": len(train_records),
         "eval_count": len(eval_records),
+        "train_class_counts": _count_by_anomaly_type(train_records),
+        "eval_class_counts": _count_by_anomaly_type(eval_records),
         "created_at": _now(),
     }
 
@@ -583,44 +755,50 @@ def load_records(path: str) -> List[Dict[str, Any]]:
     return _json_load(path)
 
 
-def train_baseline(train_records: List[Dict[str, Any]]) -> Dict[str, Any]:
-    normals = [record["features"] for record in train_records if record["label"] == 0]
-    feature_stats = {}
-    feature_weights = {}
-    for feature in FEATURES:
-        values = [sample[feature] for sample in normals]
-        feature_stats[feature] = {
-            "mean": round(mean(values), 6),
-            "std": round(max(pstdev(values), 0.01), 6),
-        }
-
-    anomaly_means = {
-        feature: mean(record["features"][feature] for record in train_records if record["label"] == 1)
-        for feature in FEATURES
-    }
-    normal_means = {feature: feature_stats[feature]["mean"] for feature in FEATURES}
-    deltas = {feature: max(anomaly_means[feature] - normal_means[feature], 0.01) for feature in FEATURES}
-    total_delta = sum(deltas.values())
-    feature_weights = {feature: round(delta / total_delta, 6) for feature, delta in deltas.items()}
+def _linear_artifact_from_model(model: Pipeline, model_type: str) -> Dict[str, Any]:
+    scaler = model.named_steps["scaler"]
+    classifier = model.named_steps["classifier"]
     return {
-        "model_type": "baseline_threshold",
-        "threshold": 0.58,
+        "model_type": model_type,
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
-        "feature_stats": feature_stats,
-        "feature_weights": feature_weights,
+        "feature_names": FEATURES,
+        "class_labels": [canonical_anomaly_type(label) for label in classifier.classes_.tolist()],
+        "normal_class_label": NORMAL_ANOMALY_TYPE,
+        "scaler_mean": [round(float(value), 10) for value in scaler.mean_.tolist()],
+        "scaler_scale": [round(float(value), 10) for value in scaler.scale_.tolist()],
+        "coefficients": [
+            [round(float(weight), 10) for weight in row]
+            for row in classifier.coef_.tolist()
+        ],
+        "intercepts": [round(float(value), 10) for value in classifier.intercept_.tolist()],
+        "anomaly_score_strategy": "1-minus-normal_probability",
     }
 
 
-def score_baseline(sample: Dict[str, float], artifact: Dict[str, Any]) -> float:
-    weighted_sum = 0.0
-    total_weight = 0.0
-    for feature, weight in artifact["feature_weights"].items():
-        mean_value = artifact["feature_stats"][feature]["mean"]
-        std_value = max(artifact["feature_stats"][feature]["std"], 0.01)
-        z_score = max(0.0, (sample[feature] - mean_value) / (2.0 * std_value))
-        weighted_sum += min(z_score, 1.0) * weight
-        total_weight += weight
-    return min(weighted_sum / max(total_weight, 0.001), 0.99)
+def train_baseline(train_records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    features, labels = vectorize(train_records)
+    model = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            (
+                "classifier",
+                LogisticRegression(
+                    max_iter=2_000,
+                    multi_class="multinomial",
+                    class_weight="balanced",
+                    random_state=7,
+                ),
+            ),
+        ]
+    )
+    model.fit(features, labels)
+    artifact = _linear_artifact_from_model(model, "baseline_multiclass_logistic_regression")
+    artifact["baseline_family"] = "multinomial_logistic_regression"
+    return artifact
+
+
+def score_baseline(sample: Dict[str, float], artifact: Dict[str, Any]) -> Dict[str, Any]:
+    return _prediction_payload(_linear_model_probabilities(sample, artifact))
 
 
 def train_autogluon_candidate(
@@ -658,28 +836,40 @@ def train_autogluon_candidate(
     rows = []
     for record in train_records:
         row = {feature: float(record["features"][feature]) for feature in FEATURES}
-        row["label"] = int(record["label"])
+        row["anomaly_type"] = canonical_anomaly_type(record["anomaly_type"])
         rows.append(row)
     train_frame = pd.DataFrame(rows)
-    predictor = TabularPredictor(label="label", path=str(predictor_dir), problem_type="binary").fit(
+    predictor = TabularPredictor(
+        label="anomaly_type",
+        path=str(predictor_dir),
+        problem_type="multiclass",
+        eval_metric="f1_macro",
+    ).fit(
         train_data=train_frame,
         presets=preset,
         time_limit=time_limit,
         verbosity=0,
     )
     leaderboard = predictor.leaderboard(train_frame, silent=True).to_dict("records")
+    class_labels = list(getattr(predictor, "class_labels", []) or [])
+    if not class_labels:
+        class_labels = list(
+            predictor.predict_proba(train_frame[FEATURES].iloc[:1], as_multiclass=True).columns
+        )
     return {
-        "model_type": "autogluon_tabular",
-        "threshold": 0.6,
+        "model_type": "autogluon_tabular_multiclass",
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "automl_engine": "autogluon",
         "predictor_path": str(predictor_dir),
         "best_model": predictor.model_best,
         "leaderboard": leaderboard[:5],
+        "class_labels": [canonical_anomaly_type(label) for label in class_labels],
+        "normal_class_label": NORMAL_ANOMALY_TYPE,
+        "anomaly_score_strategy": "1-minus-normal_probability",
     }
 
 
-def score_autogluon(sample: Dict[str, float], artifact: Dict[str, Any]) -> float:
+def score_autogluon(sample: Dict[str, float], artifact: Dict[str, Any]) -> Dict[str, Any]:
     import pandas as pd
     from autogluon.tabular import TabularPredictor
 
@@ -701,61 +891,136 @@ def score_autogluon(sample: Dict[str, float], artifact: Dict[str, Any]) -> float
         _AUTOGLUON_PREDICTOR_CACHE[predictor_source] = predictor
     frame = pd.DataFrame([{feature: float(sample[feature]) for feature in FEATURES}])
     probabilities = predictor.predict_proba(frame, as_multiclass=True)
-    if 1 in probabilities.columns:
-        return float(probabilities[1].iloc[0])
-    return float(probabilities.iloc[0].max())
+    probability_map = {
+        canonical_anomaly_type(str(label)): float(probabilities.iloc[0][label])
+        for label in probabilities.columns
+    }
+    return _prediction_payload(probability_map)
 
 
-def evaluate(records: List[Dict[str, Any]], artifact: Dict[str, Any], scorer: Callable[[Dict[str, float], Dict[str, Any]], float]) -> Dict[str, Any]:
-    threshold = float(artifact.get("threshold", 0.6))
-    tp = fp = tn = fn = 0
+def evaluate(
+    records: List[Dict[str, Any]],
+    artifact: Dict[str, Any],
+    scorer: Callable[[Dict[str, float], Dict[str, Any]], Dict[str, Any]],
+) -> Dict[str, Any]:
+    labels = list(artifact.get("class_labels") or CANONICAL_LABELS)
+    y_true: List[str] = []
+    y_pred: List[str] = []
+    probability_vectors: List[List[float]] = []
+    confidences: List[float] = []
+    latency_samples_ms: List[float] = []
+
     for record in records:
-        score = scorer(record["features"], artifact)
-        predicted = 1 if score >= threshold else 0
-        actual = record["label"]
-        if predicted == 1 and actual == 1:
-            tp += 1
-        elif predicted == 1 and actual == 0:
-            fp += 1
-        elif predicted == 0 and actual == 0:
-            tn += 1
-        else:
-            fn += 1
+        started = time.perf_counter()
+        prediction = scorer(record["features"], artifact)
+        latency_samples_ms.append((time.perf_counter() - started) * 1000.0)
+        actual = canonical_anomaly_type(record["anomaly_type"])
+        predicted = canonical_anomaly_type(prediction["predicted_anomaly_type"])
+        vector = [float(prediction["class_probabilities"].get(label, 0.0)) for label in labels]
+        total_probability = sum(vector) or 1.0
+        y_true.append(actual)
+        y_pred.append(predicted)
+        probability_vectors.append([value / total_probability for value in vector])
+        confidences.append(float(prediction.get("predicted_confidence", 0.0)))
 
-    precision = tp / max(tp + fp, 1)
-    recall = tp / max(tp + fn, 1)
-    f1 = 0.0 if not (precision + recall) else 2 * precision * recall / (precision + recall)
-    fpr = fp / max(fp + tn, 1)
+    macro_precision, macro_recall, macro_f1, _ = precision_recall_fscore_support(
+        y_true,
+        y_pred,
+        labels=labels,
+        average="macro",
+        zero_division=0,
+    )
+    _, _, weighted_f1, _ = precision_recall_fscore_support(
+        y_true,
+        y_pred,
+        labels=labels,
+        average="weighted",
+        zero_division=0,
+    )
+    per_class_precision, per_class_recall, _, support = precision_recall_fscore_support(
+        y_true,
+        y_pred,
+        labels=labels,
+        average=None,
+        zero_division=0,
+    )
+    matrix = confusion_matrix(y_true, y_pred, labels=labels)
+    normal_total = sum(1 for label in y_true if label == NORMAL_ANOMALY_TYPE)
+    normal_false_alarm_rate = (
+        sum(1 for actual, predicted in zip(y_true, y_pred) if actual == NORMAL_ANOMALY_TYPE and predicted != NORMAL_ANOMALY_TYPE)
+        / max(normal_total, 1)
+    )
+    class_recall_values = [float(value) for value in per_class_recall.tolist()] if len(per_class_recall) else [0.0]
+    stability_score = max(0.0, 1.0 - (max(class_recall_values) - min(class_recall_values)))
+    calibration_summary = {
+        "multiclass_log_loss": round(float(log_loss(y_true, probability_vectors, labels=labels)), 4),
+        "average_predicted_confidence": round(sum(confidences) / max(len(confidences), 1), 4),
+    }
     return {
-        "precision": round(precision, 4),
-        "recall": round(recall, 4),
-        "f1": round(f1, 4),
-        "false_positive_rate": round(fpr, 4),
-        "latency_p95_ms": 15,
-        "stability_score": 0.92,
+        "macro_precision": round(float(macro_precision), 4),
+        "macro_recall": round(float(macro_recall), 4),
+        "macro_f1": round(float(macro_f1), 4),
+        "weighted_f1": round(float(weighted_f1), 4),
+        "balanced_accuracy": round(float(balanced_accuracy_score(y_true, y_pred)), 4),
+        "normal_false_alarm_rate": round(float(normal_false_alarm_rate), 4),
+        "per_class_precision": {
+            label: round(float(value), 4)
+            for label, value in zip(labels, per_class_precision.tolist())
+        },
+        "per_class_recall": {
+            label: round(float(value), 4)
+            for label, value in zip(labels, per_class_recall.tolist())
+        },
+        "per_class_support": {
+            label: int(value)
+            for label, value in zip(labels, support.tolist())
+        },
+        "confusion_matrix": {
+            "labels": labels,
+            "matrix": matrix.tolist(),
+        },
+        "calibration": calibration_summary,
+        "latency_p95_ms": round(float(_percentile(latency_samples_ms, 0.95)), 4),
+        "stability_score": round(float(stability_score), 4),
     }
 
 
 def gate_metrics(metrics: Dict[str, Any], gate: Dict[str, Any] | None = None) -> Dict[str, Any]:
     active_gate = gate or PROMOTION_GATE
-    precision_ok = float(metrics.get("precision", 0.0)) >= float(active_gate["min_precision"])
-    fpr_ok = float(metrics.get("false_positive_rate", 1.0)) <= float(active_gate["max_false_positive_rate"])
+    per_class_recall = {
+        canonical_anomaly_type(label): float(value)
+        for label, value in dict(metrics.get("per_class_recall", {})).items()
+    }
+    min_class_recall = min(per_class_recall.values()) if per_class_recall else 0.0
+    macro_f1_ok = float(metrics.get("macro_f1", 0.0)) >= float(active_gate["min_macro_f1"])
+    weighted_f1_ok = float(metrics.get("weighted_f1", 0.0)) >= float(active_gate["min_weighted_f1"])
+    balanced_accuracy_ok = float(metrics.get("balanced_accuracy", 0.0)) >= float(active_gate["min_balanced_accuracy"])
+    class_recall_ok = min_class_recall >= float(active_gate["min_class_recall"])
+    normal_fpr_ok = float(metrics.get("normal_false_alarm_rate", 1.0)) <= float(active_gate["max_normal_false_alarm_rate"])
+    log_loss_ok = float(dict(metrics.get("calibration", {})).get("multiclass_log_loss", 10_000.0)) <= float(
+        active_gate["max_multiclass_log_loss"]
+    )
     latency_ok = float(metrics.get("latency_p95_ms", 10_000.0)) <= float(active_gate["max_latency_p95_ms"])
     stability_ok = float(metrics.get("stability_score", 0.0)) >= float(active_gate["min_stability_score"])
-    status = "passed" if all([precision_ok, fpr_ok, latency_ok, stability_ok]) else "failed"
+    status = "passed" if all([macro_f1_ok, weighted_f1_ok, balanced_accuracy_ok, class_recall_ok, normal_fpr_ok, log_loss_ok, latency_ok, stability_ok]) else "failed"
     return {
         "status": status,
-        "precision_ok": precision_ok,
-        "false_positive_rate_ok": fpr_ok,
+        "macro_f1_ok": macro_f1_ok,
+        "weighted_f1_ok": weighted_f1_ok,
+        "balanced_accuracy_ok": balanced_accuracy_ok,
+        "class_recall_ok": class_recall_ok,
+        "normal_false_alarm_rate_ok": normal_fpr_ok,
+        "multiclass_log_loss_ok": log_loss_ok,
         "latency_ok": latency_ok,
         "stability_ok": stability_ok,
+        "minimum_observed_class_recall": round(float(min_class_recall), 4),
         "gate": active_gate,
     }
 
 
-def vectorize(records: List[Dict[str, Any]]) -> Tuple[List[List[float]], List[int]]:
+def vectorize(records: List[Dict[str, Any]]) -> Tuple[List[List[float]], List[str]]:
     features = [[record["features"][feature] for feature in FEATURES] for record in records]
-    labels = [record["label"] for record in records]
+    labels = [canonical_anomaly_type(record["anomaly_type"]) for record in records]
     return features, labels
 
 
@@ -764,7 +1029,15 @@ def train_serving_model(train_records: List[Dict[str, Any]]) -> Pipeline:
     model = Pipeline(
         [
             ("scaler", StandardScaler()),
-            ("classifier", LogisticRegression(max_iter=1000, random_state=7)),
+            (
+                "classifier",
+                LogisticRegression(
+                    max_iter=2_000,
+                    multi_class="multinomial",
+                    class_weight="balanced",
+                    random_state=7,
+                ),
+            ),
         ]
     )
     model.fit(features, labels)
@@ -788,15 +1061,9 @@ def export_triton_repository(serving_root: Path, model: Pipeline, source_model_v
     _json_dump(
         weights_path,
         {
-            "model_type": "triton_python_logistic_regression",
+            "model_type": "triton_python_multiclass_logistic_regression",
             "source_model_version": source_model_version,
-            "feature_schema_version": FEATURE_SCHEMA_VERSION,
-            "feature_names": FEATURES,
-            "scaler_mean": [round(float(value), 10) for value in scaler.mean_.tolist()],
-            "scaler_scale": [round(float(value), 10) for value in scaler.scale_.tolist()],
-            "coefficients": [round(float(value), 10) for value in classifier.coef_[0].tolist()],
-            "intercept": round(float(classifier.intercept_[0]), 10),
-            "threshold": 0.6,
+            **_linear_artifact_from_model(model, "triton_python_multiclass_logistic_regression"),
         },
     )
     (version_root / "model.py").write_text(TRITON_MODEL_TEMPLATE)
@@ -804,6 +1071,7 @@ def export_triton_repository(serving_root: Path, model: Pipeline, source_model_v
         TRITON_CONFIG_TEMPLATE.format(
             model_name=TRITON_MODEL_NAME,
             feature_count=len(FEATURES),
+            class_count=len(classifier.classes_),
             model_version=TRITON_MODEL_VERSION,
         )
     )
@@ -817,38 +1085,21 @@ def export_triton_repository(serving_root: Path, model: Pipeline, source_model_v
 
 
 def evaluate_serving_model(records: List[Dict[str, Any]], model: Pipeline) -> Dict[str, Any]:
-    features, labels = vectorize(records)
-    probabilities = model.predict_proba(features)[:, 1]
-    tp = fp = tn = fn = 0
-    for label, probability in zip(labels, probabilities):
-        predicted = 1 if probability >= 0.6 else 0
-        if predicted == 1 and label == 1:
-            tp += 1
-        elif predicted == 1 and label == 0:
-            fp += 1
-        elif predicted == 0 and label == 0:
-            tn += 1
-        else:
-            fn += 1
-    precision = tp / max(tp + fp, 1)
-    recall = tp / max(tp + fn, 1)
-    f1 = 0.0 if not (precision + recall) else 2 * precision * recall / (precision + recall)
-    fpr = fp / max(fp + tn, 1)
-    return {
-        "precision": round(precision, 4),
-        "recall": round(recall, 4),
-        "f1": round(f1, 4),
-        "false_positive_rate": round(fpr, 4),
-        "latency_p95_ms": 18,
-        "stability_score": 0.95,
-    }
+    return evaluate(
+        records,
+        _linear_artifact_from_model(model, "triton_python_multiclass_logistic_regression"),
+        score_baseline,
+    )
 
 
-def scorer_for_artifact(artifact: Dict[str, Any]) -> Callable[[Dict[str, float], Dict[str, Any]], float]:
+def scorer_for_artifact(artifact: Dict[str, Any]) -> Callable[[Dict[str, float], Dict[str, Any]], Dict[str, Any]]:
     model_type = artifact.get("model_type")
-    if model_type == "baseline_threshold":
+    if model_type in {
+        "baseline_multiclass_logistic_regression",
+        "triton_python_multiclass_logistic_regression",
+    }:
         return score_baseline
-    if model_type == "autogluon_tabular":
+    if model_type == "autogluon_tabular_multiclass":
         return score_autogluon
     raise ValueError(f"Unsupported model type {model_type}")
 
@@ -865,16 +1116,23 @@ def select_best_model(evaluation: Dict[str, Any]) -> Dict[str, Any]:
     selected = baseline
     reason = "candidate failed evaluation gate"
 
-    if candidate_gate["status"] == "passed" and candidate["metrics"]["f1"] >= baseline["metrics"]["f1"]:
+    if candidate_gate["status"] == "passed" and (
+        float(candidate["metrics"]["macro_f1"]) > float(baseline["metrics"]["macro_f1"])
+        or (
+            float(candidate["metrics"]["macro_f1"]) == float(baseline["metrics"]["macro_f1"])
+            and float(candidate["metrics"]["weighted_f1"]) >= float(baseline["metrics"]["weighted_f1"])
+        )
+    ):
         selected = candidate
         reason = "candidate satisfied gate and outperformed baseline"
-    elif baseline["metrics"]["f1"] >= candidate["metrics"]["f1"]:
-        reason = "baseline retained due to better or equal F1 score"
+    elif float(baseline["metrics"]["macro_f1"]) >= float(candidate["metrics"]["macro_f1"]):
+        reason = "baseline retained due to better or equal macro-F1 score"
 
     return {
         "dataset_version": evaluation["dataset_version"],
         "feature_schema_version": evaluation["feature_schema_version"],
         "label_manifest": evaluation["label_manifest"],
+        "label_taxonomy_version": "ims_incident_taxonomy_v2",
         "promotion_gate": evaluation["promotion_gate"],
         "candidate_gate_result": candidate_gate,
         "baseline": baseline,
@@ -883,8 +1141,8 @@ def select_best_model(evaluation: Dict[str, Any]) -> Dict[str, Any]:
         "selected_model_type": selected["model_type"],
         "selected_artifact_path": selected["artifact_path"],
         "selection_reason": reason,
-        "selected_training_mode": "weakly_supervised",
-        "candidate_deployment_ready": True,
+        "selected_training_mode": "multiclass_supervised",
+        "candidate_deployment_ready": candidate_gate["status"] == "passed",
     }
 
 
@@ -903,6 +1161,9 @@ def build_registry(
     deployed_runtime_version = "predictive-serving-v1"
     return {
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
+        "label_taxonomy_version": "ims_incident_taxonomy_v2",
+        "class_labels": CANONICAL_LABELS,
+        "normal_class_label": NORMAL_ANOMALY_TYPE,
         "feature_schemas": [
             {
                 "version": FEATURE_SCHEMA_VERSION,
@@ -918,7 +1179,7 @@ def build_registry(
             {
                 "version": dataset_version,
                 "feature_schema_version": FEATURE_SCHEMA_VERSION,
-                "record_source": "synthetic-ims-lab",
+                "record_source": "synthetic-ims-lab-multiclass",
                 "status": "registered",
                 "created_at": _now(),
             }
@@ -947,8 +1208,10 @@ def build_registry(
                 "artifact": f"models/artifacts/{baseline_version}.json",
                 "dataset_version": dataset_version,
                 "feature_schema_version": FEATURE_SCHEMA_VERSION,
-                "training_mode": "weakly_supervised",
-                "threshold": baseline_artifact.get("threshold"),
+                "label_taxonomy_version": "ims_incident_taxonomy_v2",
+                "training_mode": "multiclass_supervised",
+                "class_labels": baseline_artifact.get("class_labels", CANONICAL_LABELS),
+                "normal_class_label": baseline_artifact.get("normal_class_label", NORMAL_ANOMALY_TYPE),
                 "metrics": baseline_metrics,
             },
             {
@@ -957,22 +1220,26 @@ def build_registry(
                 "artifact": f"models/artifacts/{candidate_version}.json",
                 "dataset_version": dataset_version,
                 "feature_schema_version": FEATURE_SCHEMA_VERSION,
-                "training_mode": "weakly_supervised",
-                "threshold": candidate_artifact.get("threshold"),
+                "label_taxonomy_version": "ims_incident_taxonomy_v2",
+                "training_mode": "multiclass_supervised",
+                "class_labels": candidate_artifact.get("class_labels", CANONICAL_LABELS),
+                "normal_class_label": candidate_artifact.get("normal_class_label", NORMAL_ANOMALY_TYPE),
                 "metrics": candidate_metrics,
                 "automl_engine": candidate_artifact.get("automl_engine", "autogluon"),
                 "best_model": candidate_artifact.get("best_model"),
             },
             {
                 "version": deployed_runtime_version,
-                "kind": "triton_python_logistic_regression",
+                "kind": "triton_python_multiclass_logistic_regression",
                 "artifact": f"models/serving/predictive/{TRITON_MODEL_NAME}/{TRITON_MODEL_VERSION}/weights.json",
                 "serving_repository": "models/serving/predictive",
                 "triton_model_name": TRITON_MODEL_NAME,
                 "dataset_version": dataset_version,
                 "feature_schema_version": FEATURE_SCHEMA_VERSION,
-                "training_mode": "weakly_supervised",
-                "threshold": 0.6,
+                "label_taxonomy_version": "ims_incident_taxonomy_v2",
+                "training_mode": "multiclass_supervised",
+                "class_labels": CANONICAL_LABELS,
+                "normal_class_label": NORMAL_ANOMALY_TYPE,
                 "source_model_version": selected_version,
                 "metrics": serving_metrics,
             },

@@ -2,18 +2,18 @@
 
 ## Purpose
 
-This phase exposes the selected anomaly model through a stable inference runtime so live platform services can score traffic windows consistently.
+This phase exposes the selected anomaly model through a stable inference runtime so live platform services can predict one canonical incident class per traffic window, plus confidence, probabilities, and top alternatives.
 
 ## Status
 
-This phase is live in the current demo through the `ims-predictive` and `ims-predictive-fs` Triton-backed serving paths. A side-by-side MLServer candidate path is the next serving experiment, but Triton remains the active default runtime.
+This phase is live through the legacy `ims-predictive` Triton path plus the feature-store rollout endpoints `ims-predictive-fs` (Triton) and `ims-predictive-fs-mlserver` (MLServer). Triton remains the default remote-scoring runtime; MLServer is live as a side-by-side parity path.
 
 ## What This Phase Covers
 
 - package the winning model for serving
-- publish the model into the active serving artifact layout
+- publish versioned and stable-alias artifacts into object storage
 - expose the runtime through OpenShift AI model serving
-- provide stable REST and gRPC inference endpoints
+- provide stable REST and gRPC inference endpoints for multiclass probabilities and derived incident signals
 - support side-by-side serving when a new runtime path is introduced
 
 ## Stage Diagram
@@ -33,21 +33,22 @@ flowchart TD
 
 ## Inputs
 
-- approved model artifact and metadata
-- serving compatibility contract
-- runtime configuration for KServe, Triton, and candidate MLServer paths
+- approved source model artifact and metadata
+- serving compatibility contract including class order, normal-class identity, and probability output shape
+- runtime configuration for KServe, Triton, and MLServer paths
 
 ## Outputs
 
-- deployed inference runtime
+- deployed inference runtimes
 - stable inference endpoints
-- serving metadata that downstream services can trust
-- side-by-side comparison path when a new runtime is introduced
+- serving metadata that downstream services can trust, including class labels and taxonomy version
+- side-by-side comparison path across Triton and MLServer
 
 ## Current Repo Touchpoints
 
-- `ai/models/`
-- `k8s/`
+- `ai/training/featurestore_train.py`
+- `services/shared/model_store.py`
+- `k8s/base/serving/`
 - `docs/architecture/feature-store-training-path.md`
 - `docs/architecture/engineering-spec.md`
 

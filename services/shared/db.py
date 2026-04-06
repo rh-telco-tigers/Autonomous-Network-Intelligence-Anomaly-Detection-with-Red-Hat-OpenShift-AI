@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-from shared.workflow import NEW, RCA_GENERATED, REMEDIATION_SUGGESTED, normalize_workflow_state, severity_from_score
+from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE
+from shared.workflow import NEW, RCA_GENERATED, REMEDIATION_SUGGESTED, normalize_workflow_state, severity_from_prediction, severity_from_score
 
 
 def _db_path() -> Path:
@@ -229,6 +230,10 @@ def init_db() -> None:
                 "current_rca_id": "INTEGER",
                 "current_ticket_id": "INTEGER",
                 "duplicate_of_incident_id": "TEXT",
+                "predicted_confidence": "REAL",
+                "class_probabilities_json": "TEXT",
+                "top_classes_json": "TEXT",
+                "is_anomaly": "INTEGER",
             },
         )
         connection.execute(
@@ -237,7 +242,8 @@ def init_db() -> None:
             SET workflow_state = COALESCE(workflow_state, status),
                 workflow_revision = COALESCE(workflow_revision, 1),
                 severity = COALESCE(severity, 'Medium'),
-                source_system = COALESCE(source_system, 'anomaly-service')
+                source_system = COALESCE(source_system, 'anomaly-service'),
+                is_anomaly = COALESCE(is_anomaly, CASE WHEN anomaly_type = 'normal_operation' THEN 0 ELSE 1 END)
             """
         )
         connection.commit()
@@ -256,14 +262,21 @@ def _rca_row(connection: sqlite3.Connection, incident_id: str, rca_id: int) -> s
 
 def create_incident(payload: Dict[str, Any]) -> Dict[str, Any]:
     workflow_state = normalize_workflow_state(str(payload.get("status") or payload.get("workflow_state") or NEW))
+    predicted_confidence = float(payload.get("predicted_confidence") or 0.0)
+    anomaly_type = str(payload.get("anomaly_type") or NORMAL_ANOMALY_TYPE)
     record = {
         "id": payload["incident_id"],
         "project": payload.get("project", "ims-demo"),
         "status": workflow_state,
-        "severity": payload.get("severity") or severity_from_score(float(payload["anomaly_score"])),
+        "severity": payload.get("severity") or severity_from_prediction(anomaly_type, predicted_confidence)
+        or severity_from_score(float(payload["anomaly_score"])),
         "source_system": payload.get("source_system", "anomaly-service"),
         "anomaly_score": payload["anomaly_score"],
-        "anomaly_type": payload["anomaly_type"],
+        "anomaly_type": anomaly_type,
+        "predicted_confidence": predicted_confidence,
+        "class_probabilities_json": _json_dumps(payload.get("class_probabilities", {})),
+        "top_classes_json": _json_dumps(payload.get("top_classes", [])),
+        "is_anomaly": bool(payload.get("is_anomaly", anomaly_type != "normal_operation")),
         "model_version": payload["model_version"],
         "feature_window_id": payload.get("feature_window_id"),
         "feature_snapshot": _json_dumps(payload.get("feature_snapshot", {})),
@@ -279,9 +292,10 @@ def create_incident(payload: Dict[str, Any]) -> Dict[str, Any]:
             """
             INSERT INTO incidents (
               id, project, status, severity, source_system, anomaly_score, anomaly_type, model_version,
+              predicted_confidence, class_probabilities_json, top_classes_json, is_anomaly,
               feature_window_id, feature_snapshot, rca_payload, recommendation, created_at, updated_at,
               workflow_state, workflow_revision, duplicate_of_incident_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               project = excluded.project,
               status = excluded.status,
@@ -289,6 +303,10 @@ def create_incident(payload: Dict[str, Any]) -> Dict[str, Any]:
               source_system = excluded.source_system,
               anomaly_score = excluded.anomaly_score,
               anomaly_type = excluded.anomaly_type,
+              predicted_confidence = excluded.predicted_confidence,
+              class_probabilities_json = excluded.class_probabilities_json,
+              top_classes_json = excluded.top_classes_json,
+              is_anomaly = excluded.is_anomaly,
               model_version = excluded.model_version,
               feature_window_id = excluded.feature_window_id,
               feature_snapshot = excluded.feature_snapshot,
@@ -307,6 +325,10 @@ def create_incident(payload: Dict[str, Any]) -> Dict[str, Any]:
                 record["anomaly_score"],
                 record["anomaly_type"],
                 record["model_version"],
+                record["predicted_confidence"],
+                record["class_probabilities_json"],
+                record["top_classes_json"],
+                int(record["is_anomaly"]),
                 record["feature_window_id"],
                 record["feature_snapshot"],
                 record["rca_payload"],
@@ -1106,9 +1128,21 @@ def _deserialize_incident(row: sqlite3.Row) -> Dict[str, Any]:
     record["workflow_revision"] = int(record.get("workflow_revision") or 1)
     record["feature_snapshot"] = _json_loads(record.get("feature_snapshot"), {})
     record["rca_payload"] = _json_loads(record.get("rca_payload"), None)
+    record["class_probabilities"] = _json_loads(record.get("class_probabilities_json"), {})
+    record["top_classes"] = _json_loads(record.get("top_classes_json"), [])
     record["current_rca_id"] = int(record["current_rca_id"]) if record.get("current_rca_id") else None
     record["current_ticket_id"] = int(record["current_ticket_id"]) if record.get("current_ticket_id") else None
-    record["severity"] = str(record.get("severity") or severity_from_score(float(record.get("anomaly_score") or 0.0)))
+    record["predicted_confidence"] = float(record.get("predicted_confidence") or 0.0)
+    record["is_anomaly"] = bool(
+        record.get("is_anomaly")
+        if record.get("is_anomaly") is not None
+        else str(record.get("anomaly_type") or NORMAL_ANOMALY_TYPE) != NORMAL_ANOMALY_TYPE
+    )
+    record["severity"] = str(
+        record.get("severity")
+        or severity_from_prediction(str(record.get("anomaly_type") or ""), float(record.get("predicted_confidence") or 0.0))
+        or severity_from_score(float(record.get("anomaly_score") or 0.0))
+    )
     record["source_system"] = str(record.get("source_system") or "anomaly-service")
     return record
 

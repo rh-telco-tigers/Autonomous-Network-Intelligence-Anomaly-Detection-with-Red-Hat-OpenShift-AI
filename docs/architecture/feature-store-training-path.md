@@ -2,18 +2,18 @@
 
 ## 1. Purpose
 
-This document defines the next architecture for the IMS anomaly platform after the current live-demo path.
+This document defines the live feature-store-backed architecture for the IMS anomaly platform across Feature Store, KFP training, model registry, and serving.
 
-The objective is to prepare for actual model training while incident collection is still in progress, and then introduce a separate Red Hat OpenShift AI Feature Store and Model Registry workflow without breaking the existing demo pipeline.
+The objective is no longer to sketch a hypothetical next path. The bundle publication pipeline, the `ims-featurestore` Feast deployment, the `ims-featurestore-train-and-register` pipeline, the OpenShift AI Model Registry publication step, and the dual Triton and MLServer serving exports are now part of the current rollout.
 
 This architecture must:
 
-- preserve the current `ims-anomaly-platform-train-and-register` path until the new path is proven
+- keep the legacy `ims-anomaly-platform-train-and-register` path available as a compatibility bridge
 - continue collecting incidents, RCA payloads, and feature windows in the running platform
 - create a final, versioned bundle dataset that is ready to publish into Feature Store
 - define how that dataset maps to Feature Store data sources, features, feature views, and feature services
-- introduce a new Kubeflow pipeline that reads from Feature Store, trains a model, and publishes a model version into the Red Hat OpenShift AI Model Registry
-- deploy the new model into a serving runtime and expose it without breaking the current `ims-predictive` service
+- run a cluster-native Kubeflow pipeline that reads from Feature Store, trains a model, and publishes a model version into the Red Hat OpenShift AI Model Registry
+- deploy the feature-store-trained model into serving runtimes without breaking the legacy `ims-predictive` service
 
 This document extends the current [engineering specification](./engineering-spec.md) and the release-oriented [incident release and offline training contract](./incident-release-corpus-and-offline-training.md).
 
@@ -30,16 +30,16 @@ It assumes Phase 1 data has already been persisted by the live platform and does
 
 ### 1.2 Document Role
 
-Keep this document as the detailed transition plan for phases 2 to 5.
+Keep this document as the detailed reference for the current phases 2 to 5 implementation and its remaining compatibility constraints.
 
 Use this file when you need:
 
-- the target Feature Store architecture
+- the live Feature Store architecture
 - bundle dataset structure and Feature Store projection rules
-- new Kubeflow pipeline boundaries and inputs
-- model registry transition details and serving rollout options
+- feature-store KFP pipeline boundaries and inputs
+- model registry and serving rollout details, including what remains transitional
 
-Use the phase overview files for concise summaries. They do not replace the design detail, milestones, and transition constraints captured here.
+Use the phase overview files for concise summaries. They do not replace the design detail, rollout status, and remaining transition constraints captured here.
 
 ## 2. Product Notes
 
@@ -54,23 +54,26 @@ Relevant references:
 
 Rules for this repo:
 
-- treat Feature Store as an additive path until the target cluster version and support posture are confirmed
-- keep the current MinIO-backed training and Triton serving path operational during the transition
-- avoid any design that requires deleting or rewriting the current demo model lifecycle before the new path is validated
+- keep the legacy MinIO-backed training and Triton bootstrap path operational as a compatibility bridge
+- treat the feature-store KFP path, model registry, and serving exports as the preferred cluster workflow
+- avoid any design that removes the legacy bridge before the remaining rollout cleanup is complete
 
 ## 3. Current State
 
-Today the platform trains and serves from MinIO-backed feature windows directly.
+Today the platform supports both the legacy direct MinIO path and the feature-store-backed cluster path.
 
 Current runtime facts:
 
 - `services/sipp-runner/run_scenario.py` writes JSON feature windows to MinIO under `pipelines/ims-demo-lab/datasets/datasets/<dataset_version>/feature-windows/...`
-- `ai/training/train_and_register.py` reads those feature-window objects from MinIO, falls back to synthetic data if the dataset is too small, trains the model, evaluates it, writes registry metadata, and uploads the serving artifact into `s3://ims-models/predictive/`
-- the current Kubeflow pipeline is `ims-anomaly-platform-train-and-register`
-- the current model registry is a repo-managed JSON document plus object storage artifacts
-- the current serving target is the `ims-predictive` Triton-backed `InferenceService`
+- `ai/training/build_feature_bundle.py` and the release tooling create versioned bundle datasets under `pipelines/ims-demo-lab/datasets/feature-bundles/<bundle_version>/`
+- `k8s/base/feature-store/featurestore-instance.yaml` deploys `ims-featurestore` through OpenShift AI Feature Store / Feast
+- `ai/pipelines/ims_feature_bundle_pipeline.py` publishes and validates bundle versions
+- `ai/pipelines/ims_featurestore_pipeline.py` resolves bundles, syncs Feast definitions, retrieves the training frame, trains and evaluates the baseline and AutoGluon candidate, exports Triton and MLServer bundles, and registers the selected model in OpenShift AI Model Registry
+- the live feature-store serving targets are `ims-predictive-fs` (Triton) and `ims-predictive-fs-mlserver` (MLServer)
+- `services/shared/model_store.py` and `anomaly-service` consume the feature-store serving path through the KServe V2 `/infer` contract
+- the older `ims-anomaly-platform-train-and-register` pipeline and `ims-predictive` service remain available as a compatibility and bootstrap path
 
-This current path remains the default demo path until the new path is proven.
+The legacy path is still available, but the feature-store path is now the preferred cluster-native model lifecycle.
 
 ## 4. Design Principles
 
@@ -82,9 +85,9 @@ This current path remains the default demo path until the new path is proven.
 - use a new KFP pipeline and a new serving endpoint so that rollback remains simple
 - publish to the Red Hat OpenShift AI Model Registry as the new model system of record, but keep a compatibility bridge to the current JSON registry until runtime consumers are updated
 
-## 5. Target Architecture
+## 5. Current Dual-Path Architecture
 
-The target architecture adds a second, explicit path next to the current live-demo path.
+The current architecture keeps a compatibility path next to the live feature-store path.
 
 ```mermaid
 flowchart TD
@@ -99,12 +102,14 @@ flowchart TD
   Online["Feature Store online store<br/>optional first release"]
 
   NewKFP["ims-featurestore-train-and-register"]
-  Artifact["model artifact<br/>Triton repo + metadata"]
+  ArtifactT["Triton bundle<br/>ims-predictive-fs"]
+  ArtifactM["MLServer bundle<br/>ims-predictive-fs-mlserver"]
   MR["RHOAI Model Registry"]
-  Serve["ims-predictive-fs<br/>KServe / Triton"]
+  ServeT["ims-predictive-fs<br/>KServe / Triton"]
+  ServeM["ims-predictive-fs-mlserver<br/>KServe / MLServer"]
 
-  CurrentKFP["current demo KFP"]
-  CurrentServe["current ims-predictive"]
+  CurrentKFP["legacy bootstrap KFP"]
+  CurrentServe["legacy ims-predictive"]
 
   SIPP --> Windows
   Windows --> Bundle
@@ -116,9 +121,12 @@ flowchart TD
   FSRepo -. optional materialize .-> Online
 
   Offline --> NewKFP
-  NewKFP --> Artifact
-  Artifact --> MR
-  MR --> Serve
+  NewKFP --> ArtifactT
+  NewKFP --> ArtifactM
+  ArtifactT --> MR
+  ArtifactM --> MR
+  MR --> ServeT
+  MR --> ServeM
 
   Windows --> CurrentKFP
   CurrentKFP --> CurrentServe
@@ -126,10 +134,10 @@ flowchart TD
 
 Operationally:
 
-- the current MinIO-to-KFP-to-Triton flow stays intact
-- the new path consumes a versioned bundle dataset, not the mutable live prefix directly
-- the new path introduces Feature Store concepts and a new model lifecycle
-- the new path deploys to a separate serving endpoint first
+- the legacy MinIO-to-KFP-to-Triton flow stays intact as a compatibility bridge
+- the feature-store path consumes a versioned bundle dataset, not the mutable live prefix directly
+- the feature-store path is the preferred cluster lifecycle for training, registry publication, and serving export
+- the feature-store path deploys to separate Triton and MLServer endpoints while preserving a simple fallback path
 
 ## 6. Bundle Dataset Architecture
 
@@ -230,11 +238,12 @@ Optional but useful:
 
 ### 7.1 Feature Store Scope in This Repo
 
-The first Feature Store milestone is not to replace the current runtime inference path. It is to:
+The Feature Store path in this repo now:
 
-- register the feature definitions against the final bundle dataset
-- generate reproducible training datasets from the offline store
-- define a versioned feature contract that can later be reused by serving
+- registers the feature definitions against the bundle dataset
+- generates reproducible training datasets from the offline store
+- exposes the Feast registry and UI for inspection
+- keeps a versioned feature contract that can later be reused by online retrieval
 
 ### 7.2 Proposed Feature Store Objects
 
@@ -340,26 +349,26 @@ Reason:
 
 ### 8.1 Pipeline Boundary
 
-We should create a new training pipeline rather than extending the current one in place.
+We now run a dedicated feature-store training pipeline rather than extending the legacy one in place.
 
 Recommended new pipeline name:
 
 - `ims-featurestore-train-and-register`
 
-Optional precursor pipeline:
+Companion bundle pipeline:
 
 - `ims-feature-bundle-publish`
 
 Rules:
 
-- the current `ims-anomaly-platform-train-and-register` pipeline remains untouched
+- the legacy `ims-anomaly-platform-train-and-register` pipeline remains untouched
 - the new pipeline consumes a `bundle_version`, not a raw `dataset_version`
 - the new pipeline writes to the Red Hat OpenShift AI Model Registry
-- the new pipeline prepares artifacts for a separate serving endpoint
+- the new pipeline prepares artifacts for separate Triton and MLServer serving endpoints
 
 ### 8.2 Proposed Pipeline Steps
 
-Recommended step sequence:
+Current step sequence:
 
 1. `resolve-bundle`
 2. `validate-bundle`
@@ -369,16 +378,19 @@ Recommended step sequence:
 6. `train-automl`
 7. `evaluate`
 8. `select-best`
-9. `export-serving-artifact`
-10. `register-model-version`
-11. `publish-deployment-manifest`
+9. `export-serving-artifact` (Triton)
+10. `export-serving-artifact` (MLServer)
+11. `register-model-version`
+12. `publish-deployment-manifest` (Triton)
+13. `publish-deployment-manifest` (MLServer)
 
 Expected behavior:
 
 - `sync-feature-store-definitions` runs `feast apply` against the feature repo
 - `retrieve-training-dataset` uses the bundle dataset and Feature Store offline retrieval to create the training frame
+- `export-serving-artifact` runs once per serving backend and both artifacts carry the selected source model version as lineage
 - `register-model-version` creates a new model and model version entry in the Red Hat OpenShift AI Model Registry and points that version to the object-storage artifact location
-- `publish-deployment-manifest` writes the metadata needed by the serving path without mutating the current live service
+- `publish-deployment-manifest` writes separate deployment metadata for Triton and MLServer without mutating the live endpoints directly
 
 ### 8.3 Pipeline Inputs
 
@@ -392,7 +404,8 @@ Required pipeline inputs:
 - `automl_engine`
 - `model_name`
 - `model_version_name`
-- `serving_target_name`
+- Triton serving-target configuration
+- MLServer serving-target configuration
 
 Recommended metadata captured at runtime:
 
@@ -436,51 +449,52 @@ Recommended model naming:
 
 ### 9.3 Compatibility Bridge
 
-The current runtime still relies on the repo JSON model registry and the MinIO `predictive/` prefix.
+The live feature-store path registers versions in OpenShift AI Model Registry, but the repo JSON registry and older MinIO `predictive/` prefixes still exist as compatibility bridges.
 
-Therefore the first release of the new path should:
+Therefore the current rollout should:
 
 - register the model version in the Red Hat OpenShift AI Model Registry
-- continue writing a compatibility manifest or compatibility JSON for the current runtime if needed
-- avoid switching anomaly-service and control-plane consumers to the new registry until the serving rollout is proven
+- keep compatibility JSON only for older bootstrap or local consumers that still need it
+- prefer serving metadata and stable object-storage aliases for feature-store KServe consumers
 
 ## 10. Serving and Exposure
 
 ### 10.1 Serving Strategy
 
-The first deployment from the new path should use a separate serving target.
+The live feature-store rollout uses separate serving targets.
 
-Recommended names:
+Current names:
 
 - `ims-predictive-fs`
-- or `ims-predictive-v2`
+- `ims-predictive-fs-mlserver`
 
 Rules:
 
 - do not replace `ims-predictive` on the first rollout
-- keep the current serving runtime available for fallback
-- expose the new service independently and compare readiness, metrics, and model outputs before cutover
-- keep Triton as the active runtime during the first new-path rollout
-- evaluate MLServer only as a side-by-side candidate runtime, not as an in-place replacement
+- keep the legacy serving runtime available for fallback and bootstrap
+- use `ims-predictive-fs` as the current default remote-scoring endpoint
+- keep `ims-predictive-fs-mlserver` available for side-by-side parity validation
+- do not attempt an in-place Triton-to-MLServer cutover
 
 ### 10.2 Serving Artifact
 
-The serving artifact should remain compatible with the current Triton-based serving design unless there is a clear reason to change formats.
+The serving layer now exports separate artifacts for Triton and MLServer rather than trying to force one runtime format onto both backends.
 
-Initial recommendation:
+Current exports:
 
-- keep exporting a Triton-serving repository for the first new path
-- store the artifact in object storage
-- register the artifact location in the Red Hat OpenShift AI Model Registry
+- a Triton-serving repository for `ims-predictive-fs`
+- an MLServer sklearn bundle for `ims-predictive-fs-mlserver`
+- versioned and stable `current` aliases in object storage
+- model-registry lineage that points back to the selected source model version
 
 MLServer evaluation note:
 
-- MLServer is a valid future candidate because it supports the KServe V2 protocol and framework-native runtimes, but it should be introduced as a second serving target with a separate artifact export path
-- do not point MLServer at the Triton repository directly; produce a dedicated MLServer bundle instead
+- MLServer remains a side-by-side runtime rather than the default serving target
+- MLServer uses a dedicated sklearn bundle and must not point at the Triton repository directly
 
 ### 10.3 Inference Integration Options
 
-There are two acceptable transition modes.
+There are still two useful integration modes.
 
 #### Mode A: Offline Feature Store only, current online scoring contract preserved
 
@@ -488,7 +502,7 @@ There are two acceptable transition modes.
 - the runtime inference path continues to send raw feature vectors directly to Triton as it does today
 - the feature service exists for contract definition and future online use
 
-This is the lowest-risk transition and the recommended first milestone.
+This is the current live rollout.
 
 #### Mode B: Feature Store for both training and online inference
 
@@ -498,11 +512,9 @@ This is the lowest-risk transition and the recommended first milestone.
 
 This is the long-term target, but it should follow after the offline training path is stable.
 
-## 11. Proposed Repo Additions
+## 11. Implemented Repo Areas
 
-The first code-preparation phase should add new files instead of overloading the existing training path.
-
-Recommended new areas:
+These repo areas now carry the feature-store implementation:
 
 ```text
 docs/architecture/feature-store-training-path.md
@@ -523,17 +535,18 @@ k8s/base/
   feature-store/
   kfp/assets/ims_featurestore_pipeline.yaml
   serving/featurestore-serving.yaml
+  serving/featurestore-serving-mlserver.yaml
 ```
 
-Rules:
+Notes:
 
-- the current `train_and_register.py` path remains intact
-- common training utilities can be shared later, but the new feature-store flow starts as a separate code path
-- deployment manifests for the new serving endpoint stay separate until promotion is explicit
+- the legacy `train_and_register.py` path remains intact
+- the feature-store flow stays as a separate code path with selectively shared utilities
+- deployment manifests for the feature-store endpoints stay separate from the legacy bootstrap service
 
-## 12. Milestones
+## 12. Rollout Milestones And Current Status
 
-### Milestone 1: Freeze the training contract while collection continues
+### Milestone 1: Freeze the training contract while collection continues (implemented)
 
 Deliverables:
 
@@ -542,7 +555,7 @@ Deliverables:
 - versioning rules
 - feature selection for `ims_window_numeric_v1`
 
-### Milestone 2: Build the final bundle dataset
+### Milestone 2: Build the final bundle dataset (implemented)
 
 Deliverables:
 
@@ -551,7 +564,7 @@ Deliverables:
 - validation report
 - dataset manifest
 
-### Milestone 3: Stand up Feature Store objects
+### Milestone 3: Stand up Feature Store objects (implemented)
 
 Deliverables:
 
@@ -561,7 +574,7 @@ Deliverables:
 - feature views
 - feature service
 
-### Milestone 4: New KFP training pipeline
+### Milestone 4: New KFP training pipeline (implemented)
 
 Deliverables:
 
@@ -571,31 +584,29 @@ Deliverables:
 - artifact export
 - model registry publication
 
-### Milestone 5: Side-by-side serving rollout
+### Milestone 5: Side-by-side serving rollout (implemented)
 
 Deliverables:
 
 - new `InferenceService`
 - health and smoke checks
 - comparison against current service
-- optional route exposure
+- dual Triton and MLServer serving exports
 
-## 13. Open Questions
+## 13. Remaining Questions
 
-- Which exact Red Hat OpenShift AI version will be the target for Feature Store, and what is the support posture in that version?
-- Do we want the first feature-store release to support offline training only, or do we also want an online store in the first iteration?
-- Should labels remain in a dedicated bundle table that is joined after feature retrieval, or should we model them as an offline-only feature view?
-- What is the preferred programmatic interface for creating model and model-version entries in the Red Hat OpenShift AI Model Registry from the KFP pipeline?
-- Do we want the new serving deployment to continue using Triton, or is there a separate runtime format we want to evaluate once the registry integration is working?
+- Which exact Red Hat OpenShift AI version and support posture should be the long-term Feature Store target for this demo?
+- Do we want to keep the first operator-facing release on offline Feature Store only, or introduce online-store materialization next?
+- When should the repo-managed JSON registry compatibility bridge be retired?
+- Should MLServer remain a parity path, or is there a future runtime-cutover plan after more smoke-test and observability hardening?
 
-## 14. Immediate Next Steps
+## 14. Near-Term Follow-Up
 
-The next implementation work should follow this order:
+The remaining implementation cleanup should follow this order:
 
-1. define the final bundle schema and manifest contract
-2. scaffold `ai/featurestore/feature_repo/` with entities, feature views, and one feature service
-3. create the new `ims-featurestore-train-and-register` pipeline source without modifying the current pipeline
-4. add a model-registry publication layer that records model versions and artifact URIs
-5. deploy the first new model to a separate `InferenceService`
+1. remove leftover score-only and legacy binary assumptions from smoke checks and helper paths
+2. decide whether online-store materialization is in scope for the next iteration
+3. decide whether MLServer remains a parity path or becomes a promoted runtime
+4. reduce compatibility dependence on the repo-managed JSON registry where cluster-native metadata is already sufficient
 
-That order keeps the current demo stable while moving the codebase toward actual model training on top of Red Hat OpenShift AI Feature Store and Model Registry.
+That order keeps the current demo stable while trimming the remaining transition-only code and documentation.

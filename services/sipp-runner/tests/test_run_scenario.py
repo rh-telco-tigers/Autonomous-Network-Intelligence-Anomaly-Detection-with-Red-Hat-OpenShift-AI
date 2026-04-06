@@ -153,6 +153,35 @@ class ScenarioAnomalyTypeTests(unittest.TestCase):
 
         self.assertIsNone(result)
 
+    def test_emit_control_plane_incident_uses_multiclass_payload(self) -> None:
+        window = {
+            "window_id": "live-sipp-v1-routing_error-1",
+            "label": 1,
+            "label_confidence": 0.91,
+            "anomaly_type": "routing_error",
+            "features": {"invite_rate": 1.6},
+            "contributing_conditions": ["route_unreachable"],
+        }
+        response = mock.Mock()
+        response.json.return_value = {"id": "inc-routing"}
+
+        with (
+            mock.patch.dict(
+                run_scenario.os.environ,
+                {"SIPP_EMIT_CONTROL_PLANE_INCIDENT": "true"},
+                clear=False,
+            ),
+            mock.patch.object(run_scenario.requests, "post", return_value=response) as post,
+        ):
+            result = run_scenario._emit_control_plane_incident(window)
+
+        self.assertEqual(result["id"], "inc-routing")
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["anomaly_type"], "routing_error")
+        self.assertAlmostEqual(payload["predicted_confidence"], 0.91)
+        self.assertEqual(payload["top_classes"][0]["anomaly_type"], "routing_error")
+        self.assertTrue(payload["is_anomaly"])
+
 
 class BulkBackfillTests(unittest.TestCase):
     def _args(self, **overrides):

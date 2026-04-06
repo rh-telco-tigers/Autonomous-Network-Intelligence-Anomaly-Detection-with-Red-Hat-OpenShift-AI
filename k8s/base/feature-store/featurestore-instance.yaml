@@ -5,8 +5,10 @@ metadata:
   namespace: ims-demo-lab
   labels:
     feature-store-ui: enabled
+    opendatahub.io/dashboard: "true"
   annotations:
     argocd.argoproj.io/sync-wave: "40"
+    openshift.io/display-name: IMS Feature Store
 spec:
   feastProject: ims_anomaly_featurestore
   feastProjectDir:

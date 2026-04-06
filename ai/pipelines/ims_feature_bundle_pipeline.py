@@ -7,7 +7,12 @@ PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ims-demo-lab/
 WORKSPACE_ROOT = "/tmp/ims-featurestore"
 CONTROL_PLANE_URL = "http://control-plane.ims-demo-lab.svc.cluster.local:8080"
 CONTROL_PLANE_API_KEY = "demo-token"
+DATASET_STORE_MODE = "s3"
+DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000"
+DATASET_STORE_BUCKET = "ims-models"
 DATASET_STORE_PREFIX = "pipelines/ims-demo-lab/datasets"
+DATASET_STORE_ACCESS_KEY = "minioadmin"
+DATASET_STORE_SECRET_KEY = "minioadmin"
 
 
 @dsl.container_component
@@ -61,9 +66,19 @@ def validate_bundle(
 
 
 def _configure_bundle_task(task) -> None:
+    task.set_env_variable("HOME", "/tmp")
     task.set_env_variable("CONTROL_PLANE_URL", CONTROL_PLANE_URL)
     task.set_env_variable("CONTROL_PLANE_API_KEY", CONTROL_PLANE_API_KEY)
+    task.set_env_variable("DATASET_STORE_MODE", DATASET_STORE_MODE)
+    task.set_env_variable("DATASET_STORE_ENDPOINT", DATASET_STORE_ENDPOINT)
+    task.set_env_variable("DATASET_STORE_BUCKET", DATASET_STORE_BUCKET)
+    task.set_env_variable("DATASET_STORE_ACCESS_KEY", DATASET_STORE_ACCESS_KEY)
+    task.set_env_variable("DATASET_STORE_SECRET_KEY", DATASET_STORE_SECRET_KEY)
     task.set_env_variable("DATASET_STORE_PREFIX", DATASET_STORE_PREFIX)
+    task.set_env_variable("MINIO_ENDPOINT", DATASET_STORE_ENDPOINT)
+    task.set_env_variable("MINIO_BUCKET", DATASET_STORE_BUCKET)
+    task.set_env_variable("MINIO_ACCESS_KEY", DATASET_STORE_ACCESS_KEY)
+    task.set_env_variable("MINIO_SECRET_KEY", DATASET_STORE_SECRET_KEY)
     task.set_env_variable("BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY", "true")
 
 

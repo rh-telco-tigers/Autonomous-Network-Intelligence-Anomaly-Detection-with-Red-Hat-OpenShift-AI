@@ -9,7 +9,12 @@ ARTIFACT_DIR = "/tmp/ims-featurestore/models/artifacts"
 FEATURE_REPO_PATH = "/workspace/ai/featurestore/feature_repo"
 CONTROL_PLANE_URL = "http://control-plane.ims-demo-lab.svc.cluster.local:8080"
 CONTROL_PLANE_API_KEY = "demo-token"
+DATASET_STORE_MODE = "s3"
+DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000"
+DATASET_STORE_BUCKET = "ims-models"
 DATASET_STORE_PREFIX = "pipelines/ims-demo-lab/datasets"
+DATASET_STORE_ACCESS_KEY = "minioadmin"
+DATASET_STORE_SECRET_KEY = "minioadmin"
 MODEL_REGISTRY_ENDPOINT = "http://ims-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080"
 FEATURESTORE_MODE = "remote"
 FEATURESTORE_PROJECT = "ims_anomaly_featurestore"
@@ -323,14 +328,33 @@ def publish_deployment_manifest(
 
 
 def _configure_bundle_task(task) -> None:
+    _configure_storage_task(task)
     task.set_env_variable("CONTROL_PLANE_URL", CONTROL_PLANE_URL)
     task.set_env_variable("CONTROL_PLANE_API_KEY", CONTROL_PLANE_API_KEY)
-    task.set_env_variable("DATASET_STORE_PREFIX", DATASET_STORE_PREFIX)
     task.set_env_variable("BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY", "true")
 
 
-def _configure_featurestore_task(task) -> None:
+def _configure_storage_task(task) -> None:
+    task.set_env_variable("HOME", "/tmp")
+    task.set_env_variable("MPLCONFIGDIR", "/tmp/matplotlib")
+    task.set_env_variable("DATASET_STORE_MODE", DATASET_STORE_MODE)
+    task.set_env_variable("DATASET_STORE_ENDPOINT", DATASET_STORE_ENDPOINT)
+    task.set_env_variable("DATASET_STORE_BUCKET", DATASET_STORE_BUCKET)
     task.set_env_variable("DATASET_STORE_PREFIX", DATASET_STORE_PREFIX)
+    task.set_env_variable("DATASET_STORE_ACCESS_KEY", DATASET_STORE_ACCESS_KEY)
+    task.set_env_variable("DATASET_STORE_SECRET_KEY", DATASET_STORE_SECRET_KEY)
+    task.set_env_variable("MINIO_ENDPOINT", DATASET_STORE_ENDPOINT)
+    task.set_env_variable("MINIO_BUCKET", DATASET_STORE_BUCKET)
+    task.set_env_variable("MINIO_ACCESS_KEY", DATASET_STORE_ACCESS_KEY)
+    task.set_env_variable("MINIO_SECRET_KEY", DATASET_STORE_SECRET_KEY)
+    task.set_env_variable("AWS_DEFAULT_REGION", FEATURESTORE_AWS_REGION)
+    task.set_env_variable("AWS_REGION", FEATURESTORE_AWS_REGION)
+    task.set_env_variable("AWS_ACCESS_KEY_ID", FEATURESTORE_AWS_ACCESS_KEY_ID)
+    task.set_env_variable("AWS_SECRET_ACCESS_KEY", FEATURESTORE_AWS_SECRET_ACCESS_KEY)
+
+
+def _configure_featurestore_task(task) -> None:
+    _configure_storage_task(task)
     task.set_env_variable("IMS_FEATURESTORE_MODE", FEATURESTORE_MODE)
     task.set_env_variable("IMS_FEATURESTORE_PROJECT", FEATURESTORE_PROJECT)
     task.set_env_variable("IMS_FEATURESTORE_REGISTRY_PATH", FEATURESTORE_REGISTRY_PATH)
@@ -361,6 +385,13 @@ def ims_featurestore_pipeline(
     serving_protocol_version: str = "v2",
     serving_prefix: str = "predictive-featurestore",
     serving_alias: str = "current",
+    mlserver_serving_model_name: str = "ims-predictive-fs-mlserver",
+    mlserver_serving_runtime_name: str = "mlserver-sklearn-runtime",
+    mlserver_serving_model_format_name: str = "sklearn",
+    mlserver_serving_model_format_version: str = "1",
+    mlserver_serving_protocol_version: str = "v2",
+    mlserver_serving_prefix: str = "predictive-featurestore-mlserver",
+    mlserver_serving_alias: str = "current",
 ):
     resolved = resolve_bundle(bundle_version=bundle_version)
     _configure_featurestore_task(resolved)
@@ -403,6 +434,17 @@ def ims_featurestore_pipeline(
         serving_prefix=serving_prefix,
         serving_alias=serving_alias,
     )
+    mlserver_exported = export_serving_artifact(
+        training_manifest=training_data.outputs["output_manifest"],
+        selection_manifest=selected.outputs["output_manifest"],
+        serving_model_name=mlserver_serving_model_name,
+        serving_runtime_name=mlserver_serving_runtime_name,
+        serving_model_format_name=mlserver_serving_model_format_name,
+        serving_model_format_version=mlserver_serving_model_format_version,
+        serving_protocol_version=mlserver_serving_protocol_version,
+        serving_prefix=mlserver_serving_prefix,
+        serving_alias=mlserver_serving_alias,
+    )
     registered = register_model_version(
         export_manifest=exported.outputs["output_manifest"],
         feature_service_name=feature_service_name,
@@ -413,8 +455,12 @@ def ims_featurestore_pipeline(
         export_manifest=exported.outputs["output_manifest"],
         model_registry_manifest=registered.outputs["output_manifest"],
     )
+    published_mlserver = publish_deployment_manifest(
+        export_manifest=mlserver_exported.outputs["output_manifest"],
+        model_registry_manifest=registered.outputs["output_manifest"],
+    )
 
-    for task in (baseline, automl, evaluated, selected, exported, registered, published):
+    for task in (baseline, automl, evaluated, selected, exported, mlserver_exported, registered, published, published_mlserver):
         _configure_featurestore_task(task)
     registered.set_env_variable("RHOAI_MODEL_REGISTRY_ENDPOINT", MODEL_REGISTRY_ENDPOINT)
     registered.set_env_variable("RHOAI_MODEL_REGISTRY_REQUIRED", "true")

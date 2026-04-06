@@ -2,17 +2,17 @@
 
 ## Purpose
 
-This phase turns persisted runtime data into explicit feature definitions so training and, later, online inference can use the same feature contract instead of relying on loosely coupled JSON payloads.
+This phase turns persisted runtime data into explicit feature definitions so training and future online inference can use the same feature contract instead of relying on loosely coupled JSON payloads.
 
 ## Status
 
-This is a target and transition phase. The current demo still uses MinIO-backed feature windows directly, while the Feature Store path is the planned next architecture.
+This phase is live. `ims-featurestore` is deployed through OpenShift AI Feature Store / Feast, its registry and UI are available in-cluster, and the KFP training path now syncs definitions and retrieves training data from the Feature Store offline path. Online materialization remains optional.
 
 ## What This Phase Covers
 
-- define entities such as call, session, or feature window lineage
-- project raw runtime data into stable feature views
-- separate numeric features, context features, and labels
+- define entities such as feature-window lineage
+- project bundle data into stable numeric, context, and label feature views
+- sync the repo feature definitions into the managed Feature Store
 - keep offline training retrieval and future online serving retrieval aligned
 - version the feature contract so model lineage stays auditable
 
@@ -29,27 +29,28 @@ flowchart TD
 
 ## Inputs
 
-- versioned feature windows from Phase 1
-- release-ready bundle data and schema definitions
+- versioned feature-bundle data and schema definitions
 - label and lineage contracts
+- feature repo definitions and cluster Feature Store configuration
 
 ## Outputs
 
-- entities
-- data sources
-- feature views
-- feature services
-- offline and optional online feature retrieval paths
+- managed Feature Store project and repo definitions
+- entities, data sources, feature views, and feature services
+- offline retrieval used by the feature-store KFP training pipeline
+- optional online-store materialization path
+- Feast registry and UI metadata that operators can inspect
 
 ## Current Repo Touchpoints
 
+- `ai/featurestore/feature_repo/`
+- `ai/training/featurestore_train.py`
+- `k8s/base/feature-store/`
 - `docs/architecture/feature-store-training-path.md`
-- `ai/`
-- `services/`
 
 ## Why It Matters
 
-The Feature Store creates a stable feature interface between data generation and model lifecycle work. Without it, training can drift from future online scoring behavior and every model iteration has to rediscover feature semantics from raw exports.
+The Feature Store creates a stable feature interface between bundle publication, model training, and future online retrieval. Without it, training can drift from serving behavior and every model iteration has to rediscover feature semantics from raw exports.
 
 ## Related Docs
 

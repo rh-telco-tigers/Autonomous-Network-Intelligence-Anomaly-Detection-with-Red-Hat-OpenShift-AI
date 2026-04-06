@@ -29,8 +29,12 @@ def _default_registry() -> Dict[str, Any]:
         "datasets": [],
         "deployed_model_version": None,
         "promotion_gate": {
-            "min_precision": 0.8,
-            "max_false_positive_rate": 0.2,
+            "min_macro_f1": 0.65,
+            "min_weighted_f1": 0.75,
+            "min_balanced_accuracy": 0.65,
+            "min_class_recall": 0.45,
+            "max_normal_false_alarm_rate": 0.2,
+            "max_multiclass_log_loss": 2.5,
             "max_latency_p95_ms": 50,
             "min_stability_score": 0.85,
             "status": "unknown",
@@ -121,15 +125,30 @@ def list_feature_schemas() -> List[Dict[str, Any]]:
 def gate_result(model: Dict[str, Any], gate: Dict[str, Any] | None = None) -> Dict[str, Any]:
     active_gate = gate or load_registry().get("promotion_gate", {})
     metrics = model.get("metrics", {})
-    precision_ok = float(metrics.get("precision", 0.0)) >= float(active_gate.get("min_precision", 0.8))
-    fpr_ok = float(metrics.get("false_positive_rate", 1.0)) <= float(active_gate.get("max_false_positive_rate", 0.2))
+    per_class_recall = [float(value) for value in dict(metrics.get("per_class_recall", {})).values()]
+    min_class_recall = min(per_class_recall) if per_class_recall else 0.0
+    macro_f1_ok = float(metrics.get("macro_f1", 0.0)) >= float(active_gate.get("min_macro_f1", 0.65))
+    weighted_f1_ok = float(metrics.get("weighted_f1", 0.0)) >= float(active_gate.get("min_weighted_f1", 0.75))
+    balanced_accuracy_ok = float(metrics.get("balanced_accuracy", 0.0)) >= float(active_gate.get("min_balanced_accuracy", 0.65))
+    class_recall_ok = min_class_recall >= float(active_gate.get("min_class_recall", 0.45))
+    normal_fpr_ok = float(metrics.get("normal_false_alarm_rate", 1.0)) <= float(
+        active_gate.get("max_normal_false_alarm_rate", 0.2)
+    )
+    log_loss_ok = float(dict(metrics.get("calibration", {})).get("multiclass_log_loss", 10_000.0)) <= float(
+        active_gate.get("max_multiclass_log_loss", 2.5)
+    )
     latency_ok = float(metrics.get("latency_p95_ms", 10_000.0)) <= float(active_gate.get("max_latency_p95_ms", 50))
     stability_ok = float(metrics.get("stability_score", 0.0)) >= float(active_gate.get("min_stability_score", 0.85))
-    status = "passed" if precision_ok and fpr_ok and latency_ok and stability_ok else "failed"
+    status = "passed" if all([macro_f1_ok, weighted_f1_ok, balanced_accuracy_ok, class_recall_ok, normal_fpr_ok, log_loss_ok, latency_ok, stability_ok]) else "failed"
     return {
         "status": status,
-        "precision_ok": precision_ok,
-        "false_positive_rate_ok": fpr_ok,
+        "macro_f1_ok": macro_f1_ok,
+        "weighted_f1_ok": weighted_f1_ok,
+        "balanced_accuracy_ok": balanced_accuracy_ok,
+        "class_recall_ok": class_recall_ok,
+        "normal_false_alarm_rate_ok": normal_fpr_ok,
+        "multiclass_log_loss_ok": log_loss_ok,
+        "minimum_observed_class_recall": round(min_class_recall, 4),
         "latency_ok": latency_ok,
         "stability_ok": stability_ok,
         "gate": active_gate,
@@ -152,7 +171,13 @@ def promote_model(version: str, actor: str, stage: str = "prod") -> Dict[str, An
         (
             entry.get("version")
             for entry in registry.get("models", [])
-            if entry.get("kind") in {"sklearn_logistic_regression", "triton_python_logistic_regression"}
+            if entry.get("kind")
+            in {
+                "sklearn_logistic_regression",
+                "sklearn_multiclass_logistic_regression",
+                "triton_python_logistic_regression",
+                "triton_python_multiclass_logistic_regression",
+            }
         ),
         None,
     )

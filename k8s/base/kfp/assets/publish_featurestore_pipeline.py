@@ -33,6 +33,13 @@ DEFAULT_PIPELINE_PARAMETERS = {
     "serving_protocol_version": "v2",
     "serving_prefix": "predictive-featurestore",
     "serving_alias": "current",
+    "mlserver_serving_model_name": "ims-predictive-fs-mlserver",
+    "mlserver_serving_runtime_name": "mlserver-sklearn-runtime",
+    "mlserver_serving_model_format_name": "sklearn",
+    "mlserver_serving_model_format_version": "1",
+    "mlserver_serving_protocol_version": "v2",
+    "mlserver_serving_prefix": "predictive-featurestore-mlserver",
+    "mlserver_serving_alias": "current",
 }
 
 

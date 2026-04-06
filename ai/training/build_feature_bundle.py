@@ -16,6 +16,9 @@ from typing import Any, Iterable
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+SERVICES_ROOT = REPO_ROOT / "services"
+if str(SERVICES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICES_ROOT))
 
 import pandas as pd
 import requests
@@ -37,9 +40,10 @@ from ai.training.train_and_register import (
     _workspace_root,
     _write_directory_reference,
 )
+from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type
 
 BUNDLE_CONTRACT_VERSION = "ims_feature_bundle_v1"
-LABEL_TAXONOMY_VERSION = "ims_incident_taxonomy_v1"
+LABEL_TAXONOMY_VERSION = "ims_incident_taxonomy_v2"
 DEFAULT_BUNDLE_WORKSPACE = "/tmp/ims-feature-bundle"
 DEFAULT_CONTROL_PLANE_URL = "http://control-plane.ims-demo-lab.svc.cluster.local:8080"
 DEFAULT_PROJECT = "ims-demo"
@@ -411,6 +415,7 @@ def _incident_rows(
         rca_payload = incident.get("rca_payload") if isinstance(incident.get("rca_payload"), dict) else {}
         approval = latest_approval_by_incident.get(str(incident.get("id") or ""))
         window_id = str(incident.get("feature_window_id") or "")
+        anomaly_type = canonical_anomaly_type(incident.get("anomaly_type"))
         rows.append(
             {
                 "incident_id": str(incident.get("id") or ""),
@@ -424,7 +429,7 @@ def _incident_rows(
                 "approval_created_at": str((approval or {}).get("created_at") or ""),
                 "rca_status": "attached" if rca_payload else "none",
                 "anomaly_score": _safe_float(incident.get("anomaly_score")),
-                "anomaly_type": str(incident.get("anomaly_type") or "unknown"),
+                "anomaly_type": anomaly_type,
                 "model_version": str(incident.get("model_version") or ""),
                 "created_at": str(incident.get("created_at") or ""),
                 "updated_at": str(incident.get("updated_at") or incident.get("created_at") or ""),
@@ -511,6 +516,7 @@ def _window_feature_row(
     summary = window.get("sipp_summary") or {}
     event_timestamp = str(window.get("window_end") or window.get("captured_at") or _now())
     created_timestamp = str(window.get("captured_at") or event_timestamp)
+    anomaly_type = canonical_anomaly_type(window.get("anomaly_type"))
     row = {
         "window_id": str(window.get("window_id") or ""),
         "event_timestamp": event_timestamp,
@@ -521,8 +527,8 @@ def _window_feature_row(
         "feature_source": str(window.get("feature_source") or "sipp-shortmessages"),
         "scenario_name": str(window.get("scenario_name") or "unknown"),
         "schema_version": str(window.get("schema_version") or FEATURE_SCHEMA_VERSION),
-        "label": _safe_int(window.get("label")),
-        "anomaly_type": str(window.get("anomaly_type") or "unknown"),
+        "label": 0 if anomaly_type == NORMAL_ANOMALY_TYPE else 1,
+        "anomaly_type": anomaly_type,
         "transport": str(summary.get("transport") or ""),
         "call_limit": _safe_int(summary.get("call_limit")),
         "rate": _safe_float(summary.get("rate")),
@@ -577,16 +583,17 @@ def _window_label_row(
     incident_info: dict[str, Any],
 ) -> dict[str, Any]:
     labels = window.get("labels") or {}
+    anomaly_type = canonical_anomaly_type(window.get("anomaly_type") or labels.get("anomaly_type"))
     return {
         "window_id": str(window.get("window_id") or ""),
         "event_timestamp": str(window.get("window_end") or window.get("captured_at") or _now()),
         "created_timestamp": str(window.get("captured_at") or window.get("window_end") or _now()),
         "dataset_version": dataset_version,
         "source_snapshot_id": snapshot_id,
-        "label": _safe_int(window.get("label")),
-        "anomaly_type": str(window.get("anomaly_type") or labels.get("anomaly_type") or "unknown"),
+        "label": 0 if anomaly_type == NORMAL_ANOMALY_TYPE else 1,
+        "anomaly_type": anomaly_type,
         "label_confidence": _safe_float(window.get("label_confidence")),
-        "is_anomaly": bool(labels.get("anomaly", bool(window.get("label", 0)))),
+        "is_anomaly": anomaly_type != NORMAL_ANOMALY_TYPE,
         "contributing_conditions_json": _string_list(
             labels.get("contributing_conditions") or window.get("contributing_conditions")
         ),

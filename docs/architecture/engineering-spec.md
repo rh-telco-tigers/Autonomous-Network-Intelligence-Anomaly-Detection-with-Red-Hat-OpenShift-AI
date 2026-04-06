@@ -127,7 +127,7 @@ flowchart TD
 
   MinIO["MinIO"]
   KFP["KFP pipelines"]
-  KServe["KServe / Triton<br/>ims-predictive"]
+  KServe["KServe model serving<br/>ims-predictive-fs"]
 
   Milvus["Milvus"]
   LLM["Generative proxy / vLLM"]
@@ -170,25 +170,28 @@ flowchart TD
   IMS["OpenIMSs"]
   Windows["Labeled feature windows<br/>live-sipp-v1"]
   MinIO["MinIO dataset store"]
-  Synthetic["Synthetic fallback<br/>only when live data is undersized"]
-  Ingest["KFP ingest-data"]
-  Train["train-baseline<br/>train-autogluon"]
-  Evaluate["evaluate<br/>select-best"]
-  Registry["model registry"]
-  TritonRepo["Triton serving repository"]
-  KServe["ims-predictive"]
+  Bundle["bundle publish<br/>ims-feature-bundle-publish"]
+  Feast["OpenShift AI Feature Store<br/>ims-featurestore"]
+  Train["ims-featurestore-train-and-register"]
+  Evaluate["train-baseline / train-autogluon<br/>evaluate / select-best"]
+  Registry["OpenShift AI Model Registry"]
+  TritonRepo["Triton export<br/>ims-predictive-fs"]
+  MLRepo["MLServer export<br/>ims-predictive-fs-mlserver"]
+  Legacy["legacy bootstrap path<br/>ims-anomaly-platform-train-and-register"]
 
   SIPP --> IMS
   SIPP --> Windows
   Windows --> MinIO
-  MinIO --> Ingest
-  Synthetic -.-> Ingest
-  Ingest --> Train
+  MinIO --> Bundle
+  Bundle --> Feast
+  Feast --> Train
   Train --> Evaluate
   Evaluate --> Registry
   Evaluate --> TritonRepo
+  Evaluate --> MLRepo
   TritonRepo --> MinIO
-  MinIO --> KServe
+  MLRepo --> MinIO
+  Windows -. compatibility .-> Legacy
 ```
 
 #### 3.1.3 Live Detection and RCA Flow
@@ -202,7 +205,7 @@ flowchart TD
   Window["feature window"]
   AN["anomaly-service"]
   Registry["model registry"]
-  KServe["ims-predictive"]
+  KServe["ims-predictive-fs"]
   RCA["rca-service"]
   Milvus["Milvus"]
   LLM["Generative proxy / vLLM"]
@@ -467,28 +470,38 @@ The system enforces:
 
 #### 4.3.3 Training Modes
 
-| Mode              | Description                                  |
-| ----------------- | -------------------------------------------- |
-| Unsupervised      | autoencoder training without explicit labels |
-| Weakly supervised | SIPp scenario labels used as supervision     |
-| Supervised        | future extension using incident-labeled data |
-| Forecasting       | deviation detection against expected trends  |
+| Mode                 | Description |
+| -------------------- | ----------- |
+| supervised-multiclass | current training mode on canonical `anomaly_type` |
+| feature-store-offline | current cluster path using Feast historical retrieval from bundle data |
+| bootstrap-supervised  | legacy MinIO helper path can synthesize balanced coverage for local or bootstrap runs |
+| forecasting           | reserved future extension for trend-deviation detection |
 
 #### 4.3.4 KFP Pipeline
 
 ```yaml
-pipeline:
-  name: ims-anomaly-automl
-  steps:
-    - ingest-data
-    - feature-engineering
-    - label-generation
-    - train-baseline
-    - train-autogluon
-    - evaluate
-    - select-best
-    - register-model
-    - deploy
+pipelines:
+  bundle_publish:
+    name: ims-feature-bundle-publish
+    steps:
+      - build-bundle
+      - validate-bundle
+  featurestore_train_register:
+    name: ims-featurestore-train-and-register
+    steps:
+      - resolve-bundle
+      - validate-bundle
+      - sync-feature-store-definitions
+      - retrieve-training-dataset
+      - train-baseline
+      - train-automl
+      - evaluate
+      - select-best
+      - export-serving-artifact-triton
+      - export-serving-artifact-mlserver
+      - register-model-version
+      - publish-deployment-manifest-triton
+      - publish-deployment-manifest-mlserver
 ```
 
 #### 4.3.5 Model Evaluation Gate
@@ -497,10 +510,14 @@ A model is eligible for promotion only if it satisfies the required evaluation g
 
 ```yaml
 conditions:
-  min_precision: 0.80
-  max_false_positive_rate: threshold
-  latency_p95: <defined_limit>
-  stability_score: acceptable
+  min_macro_f1: 0.65
+  min_weighted_f1: 0.75
+  min_balanced_accuracy: 0.65
+  min_class_recall: 0.45
+  max_normal_false_alarm_rate: 0.20
+  max_multiclass_log_loss: 2.5
+  max_latency_p95_ms: 50
+  min_stability_score: 0.85
 ```
 
 #### 4.3.6 Model Registry
@@ -508,16 +525,19 @@ conditions:
 Track the following metadata:
 
 - model version
-- dataset version
+- selected source model version
+- bundle version
 - feature schema version
+- feature service name
+- class labels and normal-class identity
 - evaluation metrics
-- threshold configuration
-- training mode
+- serving runtime, model format, and protocol
+- deployment readiness status
 
 Promotion path:
 
 ```text
-dev -> test -> prod
+selected source model -> serving export -> model registry record -> serving alias update
 ```
 
 #### 4.3.7 Serving Architecture
@@ -532,15 +552,15 @@ dev -> test -> prod
 
 ##### Services
 
-| Service         | Purpose                                            |
-| --------------- | -------------------------------------------------- |
-| anomaly-service | synchronous or batch scoring and incident creation |
-| rca-service     | RCA generation, retrieval, and evidence packaging  |
+| Service         | Purpose |
+| --------------- | ------- |
+| anomaly-service | synchronous or batch scoring, remote KServe inference, and incident creation |
+| rca-service     | RCA generation, retrieval, and evidence packaging |
 
 ##### Inference Flow
 
 ```text
-FeatureWindow -> /score -> anomaly decision -> Incident created -> RCA triggered
+FeatureWindow -> /score -> remote-kserve multiclass prediction -> Incident created -> RCA triggered
 ```
 
 ##### API Contracts
@@ -549,7 +569,20 @@ FeatureWindow -> /score -> anomaly decision -> Incident created -> RCA triggered
 
 ```json
 {
-  "features": {}
+  "project": "ims-demo",
+  "scenario_name": "registration_storm",
+  "feature_window_id": "fw-123",
+  "features": {
+    "register_rate": 6.0,
+    "invite_rate": 0.2,
+    "bye_rate": 0.1,
+    "error_4xx_ratio": 0.05,
+    "error_5xx_ratio": 0.02,
+    "latency_p95": 180.0,
+    "retransmission_count": 12.0,
+    "inter_arrival_mean": 0.8,
+    "payload_variance": 60.0
+  }
 }
 ```
 
@@ -557,9 +590,25 @@ Response:
 
 ```json
 {
-  "anomaly_score": 0.91,
+  "anomaly_score": 0.99,
   "is_anomaly": true,
-  "incident_id": "uuid"
+  "incident_id": "uuid",
+  "anomaly_type": "network_degradation",
+  "predicted_anomaly_type": "network_degradation",
+  "predicted_confidence": 0.99,
+  "class_probabilities": {
+    "network_degradation": 0.99,
+    "normal_operation": 0.01
+  },
+  "top_classes": [
+    {
+      "anomaly_type": "network_degradation",
+      "probability": 0.99
+    }
+  ],
+  "model_version": "ims-predictive-fs",
+  "scoring_mode": "remote-kserve",
+  "created_at": "..."
 }
 ```
 
@@ -568,9 +617,23 @@ Response:
 ```json
 {
   "incident_id": "uuid",
-  "model_version": "v3",
+  "project": "ims-demo",
+  "model_version": "ims-predictive-fs",
   "feature_window_id": "fw-123",
-  "anomaly_score": 0.91,
+  "anomaly_score": 0.99,
+  "anomaly_type": "network_degradation",
+  "predicted_confidence": 0.99,
+  "class_probabilities": {
+    "network_degradation": 0.99,
+    "normal_operation": 0.01
+  },
+  "top_classes": [
+    {
+      "anomaly_type": "network_degradation",
+      "probability": 0.99
+    }
+  ],
+  "is_anomaly": true,
   "created_at": "..."
 }
 ```
@@ -606,22 +669,21 @@ Response:
 }
 ```
 
-##### Current Runtime Constraint in This Repo
+##### Current Runtime Status In This Repo
 
-The checked-in implementation is Triton-specific today.
+The checked-in implementation is now dual-runtime rather than Triton-only.
 
 - `k8s/base/serving/featurestore-serving.yaml` binds `ims-predictive-fs` to `nvidia-triton-runtime` with `modelFormat.name: triton`
-- `ai/training/featurestore_train.py` exports a Triton repository made of `config.pbtxt`, `model.py`, and `weights.json`
-- the same training path generates deployment YAML with `modelFormat.name: triton` and a Triton runtime name
-- `services/shared/model_store.py` calls the V2 endpoint at `/v2/models/{model_name}/infer` and treats the first output tensor as the anomaly score
+- `k8s/base/serving/featurestore-serving-mlserver.yaml` defines `ims-predictive-fs-mlserver` for an MLServer sklearn runtime
+- `ai/training/featurestore_train.py` exports both a Triton repository (`config.pbtxt`, `model.py`, `weights.json`) and an MLServer bundle (`model.joblib`, `model-settings.json`)
+- the same training path generates deployment metadata for both runtime formats
+- `services/shared/model_store.py` calls the V2 endpoint at `/v2/models/{model_name}/infer`, accepts `class_probabilities` or `predict_proba`, and uses `anomaly_score` when the runtime provides it
 
-This means the current serving path is compatible with Triton both at the API layer and at the artifact-layout layer.
+This means the current serving path is built around a shared KServe V2 contract with runtime-specific artifact layouts.
 
-##### MLServer Evaluation
+##### MLServer Parity Path
 
-MLServer is a credible next runtime candidate because it supports the KServe V2 inference protocol, REST and gRPC endpoints, multi-model serving, adaptive batching, parallel inference workers, and framework-specific or custom runtimes. It is also the Python inference server used by KServe for several model formats, including scikit-learn, XGBoost, LightGBM, and MLflow ([MLServer](https://github.com/seldonio/mlserver), [KServe ServingRuntime](https://kserve.github.io/website/latest/modelserving/servingruntimes/)).
-
-For this repo, the fastest MLServer path is not a direct port of the Triton Python backend. The fastest path is a second export mode that packages the serving model as a scikit-learn `joblib` artifact and serves it through an MLServer sklearn runtime.
+MLServer is no longer only a design target. It is deployed side by side through `ims-predictive-fs-mlserver` and consumes the same 9-feature request contract as Triton. Triton remains the default runtime while MLServer is used for parity checks and rollout validation.
 
 ##### Can Triton Be Replaced In Place?
 
@@ -631,7 +693,7 @@ For this repo, the fastest MLServer path is not a direct port of the Triton Pyth
 | existing client URL shape | partially | the current client can keep using `/v2/models/{model_name}/infer`, but output tensor semantics must still match |
 | current model artifact layout | no | Triton expects a Triton model repository, while MLServer expects framework-native artifacts plus MLServer model settings |
 | ServingRuntime manifest | no | image, environment variables, supported model formats, and metrics conventions differ |
-| training and deployment pipeline | no | current export and generated deployment YAML are hardcoded to Triton |
+| training and deployment pipeline | no | the current export pipeline writes separate Triton and MLServer artifacts, so an in-place swap still couples runtime choice with serving-alias cutover |
 | safe rollout strategy | no | replacing Triton in place would combine runtime, artifact, client, and observability changes in one step |
 
 Decision:
@@ -640,7 +702,7 @@ Decision:
 - add MLServer as a side-by-side candidate runtime
 - only consider cutover after artifact parity, output parity, and smoke-test parity are demonstrated
 
-##### Target Side-by-Side Serving Design
+##### Current Side-by-Side Serving Design
 
 ```mermaid
 flowchart TD
@@ -682,44 +744,44 @@ Minimal `model-settings.json`:
 Required rules:
 
 - preserve the exact numeric feature order already used by the Triton path
-- preserve the same anomaly threshold in `serving-metadata.json`
-- return an anomaly score or probability, not only a class label
+- preserve the same class-label order and `normal_operation` identity in `serving-metadata.json`
+- return a full probability vector; an explicit `anomaly_score` tensor is optional because the client can derive it
 - do not point MLServer at the existing Triton repository prefix
 
 ##### ServingRuntime and InferenceService Resources
 
-Checked-in scaffolding:
+Checked-in resources:
 
+- `k8s/base/serving/featurestore-serving.yaml`
 - `k8s/base/serving/mlserver-runtime-template.yaml`
 - `k8s/base/serving/featurestore-serving-mlserver.yaml`
 
-Deployment intent:
+Deployment notes:
 
-- `mlserver-sklearn-runtime` is the opt-in ServingRuntime for MLServer-backed sklearn artifacts
-- `ims-predictive-fs-mlserver` is the side-by-side candidate endpoint
-- these manifests are intentionally not added to `k8s/base/serving/kustomization.yaml` until the export path writes MLServer-compatible artifacts
+- `ims-predictive-fs` is the current default Triton-backed remote-scoring endpoint
+- `mlserver-sklearn-runtime` and `ims-predictive-fs-mlserver` form the live side-by-side parity path
+- the MLServer manifest is kept separate from the legacy default serving base so rollout and cutover stay explicit
 
-##### Required Repo Changes Before Cutover
+##### Implemented Repo Changes And Remaining Hardening
 
 1. Training export
-   - extend `ai/training/featurestore_train.py` with a serving backend switch such as `triton|mlserver`
-   - keep `_export_triton_repository()` for the active path
-   - add an MLServer export function that writes `model.joblib`, `model-settings.json`, and `serving-metadata.json`
-   - generate MLServer deployment YAML with `modelFormat.name: sklearn`
+   - `ai/training/featurestore_train.py` supports both `triton` and `mlserver` serving backends
+   - `_export_triton_repository()` remains the active Triton export path
+   - `_export_mlserver_bundle()` writes `model.joblib`, `model-settings.json`, and `serving-metadata.json`
+   - deployment metadata is generated for both runtime formats
 2. Registry and metadata
-   - record `serving_runtime`, `serving_model_format`, and `serving_protocol`
-   - distinguish Triton and MLServer storage URIs in registry metadata
+   - registry payloads record `serving_runtime`, `serving_model_format`, and `serving_protocol`
+   - Triton and MLServer storage URIs are distinct and versioned
 3. Scoring client
-   - keep `services/shared/model_store.py` on the V2 `/infer` endpoint
-   - add explicit validation of output tensor name, type, and shape
-   - add runtime-aware configuration such as `PREDICTIVE_RUNTIME` or candidate-endpoint settings for smoke tests
+   - `services/shared/model_store.py` stays on the V2 `/infer` endpoint
+   - the client validates `class_probabilities` or `predict_proba` output semantics
+   - remaining cleanup is to remove leftover score-only assumptions from older smoke-check helpers
 4. Smoke tests
-   - compare Triton and MLServer responses on the same feature vectors
-   - verify returned score, threshold behavior, latency, and error handling
-   - only promote MLServer after parity is acceptable
+   - Triton and MLServer can already be compared on the same feature vectors
+   - remaining hardening is to expand parity automation around latency, errors, and rollout policy
 5. Observability
-   - add a PodMonitor for MLServer at port `8080`
-   - keep Triton dashboards unchanged and add comparison dashboards for MLServer as needed
+   - Triton observability stays unchanged
+   - MLServer-specific dashboards and monitors remain optional follow-up work
 
 ##### Inference Endpoint Contract For MLServer
 
@@ -727,7 +789,7 @@ Active Triton path:
 
 - `http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080`
 
-Candidate MLServer path:
+Live MLServer parity path:
 
 - `http://ims-predictive-fs-mlserver-predictor.ims-demo-lab.svc.cluster.local:8080`
 
@@ -748,9 +810,11 @@ Request contract should remain:
 
 Response acceptance rules:
 
-- the first output must be numeric
-- the output must represent anomaly score or probability, not only a class label
-- the client must reject unexpected output shapes instead of silently accepting nested values
+- accept `class_probabilities` or `predict_proba` as the primary probability tensor
+- expected probability shape is `[1, 12]`
+- an optional `anomaly_score` tensor may accompany the probabilities
+- the client derives predicted class and anomaly score from probabilities when needed
+- the client must reject unexpected output names or shapes instead of silently accepting nested values
 
 ##### Recommended Rollout Decision
 

@@ -23,6 +23,11 @@ spec:
               namespace="${POD_NAMESPACE:-ims-demo-lab}"
               oc rollout status deploy/feast-ims-featurestore -n "${namespace}" --timeout=300s
               oc exec deploy/feast-ims-featurestore -n "${namespace}" -c registry -- bash -lc 'feast apply'
+              oc label featurestore/ims-featurestore -n "${namespace}" opendatahub.io/dashboard=true --overwrite || true
+              oc annotate featurestore/ims-featurestore -n "${namespace}" openshift.io/display-name='IMS Feature Store' --overwrite || true
+              oc label route/feast-ims-featurestore-ui service/feast-ims-featurestore-ui deployment/feast-ims-featurestore -n "${namespace}" opendatahub.io/dashboard=true --overwrite || true
+              oc annotate route/feast-ims-featurestore-ui -n "${namespace}" openshift.io/display-name='IMS Feature Store UI' --overwrite || true
+              oc annotate service/feast-ims-featurestore-ui -n "${namespace}" openshift.io/display-name='IMS Feature Store UI' --overwrite || true
           env:
             - name: POD_NAMESPACE
               valueFrom:

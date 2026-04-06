@@ -29,6 +29,7 @@ from ai.training.model_registry_client import (
     publish_model_version,
 )
 from ai.training.train_and_register import (
+    DEFAULT_MIN_WINDOWS_PER_CLASS,
     FEATURES,
     FEATURE_SCHEMA_VERSION,
     TRITON_CONFIG_TEMPLATE,
@@ -36,6 +37,8 @@ from ai.training.train_and_register import (
     _download_file_reference,
     _json_dump,
     _json_load,
+    _linear_artifact_from_model,
+    _multiclass_training_guard,
     _now,
     _prepare_artifact_for_storage,
     _write_json_reference,
@@ -362,6 +365,14 @@ def _retrieve_training_dataset(
             }
         )
 
+    min_per_class = max(int(os.getenv("IMS_MIN_WINDOWS_PER_CLASS", str(DEFAULT_MIN_WINDOWS_PER_CLASS))), 1)
+    guard = _multiclass_training_guard(records, min_per_class)
+    if not guard["all_classes_present"]:
+        raise ValueError(
+            "Feature-store training data does not meet multiclass coverage requirements. "
+            f"Missing or underfilled classes: {guard['missing_or_underfilled_classes']}"
+        )
+
     train_records, eval_records = split_dataset(records)
     workspace = Path(workspace_root)
     bundle_version = localized_manifest["bundle_version"]
@@ -387,6 +398,8 @@ def _retrieve_training_dataset(
         "eval_path": eval_reference,
         "train_count": len(train_records),
         "eval_count": len(eval_records),
+        "label_taxonomy_version": localized_manifest["label_taxonomy_version"],
+        "class_counts": guard["class_counts"],
         "created_at": _now(),
     }
 
@@ -491,21 +504,12 @@ def _export_triton_repository(
     version_root = repository_root / "1"
     version_root.mkdir(parents=True, exist_ok=True)
 
-    scaler = model.named_steps["scaler"]
-    classifier = model.named_steps["classifier"]
     weights_path = version_root / "weights.json"
     _json_dump(
         weights_path,
         {
-            "model_type": "triton_python_logistic_regression",
             "source_model_version": source_model_version,
-            "feature_schema_version": FEATURE_SCHEMA_VERSION,
-            "feature_names": FEATURES,
-            "scaler_mean": [round(float(value), 10) for value in scaler.mean_.tolist()],
-            "scaler_scale": [round(float(value), 10) for value in scaler.scale_.tolist()],
-            "coefficients": [round(float(value), 10) for value in classifier.coef_[0].tolist()],
-            "intercept": round(float(classifier.intercept_[0]), 10),
-            "threshold": 0.6,
+            **_linear_artifact_from_model(model, "triton_python_multiclass_logistic_regression"),
         },
     )
     (version_root / "model.py").write_text(TRITON_MODEL_TEMPLATE)
@@ -513,6 +517,7 @@ def _export_triton_repository(
         TRITON_CONFIG_TEMPLATE.format(
             model_name=serving_model_name,
             feature_count=len(FEATURES),
+            class_count=len(model.named_steps["classifier"].classes_),
             model_version="1",
         )
     )
@@ -667,6 +672,7 @@ def _export_serving_artifact_step(
     serving_metadata = {
         "bundle_version": training_manifest["bundle_version"],
         "feature_service_name": training_manifest["feature_service_name"],
+        "label_taxonomy_version": training_manifest.get("label_taxonomy_version"),
         "selected_model_version": selected_version,
         "selected_artifact_path": selected_artifact_path,
         "serving_model_name": serving_model_name,
@@ -675,6 +681,8 @@ def _export_serving_artifact_step(
         "serving_model_format_version": serving_model_format_version,
         "serving_protocol_version": protocol_version,
         "serving_backend": serving_backend,
+        "class_labels": _linear_artifact_from_model(serving_model, "serving_multiclass_logistic_regression")["class_labels"],
+        "normal_class_label": "normal_operation",
         "serving_metrics": serving_metrics,
         "created_at": _now(),
     }
@@ -749,6 +757,9 @@ def _register_model_version_step(
             "serving_model_format_version": export_manifest.get("serving_model_format_version", DEFAULT_MODEL_FORMAT_VERSION),
             "serving_protocol_version": export_manifest.get("serving_protocol_version", DEFAULT_PROTOCOL_VERSION),
             "serving_backend": export_manifest.get("serving_backend", _serving_backend(DEFAULT_MODEL_FORMAT_NAME)),
+            "label_taxonomy_version": export_manifest.get("label_taxonomy_version", ""),
+            "class_labels": export_manifest.get("class_labels", []),
+            "normal_class_label": export_manifest.get("normal_class_label", "normal_operation"),
             "selected_model_version": export_manifest["selected_model_version"],
             "serving_alias_storage_uri": export_manifest.get("serving_alias_storage_uri", ""),
             "description": f"Feature-store-trained IMS anomaly model for bundle {export_manifest['bundle_version']}",
@@ -848,6 +859,9 @@ def _publish_deployment_manifest_step(
         "serving_model_format_version": export_manifest.get("serving_model_format_version", DEFAULT_MODEL_FORMAT_VERSION),
         "serving_protocol_version": export_manifest.get("serving_protocol_version", DEFAULT_PROTOCOL_VERSION),
         "bundle_version": export_manifest["bundle_version"],
+        "label_taxonomy_version": export_manifest.get("label_taxonomy_version", ""),
+        "class_labels": export_manifest.get("class_labels", []),
+        "normal_class_label": export_manifest.get("normal_class_label", "normal_operation"),
         "selected_model_version": export_manifest["selected_model_version"],
         "versioned_storage_uri": export_manifest["serving_storage_uri"],
         "stable_storage_uri": export_manifest.get("serving_alias_storage_uri", export_manifest["serving_storage_uri"]),

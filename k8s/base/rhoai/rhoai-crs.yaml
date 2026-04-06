@@ -30,7 +30,7 @@ spec:
       argoWorkflowsControllers:
         managementState: Managed
     feastoperator:
-      managementState: Removed
+      managementState: Managed
     kserve:
       managementState: Managed
       defaultDeploymentMode: RawDeployment

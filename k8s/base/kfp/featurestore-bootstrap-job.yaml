@@ -38,7 +38,7 @@ spec:
               value: ims-featurestore-demo
             - name: PIPELINE_PARAMETERS_JSON
               value: |
-                {"bundle_version":"ims-feature-bundle-v1","feature_service_name":"ims_anomaly_scoring_v1","baseline_version":"baseline-fs-v1","candidate_version":"candidate-fs-v1","automl_engine":"autogluon","model_name":"ims-anomaly-featurestore","model_version_name":"ims-anomaly-featurestore-v1","serving_model_name":"ims-predictive-fs","serving_runtime_name":"nvidia-triton-runtime","serving_prefix":"predictive-featurestore","serving_alias":"current"}
+                {"bundle_version":"ims-feature-bundle-v1","feature_service_name":"ims_anomaly_scoring_v1","baseline_version":"baseline-fs-v1","candidate_version":"candidate-fs-v1","automl_engine":"autogluon","model_name":"ims-anomaly-featurestore","model_version_name":"ims-anomaly-featurestore-v1","serving_model_name":"ims-predictive-fs","serving_runtime_name":"nvidia-triton-runtime","serving_model_format_name":"triton","serving_model_format_version":"2","serving_protocol_version":"v2","serving_prefix":"predictive-featurestore","serving_alias":"current","mlserver_serving_model_name":"ims-predictive-fs-mlserver","mlserver_serving_runtime_name":"mlserver-sklearn-runtime","mlserver_serving_model_format_name":"sklearn","mlserver_serving_model_format_version":"1","mlserver_serving_protocol_version":"v2","mlserver_serving_prefix":"predictive-featurestore-mlserver","mlserver_serving_alias":"current"}
             - name: PIPELINE_SKIP_DEMO_RUN
               value: "true"
           command:
