@@ -8,6 +8,8 @@ from typing import Any, Dict, Iterator, List, Sequence, Tuple
 
 import requests
 
+from shared.debug_trace import interaction_trace_packets, trace_now
+
 
 DEFAULT_MILVUS_COLLECTIONS = (
     "ims_runbooks",
@@ -701,7 +703,7 @@ def _parse_llm_json_content(content: object) -> Dict[str, object] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def generate_with_llm(prompt: str) -> Dict[str, object] | None:
+def generate_with_llm_trace(prompt: str) -> Dict[str, object] | None:
     endpoint = os.getenv("LLM_ENDPOINT", "").rstrip("/")
     model_name = os.getenv("LLM_MODEL", "granite")
     api_key = os.getenv("LLM_API_KEY", "").strip()
@@ -709,25 +711,89 @@ def generate_with_llm(prompt: str) -> Dict[str, object] | None:
     if not endpoint:
         return None
 
+    request_endpoint = _llm_chat_completions_url(endpoint)
+    request_payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": "Respond only with valid JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.1,
+    }
+    metadata = {
+        "model_name": model_name,
+        "timeout_seconds": request_timeout_seconds,
+    }
+    started_at = trace_now()
     try:
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         response = requests.post(
-            _llm_chat_completions_url(endpoint),
+            request_endpoint,
             headers=headers,
-            json={
-                "model": model_name,
-                "messages": [
-                    {"role": "system", "content": "Respond only with valid JSON."},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.1,
-            },
+            json=request_payload,
             timeout=request_timeout_seconds,
         )
+        finished_at = trace_now()
         response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
-        return _parse_llm_json_content(content)
-    except Exception:
+        response_payload = response.json()
+        content = response_payload["choices"][0]["message"]["content"]
+        raw_content = _coerce_llm_message_content(content)
+        parsed = _parse_llm_json_content(content)
+        return {
+            "parsed": parsed,
+            "request_payload": request_payload,
+            "response_payload": response_payload,
+            "raw_content": raw_content,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "trace_packets": interaction_trace_packets(
+                category="llm",
+                service="rca-service",
+                target="llm-runtime",
+                method="POST",
+                endpoint=request_endpoint,
+                request_payload=request_payload,
+                response_payload={
+                    "status_code": response.status_code,
+                    "body": response_payload,
+                    "raw_content": raw_content,
+                    "parsed_json": parsed,
+                    "reasoning": ((response_payload.get("choices") or [{}])[0].get("message") or {}).get("reasoning"),
+                },
+                request_timestamp=started_at,
+                response_timestamp=finished_at,
+                metadata=metadata,
+            ),
+        }
+    except Exception as exc:
+        finished_at = trace_now()
+        return {
+            "parsed": None,
+            "request_payload": request_payload,
+            "response_payload": {"error": str(exc)},
+            "raw_content": "",
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "trace_packets": interaction_trace_packets(
+                category="llm",
+                service="rca-service",
+                target="llm-runtime",
+                method="POST",
+                endpoint=request_endpoint,
+                request_payload=request_payload,
+                response_payload={"error": str(exc)},
+                request_timestamp=started_at,
+                response_timestamp=finished_at,
+                metadata=metadata,
+            ),
+        }
+
+
+def generate_with_llm(prompt: str) -> Dict[str, object] | None:
+    trace = generate_with_llm_trace(prompt)
+    if not trace:
         return None
+    parsed = trace.get("parsed")
+    return parsed if isinstance(parsed, dict) else None

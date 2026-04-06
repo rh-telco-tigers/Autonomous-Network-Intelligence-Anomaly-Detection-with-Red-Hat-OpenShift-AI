@@ -6,9 +6,10 @@ from pydantic import BaseModel, Field
 
 from shared.control_plane_client import attach_rca
 from shared.cors import install_cors
+from shared.debug_trace import make_trace_packet, trace_now
 from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type, metric_weights, scenario_definition
 from shared.metrics import install_metrics, record_rca
-from shared.rag import build_prompt, generate_with_llm, retrieve_context
+from shared.rag import build_prompt, generate_with_llm_trace, retrieve_context
 from shared.security import require_api_key
 
 
@@ -214,9 +215,30 @@ def rca(request: RCARequest):
     anomaly_type = canonical_anomaly_type(str(request.context.get("anomaly_type", NORMAL_ANOMALY_TYPE)))
     definition = scenario_definition(anomaly_type)
     query = f"incident={request.incident_id} anomaly_type={anomaly_type} context={request.context}"
+    retrieval_started_at = trace_now()
     documents = retrieve_context(query, limit=3)
+    retrieval_finished_at = trace_now()
     evidence = build_evidence(anomaly_type, documents)
     confidence = compute_confidence(evidence, documents)
+    prompt = build_prompt({"incident_id": request.incident_id, **request.context}, documents)
+    trace_packets = [
+        make_trace_packet(
+            "llm",
+            "event",
+            title="RAG retrieval context",
+            service="rca-service",
+            timestamp=retrieval_finished_at,
+            payload={
+                "query": query,
+                "incident_context": {"incident_id": request.incident_id, **request.context},
+                "documents": documents,
+            },
+            metadata={
+                "retrieved_document_count": len(documents),
+                "retrieval_started_at": retrieval_started_at,
+            },
+        )
+    ]
 
     response = {
         "incident_id": request.incident_id,
@@ -231,7 +253,10 @@ def rca(request: RCARequest):
         "retrieved_documents": summarize_documents(documents),
         **_generation_metadata("local-rag"),
     }
-    generated = generate_with_llm(build_prompt({"incident_id": request.incident_id, **request.context}, documents))
+    llm_trace = generate_with_llm_trace(prompt)
+    generated = llm_trace.get("parsed") if isinstance(llm_trace, dict) else None
+    if isinstance(llm_trace, dict):
+        trace_packets.extend(llm_trace.get("trace_packets") or [])
     if generated:
         response = normalize_response(generated, documents, anomaly_type, request.incident_id)
         response.update(_generation_metadata("llm-rag"))
@@ -262,6 +287,7 @@ def rca(request: RCARequest):
             "llm_model": response.get("llm_model"),
             "llm_runtime": response.get("llm_runtime"),
             "retrieved_documents": response.get("retrieved_documents", []),
+            "debug_trace": trace_packets,
         },
     )
     return response

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from shared.control_plane_client import create_incident
 from shared.cors import install_cors
+from shared.debug_trace import interaction_trace_packets, trace_now
 from shared.metrics import install_metrics
 from shared.model_store import ModelUnavailableError, current_model_status, score_features_detailed
 from shared.security import AuthContext, ensure_project_access, ensure_role, require_api_key
@@ -50,13 +51,19 @@ def current_model(auth: AuthContext | None = Depends(require_api_key)):
 @app.post("/score")
 def score(request: ScoreRequest, auth: AuthContext | None = Depends(require_api_key)):
     ensure_project_access(auth, request.project)
+    score_request_payload = request.model_dump(exclude_none=True)
+    score_request_time = trace_now()
     stored_features = dict(request.features)
     if request.scenario_name and "scenario_name" not in stored_features:
         stored_features["scenario_name"] = request.scenario_name
     if request.anomaly_type_hint and "anomaly_type_hint" not in stored_features:
         stored_features["anomaly_type_hint"] = request.anomaly_type_hint
     try:
-        result = score_features_detailed(stored_features, anomaly_type_hint=request.anomaly_type_hint or request.scenario_name)
+        result = score_features_detailed(
+            stored_features,
+            anomaly_type_hint=request.anomaly_type_hint or request.scenario_name,
+            include_debug_trace=True,
+        )
     except ModelUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -67,6 +74,37 @@ def score(request: ScoreRequest, auth: AuthContext | None = Depends(require_api_
     model_version = str(result["model_version"])
     incident_id = str(uuid.uuid4()) if is_anomaly else None
     created_at = datetime.now(tz=timezone.utc).isoformat()
+    score_response_payload = {
+        "anomaly_score": anomaly_score,
+        "is_anomaly": is_anomaly,
+        "incident_id": incident_id,
+        "anomaly_type": anomaly_type,
+        "predicted_anomaly_type": anomaly_type,
+        "predicted_confidence": predicted_confidence,
+        "class_probabilities": result.get("class_probabilities", {}),
+        "top_classes": result.get("top_classes", []),
+        "model_version": model_version,
+        "scoring_mode": result["scoring_mode"],
+        "created_at": created_at,
+    }
+    debug_trace_packets = list(result.get("debug_trace") or [])
+    debug_trace_packets.extend(
+        interaction_trace_packets(
+            category="api",
+            service="anomaly-service",
+            target="score-client",
+            method="POST",
+            endpoint="/score",
+            request_payload=score_request_payload,
+            response_payload=score_response_payload,
+            request_timestamp=score_request_time,
+            response_timestamp=trace_now(),
+            metadata={
+                "feature_window_id": request.feature_window_id,
+                "project": request.project,
+            },
+        )
+    )
     if is_anomaly and incident_id:
         create_incident(
             {
@@ -82,21 +120,10 @@ def score(request: ScoreRequest, auth: AuthContext | None = Depends(require_api_
                 "model_version": model_version,
                 "feature_snapshot": stored_features,
                 "created_at": created_at,
+                "debug_trace": debug_trace_packets,
             }
         )
-    return {
-        "anomaly_score": anomaly_score,
-        "is_anomaly": is_anomaly,
-        "incident_id": incident_id,
-        "anomaly_type": anomaly_type,
-        "predicted_anomaly_type": anomaly_type,
-        "predicted_confidence": predicted_confidence,
-        "class_probabilities": result.get("class_probabilities", {}),
-        "top_classes": result.get("top_classes", []),
-        "model_version": model_version,
-        "scoring_mode": result["scoring_mode"],
-        "created_at": created_at,
-    }
+    return score_response_payload
 
 
 @app.post("/score/batch")

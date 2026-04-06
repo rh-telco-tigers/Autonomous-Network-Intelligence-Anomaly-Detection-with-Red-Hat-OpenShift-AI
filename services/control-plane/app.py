@@ -27,6 +27,7 @@ from shared.aap import (
     wait_for_runner_job as aap_wait_for_runner_job,
 )
 from shared.cors import install_cors
+from shared.debug_trace import interaction_trace_packets, make_trace_packet
 from shared.eda import (
     EDAAutomationError,
     bootstrap_resources as eda_bootstrap_resources,
@@ -136,6 +137,7 @@ logger = logging.getLogger(__name__)
 RELATED_CONTEXT_COLLECTIONS = [name for name in DEFAULT_MILVUS_COLLECTIONS if name != RUNBOOK_COLLECTION]
 _AUTOMATION_BOOTSTRAP_LOCK = threading.Lock()
 _AUTOMATION_BOOTSTRAP_STARTED = False
+DEBUG_TRACE_EVENT_TYPE = "debug_trace_packet"
 
 
 class IncidentCreate(BaseModel):
@@ -155,6 +157,7 @@ class IncidentCreate(BaseModel):
     severity: Optional[str] = None
     source_system: str = "anomaly-service"
     auto_generate_rca: bool = True
+    debug_trace: List[Dict[str, object]] = Field(default_factory=list)
 
 
 class RCAAttach(BaseModel):
@@ -170,6 +173,7 @@ class RCAAttach(BaseModel):
     llm_model: Optional[str] = None
     llm_runtime: Optional[str] = None
     retrieved_documents: List[Dict[str, object]] = Field(default_factory=list)
+    debug_trace: List[Dict[str, object]] = Field(default_factory=list)
 
 
 class ModelPromotionRequest(BaseModel):
@@ -1459,6 +1463,148 @@ def _request_json(method: str, url: str, payload: Dict[str, object] | None = Non
     return parsed if isinstance(parsed, dict) else {"value": parsed}
 
 
+def _record_debug_trace_packets(incident_id: str, actor: str, packets: object) -> None:
+    if not incident_id or not isinstance(packets, list):
+        return
+    for packet in packets:
+        if not isinstance(packet, dict):
+            continue
+        trace_payload = dict(packet)
+        trace_payload.setdefault("timestamp", _now_iso())
+        trace_payload.setdefault("category", "workflow")
+        trace_payload.setdefault("phase", "event")
+        trace_payload.setdefault("title", "Trace event")
+        trace_payload.setdefault("service", "control-plane")
+        trace_payload.setdefault("payload", {})
+        trace_payload.setdefault("metadata", {})
+        record_audit(DEBUG_TRACE_EVENT_TYPE, actor, trace_payload, incident_id=incident_id)
+
+
+def _trace_event_timestamp(payload: object, fallback: str) -> str:
+    if isinstance(payload, dict):
+        timestamp = str(payload.get("timestamp") or "").strip()
+        if timestamp:
+            return timestamp
+    return fallback
+
+
+def _trace_sort_key(packet: Dict[str, object], fallback_index: int) -> tuple[datetime, int, int]:
+    raw_timestamp = str(packet.get("timestamp") or "").strip()
+    try:
+        parsed_timestamp = datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        parsed_timestamp = datetime.min.replace(tzinfo=timezone.utc)
+    phase_priority = {"request": 0, "response": 1, "event": 2}.get(str(packet.get("phase") or "event"), 3)
+    return parsed_timestamp, phase_priority, fallback_index
+
+
+def _audit_trace_category(event_type: str) -> str:
+    if event_type.startswith("ticket_") or event_type == "plane_webhook_processed":
+        return "ticket"
+    if event_type in {"scenario_executed", "incident_created", "rca_attached"}:
+        return "api"
+    if event_type in {"incident_approved", "action_executed", "verification_recorded", "workflow_transition"}:
+        return "workflow"
+    return "workflow"
+
+
+def _debug_trace_packets_for_incident(incident: Dict[str, object]) -> List[Dict[str, object]]:
+    incident_id = str(incident.get("id") or "")
+    workflow = _workflow_payload(incident)
+    audit_events = list_audit_events(limit=500, incident_id=incident_id)
+    packets: List[Dict[str, object]] = []
+
+    for audit_event in audit_events:
+        payload = audit_event.get("payload")
+        if str(audit_event.get("event_type") or "") == DEBUG_TRACE_EVENT_TYPE and isinstance(payload, dict):
+            packets.append(
+                dict(payload)
+                | {
+                    "timestamp": _trace_event_timestamp(payload, str(audit_event.get("created_at") or _now_iso())),
+                    "metadata": {
+                        **(payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}),
+                        "audit_event_id": audit_event.get("id"),
+                        "actor": audit_event.get("actor"),
+                        "event_type": audit_event.get("event_type"),
+                    },
+                }
+            )
+            continue
+
+        packets.append(
+            make_trace_packet(
+                _audit_trace_category(str(audit_event.get("event_type") or "")),
+                "event",
+                title=_timeline_title(str(audit_event.get("event_type") or "")),
+                service="control-plane",
+                timestamp=str(audit_event.get("created_at") or _now_iso()),
+                payload=payload if isinstance(payload, dict) else {"value": payload},
+                metadata={
+                    "actor": audit_event.get("actor"),
+                    "event_type": audit_event.get("event_type"),
+                    "audit_event_id": audit_event.get("id"),
+                },
+            )
+        )
+
+    for action in workflow.get("actions") or []:
+        if not isinstance(action, dict):
+            continue
+        packets.append(
+            make_trace_packet(
+                "action",
+                "event",
+                title=f"Action {action.get('id')} result",
+                service="control-plane",
+                timestamp=str(action.get("finished_at") or action.get("started_at") or _now_iso()),
+                payload=action.get("result_json") if isinstance(action.get("result_json"), dict) else {"value": action.get("result_json")},
+                metadata={
+                    "action_id": action.get("id"),
+                    "action_mode": action.get("action_mode"),
+                    "execution_status": action.get("execution_status"),
+                    "triggered_by": action.get("triggered_by"),
+                    "remediation_id": action.get("remediation_id"),
+                },
+            )
+        )
+
+    for ticket in workflow.get("tickets") or []:
+        if not isinstance(ticket, dict):
+            continue
+        provider = str(ticket.get("provider") or "ticket")
+        for sync_event in ticket.get("sync_events") or []:
+            if not isinstance(sync_event, dict):
+                continue
+            packets.append(
+                make_trace_packet(
+                    "ticket",
+                    "event",
+                    title=f"{provider.upper()} {sync_event.get('event_type') or 'sync'}",
+                    service="control-plane",
+                    target=provider,
+                    timestamp=str(sync_event.get("created_at") or _now_iso()),
+                    payload=sync_event.get("payload") if isinstance(sync_event.get("payload"), dict) else {"value": sync_event.get("payload")},
+                    metadata={
+                        "ticket_id": ticket.get("id"),
+                        "provider": provider,
+                        "direction": sync_event.get("direction"),
+                        "status": sync_event.get("status"),
+                        "sync_event_id": sync_event.get("id"),
+                    },
+                )
+            )
+
+    indexed_packets = list(enumerate(packets))
+    sorted_packets = sorted(
+        indexed_packets,
+        key=lambda item_with_index: _trace_sort_key(item_with_index[1], item_with_index[0]),
+    )
+    ordered_packets: List[Dict[str, object]] = []
+    for sequence, (_, packet) in enumerate(sorted_packets, start=1):
+        ordered_packets.append(packet | {"sequence": sequence})
+    return ordered_packets
+
+
 def _incident_feature_context(incident: Dict[str, object]) -> Dict[str, object]:
     features = incident.get("feature_snapshot") or {}
     return features if isinstance(features, dict) else {}
@@ -1479,7 +1625,46 @@ def _incident_rca_request_payload(incident: Dict[str, object]) -> Dict[str, obje
 
 
 def _request_incident_rca(incident: Dict[str, object]) -> Dict[str, object]:
-    return _request_json("POST", f"{RCA_SERVICE_URL}/rca", _incident_rca_request_payload(incident))
+    incident_id = str(incident.get("id") or incident.get("incident_id") or "")
+    request_payload = _incident_rca_request_payload(incident)
+    request_timestamp = _now_iso()
+    try:
+        response_payload = _request_json("POST", f"{RCA_SERVICE_URL}/rca", request_payload)
+    except HTTPException as exc:
+        _record_debug_trace_packets(
+            incident_id,
+            "control-plane",
+            interaction_trace_packets(
+                category="api",
+                service="control-plane",
+                target="rca-service",
+                method="POST",
+                endpoint=f"{RCA_SERVICE_URL}/rca",
+                request_payload=request_payload,
+                response_payload={"error": exc.detail},
+                request_timestamp=request_timestamp,
+                response_timestamp=_now_iso(),
+                metadata={"incident_id": incident_id},
+            ),
+        )
+        raise
+    _record_debug_trace_packets(
+        incident_id,
+        "control-plane",
+        interaction_trace_packets(
+            category="api",
+            service="control-plane",
+            target="rca-service",
+            method="POST",
+            endpoint=f"{RCA_SERVICE_URL}/rca",
+            request_payload=request_payload,
+            response_payload=response_payload,
+            request_timestamp=request_timestamp,
+            response_timestamp=_now_iso(),
+            metadata={"incident_id": incident_id},
+        ),
+    )
+    return response_payload
 
 
 def _auto_generate_incident_rca(incident_id: str, actor: str = "control-plane:auto-rca") -> None:
@@ -2246,9 +2431,30 @@ def post_incident(
     auth: AuthContext | None = Depends(require_api_key),
 ):
     ensure_project_access(auth, payload.project)
-    incident = create_incident(payload.model_dump(exclude_none=True))
+    incident_request_payload = payload.model_dump(exclude_none=True)
+    inbound_debug_trace = list(incident_request_payload.pop("debug_trace", []))
+    request_timestamp = _now_iso()
+    incident = create_incident(incident_request_payload)
+    response_timestamp = _now_iso()
     _publish_incident_evidence_record(incident)
     record_audit("incident_created", "anomaly-service", incident, incident_id=incident["id"])
+    _record_debug_trace_packets(
+        str(incident.get("id") or ""),
+        str(payload.source_system or "anomaly-service"),
+        interaction_trace_packets(
+            category="api",
+            service=str(payload.source_system or "anomaly-service"),
+            target="control-plane",
+            method="POST",
+            endpoint="/incidents",
+            request_payload=incident_request_payload,
+            response_payload=incident,
+            request_timestamp=request_timestamp,
+            response_timestamp=response_timestamp,
+            metadata={"source_system": payload.source_system},
+        )
+        + inbound_debug_trace,
+    )
     record_incident(incident["project"], incident["anomaly_type"], incident["status"])
     set_active_incidents(list_incidents(project=incident["project"]))
     background_tasks.add_task(_publish_eda_event_best_effort, "incident_created", incident)
@@ -2315,6 +2521,18 @@ def get_incident_by_id(incident_id: str, auth: AuthContext | None = Depends(requ
     return _workflow_payload(incident)
 
 
+@app.get("/incidents/{incident_id}/debug-trace")
+def get_incident_debug_trace(incident_id: str, auth: AuthContext | None = Depends(require_api_key)):
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+    return {
+        "incident": _enrich_incident(incident, list_audit_events(limit=500, incident_id=incident_id), list_incidents(project=str(incident.get("project") or "ims-demo"))),
+        "trace_packets": _debug_trace_packets_for_incident(incident),
+    }
+
+
 @app.get("/incidents/{incident_id}/rca")
 def get_incident_rca(incident_id: str, auth: AuthContext | None = Depends(require_api_key)):
     incident = get_incident(incident_id)
@@ -2347,11 +2565,32 @@ def generate_incident_rca(incident_id: str, auth: AuthContext | None = Depends(r
 
 @app.post("/incidents/{incident_id}/rca")
 def post_rca(incident_id: str, payload: RCAAttach, auth: AuthContext | None = Depends(require_api_key)):
-    incident = attach_rca(incident_id, payload.model_dump())
+    request_payload = payload.model_dump()
+    inbound_debug_trace = list(request_payload.get("debug_trace") or [])
+    audit_payload = {key: value for key, value in request_payload.items() if key != "debug_trace"}
+    request_timestamp = _now_iso()
+    incident = attach_rca(incident_id, request_payload)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
     ensure_project_access(auth, incident["project"])
-    record_audit("rca_attached", "rca-service", payload.model_dump(), incident_id=incident_id)
+    record_audit("rca_attached", "rca-service", audit_payload, incident_id=incident_id)
+    _record_debug_trace_packets(
+        incident_id,
+        "rca-service",
+        interaction_trace_packets(
+            category="api",
+            service="rca-service",
+            target="control-plane",
+            method="POST",
+            endpoint=f"/incidents/{incident_id}/rca",
+            request_payload=request_payload,
+            response_payload=_workflow_payload(get_incident(incident_id) or incident),
+            request_timestamp=request_timestamp,
+            response_timestamp=_now_iso(),
+            metadata={"incident_id": incident_id},
+        )
+        + inbound_debug_trace,
+    )
     refreshed = get_incident(incident_id) or incident
     _publish_rca_reasoning_record(refreshed, payload.model_dump())
     _publish_eda_event_best_effort("rca_attached", refreshed)

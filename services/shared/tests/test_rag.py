@@ -1,10 +1,15 @@
 import importlib.util
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+
+SERVICES_ROOT = Path(__file__).resolve().parents[2]
+if str(SERVICES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICES_ROOT))
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "rag.py"
 SPEC = importlib.util.spec_from_file_location("shared_rag", MODULE_PATH)

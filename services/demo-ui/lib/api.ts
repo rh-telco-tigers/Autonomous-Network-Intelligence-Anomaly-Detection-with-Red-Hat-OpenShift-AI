@@ -6,6 +6,7 @@ import { useApiToken } from "@/components/providers/app-providers";
 import type {
   ConsoleState,
   DocumentResponse,
+  IncidentDebugTraceResponse,
   IncidentRecord,
   IncidentWorkflow,
   KnowledgeArticleResponse,
@@ -99,6 +100,18 @@ export function useIncidentWorkflowQuery(incidentId: string) {
   return useQuery({
     queryKey: ["incident-workflow", incidentId, token],
     queryFn: () => request<IncidentWorkflow>(`/api/incidents/${encodeURIComponent(incidentId)}`, token),
+    enabled: Boolean(incidentId),
+    refetchInterval: 12_000,
+    staleTime: 5_000,
+    retry: 2,
+  });
+}
+
+export function useIncidentDebugTraceQuery(incidentId: string) {
+  const { token } = useApiToken();
+  return useQuery({
+    queryKey: ["incident-debug-trace", incidentId, token],
+    queryFn: () => request<IncidentDebugTraceResponse>(`/api/incidents/${encodeURIComponent(incidentId)}/debug-trace`, token),
     enabled: Boolean(incidentId),
     refetchInterval: 12_000,
     staleTime: 5_000,

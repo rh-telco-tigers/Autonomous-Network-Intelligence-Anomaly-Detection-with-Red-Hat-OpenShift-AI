@@ -7,6 +7,7 @@ from typing import Dict, Tuple
 from joblib import load as joblib_load
 import requests
 
+from shared.debug_trace import interaction_trace_packets, trace_now
 from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type, canonical_anomaly_types
 from shared.model_registry import load_registry as load_registry_document
 
@@ -172,7 +173,11 @@ def score_features(features: Dict[str, object], anomaly_type_hint: str | None = 
     )
 
 
-def score_features_detailed(features: Dict[str, object], anomaly_type_hint: str | None = None) -> Dict[str, object]:
+def score_features_detailed(
+    features: Dict[str, object],
+    anomaly_type_hint: str | None = None,
+    include_debug_trace: bool = False,
+) -> Dict[str, object]:
     deployed = load_deployed_model()
     if not deployed:
         raise ModelUnavailableError("No deployed model is registered for anomaly scoring")
@@ -182,7 +187,15 @@ def score_features_detailed(features: Dict[str, object], anomaly_type_hint: str 
     reported_version = str(metadata["version"])
     model_type = artifact.get("model_type") if isinstance(artifact, dict) else None
     class_labels = _canonical_class_labels(metadata, artifact)
-    remote_prediction = _remote_score(features, class_labels, anomaly_type_hint=anomaly_type_hint)
+    debug_trace_packets: list[Dict[str, object]] = []
+    remote_prediction, remote_trace_packets = _remote_score(
+        features,
+        class_labels,
+        anomaly_type_hint=anomaly_type_hint,
+        include_debug_trace=include_debug_trace,
+    )
+    if include_debug_trace:
+        debug_trace_packets.extend(remote_trace_packets)
     scoring_mode = "remote-kserve"
     if remote_prediction is not None:
         prediction = remote_prediction
@@ -190,24 +203,47 @@ def score_features_detailed(features: Dict[str, object], anomaly_type_hint: str 
     elif metadata.get("kind") == "triton_python_multiclass_logistic_regression":
         prediction = _score_triton_export(features, artifact)
         scoring_mode = "triton-artifact"
+        if include_debug_trace:
+            debug_trace_packets.extend(
+                _local_model_trace_packets(features, prediction, "triton-artifact", reported_version, str(metadata.get("kind") or ""))
+            )
     elif metadata.get("kind") in {"sklearn_multiclass_logistic_regression", "sklearn_logistic_regression"}:
         prediction = _score_serving_model(features, artifact, metadata)
         scoring_mode = "local-artifact"
+        if include_debug_trace:
+            debug_trace_packets.extend(
+                _local_model_trace_packets(features, prediction, "local-artifact", reported_version, str(metadata.get("kind") or ""))
+            )
     elif model_type == "baseline_multiclass_logistic_regression":
         prediction = _score_baseline(features, artifact)
         scoring_mode = "baseline-artifact"
+        if include_debug_trace:
+            debug_trace_packets.extend(
+                _local_model_trace_packets(features, prediction, "baseline-artifact", reported_version, str(model_type or "baseline"))
+            )
     elif model_type == "autogluon_tabular_multiclass":
         prediction = _score_autogluon(features, artifact, metadata)
         scoring_mode = "autogluon-artifact"
+        if include_debug_trace:
+            debug_trace_packets.extend(
+                _local_model_trace_packets(features, prediction, "autogluon-artifact", reported_version, str(model_type or "autogluon"))
+            )
     else:
         prediction = _score_legacy_runtime(features, artifact, metadata, anomaly_type_hint)
         scoring_mode = "legacy-fallback"
-    return {
+        if include_debug_trace:
+            debug_trace_packets.extend(
+                _local_model_trace_packets(features, prediction, "legacy-fallback", reported_version, str(model_type or metadata.get("kind") or "legacy"))
+            )
+    result = {
         **prediction,
         "model_version": reported_version,
         "scoring_mode": scoring_mode,
         "provided_anomaly_type_hint": canonical_anomaly_type(anomaly_type_hint) if anomaly_type_hint else None,
     }
+    if include_debug_trace:
+        result["debug_trace"] = debug_trace_packets
+    return result
 
 
 def _flatten_numbers(value: object) -> list[float]:
@@ -222,36 +258,102 @@ def _flatten_numbers(value: object) -> list[float]:
         return []
 
 
+def _numeric_feature_payload(features: Dict[str, object]) -> Dict[str, float]:
+    return {feature: float(features.get(feature, 0.0)) for feature in NUMERIC_FEATURES}
+
+
+def _local_model_trace_packets(
+    features: Dict[str, object],
+    prediction: Dict[str, object],
+    scoring_mode: str,
+    model_version: str,
+    model_kind: str,
+) -> list[Dict[str, object]]:
+    request_timestamp = trace_now()
+    response_timestamp = trace_now()
+    return interaction_trace_packets(
+        category="model",
+        service="anomaly-service",
+        target="local-artifact",
+        method="LOCAL",
+        endpoint=f"local://{scoring_mode}",
+        request_payload={
+            "features": _numeric_feature_payload(features),
+            "numeric_vector": list(_numeric_feature_payload(features).values()),
+        },
+        response_payload=prediction,
+        request_timestamp=request_timestamp,
+        response_timestamp=response_timestamp,
+        metadata={
+            "model_version": model_version,
+            "scoring_mode": scoring_mode,
+            "model_kind": model_kind,
+        },
+    )
+
+
 def _remote_score(
     features: Dict[str, object],
     class_labels: list[str],
     anomaly_type_hint: str | None = None,
-) -> Dict[str, object] | None:
+    include_debug_trace: bool = False,
+) -> tuple[Dict[str, object] | None, list[Dict[str, object]]]:
     endpoint = _predictive_endpoint()
     model_name = _predictive_model_name()
     if not endpoint:
-        return None
+        return None, []
 
     values = [[float(features.get(feature, 0.0)) for feature in NUMERIC_FEATURES]]
+    request_payload = {
+        "inputs": [
+            {
+                "name": "predict",
+                "shape": [1, len(NUMERIC_FEATURES)],
+                "datatype": "FP32",
+                "data": values,
+            }
+        ]
+    }
+    request_endpoint = f"{endpoint}/v2/models/{model_name}/infer"
+    request_timestamp = trace_now() if include_debug_trace else None
     try:
         response = requests.post(
-            f"{endpoint}/v2/models/{model_name}/infer",
-            json={
-                "inputs": [
-                    {
-                        "name": "predict",
-                        "shape": [1, len(NUMERIC_FEATURES)],
-                        "datatype": "FP32",
-                        "data": values,
-                    }
-                ]
-            },
+            request_endpoint,
+            json=request_payload,
             timeout=10,
         )
+        response_timestamp = trace_now() if include_debug_trace else None
+        body = response.text.strip()
+        try:
+            response_payload = response.json() if body else {}
+        except ValueError:
+            response_payload = {"detail": body} if body else {}
         response.raise_for_status()
-        outputs = response.json().get("outputs", [])
+        trace_packets = (
+            interaction_trace_packets(
+                category="model",
+                service="anomaly-service",
+                target="predictive-service",
+                method="POST",
+                endpoint=request_endpoint,
+                request_payload=request_payload,
+                response_payload={
+                    "status_code": response.status_code,
+                    "body": response_payload,
+                },
+                request_timestamp=request_timestamp,
+                response_timestamp=response_timestamp,
+                metadata={
+                    "model_name": model_name,
+                    "class_labels": class_labels,
+                },
+            )
+            if include_debug_trace
+            else []
+        )
+        outputs = response_payload.get("outputs", []) if isinstance(response_payload, dict) else []
         if not outputs:
-            return None
+            return None, trace_packets
         outputs_by_name = {
             str(output.get("name", "")).lower(): output
             for output in outputs
@@ -271,15 +373,37 @@ def _remote_score(
                     score_values = _flatten_numbers(score_output.get("data", []))
                     if score_values:
                         prediction["anomaly_score"] = round(float(score_values[0]), 6)
-                return prediction
+                return prediction, trace_packets
         score_output = outputs_by_name.get("anomaly_score")
         if score_output:
             score_values = _flatten_numbers(score_output.get("data", []))
             if score_values:
-                return _legacy_prediction_from_score(float(score_values[0]), features, anomaly_type_hint=anomaly_type_hint)
-    except Exception:
-        return None
-    return None
+                return (
+                    _legacy_prediction_from_score(float(score_values[0]), features, anomaly_type_hint=anomaly_type_hint),
+                    trace_packets,
+                )
+        return None, trace_packets
+    except Exception as exc:
+        if not include_debug_trace:
+            return None, []
+        return (
+            None,
+            interaction_trace_packets(
+                category="model",
+                service="anomaly-service",
+                target="predictive-service",
+                method="POST",
+                endpoint=request_endpoint,
+                request_payload=request_payload,
+                response_payload={"error": str(exc)},
+                request_timestamp=request_timestamp,
+                response_timestamp=trace_now(),
+                metadata={
+                    "model_name": model_name,
+                    "class_labels": class_labels,
+                },
+            ),
+        )
 
 
 def _load_artifact(artifact_path: Path, kind: str) -> Dict[str, object] | object:

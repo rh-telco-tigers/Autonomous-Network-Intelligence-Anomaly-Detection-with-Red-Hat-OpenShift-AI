@@ -329,6 +329,25 @@ export type IncidentWorkflow = {
   plane_workflow_state: string;
 };
 
+export type DebugTracePacket = {
+  sequence: number;
+  category: string;
+  phase: string;
+  title: string;
+  timestamp: string;
+  service?: string;
+  target?: string;
+  endpoint?: string;
+  method?: string;
+  payload: unknown;
+  metadata: Record<string, unknown>;
+};
+
+export type IncidentDebugTraceResponse = {
+  incident: IncidentRecord;
+  trace_packets: DebugTracePacket[];
+};
+
 export type TicketLookupResponse = {
   ticket: TicketRecord;
   workflow: IncidentWorkflow;

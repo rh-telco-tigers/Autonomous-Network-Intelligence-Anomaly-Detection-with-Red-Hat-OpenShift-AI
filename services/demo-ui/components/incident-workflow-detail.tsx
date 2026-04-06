@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Bot, Info, Sparkles } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -23,11 +23,9 @@ import type {
   IncidentActionRecord,
   IncidentRecord,
   IncidentWorkflow,
-  RelatedRecords,
   RcaPayload,
   RcaRecord,
   RemediationRecord,
-  ResolutionExtract,
   TicketRecord,
   VerificationRecord,
   WorkflowState,
@@ -267,22 +265,10 @@ export function IncidentWorkflowDetail() {
   const refreshWorkflow = React.useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["incident-workflow", incidentId, token] }),
-      queryClient.invalidateQueries({ queryKey: ["incident-related", incidentId, token] }),
       queryClient.invalidateQueries({ queryKey: ["incidents"] }),
       queryClient.invalidateQueries({ queryKey: ["console-state"] }),
     ]);
   }, [incidentId, queryClient, token]);
-
-  const relatedQuery = useQuery({
-    queryKey: ["incident-related", incidentId, token],
-    queryFn: () =>
-      request<RelatedRecords>(`/api/incidents/${encodeURIComponent(incidentId)}/related`, token, {
-        method: "POST",
-        body: JSON.stringify({ limit: 6, knowledge_limit: 10 }),
-      }),
-    enabled: Boolean(incidentId),
-    refetchInterval: 15_000,
-  });
 
   const openTicket = React.useCallback((ticket?: Pick<TicketRecord, "provider" | "external_id" | "url"> | null) => {
     const href = resolveTicketHref(ticket);
@@ -758,7 +744,6 @@ export function IncidentWorkflowDetail() {
     hasExecutionHistory: hasActionHistory,
     hasVerification,
   });
-  const relatedData = relatedQuery.data;
   const pending =
     generateRcaMutation.isPending ||
     generateRemediationsMutation.isPending ||
@@ -1333,146 +1318,24 @@ export function IncidentWorkflowDetail() {
               <CardContent className="space-y-4 p-6">
                 <div>
                   <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Advanced technical details</div>
-                  <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">Open the system detail only when you need it</div>
+                  <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">Open the dedicated debug trace only when you need it</div>
                   <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
-                    IDs, feature details, related evidence, and saved resolutions stay available without crowding the main workflow.
+                    Raw request and response packets, model inputs and outputs, LLM prompts and responses, and lifecycle trace data now live on a separate deep-dive page.
                   </p>
                 </div>
-
-                <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">
-                    Incident, model, and feature details
-                  </summary>
-                  <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <SummaryItem label="Incident ID" value={incident.id} />
-                    <SummaryItem label="Workflow revision" value={String(incident.workflow_revision)} />
-                    <SummaryItem label="Model version" value={incident.model_version} />
-                    <SummaryItem label="Feature window" value={incident.feature_window_id ?? "Unavailable"} />
-                    <SummaryItem label="Plane state" value={data.plane_workflow_state} />
-                    <SummaryItem label="Workflow state" value={<StatusBadge value={incident.status} />} />
-                    <SummaryItem label="Prediction confidence" value={formatRelativeNumber(incident.predicted_confidence)} />
-                    <SummaryItem label="Top alternatives" value={formatTopClassPredictions(incident.top_classes ?? [])} />
-                    <SummaryItem label="Updated" value={formatTime(incident.updated_at)} />
-                  </div>
-                </details>
-
-                <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Related evidence and knowledge</summary>
-                  <div className="mt-4 space-y-4">
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      <SummaryItem label="Evidence matches" value={String(relatedData?.evidence.length ?? 0)} />
-                      <SummaryItem label="Reasoning matches" value={String(relatedData?.reasoning.length ?? 0)} />
-                      <SummaryItem label="Resolution matches" value={String(relatedData?.resolution.length ?? 0)} />
-                      <SummaryItem label="Knowledge articles" value={String(relatedData?.knowledge.length ?? 0)} />
+                <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-6">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="max-w-3xl">
+                      <div className="text-sm font-medium text-[var(--text-strong)]">Detailed execution trace</div>
+                      <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                        Open the deep dive view for the full timestamped flow across API calls, model inference, RCA generation, ticket sync, and workflow events.
+                      </p>
                     </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {(incident.explainability ?? []).slice(0, 4).map((item) => (
-                        <div key={item.feature} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
-                          <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{item.label}</div>
-                          <div className="mt-2 text-sm text-[var(--text-strong)]">Weight {formatRelativeNumber(item.weight, 2)}</div>
-                        </div>
-                      ))}
-                    </div>
-                    {relatedQuery.isLoading ? (
-                      <div className="text-sm text-[var(--text-muted)]">Loading related evidence and articles...</div>
-                    ) : (
-                      <div className="space-y-4">
-                        {relatedData?.documents.length ? (
-                          <div className="space-y-3">
-                            <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Related documents</div>
-                            {relatedData.documents.map((document) => (
-                              <div
-                                key={`${document.collection}-${document.reference}`}
-                                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4"
-                              >
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="font-medium text-[var(--text-strong)]">{document.title}</div>
-                                  <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
-                                    {titleize(document.collection)}
-                                  </div>
-                                </div>
-                                <div className="mt-1 text-sm text-[var(--text-secondary)]">{truncateText(document.content, 180)}</div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        {relatedData?.knowledge.length ? (
-                          <div className="space-y-3">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div>
-                                <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Knowledge articles</div>
-                                <div className="mt-1 text-sm text-[var(--text-secondary)]">
-                                  Guidance articles matched to this incident type.
-                                </div>
-                              </div>
-                              <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
-                                {relatedData.knowledge.length} available
-                              </div>
-                            </div>
-                            {relatedData.knowledge.map((article) => (
-                              <div
-                                key={`${article.collection}-${article.reference}`}
-                                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4"
-                              >
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                  <div className="min-w-0 flex-1">
-                                    <div className="font-medium text-[var(--text-strong)]">{article.title}</div>
-                                    <div className="mt-1 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
-                                      {titleize(article.category ?? "knowledge")} · score {formatRelativeNumber(article.score, 2)}
-                                    </div>
-                                  </div>
-                                  <Button asChild variant="secondary" className="shrink-0">
-                                    <Link href={knowledgeArticleHref(incident.id, article.reference)}>View article</Link>
-                                  </Button>
-                                </div>
-                                <div className="mt-2 text-sm text-[var(--text-secondary)]">{truncateText(article.content, 220)}</div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        {!relatedData?.documents.length && !relatedData?.knowledge.length ? (
-                          <InlineEmptyState
-                            title="No related knowledge yet"
-                            description="Related evidence, articles, and past resolutions will appear here when loading completes."
-                          />
-                        ) : null}
-                      </div>
-                    )}
+                    <Button asChild className="shrink-0">
+                      <Link href={`/incidents/${encodeURIComponent(incident.id)}/debug`}>View Detailed Execution Trace</Link>
+                    </Button>
                   </div>
-                </details>
-
-                <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Step details</summary>
-                  <div className="mt-4">
-                    <StepReferenceCard steps={flowGuide.steps} planeState={data.plane_workflow_state} />
-                  </div>
-                </details>
-
-                <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">History and saved resolutions</summary>
-                  <div className="mt-4 grid gap-4 xl:grid-cols-3">
-                    <ListCard
-                      title="Execution history"
-                      items={buildActionItems(data.actions)}
-                      emptyTitle="No actions yet"
-                      emptyDescription="Approve or run a remediation to start building execution history."
-                    />
-                    <ListCard
-                      title="Verification records"
-                      items={buildVerificationItems(data.verifications)}
-                      emptyTitle="No verifications yet"
-                      emptyDescription="Add a verification record to see entries here."
-                    />
-                    <ListCard
-                      title="Verified knowledge"
-                      items={buildResolutionItems(data.resolution_extracts)}
-                      emptyTitle="No verified knowledge yet"
-                      emptyDescription="Verified fixes are saved here for similar incidents later."
-                    />
-                  </div>
-                </details>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -1895,49 +1758,6 @@ function WorkflowStageDock({
   );
 }
 
-function StepReferenceCard({ steps, planeState }: { steps: GuideStep[]; planeState: string }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Steps</CardTitle>
-        <CardDescription>Completed steps are marked. Later steps unlock as you progress.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {steps.map((step) => {
-          const styles = stepClasses(step.status);
-          return (
-            <div key={step.number} className="flex gap-3">
-              <div className={styles.dot}>{step.status === "done" ? "✓" : step.number}</div>
-              <div className={styles.card}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-medium text-[var(--text-strong)]">{step.title}</div>
-                    <div className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{step.description}</div>
-                  </div>
-                  {step.status === "current" ? (
-                    <span className="rounded-full bg-sky-500 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-950">
-                      Now
-                    </span>
-                  ) : null}
-                  {step.status === "attention" ? (
-                    <span className="rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-950">
-                      Review
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-
-        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
-          Plane shows this workflow for collaboration. Current Plane state: <span className="font-medium text-[var(--text-strong)]">{planeState}</span>.
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 function buildIncidentViewSteps(status: WorkflowState): IncidentViewStep[] {
   return INCIDENT_VIEW_STEP_TEMPLATES.map((step, index) => ({
     number: index + 1,
@@ -1969,7 +1789,7 @@ function describeGuideAction(action: GuideActionId, hasTicket: boolean) {
     case "focusTimeline":
       return "Review the incident timeline to see what changed at each stage of the workflow.";
     case "focusKnowledge":
-      return "Open advanced details for IDs, related evidence, saved resolutions, and matched knowledge articles.";
+      return "Open the dedicated debug page for the full ordered execution trace and raw payloads.";
     case "reviewExecution":
       return "Inspect the latest execution result and verification outcome before deciding on the next action.";
     case "executeSelected":
@@ -2043,38 +1863,6 @@ function InlineEmptyState({ title, description }: { title: string; description: 
       <div className="font-medium text-[var(--text-strong)]">{title}</div>
       <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{description}</p>
     </div>
-  );
-}
-
-function ListCard({
-  title,
-  items,
-  emptyTitle,
-  emptyDescription,
-}: {
-  title: string;
-  items: Array<{ title: string; description: string }>;
-  emptyTitle: string;
-  emptyDescription: string;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {items.length ? (
-          items.map((item) => (
-            <div key={`${item.title}-${item.description}`} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-              <div className="font-medium text-[var(--text-strong)]">{item.title}</div>
-              <div className="mt-1 text-sm text-[var(--text-secondary)]">{item.description}</div>
-            </div>
-          ))
-        ) : (
-          <InlineEmptyState title={emptyTitle} description={emptyDescription} />
-        )}
-      </CardContent>
-    </Card>
   );
 }
 
@@ -2295,7 +2083,7 @@ function deriveFlowGuide({
         ],
         ticketHint: "Keep the ticket synchronized so collaborators see the final verified outcome before closure.",
         primary: { label: "Close incident", action: "closeIncident" },
-        secondary: { label: "Review knowledge", action: "focusKnowledge" },
+        secondary: { label: "View detailed trace", action: "focusKnowledge" },
         steps,
       };
     case "CLOSED":
@@ -2321,7 +2109,7 @@ function deriveFlowGuide({
           },
         ],
         ticketHint: "Keep Plane synchronized for audit and collaboration, but the incident is now complete locally.",
-        primary: { label: "Review knowledge", action: "focusKnowledge" },
+        primary: { label: "View detailed trace", action: "focusKnowledge" },
         secondary: { label: "Review timeline", action: "focusTimeline" },
         steps,
       };
@@ -2876,41 +2664,12 @@ function remediationDecisionPriority(activity: RemediationActivity | undefined) 
   }
 }
 
-function buildActionItems(actions: IncidentActionRecord[]) {
-  return actions.map((action) => ({
-    title: `${titleize(action.execution_status)} · ${titleize(action.action_mode)}`,
-    description: `${action.result_summary ?? action.notes ?? "No action summary"} · ${formatTime(action.finished_at ?? action.started_at ?? null)}`,
-  }));
-}
-
-function buildVerificationItems(records: VerificationRecord[]) {
-  return records.map((record) => ({
-    title: `${titleize(record.verification_status)} · ${record.verified_by}`,
-    description: `${record.custom_resolution ?? record.notes ?? "No verification note"} · ${formatTime(record.created_at)}`,
-  }));
-}
-
-function buildResolutionItems(extracts: ResolutionExtract[]) {
-  return extracts.map((extract) => ({
-    title: `${titleize(extract.verification_quality)} quality`,
-    description: `${extract.summary} · ${formatTime(extract.created_at)}`,
-  }));
-}
-
 function truncateText(value: string | null | undefined, limit: number) {
   const text = String(value ?? "").replace(/\s+/g, " ").trim();
   if (text.length <= limit) {
     return text;
   }
   return `${text.slice(0, limit - 1)}...`;
-}
-
-function knowledgeArticleHref(incidentId: string, reference: string) {
-  const encodedReference = reference
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
-  return `/incidents/${encodeURIComponent(incidentId)}/knowledge/${encodedReference}`;
 }
 
 function evidenceDocumentHref(incidentId: string, collection: string, reference: string) {
