@@ -33,6 +33,8 @@ Use this file when you need:
 - embedding strategy and retrieval rules
 - automation execution, safety controls, and human approval rules
 
+Use [`event-driven-ansible.md`](./event-driven-ansible.md) when you want the narrower walkthrough of the EDA webhook, activation, and callback path.
+
 ### 1.3 Current Implementation Snapshot
 
 The current cluster implementation already includes the following runtime control points:

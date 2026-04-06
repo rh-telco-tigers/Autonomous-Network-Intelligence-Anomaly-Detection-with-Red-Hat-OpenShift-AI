@@ -53,7 +53,7 @@ The same platform is also easier to reason about as eight connected phases:
 8. Phase 8: Remediation
 
 ```mermaid
-flowchart LR
+flowchart TD
   P1["Phase 1<br/>Data Generation"] --> P2["Phase 2<br/>Feature Store"]
   P2 --> P3["Phase 3<br/>Model Training (KFP)"]
   P3 --> P4["Phase 4<br/>Model Registry"]
@@ -69,6 +69,7 @@ Deep-dive document mapping:
 - [Incident release and offline training](./incident-release-corpus-and-offline-training.md) explains persisted source data, release packaging, and offline-training inputs.
 - [Feature store training path](./feature-store-training-path.md) explains phases 2 to 5 in detail.
 - [RCA and remediation](./rca-remediation.md) explains phases 6 to 8 in detail.
+- [Event-Driven Ansible](./event-driven-ansible.md) explains the event-driven remediation path in Phase 8.
 
 ### 1.5 Document Role
 
@@ -112,7 +113,7 @@ This architecture is easier to read as a few small views instead of one large di
 #### 3.1.1 Runtime Overview
 
 ```mermaid
-flowchart LR
+flowchart TD
   UI["demo-ui SPA"]
   Pulse["demo-incident-pulse<br/>CronJob"]
   CP["control-plane<br/>console API"]
@@ -193,7 +194,7 @@ flowchart TD
 #### 3.1.3 Live Detection and RCA Flow
 
 ```mermaid
-flowchart LR
+flowchart TD
   UI["demo-ui"]
   Pulse["demo-incident-pulse"]
   CP["control-plane console API"]
@@ -227,7 +228,7 @@ flowchart LR
 #### 3.1.4 Repository to Runtime Mapping
 
 ```mermaid
-flowchart LR
+flowchart TD
   subgraph Services["services/"]
     DemoUIDir["demo-ui/"]
     FeatureDir["feature-gateway/"]
@@ -642,7 +643,7 @@ Decision:
 ##### Target Side-by-Side Serving Design
 
 ```mermaid
-flowchart LR
+flowchart TD
   KFP["feature-store KFP pipeline"] --> ExportT["Triton export"]
   KFP --> ExportM["MLServer sklearn export"]
   ExportT --> TritonISVC["ims-predictive-fs<br/>Triton InferenceService"]

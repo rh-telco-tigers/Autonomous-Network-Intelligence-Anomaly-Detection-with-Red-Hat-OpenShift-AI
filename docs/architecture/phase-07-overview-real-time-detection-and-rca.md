@@ -19,7 +19,7 @@ This is an active part of the current platform and one of the primary differenti
 ## Stage Diagram
 
 ```mermaid
-flowchart LR
+flowchart TD
   Traffic["live SIP traffic"] --> FG["feature-gateway"]
   FG --> Window["feature window"]
   Window --> AN["anomaly-service"]

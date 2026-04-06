@@ -19,7 +19,7 @@ This phase is live today through the current MinIO-backed training path. A secon
 ## Stage Diagram
 
 ```mermaid
-flowchart LR
+flowchart TD
   Data["training dataset<br/>MinIO or Feature Store offline"] --> Ingest["ingest and validate"]
   Ingest --> Build["feature preparation"]
   Build --> Train["train candidate models"]

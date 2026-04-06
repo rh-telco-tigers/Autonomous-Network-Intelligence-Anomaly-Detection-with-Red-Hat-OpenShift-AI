@@ -19,7 +19,7 @@ This is an active part of the current demo stack.
 ## Stage Diagram
 
 ```mermaid
-flowchart LR
+flowchart TD
   XML["SIPp XML scenarios"] --> Runner["sipp-runner"]
   Runner --> IMS["OpenIMSs core"]
   IMS --> Signals["SIP responses<br/>errors, latency, retries"]

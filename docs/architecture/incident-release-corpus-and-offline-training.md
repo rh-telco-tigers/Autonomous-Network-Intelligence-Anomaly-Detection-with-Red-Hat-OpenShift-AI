@@ -82,7 +82,7 @@ Out of scope:
 The architecture has three distinct processing flows plus the live runtime sources that feed them, with a hard boundary between the live demo path and the public release path.
 
 ```mermaid
-flowchart LR
+flowchart TD
   subgraph Runtime["Live platform runtime"]
     SIPP["SIPp + OpenIMSs traffic"]
     MinIO["MinIO feature windows"]

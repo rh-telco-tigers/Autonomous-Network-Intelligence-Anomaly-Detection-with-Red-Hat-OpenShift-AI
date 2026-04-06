@@ -19,7 +19,7 @@ This phase is live in the current demo through the `ims-predictive` and `ims-pre
 ## Stage Diagram
 
 ```mermaid
-flowchart LR
+flowchart TD
   Registry["approved model version"] --> TritonRepo["Triton model repository"]
   Registry --> MLRepo["MLServer model bundle"]
   TritonRepo --> MinIO["MinIO model storage"]

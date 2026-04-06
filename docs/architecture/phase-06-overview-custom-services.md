@@ -19,7 +19,7 @@ This is an active part of the current platform.
 ## Stage Diagram
 
 ```mermaid
-flowchart LR
+flowchart TD
   UI["demo-ui"] --> CP["control-plane"]
   CP --> FG["feature-gateway"]
   CP --> AN["anomaly-service"]

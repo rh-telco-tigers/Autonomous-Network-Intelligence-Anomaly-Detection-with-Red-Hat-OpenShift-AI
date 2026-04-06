@@ -19,7 +19,7 @@ This phase is in transition. The current demo uses repo-managed metadata plus Mi
 ## Stage Diagram
 
 ```mermaid
-flowchart LR
+flowchart TD
   Artifact["trained model artifact"] --> Package["artifact packaging"]
   Metrics["evaluation metrics"] --> Register["registry record"]
   Package --> Register

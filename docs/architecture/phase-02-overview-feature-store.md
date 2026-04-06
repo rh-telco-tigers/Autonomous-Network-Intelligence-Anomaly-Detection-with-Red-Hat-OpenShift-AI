@@ -19,7 +19,7 @@ This is a target and transition phase. The current demo still uses MinIO-backed 
 ## Stage Diagram
 
 ```mermaid
-flowchart LR
+flowchart TD
   Bundle["versioned bundle dataset"] --> Repo["Feature Store repo<br/>entities, views, services"]
   Repo --> Offline["offline store"]
   Repo -. optional .-> Online["online store"]

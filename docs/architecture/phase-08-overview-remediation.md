@@ -27,7 +27,7 @@ Current live coverage:
 ## Stage Diagram
 
 ```mermaid
-flowchart LR
+flowchart TD
   RCA["RCA result"] --> Suggest["rank remediation options"]
   Suggest --> Human["operator review in platform UI"]
   Suggest --> Event["control-plane publishes EDA event"]
@@ -86,3 +86,4 @@ This phase closes the loop. It is where the platform proves that its analysis ca
 - [Architecture by phase](./README.md)
 - [Engineering specification](./engineering-spec.md)
 - [RCA and remediation](./rca-remediation.md)
+- [Event-Driven Ansible](./event-driven-ansible.md)
