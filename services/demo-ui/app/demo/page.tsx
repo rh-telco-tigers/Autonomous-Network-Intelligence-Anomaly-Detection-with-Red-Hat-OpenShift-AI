@@ -89,7 +89,7 @@ export default function DemoPage() {
             <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm text-[var(--text-secondary)]">
               {scenarioRunner.isPending
                 ? "Running scenario: generating features, scoring the anomaly, creating analysis, and updating the incident."
-                : "Scenario execution updates the incident queue and traffic view."}
+                : "Scenario execution updates the incident queue and shared platform state."}
             </div>
           </CardContent>
         </Card>

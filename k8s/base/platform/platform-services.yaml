@@ -762,6 +762,24 @@ spec:
     insecureEdgeTerminationPolicy: Redirect
   wildcardPolicy: None
 ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-ui-oauth-config
+  namespace: ims-demo-lab
+type: Opaque
+stringData:
+  session_secret: m9cjPX3sJ4DDwB6tekhBmQ1fPd9X2hV582uIu5jEwdb
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: demo-ui
+  namespace: ims-demo-lab
+  annotations:
+    serviceaccounts.openshift.io/oauth-redirectreference.primary: >-
+      {"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"demo-ui"}}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -777,11 +795,20 @@ spec:
       labels:
         app: demo-ui
     spec:
+      serviceAccountName: demo-ui
+      volumes:
+        - name: demo-ui-oauth-tls
+          secret:
+            secretName: demo-ui-oauth-tls
+        - name: demo-ui-oauth-config
+          secret:
+            secretName: demo-ui-oauth-config
       containers:
         - name: demo-ui
           image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/demo-ui:latest
           ports:
-            - containerPort: 8080
+            - name: http
+              containerPort: 8080
           env:
             - name: CONTROL_PLANE_PROXY_URL
               value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
@@ -801,6 +828,33 @@ spec:
               memory: 256Mi
             limits:
               memory: 512Mi
+        - name: oauth-proxy
+          image: registry.redhat.io/openshift4/ose-oauth-proxy-rhel9:v4.20.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: oauth-proxy
+              containerPort: 8443
+          args:
+            - --https-address=:8443
+            - --provider=openshift
+            - --openshift-service-account=demo-ui
+            - --upstream=http://localhost:8080
+            - --tls-cert=/etc/tls/private/tls.crt
+            - --tls-key=/etc/tls/private/tls.key
+            - --cookie-secret-file=/etc/proxy/secrets/session_secret
+          volumeMounts:
+            - name: demo-ui-oauth-tls
+              mountPath: /etc/tls/private
+              readOnly: true
+            - name: demo-ui-oauth-config
+              mountPath: /etc/proxy/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
 ---
 apiVersion: v1
 kind: Service
@@ -809,6 +863,8 @@ metadata:
   namespace: ims-demo-lab
   labels:
     app: demo-ui
+  annotations:
+    service.alpha.openshift.io/serving-cert-secret-name: demo-ui-oauth-tls
 spec:
   selector:
     app: demo-ui
@@ -816,6 +872,9 @@ spec:
     - name: http
       port: 8080
       targetPort: 8080
+    - name: oauth
+      port: 8443
+      targetPort: oauth-proxy
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -828,8 +887,8 @@ spec:
     name: demo-ui
     weight: 100
   port:
-    targetPort: http
+    targetPort: oauth
   tls:
-    termination: edge
+    termination: reencrypt
     insecureEdgeTerminationPolicy: Redirect
   wildcardPolicy: None

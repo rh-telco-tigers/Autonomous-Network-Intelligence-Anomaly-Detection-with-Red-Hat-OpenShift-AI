@@ -19,7 +19,6 @@ The UI is intentionally split into focused pages instead of a single overloaded 
 - `Overview` for high-level metrics and charts
 - `Incidents` for queue management
 - `Incident detail` for RCA, remediation, ticket sync, execution, and verification
-- `Live Traffic` for the normal/anomalous stream
 - `Services` for platform health and integration links
 - `Demo Scenarios` for on-demand scenario execution
 

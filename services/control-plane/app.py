@@ -71,7 +71,6 @@ from shared.db import (
 )
 from shared.incident_taxonomy import (
     NORMAL_ANOMALY_TYPE,
-    NORMAL_SCENARIO_NAME,
     canonical_anomaly_type,
     console_scenario_catalog,
     console_scenario_names,
@@ -1617,28 +1616,6 @@ def _default_recommendation(anomaly_type: str) -> str:
     )
 
 
-def _traffic_status_label(response_code: int, malformed: bool = False) -> str:
-    if malformed and 400 <= response_code < 500:
-        return "Malformed"
-    if response_code == 200:
-        return "200 OK"
-    if response_code == 202:
-        return "202 accepted"
-    if response_code == 401:
-        return "401 challenge"
-    if response_code == 407:
-        return "407 challenge"
-    if response_code == 408:
-        return "408 timeout"
-    if response_code == 486:
-        return "486 busy"
-    if 400 <= response_code < 500:
-        return f"{response_code} reject"
-    if response_code >= 500:
-        return f"{response_code} error"
-    return str(response_code)
-
-
 def _incident_impact(incident: Dict[str, object]) -> str:
     anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type", NORMAL_ANOMALY_TYPE)))
     features = incident.get("feature_snapshot") or {}
@@ -2123,124 +2100,6 @@ def _matches_incident_filters(
     return normalized_query in haystack
 
 
-def _traffic_stream(project: str, audit_events: List[Dict[str, object]]) -> List[Dict[str, object]]:
-    stream: List[Dict[str, object]] = []
-    for event in audit_events:
-        execution = _scenario_execution_from_audit(event, project)
-        if execution:
-            stream.append(execution)
-        if len(stream) >= 24:
-            break
-    return stream
-
-
-def _traffic_preview(feature_window: Dict[str, object] | None) -> Dict[str, object]:
-    if not feature_window:
-        return {"rows": [], "stats": {"requests_per_second": 0.0, "retry_ratio": 0.0, "active_node": "pcscf-1"}, "packet_sample": ""}
-
-    features = feature_window.get("features", feature_window)
-    if not isinstance(features, dict):
-        features = {}
-    labels = feature_window.get("labels")
-    if not isinstance(labels, dict):
-        labels = {}
-    raw_scenario_name = str(
-        feature_window.get("scenario_name")
-        or feature_window.get("scenario")
-        or feature_window.get("anomaly_type")
-        or labels.get("anomaly_type")
-        or "normal"
-    )
-    scenario_name = normalize_scenario_name(raw_scenario_name)
-    definition = scenario_definition(scenario_name)
-    latency = _coerce_float(features.get("latency_p95") or features.get("latency_p95_ms"), 80.0)
-    register_rate = _coerce_float(features.get("register_rate"))
-    invite_rate = _coerce_float(features.get("invite_rate"))
-    bye_rate = _coerce_float(features.get("bye_rate"))
-    retransmissions = _coerce_float(features.get("retransmission_count"))
-    total_rate = max(register_rate + invite_rate + bye_rate, 0.0)
-    retry_ratio = round(min(retransmissions / max(total_rate, 1.0), 1.0), 2)
-    base = datetime.now(tz=timezone.utc)
-    rows = []
-    for profile in list(definition.get("event_profiles", [])):
-        sample_count = 2 if int(profile.get("count", 0)) >= 24 and len(rows) <= 3 else 1
-        for sample_index in range(sample_count):
-            row_latency = float(profile.get("latency_ms", latency or 80.0)) + (
-                float(profile.get("latency_step", 0.0) or 0.0) * sample_index
-            )
-            rows.append(
-                {
-                    "time": (base.replace(microsecond=0)).strftime("%H:%M:%S"),
-                    "method": str(profile.get("method", "REGISTER")),
-                    "path": str(profile.get("path", "UE -> P-CSCF -> S-CSCF")),
-                    "status": _traffic_status_label(
-                        int(profile.get("response_code", 200)),
-                        malformed=bool(profile.get("malformed", False)),
-                    ),
-                    "latency_ms": round(float(row_latency), 1),
-                    "sequence": len(rows),
-                }
-            )
-            if len(rows) >= 6:
-                break
-        if len(rows) >= 6:
-            break
-
-    return {
-        "scenario_name": scenario_name,
-        "display_name": str(definition.get("display_name", _titleize(scenario_name))),
-        "source": str(feature_window.get("feature_source") or feature_window.get("source") or "derived"),
-        "rows": rows,
-        "stats": {
-            "requests_per_second": round(total_rate, 2),
-            "retry_ratio": retry_ratio,
-            "active_node": str(features.get("node_id") or feature_window.get("node_id") or "pcscf-1"),
-        },
-        "packet_sample": str(definition.get("packet_sample", "")),
-    }
-
-
-def _scenario_execution_from_audit(event: Dict[str, object], project: str) -> Dict[str, object] | None:
-    if str(event.get("event_type", "")) != "scenario_executed":
-        return None
-
-    payload = event.get("payload") or {}
-    if not isinstance(payload, dict):
-        return None
-
-    event_project = str(payload.get("project") or project)
-    if event_project != project:
-        return None
-
-    features = payload.get("features")
-    preview = _traffic_preview(
-        {
-            "scenario_name": normalize_scenario_name(str(payload.get("scenario") or payload.get("anomaly_type") or NORMAL_SCENARIO_NAME)),
-            "feature_source": payload.get("feature_source") or "derived",
-            "features": features if isinstance(features, dict) else {},
-        }
-    )
-    if not isinstance(features, dict):
-        recorded_preview = payload.get("traffic_preview")
-        if isinstance(recorded_preview, dict) and isinstance(recorded_preview.get("rows"), list):
-            preview = recorded_preview
-
-    incident_id = str(event.get("incident_id") or payload.get("incident_id") or "").strip() or None
-    anomaly_type = canonical_anomaly_type(str(payload.get("anomaly_type") or payload.get("scenario") or NORMAL_ANOMALY_TYPE))
-    scenario_name = normalize_scenario_name(str(payload.get("scenario") or anomaly_type or NORMAL_ANOMALY_TYPE))
-    return {
-        "project": event_project,
-        "scenario": scenario_name,
-        "feature_source": str(payload.get("feature_source") or "unknown"),
-        "is_anomaly": bool(payload.get("is_anomaly")),
-        "anomaly_type": anomaly_type,
-        "anomaly_score": _coerce_float(payload.get("anomaly_score")),
-        "incident_id": incident_id,
-        "executed_at": str(event.get("created_at") or payload.get("executed_at") or ""),
-        "traffic_preview": preview,
-    }
-
-
 def _active_incident_summary(open_incidents: List[Dict[str, object]]) -> Dict[str, List[Dict[str, object]]]:
     categories: Dict[str, Dict[str, object]] = {}
     model_versions: Dict[str, Dict[str, object]] = {}
@@ -2301,47 +2160,16 @@ def _active_incident_summary(open_incidents: List[Dict[str, object]]) -> Dict[st
 
 def _build_console_state(project: str) -> Dict[str, object]:
     incidents = list_incidents(project=project)
-    scenario_audit_events = list_audit_events(limit=48, event_type="scenario_executed")
     services = _service_snapshot()
-    registry = load_registry()
     incident_summaries = [_incident_summary_view(incident) for incident in incidents]
     recent_incident_summaries = incident_summaries[:CONSOLE_RECENT_INCIDENT_LIMIT]
     latest_incident = incidents[0] if incidents else None
     latest_incident_summary = incident_summaries[0] if incident_summaries else None
-    latest_scenario = None
-    for event in scenario_audit_events:
-        latest_scenario = _scenario_execution_from_audit(event, project)
-        if latest_scenario:
-            break
     active_incidents = [incident for incident in incident_summaries if is_active_state(str(incident.get("status") or NEW))]
     active_summary = _active_incident_summary(active_incidents)
     set_active_incidents(active_incidents)
     healthy_services = sum(1 for service in services if bool(service.get("ok")))
-    traffic_stream = _traffic_stream(project, scenario_audit_events)
     integrations = integration_status()
-    active_scenario = (
-        normalize_scenario_name(str(latest_scenario.get("scenario")))
-        if latest_scenario
-        else (
-            normalize_scenario_name(str(latest_incident_summary.get("anomaly_type")))
-            if latest_incident_summary
-            else normalize_scenario_name(str((registry or {}).get("dataset_version") or NORMAL_SCENARIO_NAME))
-        )
-    )
-    if latest_scenario and isinstance(latest_scenario.get("traffic_preview"), dict):
-        traffic_preview = latest_scenario["traffic_preview"]
-    else:
-        traffic_preview = _traffic_preview(
-            {
-                "scenario_name": normalize_scenario_name(str(latest_incident_summary.get("anomaly_type")))
-                if latest_incident_summary
-                else NORMAL_SCENARIO_NAME,
-                "feature_source": "incident-feature-snapshot",
-                "features": latest_incident.get("feature_snapshot", {}) if latest_incident else {},
-            }
-            if latest_incident
-            else None
-        )
     return {
         "generated_at": _now_iso(),
         "cluster": {
@@ -2349,7 +2177,6 @@ def _build_console_state(project: str) -> Dict[str, object]:
             "status": "degraded" if active_incidents or healthy_services < len(services) else "healthy",
             "active_incident_id": latest_incident_summary.get("id") if latest_incident_summary else None,
             "rca_status": "attached" if latest_incident and latest_incident.get("rca_payload") else "none",
-            "current_scenario": active_scenario,
             "auto_refresh_seconds": CONSOLE_AUTO_REFRESH_SECONDS,
         },
         "summary": {
@@ -2368,8 +2195,6 @@ def _build_console_state(project: str) -> Dict[str, object]:
         "services": services,
         "integrations": integrations,
         "scenarios": console_scenario_catalog(),
-        "traffic_stream": traffic_stream,
-        "traffic_preview": traffic_preview,
     }
 
 
@@ -3551,7 +3376,6 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
     )
 
     incident_id = str(score.get("incident_id") or "") or None
-    traffic_preview = _traffic_preview(feature_window)
     record_audit(
         "scenario_executed",
         auth.subject if auth else "console-ui",
@@ -3568,7 +3392,6 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
             "anomaly_score": score.get("anomaly_score"),
             "incident_id": incident_id,
             "features": scoring_features,
-            "traffic_preview": traffic_preview,
             "executed_at": _now_iso(),
         },
         incident_id=incident_id,

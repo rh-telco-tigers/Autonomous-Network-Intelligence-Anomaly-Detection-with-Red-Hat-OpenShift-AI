@@ -69,7 +69,7 @@ export default function OverviewPage() {
       <PageHeader
         eyebrow="Operations summary"
         title="Overview"
-        description="Summary of incidents, traffic, and service health."
+        description="Summary of incidents, workflow status, and service health."
       />
       {showRefreshWarning ? (
         <TransientDataWarning>
@@ -86,9 +86,9 @@ export default function OverviewPage() {
           detail="Core platform services available"
         />
         <MetricCard
-          label="Traffic windows"
-          value={formatInteger(data.traffic_stream.length)}
-          detail="Recent normal and anomalous scenario windows"
+          label="Total incidents"
+          value={formatInteger(data.summary.incident_count)}
+          detail="All incidents currently retained by the platform"
         />
       </div>
 

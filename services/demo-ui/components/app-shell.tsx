@@ -64,7 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="border-t border-[var(--border-subtle)] p-4">
             <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
-              <p className="text-xs uppercase tracking-[0.25em] text-[var(--text-subtle)]">API Token</p>
+              <p className="text-xs uppercase tracking-[0.25em] text-[var(--text-subtle)]">Internal API Token</p>
               <Input
                 className="mt-3"
                 value={draftToken}
@@ -75,7 +75,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 Apply token
               </Button>
               <p className="mt-3 text-xs text-[var(--text-subtle)]">
-                Stored in this browser for API calls from this app.
+                OpenShift login protects frontend access. This token is still used for the existing control-plane API calls from this app.
               </p>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { Activity, LayoutDashboard, PlayCircle, ServerCog, Siren } from "lucide-react";
+import { LayoutDashboard, PlayCircle, ServerCog, Siren } from "lucide-react";
 
 export const navItems = [
   {
@@ -12,12 +12,6 @@ export const navItems = [
     label: "Incidents",
     description: "Manage incident workflow and status",
     icon: Siren,
-  },
-  {
-    href: "/live-traffic",
-    label: "Live Traffic",
-    description: "Stream normal and anomalous traffic",
-    icon: Activity,
   },
   {
     href: "/services",

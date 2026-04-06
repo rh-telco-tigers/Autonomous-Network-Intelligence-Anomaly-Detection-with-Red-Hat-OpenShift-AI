@@ -22,28 +22,6 @@ export type ServiceSnapshot = {
   payload: Record<string, unknown>;
 };
 
-export type TrafficPreviewRow = {
-  time: string;
-  method: string;
-  path: string;
-  status: string;
-  latency_ms: number;
-  sequence: number;
-};
-
-export type TrafficPreview = {
-  scenario_name?: string;
-  display_name?: string;
-  source?: string;
-  rows: TrafficPreviewRow[];
-  stats: {
-    requests_per_second: number;
-    retry_ratio: number;
-    active_node: string;
-  };
-  packet_sample: string;
-};
-
 export type IncidentTicketSummary = {
   provider: string;
   external_key?: string;
@@ -100,7 +78,6 @@ export type ConsoleState = {
     status: string;
     active_incident_id?: string | null;
     rca_status: string;
-    current_scenario: string;
     auto_refresh_seconds: number;
   };
   summary: {
@@ -135,10 +112,7 @@ export type ConsoleState = {
     tone: string;
     is_nominal?: boolean;
   }>;
-  latest_scenario?: TrafficStreamEvent | null;
   models?: Record<string, unknown>;
-  traffic_stream: TrafficStreamEvent[];
-  traffic_preview: TrafficPreview;
 };
 
 export type AuditEvent = {
@@ -357,18 +331,6 @@ export type KnowledgeArticleResponse = {
 
 export type DocumentResponse = {
   document: RelatedDocument;
-};
-
-export type TrafficStreamEvent = {
-  project: string;
-  scenario: string;
-  feature_source: string;
-  is_anomaly: boolean;
-  anomaly_type: string;
-  anomaly_score: number;
-  incident_id?: string | null;
-  executed_at: string;
-  traffic_preview: TrafficPreview;
 };
 
 export type ScenarioRunResponse = {
