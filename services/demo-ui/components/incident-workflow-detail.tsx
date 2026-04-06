@@ -63,13 +63,6 @@ type RcaGenerationInfo = {
   provenanceLabel: string;
 };
 
-type SimulationPreview = {
-  effectiveness: string;
-  latencyImpact: string;
-  confidence: string;
-  summary: string;
-};
-
 type StepStatus = "current" | "done" | "todo" | "attention";
 
 type GuideActionId =
@@ -243,7 +236,6 @@ export function IncidentWorkflowDetail() {
   const [focusedRemediationId, setFocusedRemediationId] = React.useState<number | null>(null);
   const [remediationNotes, setRemediationNotes] = React.useState<Record<number, string>>({});
 
-  const evidenceRef = React.useRef<HTMLDivElement>(null);
   const rcaRef = React.useRef<HTMLDivElement>(null);
   const remediationRef = React.useRef<HTMLDivElement>(null);
   const verificationRef = React.useRef<HTMLDivElement>(null);
@@ -251,7 +243,6 @@ export function IncidentWorkflowDetail() {
   const timelineRef = React.useRef<HTMLDivElement>(null);
   const knowledgeRef = React.useRef<HTMLDivElement>(null);
   const executionRef = React.useRef<HTMLDivElement>(null);
-  const simulationRef = React.useRef<HTMLDivElement>(null);
 
   const { data, isLoading, error } = useIncidentWorkflowQuery(incidentId);
   const incident = data?.incident;
@@ -615,14 +606,6 @@ export function IncidentWorkflowDetail() {
     [clearRemediationNote, escalateIncidentMutation, remediationNote, scrollToSection, ticketRef],
   );
 
-  const reviewSimulation = React.useCallback(
-    (remediation: RemediationRecord) => {
-      setFocusedRemediationId(remediation.id);
-      scrollToSection(simulationRef);
-    },
-    [scrollToSection, simulationRef],
-  );
-
   const handleGuideAction = React.useCallback(
     async (action: GuideActionId) => {
       switch (action) {
@@ -673,7 +656,7 @@ export function IncidentWorkflowDetail() {
           }
           break;
         case "openEvidence":
-          scrollToSection(evidenceRef);
+          scrollToSection(rcaRef);
           break;
         case "reviewRca":
           scrollToSection(rcaRef);
@@ -702,7 +685,6 @@ export function IncidentWorkflowDetail() {
     },
     [
       closeIncidentMutation,
-      evidenceRef,
       executionRef,
       generateRcaMutation,
       generateRemediationsMutation,
@@ -734,7 +716,6 @@ export function IncidentWorkflowDetail() {
   const verificationUnlocked =
     hasActionHistory || ["EXECUTED", "EXECUTING", "VERIFIED", "CLOSED", "VERIFICATION_FAILED", "FALSE_POSITIVE"].includes(incident.status);
   const ticketUnlocked = hasRca || hasTicket || incident.status === "ESCALATED";
-  const observedSignals = buildObservedSignals(incident);
   const flowGuide = deriveFlowGuide({
     state: incident.status,
     selectedRemediation,
@@ -766,8 +747,6 @@ export function IncidentWorkflowDetail() {
   const commandCenterSummary = headlineRemediation ? buildRemediationPreview(headlineRemediation) : latestRcaRecommendation;
   const decisionRisk = titleize(headlineRemediation?.risk_level ?? (incident.severity === "Critical" ? "medium" : "low"));
   const rcaConfidenceLabel = hasRca ? `${Math.round(Number(latestRca?.confidence ?? 0) * 100)}%` : "Pending";
-  const simulationPreview = buildSimulationPreview(incident, selectedRemediation, latestRca);
-  const translatedEvidence = buildHumanEvidenceSummary(incident, observedSignals);
   const alternativeRemediations = displayedRemediations.filter((item) => item.id !== primaryRemediation?.id);
   const incidentViewSteps = buildIncidentViewSteps(incident.status);
   const currentIncidentStep =
@@ -949,24 +928,6 @@ export function IncidentWorkflowDetail() {
             </CardContent>
           </Card>
 
-          <div ref={evidenceRef} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {translatedEvidence.slice(0, 4).map((item, index) => (
-              <Card key={item.title} className={cn(index === 0 && "border-rose-400/20 bg-rose-500/8")}>
-                <CardContent className="p-5">
-                  <div
-                    className={cn(
-                      "text-xs uppercase tracking-[0.24em]",
-                      index === 0 ? "text-rose-700 dark:text-rose-200" : "text-[var(--text-muted)]",
-                    )}
-                  >
-                    {item.title}
-                  </div>
-                  <div className="mt-3 text-sm font-semibold leading-6 text-[var(--text-strong)]">{item.detail}</div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
           <div ref={rcaRef}>
             <Card>
               <CardContent className="space-y-6 p-6">
@@ -1106,7 +1067,6 @@ export function IncidentWorkflowDetail() {
                         onReject={(remediation) => void runRemediationAction(remediation, "reject")}
                         onRetry={(remediation) => void retryRemediation(remediation)}
                         onEscalate={(remediation) => void escalateFromRemediation(remediation)}
-                        onSimulate={(remediation) => reviewSimulation(remediation)}
                       />
                     ) : null}
 
@@ -1130,7 +1090,6 @@ export function IncidentWorkflowDetail() {
                             onReject={(item) => void runRemediationAction(item, "reject")}
                             onRetry={(item) => void retryRemediation(item)}
                             onEscalate={(item) => void escalateFromRemediation(item)}
-                            onSimulate={(item) => reviewSimulation(item)}
                           />
                         ))
                       ) : (
@@ -1298,9 +1257,6 @@ export function IncidentWorkflowDetail() {
                     <div className="flex flex-wrap gap-3">
                       <Button type="submit" disabled={verificationMutation.isPending}>
                         {verificationMutation.isPending ? "Saving..." : "Record verification"}
-                      </Button>
-                      <Button variant="secondary" type="button" onClick={() => scrollToSection(simulationRef)}>
-                        Review simulation
                       </Button>
                     </div>
                   </form>
@@ -1475,36 +1431,6 @@ export function IncidentWorkflowDetail() {
             </Card>
           </div>
 
-          <div ref={simulationRef}>
-            <Card className="border-slate-900 bg-slate-900 text-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-              <CardContent className="space-y-4 p-6">
-                <div className="text-xs uppercase tracking-[0.24em] text-slate-300">Primary workflow action</div>
-                <div className="text-lg font-semibold">{flowGuide.primary.label}</div>
-                <p className="text-sm leading-6 text-slate-300">{describeGuideAction(flowGuide.primary.action, hasTicket)}</p>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="rounded-2xl bg-white/10 p-3">
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-slate-300">Predicted effectiveness</div>
-                    <div className="mt-2 text-sm font-medium text-white">{simulationPreview.effectiveness}</div>
-                  </div>
-                  <div className="rounded-2xl bg-white/10 p-3">
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-slate-300">Latency impact</div>
-                    <div className="mt-2 text-sm font-medium text-white">{simulationPreview.latencyImpact}</div>
-                  </div>
-                  <div className="rounded-2xl bg-white/10 p-3">
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-slate-300">Preview confidence</div>
-                    <div className="mt-2 text-sm font-medium text-white">{simulationPreview.confidence}</div>
-                  </div>
-                </div>
-                <Button
-                  className="w-full bg-white text-slate-900 hover:bg-slate-100"
-                  onClick={() => void handleGuideAction(flowGuide.primary.action)}
-                  disabled={pending || Boolean(flowGuide.primary.disabled)}
-                >
-                  {flowGuide.primary.label}
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
         </aside>
       </div>
     </div>
@@ -1528,7 +1454,6 @@ function RemediationActionCard({
   onReject,
   onRetry,
   onEscalate,
-  onSimulate,
 }: {
   remediation: RemediationRecord;
   activity: RemediationActivity;
@@ -1546,7 +1471,6 @@ function RemediationActionCard({
   onReject: (remediation: RemediationRecord) => void;
   onRetry: (remediation: RemediationRecord) => void;
   onEscalate: (remediation: RemediationRecord) => void;
-  onSimulate: (remediation: RemediationRecord) => void;
 }) {
   const noteId = `remediation-note-${remediation.id}`;
   const decisionLocked = activity.decisionLocked;
@@ -1579,7 +1503,7 @@ function RemediationActionCard({
         <div className="flex flex-wrap items-center gap-2">
           {isFocused ? (
             <div className="rounded-full border border-[var(--accent-ring)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
-              Previewing
+              Selected
             </div>
           ) : null}
           <RemediationDecisionPill state={activity.decisionState} />
@@ -1641,17 +1565,6 @@ function RemediationActionCard({
           className={cn(decisionLocked && "line-through")}
         >
           Approve & execute
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            onFocus(remediation.id);
-            onSimulate(remediation);
-          }}
-          disabled={pending}
-        >
-          Simulate first
         </Button>
         <Button
           size="sm"
@@ -1768,39 +1681,6 @@ function buildIncidentViewSteps(status: WorkflowState): IncidentViewStep[] {
   }));
 }
 
-function describeGuideAction(action: GuideActionId, hasTicket: boolean) {
-  switch (action) {
-    case "generateRca":
-      return "Create AI-assisted root cause analysis from the current evidence and move the incident into RCA review.";
-    case "generateRemediations":
-      return "Turn the current RCA into ranked manual and automation-backed remediation options.";
-    case "openEvidence":
-      return "Review business impact, leading signals, and evidence references before taking the next step.";
-    case "reviewRca":
-      return "Review the AI analysis, confidence, and evidence before you choose or approve a fix.";
-    case "focusRemediation":
-      return "Review ranked remediations, add operator notes, and approve, run, simulate, or reject the selected path.";
-    case "focusVerification":
-      return "Record whether the action worked, update the ticket, and decide whether the incident can close.";
-    case "focusTicket":
-      return hasTicket
-        ? "Open the linked ticket workflow, recent comments, and sync controls without leaving this incident page."
-        : "Create or sync the incident ticket once RCA and operator context are ready.";
-    case "focusTimeline":
-      return "Review the incident timeline to see what changed at each stage of the workflow.";
-    case "focusKnowledge":
-      return "Open the dedicated debug page for the full ordered execution trace and raw payloads.";
-    case "reviewExecution":
-      return "Inspect the latest execution result and verification outcome before deciding on the next action.";
-    case "executeSelected":
-      return "Approve and launch the selected remediation through the normal audited workflow path.";
-    case "closeIncident":
-      return "Close the incident after successful verification confirms the issue is resolved.";
-    case "none":
-      return "Stay on the current step.";
-  }
-}
-
 function AiGeneratedBadge({ generation }: { generation: RcaGenerationInfo }) {
   return (
     <div
@@ -1825,9 +1705,9 @@ function AiContentPill({ generation }: { generation: RcaGenerationInfo }) {
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em]",
         generation.llmUsed
-          ? "border-emerald-500/25 bg-emerald-500/8 text-emerald-200/90"
+          ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/8 dark:text-emerald-200/90"
           : generation.llmConfigured
-            ? "border-amber-500/25 bg-amber-500/8 text-amber-200/90"
+            ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/8 dark:text-amber-200/90"
             : "border-[var(--border-subtle)] bg-[var(--surface-raised)] text-[var(--text-secondary)]",
       )}
     >
@@ -2294,45 +2174,6 @@ function stepChipClasses(status: StepStatus) {
   return "border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-[var(--text-secondary)]";
 }
 
-function buildObservedSignals(incident: IncidentRecord): string[] {
-  const features = (incident.feature_snapshot ?? {}) as Record<string, unknown>;
-  const signals: string[] = [];
-  const scenarioName = String(features.scenario_name ?? "").trim();
-  if (scenarioName) {
-    signals.push(`Scenario: ${scenarioName}`);
-  }
-  const contributingConditions = asStringList(features.contributing_conditions);
-  if (contributingConditions.length) {
-    signals.push(`Contributing conditions: ${contributingConditions.join(", ")}`);
-  }
-
-  const numericFragments = [
-    featureFragment("5xx ratio", features.error_5xx_ratio),
-    featureFragment("4xx ratio", features.error_4xx_ratio),
-    featureFragment("Latency p95", features.latency_p95),
-    featureFragment("Retransmissions", features.retransmission_count),
-  ].filter(Boolean);
-  if (numericFragments.length) {
-    signals.push(numericFragments.join(" · "));
-  }
-
-  const targetNode = [features.target_endpoint, features.node_id, features.active_node]
-    .map((value) => String(value ?? "").trim())
-    .find(Boolean);
-  if (targetNode) {
-    signals.push(`Target node: ${targetNode}`);
-  }
-  if (incident.feature_window_id) {
-    signals.push(`Feature window: ${incident.feature_window_id}`);
-  }
-  if (!signals.length) {
-    signals.push(
-      `Model ${incident.model_version} predicted ${incident.anomaly_type} with confidence ${formatRelativeNumber(incident.predicted_confidence)}.`,
-    );
-  }
-  return signals;
-}
-
 function asStringList(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.map((item) => String(item ?? "").trim()).filter(Boolean);
@@ -2457,14 +2298,6 @@ function buildRcaRecommendation(source: RcaRecord | undefined, incidentRecommend
   );
 }
 
-function featureFragment(label: string, value: unknown) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return "";
-  }
-  return `${label}: ${formatRelativeNumber(numeric)}`;
-}
-
 function remediationMode(remediation?: RemediationRecord) {
   if (!remediation) {
     return "Pending";
@@ -2486,69 +2319,6 @@ function buildRemediationPreview(remediation: RemediationRecord) {
     return `${remediation.description} This option is for coordination and ticket workflow rather than direct automation.`;
   }
   return `${remediation.description} This path records a manual operator action instead of invoking automation.`;
-}
-
-function buildHumanEvidenceSummary(incident: IncidentRecord, observedSignals: string[]) {
-  const topEvidence = incident.evidence_sources?.[0];
-  const strongestSignal = incident.explainability?.[0];
-  return [
-    {
-      title: "Business impact",
-      detail: incident.impact || incident.subtitle || "Impact is still being assessed from the current incident evidence.",
-    },
-    {
-      title: "What changed",
-      detail: observedSignals[0] || "The platform has not published the leading signal yet.",
-    },
-    {
-      title: "Top contributing factor",
-      detail: topEvidence
-        ? `${topEvidence.title}. ${topEvidence.detail}.`
-        : strongestSignal
-          ? `${strongestSignal.label} carried the strongest explainability weight for this incident.`
-          : "No dominant contributing factor has been summarized yet.",
-    },
-    {
-      title: "Safe response posture",
-      detail: incident.blast_radius
-        ? `Keep the first response scoped to ${incident.blast_radius}.`
-        : "Keep the first response targeted and easy to rollback until verification confirms recovery.",
-    },
-  ];
-}
-
-function buildSimulationPreview(
-  incident: IncidentRecord,
-  remediation: RemediationRecord | undefined,
-  latestRca: RcaRecord | undefined,
-): SimulationPreview {
-  const baseConfidence = Number(latestRca?.confidence ?? incident.predicted_confidence ?? 0.5);
-  if (!remediation) {
-    return {
-      effectiveness: "Pending selection",
-      latencyImpact: "Unknown",
-      confidence: `${Math.round(Math.max(45, Math.min(baseConfidence * 100, 90)))}%`,
-      summary: "Select a remediation to preview estimated impact before execution.",
-    };
-  }
-
-  const rankScore = Number(remediation.rank_score ?? remediation.confidence ?? 0.6);
-  const effectivenessPercent = Math.round(Math.max(35, Math.min(92, 42 + rankScore * 26 + baseConfidence * 24)));
-  const riskLevel = asStringValue(remediation.risk_level).toLowerCase();
-  const latencyImpact =
-    riskLevel === "high" ? "+9%" : riskLevel === "medium" ? "+5%" : riskLevel === "critical" ? "+12%" : "+2%";
-  const previewConfidence = Math.round(
-    Math.max(45, Math.min((((Number(remediation.confidence ?? 0.6) + baseConfidence) / 2) * 100), 95)),
-  );
-
-  return {
-    effectiveness: `${effectivenessPercent}%`,
-    latencyImpact,
-    confidence: `${previewConfidence}%`,
-    summary: remediation.expected_outcome
-      ? `${remediation.expected_outcome} This preview keeps the first move scoped to workflow revision ${remediation.based_on_revision}.`
-      : `This preview assumes ${remediation.title.toLowerCase()} is applied first and focuses on reducing customer-facing pressure before broader escalation.`,
-  };
 }
 
 function buildRemediationActivityMap(
