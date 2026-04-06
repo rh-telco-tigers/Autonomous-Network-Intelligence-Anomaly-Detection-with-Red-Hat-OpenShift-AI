@@ -86,4 +86,5 @@ This phase closes the loop. It is where the platform proves that its analysis ca
 - [Architecture by phase](./README.md)
 - [Engineering specification](./engineering-spec.md)
 - [RCA and remediation](./rca-remediation.md)
+- [Remediation suggestions and playbooks](./remediation-suggestions-and-playbooks.md)
 - [Event-Driven Ansible](./event-driven-ansible.md)
