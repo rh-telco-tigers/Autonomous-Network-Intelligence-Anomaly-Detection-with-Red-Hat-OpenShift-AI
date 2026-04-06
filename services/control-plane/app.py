@@ -2616,7 +2616,30 @@ def _execute_incident_action(
     finished_at = None
     action_result_json: Dict[str, object] = {"execute": payload.execute, "action_ref": action_ref}
     current_state = normalize_workflow_state(str(incident.get("status") or NEW))
-    if current_state == REMEDIATION_SUGGESTED:
+    remediation_status = str((remediation or {}).get("status") or "").strip().lower()
+    reuse_existing_approval = current_state == APPROVED and payload.execute and remediation_status == "approved"
+
+    if current_state in {EXECUTED, EXECUTION_FAILED, VERIFICATION_FAILED} or (
+        current_state == APPROVED and not reuse_existing_approval
+    ):
+        incident = _transition_incident_with_audit(
+            incident,
+            REMEDIATION_SUGGESTED,
+            actor,
+            payload.notes
+            or (
+                f"Reopened remediation review after the previous result for {action_ref}."
+                if current_state in {EXECUTED, EXECUTION_FAILED, VERIFICATION_FAILED}
+                else f"Reopened remediation review to choose a different approved action instead of {action_ref}."
+            ),
+        )
+        incident = _transition_incident_with_audit(
+            incident,
+            AWAITING_APPROVAL,
+            actor,
+            "Operator is reviewing another remediation option.",
+        )
+    elif current_state == REMEDIATION_SUGGESTED:
         incident = _transition_incident_with_audit(
             incident,
             AWAITING_APPROVAL,
@@ -2624,12 +2647,15 @@ def _execute_incident_action(
             "Operator opened remediation workflow.",
         )
 
-    incident = _transition_incident_with_audit(
-        incident,
-        APPROVED,
-        actor,
-        payload.notes or f"Approved remediation action {action_ref}.",
-    )
+    if not reuse_existing_approval:
+        incident = _transition_incident_with_audit(
+            incident,
+            APPROVED,
+            actor,
+            payload.notes or f"Approved remediation action {action_ref}.",
+        )
+    else:
+        action_result_json["approval_reused"] = True
     if payload.execute:
         ensure_role(auth, "automation")
 

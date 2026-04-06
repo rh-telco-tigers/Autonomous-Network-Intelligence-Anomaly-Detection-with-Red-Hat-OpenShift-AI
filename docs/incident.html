@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IMS Incident Workflow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .glass { backdrop-filter: blur(8px); }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-900">
+  <div class="min-h-screen">
+    <header class="sticky top-0 z-30 border-b border-slate-200 bg-white/90 glass">
+      <div class="mx-auto flex max-w-[1600px] items-center justify-between px-6 py-4">
+        <div class="flex items-center gap-4">
+          <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-600 text-sm font-bold text-white shadow-sm">IMS</div>
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Incident workflow</p>
+            <h1 class="text-xl font-semibold text-slate-950">Network Degradation</h1>
+          </div>
+          <span class="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">Open incident</span>
+          <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">Model confidence 97%</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <button class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">Refresh</button>
+          <button class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800">Open incident ticket</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="mx-auto grid max-w-[1600px] grid-cols-12 gap-6 px-6 py-6">
+      <!-- left workflow nav -->
+      <aside class="col-span-12 xl:col-span-2">
+        <div class="sticky top-24 space-y-4">
+          <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Workflow</p>
+            <h2 class="mt-2 text-lg font-semibold text-slate-950">Resolve incident</h2>
+            <p class="mt-1 text-sm text-slate-600">Guide the operator one step at a time instead of showing the full system at once.</p>
+
+            <nav class="mt-6 space-y-2">
+              <button class="flex w-full items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left">
+                <div class="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">✓</div>
+                <div>
+                  <p class="text-sm font-semibold text-emerald-900">1. Detect</p>
+                  <p class="text-xs text-emerald-700">Incident created and scoped</p>
+                </div>
+              </button>
+
+              <button class="flex w-full items-start gap-3 rounded-2xl border border-sky-300 bg-sky-50 px-4 py-3 text-left shadow-sm ring-2 ring-sky-100">
+                <div class="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-sky-600 text-xs font-bold text-white">2</div>
+                <div>
+                  <p class="text-sm font-semibold text-sky-950">2. Investigate</p>
+                  <p class="text-xs text-sky-700">Current active step</p>
+                </div>
+              </button>
+
+              <button class="flex w-full items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left">
+                <div class="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-slate-300 text-xs font-bold text-white">3</div>
+                <div>
+                  <p class="text-sm font-semibold text-slate-700">3. RCA</p>
+                  <p class="text-xs text-slate-500">Generate and approve cause</p>
+                </div>
+              </button>
+
+              <button class="flex w-full items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left">
+                <div class="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-slate-300 text-xs font-bold text-white">4</div>
+                <div>
+                  <p class="text-sm font-semibold text-slate-700">4. Remediation</p>
+                  <p class="text-xs text-slate-500">Execute plan or escalate</p>
+                </div>
+              </button>
+
+              <button class="flex w-full items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left">
+                <div class="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-slate-300 text-xs font-bold text-white">5</div>
+                <div>
+                  <p class="text-sm font-semibold text-slate-700">5. Verify & close</p>
+                  <p class="text-xs text-slate-500">Confirm recovery and learn</p>
+                </div>
+              </button>
+            </nav>
+          </div>
+
+          <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Operator guidance</p>
+            <div class="mt-3 rounded-2xl bg-slate-50 p-4">
+              <p class="text-sm font-semibold text-slate-900">What should I do next?</p>
+              <p class="mt-2 text-sm leading-6 text-slate-600">Review transport degradation evidence, then generate AI-assisted RCA. Avoid executing changes before RCA approval.</p>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- main content -->
+      <section class="col-span-12 xl:col-span-7 space-y-6">
+        <!-- top incident summary -->
+        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div class="max-w-3xl">
+              <div class="flex items-center gap-2">
+                <span class="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">Step 2 of 5</span>
+                <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">Investigate</span>
+              </div>
+              <h2 class="mt-4 text-2xl font-semibold tracking-tight text-slate-950">Investigate network transport degradation</h2>
+              <p class="mt-3 max-w-2xl text-sm leading-6 text-slate-600">The system has already detected a likely service-impacting issue. This screen only shows the evidence needed for the current decision: whether to accept the investigation summary and continue to RCA.</p>
+            </div>
+            <div class="grid min-w-[260px] grid-cols-2 gap-3">
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Incident ID</p>
+                <p class="mt-2 text-sm font-semibold text-slate-900">7a6f7ea2…e1e2d</p>
+              </div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Affected site</p>
+                <p class="mt-2 text-sm font-semibold text-slate-900">P-CSCF ingress</p>
+              </div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Severity</p>
+                <p class="mt-2 text-sm font-semibold text-amber-700">Medium</p>
+              </div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Started</p>
+                <p class="mt-2 text-sm font-semibold text-slate-900">6:15 PM</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- evidence cards -->
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div class="rounded-3xl border border-red-200 bg-red-50 p-5 shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-red-600">Primary signal</p>
+            <p class="mt-3 text-lg font-semibold text-red-950">rate_limit_pscf</p>
+            <p class="mt-2 text-sm leading-6 text-red-800">P-CSCF ingress likely applying rate limits under abnormal traffic volume.</p>
+          </div>
+          <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Packet loss</p>
+            <p class="mt-3 text-2xl font-semibold text-slate-950">4.8%</p>
+            <p class="mt-2 text-sm text-slate-600">Above recent baseline and aligned with transport degradation.</p>
+          </div>
+          <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Latency drift</p>
+            <p class="mt-3 text-2xl font-semibold text-slate-950">+220 ms</p>
+            <p class="mt-2 text-sm text-slate-600">Observed across ingress path during the anomaly window.</p>
+          </div>
+          <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Historical match</p>
+            <p class="mt-3 text-2xl font-semibold text-slate-950">77%</p>
+            <p class="mt-2 text-sm text-slate-600">Milvus retrieved similar congestion cases from prior incidents.</p>
+          </div>
+        </div>
+
+        <!-- explanation -->
+        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div class="max-w-3xl">
+              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">AI investigation summary</p>
+              <h3 class="mt-2 text-xl font-semibold text-slate-950">Transport degradation is confirmed before full RCA generation</h3>
+              <p class="mt-4 text-sm leading-7 text-slate-600">The evidence strongly suggests the ingress path is experiencing congestion or protective rate limiting. This stage intentionally avoids showing raw technical detail unless requested. The operator should either continue to RCA or open the advanced detail drawer for deeper validation.</p>
+            </div>
+            <div class="w-full max-w-sm rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Decision recommendation</p>
+              <p class="mt-2 text-sm font-medium text-slate-900">Proceed to RCA generation</p>
+              <p class="mt-2 text-sm leading-6 text-slate-600">Confidence is high enough to move to cause analysis without manual transport deep dive first.</p>
+            </div>
+          </div>
+
+          <div class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div class="rounded-2xl border border-slate-200 p-4">
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Why it is likely</p>
+              <p class="mt-2 text-sm leading-6 text-slate-600">Latency, packet loss, and prior matching incidents all point to ingress saturation rather than endpoint failure.</p>
+            </div>
+            <div class="rounded-2xl border border-slate-200 p-4">
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">What is not ready</p>
+              <p class="mt-2 text-sm leading-6 text-slate-600">Final root cause wording and approved remediation are not created yet.</p>
+            </div>
+            <div class="rounded-2xl border border-slate-200 p-4">
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">If operator disagrees</p>
+              <p class="mt-2 text-sm leading-6 text-slate-600">Pause automation, add investigation notes, and escalate to the network team before RCA generation.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ticket update strip -->
+        <div class="rounded-3xl border border-sky-200 bg-sky-50 p-6 shadow-sm">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Ticket-centric workflow</p>
+              <h3 class="mt-2 text-lg font-semibold text-sky-950">Every stage updates the same incident ticket</h3>
+              <p class="mt-2 max-w-3xl text-sm leading-6 text-sky-900/80">When you continue, the system appends the investigation summary to the incident ticket, preserving one clean operational record for RCA, remediation, verification, and Milvus learning.</p>
+            </div>
+            <button class="rounded-2xl border border-sky-300 bg-white px-4 py-2 text-sm font-semibold text-sky-700 shadow-sm hover:bg-sky-100">Preview ticket update</button>
+          </div>
+        </div>
+
+        <!-- action cards -->
+        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Next action</p>
+              <h3 class="mt-2 text-xl font-semibold text-slate-950">Choose how to continue</h3>
+              <p class="mt-2 text-sm text-slate-600">One primary action, a few safe alternatives.</p>
+            </div>
+            <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Recommended: Continue to RCA</span>
+          </div>
+
+          <div class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div class="rounded-3xl border-2 border-slate-900 bg-slate-900 p-5 text-white shadow-sm">
+              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">Primary action</p>
+              <h4 class="mt-3 text-lg font-semibold">Generate RCA</h4>
+              <p class="mt-2 text-sm leading-6 text-slate-300">Create AI-assisted root cause analysis and append investigation notes to the ticket.</p>
+              <div class="mt-5 flex items-center justify-between">
+                <span class="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-200">Updates ticket</span>
+                <button class="rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-100">Continue</button>
+              </div>
+            </div>
+
+            <div class="rounded-3xl border border-slate-200 p-5 shadow-sm">
+              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Alternative</p>
+              <h4 class="mt-3 text-lg font-semibold text-slate-950">Open deep technical details</h4>
+              <p class="mt-2 text-sm leading-6 text-slate-600">Inspect raw evidence, workflow internals, and model context before continuing.</p>
+              <div class="mt-5 flex items-center justify-between">
+                <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">Read only</span>
+                <button class="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Open details</button>
+              </div>
+            </div>
+
+            <div class="rounded-3xl border border-slate-200 p-5 shadow-sm">
+              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Alternative</p>
+              <h4 class="mt-3 text-lg font-semibold text-slate-950">Escalate to human coordination</h4>
+              <p class="mt-2 text-sm leading-6 text-slate-600">Pause automation and create a coordination path for network operations review.</p>
+              <div class="mt-5 flex items-center justify-between">
+                <span class="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">Manual approval</span>
+                <button class="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Escalate</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- collapsed advanced -->
+        <div class="rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <button class="flex w-full items-center justify-between px-6 py-5 text-left">
+            <div>
+              <p class="text-sm font-semibold text-slate-900">Advanced technical details</p>
+              <p class="mt-1 text-sm text-slate-500">Raw workflow notes, feature vectors, model metadata, and retrieval evidence.</p>
+            </div>
+            <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">Collapsed</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- right rail -->
+      <aside class="col-span-12 xl:col-span-3 space-y-6">
+        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Incident ticket</p>
+              <h2 class="mt-2 text-lg font-semibold text-slate-950">INC-2026-00421</h2>
+            </div>
+            <span class="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">In progress</span>
+          </div>
+
+          <div class="mt-6 space-y-4 border-l-2 border-slate-200 pl-5">
+            <div class="relative">
+              <span class="absolute -left-[29px] top-1.5 h-3 w-3 rounded-full bg-emerald-500 ring-4 ring-white"></span>
+              <p class="text-sm font-semibold text-slate-900">Incident created</p>
+              <p class="mt-1 text-xs text-slate-500">6:15 PM • anomaly detected by predictive pipeline</p>
+            </div>
+            <div class="relative">
+              <span class="absolute -left-[29px] top-1.5 h-3 w-3 rounded-full bg-sky-500 ring-4 ring-white"></span>
+              <p class="text-sm font-semibold text-slate-900">Investigation summary drafted</p>
+              <p class="mt-1 text-xs text-slate-500">Ready to append to ticket and proceed to RCA</p>
+            </div>
+            <div class="relative opacity-60">
+              <span class="absolute -left-[29px] top-1.5 h-3 w-3 rounded-full bg-slate-300 ring-4 ring-white"></span>
+              <p class="text-sm font-semibold text-slate-700">RCA generated</p>
+              <p class="mt-1 text-xs text-slate-500">Pending</p>
+            </div>
+            <div class="relative opacity-60">
+              <span class="absolute -left-[29px] top-1.5 h-3 w-3 rounded-full bg-slate-300 ring-4 ring-white"></span>
+              <p class="text-sm font-semibold text-slate-700">Remediation executed</p>
+              <p class="mt-1 text-xs text-slate-500">Pending</p>
+            </div>
+            <div class="relative opacity-60">
+              <span class="absolute -left-[29px] top-1.5 h-3 w-3 rounded-full bg-slate-300 ring-4 ring-white"></span>
+              <p class="text-sm font-semibold text-slate-700">Verification and Milvus update</p>
+              <p class="mt-1 text-xs text-slate-500">Pending</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Planned ticket note</p>
+          <div class="mt-4 rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+            Investigation indicates transport degradation consistent with ingress congestion or rate limiting. Recommended next step: generate RCA and prepare remediation options without executing changes yet.
+          </div>
+          <button class="mt-4 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">Edit note before append</button>
+        </div>
+
+        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Execution policy</p>
+          <div class="mt-4 space-y-3">
+            <div class="flex items-start justify-between gap-3 rounded-2xl bg-slate-50 p-4">
+              <div>
+                <p class="text-sm font-semibold text-slate-900">Automation locked until RCA approval</p>
+                <p class="mt-1 text-xs leading-5 text-slate-500">Prevents accidental remediation before cause is accepted.</p>
+              </div>
+              <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">Enabled</span>
+            </div>
+            <div class="flex items-start justify-between gap-3 rounded-2xl bg-slate-50 p-4">
+              <div>
+                <p class="text-sm font-semibold text-slate-900">Ticket updated at every stage</p>
+                <p class="mt-1 text-xs leading-5 text-slate-500">Single record for audit, approvals, and operator notes.</p>
+              </div>
+              <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">Enabled</span>
+            </div>
+            <div class="flex items-start justify-between gap-3 rounded-2xl bg-slate-50 p-4">
+              <div>
+                <p class="text-sm font-semibold text-slate-900">Milvus learning only after verification</p>
+                <p class="mt-1 text-xs leading-5 text-slate-500">Avoids poisoning retrieval with unverified outcomes.</p>
+              </div>
+              <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">Enabled</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-3xl border border-slate-200 bg-slate-900 p-6 text-white shadow-sm">
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Primary workflow action</p>
+          <h3 class="mt-2 text-lg font-semibold">Continue to RCA</h3>
+          <p class="mt-2 text-sm leading-6 text-slate-300">Appends investigation summary to the ticket and moves the operator into the RCA approval step.</p>
+          <button class="mt-5 w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-100">Generate RCA and update ticket</button>
+        </div>
+      </aside>
+    </main>
+  </div>
+</body>
+</html>

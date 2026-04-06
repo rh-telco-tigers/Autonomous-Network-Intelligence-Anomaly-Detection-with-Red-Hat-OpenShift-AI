@@ -10,7 +10,6 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { useApiToken } from "@/components/providers/app-providers";
-import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -103,6 +102,10 @@ type GuideStep = {
   status: StepStatus;
 };
 
+type IncidentViewStep = GuideStep & {
+  action: GuideActionId;
+};
+
 type FlowGuide = {
   tone: "info" | "warning" | "success";
   badge: string;
@@ -114,6 +117,24 @@ type FlowGuide = {
   primary: GuideAction;
   secondary?: GuideAction;
   steps: GuideStep[];
+};
+
+type RemediationDecisionState = "available" | "approved" | "executing" | "executed" | "failed" | "rejected";
+
+type RemediationActivity = {
+  attemptCount: number;
+  canRetry: boolean;
+  decisionLocked: boolean;
+  decisionState: RemediationDecisionState;
+  latestAction?: IncidentActionRecord;
+  retryLabel?: string;
+  summary: string;
+};
+
+type RemediationActionResponse = {
+  workflow: IncidentWorkflow;
+  action?: IncidentActionRecord;
+  remediation?: RemediationRecord;
 };
 
 const GUIDE_STEP_TEMPLATES = [
@@ -139,6 +160,34 @@ const GUIDE_STEP_TEMPLATES = [
   },
 ] as const;
 
+const INCIDENT_VIEW_STEP_TEMPLATES = [
+  {
+    title: "Detect",
+    description: "Incident created and scoped",
+    action: "openEvidence",
+  },
+  {
+    title: "Investigate",
+    description: "Review evidence and impact",
+    action: "openEvidence",
+  },
+  {
+    title: "RCA",
+    description: "Generate and review cause",
+    action: "reviewRca",
+  },
+  {
+    title: "Remediation",
+    description: "Run a fix or escalate",
+    action: "focusRemediation",
+  },
+  {
+    title: "Verify & close",
+    description: "Confirm recovery and learn",
+    action: "focusVerification",
+  },
+] as const;
+
 const STEP_STATUS_MAP: Record<WorkflowState, StepStatus[]> = {
   NEW: ["current", "todo", "todo", "todo", "todo"],
   RCA_GENERATED: ["done", "current", "todo", "todo", "todo"],
@@ -156,6 +205,23 @@ const STEP_STATUS_MAP: Record<WorkflowState, StepStatus[]> = {
   ESCALATED: ["done", "done", "attention", "todo", "todo"],
 };
 
+const INCIDENT_VIEW_STATUS_MAP: Record<WorkflowState, StepStatus[]> = {
+  NEW: ["done", "current", "todo", "todo", "todo"],
+  RCA_GENERATED: ["done", "done", "current", "todo", "todo"],
+  REMEDIATION_SUGGESTED: ["done", "done", "done", "current", "todo"],
+  AWAITING_APPROVAL: ["done", "done", "done", "current", "todo"],
+  APPROVED: ["done", "done", "done", "current", "todo"],
+  EXECUTING: ["done", "done", "done", "current", "todo"],
+  EXECUTED: ["done", "done", "done", "done", "current"],
+  VERIFIED: ["done", "done", "done", "done", "done"],
+  CLOSED: ["done", "done", "done", "done", "done"],
+  RCA_REJECTED: ["done", "attention", "attention", "todo", "todo"],
+  EXECUTION_FAILED: ["done", "done", "done", "attention", "todo"],
+  VERIFICATION_FAILED: ["done", "done", "done", "done", "attention"],
+  FALSE_POSITIVE: ["done", "done", "done", "done", "done"],
+  ESCALATED: ["done", "done", "done", "attention", "todo"],
+};
+
 const TONE_CARD_CLASSES = {
   info: "border-sky-400/20 bg-sky-500/5 ring-1 ring-sky-400/10",
   warning: "border-amber-400/20 bg-amber-500/5 ring-1 ring-amber-400/10",
@@ -163,9 +229,9 @@ const TONE_CARD_CLASSES = {
 } as const;
 
 const TONE_BADGE_CLASSES = {
-  info: "border-sky-400/30 bg-sky-500/10 text-sky-200",
-  warning: "border-amber-400/30 bg-amber-500/10 text-amber-200",
-  success: "border-emerald-400/30 bg-emerald-500/10 text-emerald-200",
+  info: "border-sky-400/30 bg-sky-500/10 text-[var(--text-strong)]",
+  warning: "border-amber-400/30 bg-amber-500/10 text-[var(--text-strong)]",
+  success: "border-emerald-400/30 bg-emerald-500/10 text-[var(--text-strong)]",
 } as const;
 
 export function IncidentWorkflowDetail() {
@@ -296,7 +362,7 @@ export function IncidentWorkflowDetail() {
         values.mode === "reject"
           ? { rejected_by: values.actor, notes: values.notes }
           : { approved_by: values.actor, notes: values.notes };
-      return request<{ action: IncidentActionRecord; workflow: IncidentWorkflow }>(path, token, {
+      return request<RemediationActionResponse>(path, token, {
         method: "POST",
         body: JSON.stringify(body),
       });
@@ -385,12 +451,38 @@ export function IncidentWorkflowDetail() {
     },
   });
 
+  const remediationRevision = React.useMemo(() => {
+    if (!data?.remediations.length) {
+      return null;
+    }
+    return data.current_remediations[0]?.based_on_revision ?? data.remediations[0]?.based_on_revision ?? null;
+  }, [data]);
+
+  const displayedRemediations = React.useMemo(() => {
+    if (!data || remediationRevision == null) {
+      return [];
+    }
+    return data.remediations.filter((item) => item.based_on_revision === remediationRevision);
+  }, [data, remediationRevision]);
+
+  const remediationActivityById = React.useMemo(
+    () => buildRemediationActivityMap(displayedRemediations, data?.actions ?? []),
+    [displayedRemediations, data?.actions],
+  );
+
   const preferredRemediation = React.useMemo(() => {
-    if (!data) {
+    if (!displayedRemediations.length) {
       return undefined;
     }
-    return data.current_remediations.find((item) => item.status === "approved") ?? data.current_remediations[0];
-  }, [data]);
+    return [...displayedRemediations].sort((left, right) => {
+      const priorityDelta =
+        remediationDecisionPriority(remediationActivityById[left.id]) - remediationDecisionPriority(remediationActivityById[right.id]);
+      if (priorityDelta !== 0) {
+        return priorityDelta;
+      }
+      return left.suggestion_rank - right.suggestion_rank;
+    })[0];
+  }, [displayedRemediations, remediationActivityById]);
 
   React.useEffect(() => {
     if (!data) {
@@ -408,27 +500,27 @@ export function IncidentWorkflowDetail() {
   }, [data, verificationForm]);
 
   React.useEffect(() => {
-    if (!data?.current_remediations.length) {
+    if (!displayedRemediations.length) {
       setFocusedRemediationId(null);
       return;
     }
     setFocusedRemediationId((current) => {
-      if (current && data.current_remediations.some((item) => item.id === current)) {
+      if (current && displayedRemediations.some((item) => item.id === current)) {
         return current;
       }
-      return preferredRemediation?.id ?? data.current_remediations[0]?.id ?? null;
+      return preferredRemediation?.id ?? displayedRemediations[0]?.id ?? null;
     });
-  }, [data, preferredRemediation]);
+  }, [displayedRemediations, preferredRemediation]);
 
   const selectedRemediation = React.useMemo(() => {
-    if (!data) {
+    if (!displayedRemediations.length) {
       return undefined;
     }
     if (focusedRemediationId != null) {
-      return data.current_remediations.find((item) => item.id === focusedRemediationId) ?? preferredRemediation;
+      return displayedRemediations.find((item) => item.id === focusedRemediationId) ?? preferredRemediation;
     }
     return preferredRemediation;
-  }, [data, focusedRemediationId, preferredRemediation]);
+  }, [displayedRemediations, focusedRemediationId, preferredRemediation]);
 
   const latestRca = data?.rca_history[0];
   const latestRcaGeneration = buildRcaGenerationInfo(latestRca);
@@ -480,7 +572,7 @@ export function IncidentWorkflowDetail() {
           notes: remediationNote(remediation.id),
           mode,
         });
-        const executionStatus = payload.action.execution_status;
+        const executionStatus = payload.action?.execution_status ?? (mode === "reject" ? "rejected" : "approved");
         setNotice({
           kind: mode === "execute" && executionStatus === "failed" ? "error" : "success",
           message:
@@ -491,7 +583,7 @@ export function IncidentWorkflowDetail() {
                   ? "Remediation approved and launched in AAP."
                   : executionStatus === "executed"
                     ? "Remediation approved and executed."
-                    : payload.action.result_summary ?? "Remediation execution failed."
+                    : payload.action?.result_summary ?? "Remediation execution failed."
                 : "Remediation approved.",
         });
         clearRemediationNote(remediation.id);
@@ -503,6 +595,13 @@ export function IncidentWorkflowDetail() {
       }
     },
     [actionMutation, actorName, clearRemediationNote, remediationNote],
+  );
+
+  const retryRemediation = React.useCallback(
+    async (remediation: RemediationRecord) => {
+      await runRemediationAction(remediation, "execute");
+    },
+    [runRemediationAction],
   );
 
   const escalateFromRemediation = React.useCallback(
@@ -642,7 +741,7 @@ export function IncidentWorkflowDetail() {
   }
 
   const hasRca = Boolean(latestRca);
-  const hasRemediations = data.current_remediations.length > 0;
+  const hasRemediations = displayedRemediations.length > 0;
   const hasTicket = Boolean(currentTicket);
   const hasActionHistory = data.actions.length > 0;
   const hasVerification = data.verifications.length > 0 || ["VERIFIED", "CLOSED", "FALSE_POSITIVE"].includes(incident.status);
@@ -684,22 +783,19 @@ export function IncidentWorkflowDetail() {
   const rcaConfidenceLabel = hasRca ? `${Math.round(Number(latestRca?.confidence ?? 0) * 100)}%` : "Pending";
   const simulationPreview = buildSimulationPreview(incident, selectedRemediation, latestRca);
   const translatedEvidence = buildHumanEvidenceSummary(incident, observedSignals);
-  const alternativeRemediations = data.current_remediations.filter((item) => item.id !== primaryRemediation?.id);
+  const alternativeRemediations = displayedRemediations.filter((item) => item.id !== primaryRemediation?.id);
+  const incidentViewSteps = buildIncidentViewSteps(incident.status);
+  const currentIncidentStep =
+    incidentViewSteps.find((step) => step.status === "current" || step.status === "attention") ??
+    incidentViewSteps[incidentViewSteps.length - 1];
+  const ticketDraftNote = ticketForm.watch("note");
+  const plannedTicketNote = truncateText(
+    ticketDraftNote?.trim() || latestRcaAnalysis || flowGuide.subtext || "Ticket updates will appear here once you add a note.",
+    220,
+  );
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        eyebrow="Incident workflow"
-        title={titleize(incident.anomaly_type)}
-        description="Review the analysis, choose a fix, run it, verify the result, and close the incident from this page."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <div className={cn("rounded-full border px-3 py-1 text-xs font-medium", TONE_BADGE_CLASSES[flowGuide.tone])}>{flowGuide.badge}</div>
-            <StatusBadge value={incident.status} />
-          </div>
-        }
-      />
-
+    <div className="space-y-6">
       {notice ? (
         <div className="fixed bottom-4 left-4 right-4 z-50 md:left-auto md:max-w-md" role="status" aria-live="polite">
           <div
@@ -724,196 +820,214 @@ export function IncidentWorkflowDetail() {
         </div>
       ) : null}
 
-      <div className="sticky top-4 z-30">
-        <WorkflowStageDock flowGuide={flowGuide} status={incident.status} />
-      </div>
-
-      <Card className={cn(TONE_CARD_CLASSES[flowGuide.tone], "overflow-hidden")}>
-        <CardHeader className="gap-6">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <div className="text-[11px] uppercase tracking-[0.35em] text-[var(--text-muted)]">Summary</div>
-              <CardTitle className="mt-2 text-2xl sm:text-3xl">
-                {headlineRemediation?.title ?? flowGuide.title}
-              </CardTitle>
-              <CardDescription className="mt-3 max-w-5xl text-sm leading-6">
-                {commandCenterSummary}
-              </CardDescription>
+      <div className="sticky top-0 z-30 rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4 shadow-sm backdrop-blur">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0 flex-1 space-y-4">
+            <Button asChild variant="outline" size="sm" className="w-fit">
+              <Link href="/incidents">Back to incidents</Link>
+            </Button>
+            <div className="flex items-start gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent)] text-sm font-bold text-slate-950 shadow-sm">
+                IMS
+              </div>
+              <div className="min-w-0">
+                <div className="text-[11px] uppercase tracking-[0.32em] text-[var(--text-muted)]">Incident workflow</div>
+                <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[var(--text-strong)] sm:text-3xl">
+                  {titleize(incident.anomaly_type)}
+                </h1>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--text-secondary)]">{flowGuide.subtext}</p>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge value={incident.severity} />
+            <div className="flex flex-wrap gap-2">
               <StatusBadge value={incident.status} />
+              <StatusBadge value={incident.severity} />
               <div className={cn("rounded-full border px-3 py-1 text-xs font-medium", TONE_BADGE_CLASSES[flowGuide.tone])}>
                 {flowGuide.badge}
               </div>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <SummaryItem label="Operational impact" value={incident.impact ?? incident.subtitle ?? "Assessing impact"} />
-            <SummaryItem label="Blast radius" value={incident.blast_radius ?? "Not yet mapped"} />
-            <SummaryItem label="AI confidence" value={rcaConfidenceLabel} />
-            <SummaryItem label="Decision risk" value={decisionRisk} />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/8 p-5">
-              <div className="text-xs uppercase tracking-[0.2em] text-emerald-200/80">AI analysis</div>
-              <div className="mt-3 text-lg font-semibold text-[var(--text-strong)]">
-                {latestRca?.root_cause ?? "RCA is still being generated"}
+              <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                Analysis confidence {rcaConfidenceLabel}
               </div>
-              <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{latestRcaAnalysis}</p>
-            </div>
-            <div className="rounded-3xl border border-amber-500/20 bg-amber-500/8 p-5">
-              <div className="text-xs uppercase tracking-[0.2em] text-amber-200/80">Recommended next step</div>
-              <div className="mt-3 text-lg font-semibold text-[var(--text-strong)]">
-                {headlineRemediation?.title ?? latestRcaRecommendation}
-              </div>
-              <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
-                {headlineRemediation?.expected_outcome ??
-                  "Choose the action that reduces customer impact without increasing the scope of the issue."}
-              </p>
             </div>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" onClick={() => void refreshWorkflow()} disabled={pending}>
+              Refresh
+            </Button>
+            {currentTicketHref ? (
+              <Button asChild>
+                <a href={currentTicketHref} target="_blank" rel="noreferrer">
+                  Open incident ticket
+                </a>
+              </Button>
+            ) : (
+              <Button onClick={() => void handleGuideAction("focusTicket")} disabled={!ticketUnlocked}>
+                {ticketUnlocked ? "Open incident ticket" : "Ticket waits for RCA"}
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
 
-          <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)_360px]">
+        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
+          <Card>
+            <CardContent className="space-y-4 p-5">
               <div>
-                <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Why this is recommended</div>
-                <div className="mt-3 text-base font-semibold text-[var(--text-strong)]">
-                    {headlineRemediation ? headlineRemediation.title : "Recommendation pending"}
-                </div>
+                <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Workflow</div>
+                <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">Resolve incident</div>
+                <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+                  Stay in one page and move the incident forward without losing ticket context or operator actions.
+                </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
-                  RCA source: {latestRcaGeneration.sourceLabel}
-                </div>
-                <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
-                  Action type: {headlineRemediationMode}
-                </div>
+              <div className="space-y-2">
+                {incidentViewSteps.map((step) => {
+                  const styles = stepClasses(step.status);
+                  return (
+                    <button
+                      key={step.number}
+                      type="button"
+                      onClick={() => void handleGuideAction(step.action)}
+                      className={cn("flex w-full items-start gap-3 text-left transition hover:opacity-95", styles.card)}
+                    >
+                      <div className={styles.dot}>{step.status === "done" ? "✓" : step.number}</div>
+                      <div>
+                        <div className="text-sm font-semibold text-[var(--text-strong)]">
+                          {step.number}. {step.title}
+                        </div>
+                        <div className="mt-1 text-xs text-[var(--text-secondary)]">{step.description}</div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              {flowGuide.helpers.map((helper) => (
-                <div key={helper.title} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{helper.title}</div>
-                  <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{helper.text}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div className="rounded-3xl border border-sky-400/20 bg-sky-500/8 p-5 text-sm leading-6 text-[var(--text-secondary)]">
-            Use the cards below to add notes and approve, simulate, escalate, or reject a fix. Record the result in Execution and verification below.
-          </div>
-        </CardContent>
-      </Card>
+          <Card>
+            <CardContent className="space-y-4 p-5">
+              <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Operator guidance</div>
+              <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                <div className="text-sm font-semibold text-[var(--text-strong)]">What should I do next?</div>
+                <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{flowGuide.description}</p>
+              </div>
+              <Button
+                className="w-full"
+                onClick={() => void handleGuideAction(flowGuide.primary.action)}
+                disabled={pending || Boolean(flowGuide.primary.disabled)}
+              >
+                {flowGuide.primary.label}
+              </Button>
+            </CardContent>
+          </Card>
+        </aside>
 
-      <div className="grid gap-6 xl:grid-cols-[1.45fr_0.95fr]">
-        <div className="space-y-6">
-          <div ref={evidenceRef}>
-            <Card>
-              <CardHeader className="flex-row items-start justify-between gap-4">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">System evidence</div>
-                  <CardTitle className="mt-1">What we observed</CardTitle>
-                  <CardDescription>Summary of the model signals and service data before you open the detailed evidence.</CardDescription>
-                </div>
-                <Button variant="secondary" onClick={() => scrollToSection(timelineRef)}>
-                  View timeline
-                </Button>
-              </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2">
-                {translatedEvidence.map((item) => (
-                  <div key={item.title} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                    <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{item.title}</div>
-                    <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{item.detail}</p>
+        <section className="space-y-6">
+          <Card className={cn(TONE_CARD_CLASSES[flowGuide.tone], "overflow-hidden")}>
+            <CardContent className="space-y-6 p-6">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                <div className="max-w-3xl">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="rounded-full border border-sky-400/25 bg-sky-500/10 px-3 py-1 text-xs font-semibold text-[var(--text-strong)]">
+                      Step {currentIncidentStep.number} of {incidentViewSteps.length}
+                    </div>
+                    <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-3 py-1 text-xs font-semibold text-[var(--text-secondary)]">
+                      {currentIncidentStep.title}
+                    </div>
                   </div>
-                ))}
-              </CardContent>
-            </Card>
+                  <div className="mt-4 text-2xl font-semibold tracking-tight text-[var(--text-strong)]">{flowGuide.title}</div>
+                  <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{commandCenterSummary}</p>
+                </div>
+                <div className="grid min-w-[260px] grid-cols-2 gap-3">
+                  <SummaryItem
+                    label="Incident ID"
+                    value={<span className="font-mono text-xs [overflow-wrap:anywhere]">{incident.id}</span>}
+                  />
+                  <SummaryItem
+                    label="Affected site"
+                    value={
+                      asStringValue((incident.feature_snapshot as Record<string, unknown> | null)?.node_role) ||
+                      asStringValue((incident.feature_snapshot as Record<string, unknown> | null)?.node_id) ||
+                      incident.feature_window_id ||
+                      "Primary service path"
+                    }
+                  />
+                  <SummaryItem label="Severity" value={<StatusBadge value={incident.severity} />} />
+                  <SummaryItem label="Started" value={formatTime(incident.created_at)} />
+                </div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <SummaryItem label="Operational impact" value={incident.impact ?? incident.subtitle ?? "Assessing impact"} />
+                <SummaryItem label="Blast radius" value={incident.blast_radius ?? "Not yet mapped"} />
+                <SummaryItem label="AI confidence" value={rcaConfidenceLabel} />
+                <SummaryItem label="Decision risk" value={decisionRisk} />
+              </div>
+            </CardContent>
+          </Card>
+
+          <div ref={evidenceRef} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {translatedEvidence.slice(0, 4).map((item, index) => (
+              <Card key={item.title} className={cn(index === 0 && "border-rose-400/20 bg-rose-500/8")}>
+                <CardContent className="p-5">
+                  <div
+                    className={cn(
+                      "text-xs uppercase tracking-[0.24em]",
+                      index === 0 ? "text-rose-700 dark:text-rose-200" : "text-[var(--text-muted)]",
+                    )}
+                  >
+                    {item.title}
+                  </div>
+                  <div className="mt-3 text-sm font-semibold leading-6 text-[var(--text-strong)]">{item.detail}</div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
 
           <div ref={rcaRef}>
             <Card>
-              <CardHeader className="flex-row items-start justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">
-                    <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" aria-hidden="true" />
-                    <span>AI analysis</span>
-                  </div>
-                  <CardTitle className="mt-1">Root cause and recommendation</CardTitle>
-                  <CardDescription>Review the AI analysis and supporting evidence before deciding on a fix.</CardDescription>
-                </div>
-                {!hasRca ? (
-                  <Button variant="secondary" onClick={() => handleGuideAction("generateRca")} disabled={pending}>
-                    {generateRcaMutation.isPending ? "Generating..." : "Generate RCA"}
-                  </Button>
-                ) : (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <AiGeneratedBadge generation={latestRcaGeneration} />
-                    <div
-                      className={cn(
-                        "rounded-full border px-3 py-1 text-xs font-medium",
-                        latestRcaGeneration.llmUsed
-                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
-                          : latestRcaGeneration.llmConfigured
-                            ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
-                            : "border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-[var(--text-secondary)]",
-                      )}
-                    >
-                      {latestRcaGeneration.sourceLabel}
+              <CardContent className="space-y-6 p-6">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="max-w-3xl">
+                    <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">
+                      <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" aria-hidden="true" />
+                      <span>AI investigation summary</span>
+                      {hasRca ? <AiGeneratedBadge generation={latestRcaGeneration} /> : null}
                     </div>
-                  </div>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {hasRca ? (
-                  <div className="flex items-start gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                    <div
-                      className={cn(
-                        "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border",
-                        latestRcaGeneration.llmUsed
-                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
-                          : latestRcaGeneration.llmConfigured
-                            ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
-                            : "border-[var(--border-subtle)] bg-[var(--surface-raised)] text-[var(--text-secondary)]",
-                      )}
-                    >
-                      {latestRcaGeneration.llmUsed ? <Bot className="h-4 w-4" aria-hidden="true" /> : <Info className="h-4 w-4" aria-hidden="true" />}
+                    <div className="mt-2 text-xl font-semibold text-[var(--text-strong)]">
+                      {latestRca?.root_cause ?? "RCA has not been generated yet"}
                     </div>
-                    <div className="min-w-0">
-                      <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{latestRcaGeneration.provenanceLabel}</div>
-                      <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{latestRcaGeneration.summary}</p>
+                    <p className="mt-4 text-sm leading-7 text-[var(--text-secondary)]">{latestRcaAnalysis}</p>
+                  </div>
+                  <div className="w-full max-w-sm rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                    <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Decision recommendation</div>
+                    <div className="mt-2 text-sm font-medium text-[var(--text-strong)]">{flowGuide.primary.label}</div>
+                    <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{flowGuide.subtext}</p>
+                    {hasRca ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <AiContentPill generation={latestRcaGeneration} />
+                        <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                          Action type: {headlineRemediationMode}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-3">
+                  {flowGuide.helpers.map((helper) => (
+                    <div key={helper.title} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                      <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{helper.title}</div>
+                      <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{helper.text}</p>
                     </div>
-                  </div>
-                ) : null}
-                <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Analysis</div>
-                    {hasRca ? <AiContentPill generation={latestRcaGeneration} /> : null}
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{latestRcaAnalysis}</p>
+                  ))}
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <SummaryItem
-                    label="Root cause summary"
-                    value={latestRca?.root_cause || "Pending RCA"}
-                    meta={hasRca ? <AiContentPill generation={latestRcaGeneration} /> : undefined}
-                  />
-                  <SummaryItem
-                    label="Recommended action"
-                    value={latestRcaRecommendation}
-                    meta={hasRca ? <AiContentPill generation={latestRcaGeneration} /> : undefined}
-                  />
-                </div>
+
                 <div className="grid gap-4 md:grid-cols-4">
                   <SummaryItem label="Confidence" value={rcaConfidenceLabel} />
                   <SummaryItem label="Runtime" value={latestRcaGeneration.runtime} />
                   <SummaryItem label="Model" value={latestRcaGeneration.model} />
                   <SummaryItem label="Evidence docs" value={String(latestRcaGeneration.retrievedDocumentCount)} />
                 </div>
+
                 <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
                   <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Evidence references</div>
                   <div className="mt-3 space-y-3">
@@ -947,25 +1061,52 @@ export function IncidentWorkflowDetail() {
                     )}
                   </div>
                 </div>
+
+                {!hasRca ? (
+                  <div className="flex flex-wrap gap-3">
+                    <Button onClick={() => void handleGuideAction("generateRca")} disabled={pending}>
+                      {generateRcaMutation.isPending ? "Generating..." : "Generate RCA"}
+                    </Button>
+                    <Button variant="outline" onClick={() => void handleGuideAction("openEvidence")}>
+                      Review evidence first
+                    </Button>
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           </div>
 
+          <div className="rounded-3xl border border-sky-400/20 bg-sky-500/8 p-6 shadow-sm">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="text-xs uppercase tracking-[0.24em] text-sky-700 dark:text-sky-200">Ticket-centric workflow</div>
+                <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">Every stage updates the same incident ticket</div>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--text-secondary)]">{ticketAutoSyncHint}</p>
+              </div>
+              <Button variant="secondary" onClick={() => void handleGuideAction("focusTicket")}>
+                {currentTicket ? "Open ticket workflow" : "Create or preview ticket"}
+              </Button>
+            </div>
+          </div>
+
           <div ref={remediationRef}>
             <Card>
-              <CardHeader className="flex-row items-start justify-between gap-4">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Action options</div>
-                  <CardTitle className="mt-1">Recommended fix and other options</CardTitle>
-                  <CardDescription>Add notes and approve, run, simulate, escalate, or reject a fix from the cards below.</CardDescription>
+              <CardContent className="space-y-6 p-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Remediation workflow</div>
+                    <div className="mt-2 text-xl font-semibold text-[var(--text-strong)]">Choose and approve a fix</div>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--text-secondary)]">
+                      Each remediation keeps its own decision history. Completed one-time actions disable automatically, tried fixes stay visible, and retries are explicit.
+                    </p>
+                  </div>
+                  {displayedRemediations.length ? (
+                    <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                      {displayedRemediations.length} suggestions in this review
+                    </div>
+                  ) : null}
                 </div>
-                {hasRca && !hasRemediations ? (
-                  <Button variant="secondary" onClick={() => handleGuideAction("generateRemediations")} disabled={pending}>
-                    {generateRemediationsMutation.isPending ? "Generating..." : "Generate remediations"}
-                  </Button>
-                ) : null}
-              </CardHeader>
-              <CardContent className="space-y-4">
+
                 {hasRemediations ? (
                   <>
                     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
@@ -987,6 +1128,7 @@ export function IncidentWorkflowDetail() {
                     {primaryRemediation ? (
                       <RemediationActionCard
                         remediation={primaryRemediation}
+                        activity={remediationActivityById[primaryRemediation.id]}
                         titlePrefix="Primary action"
                         description={buildRemediationPreview(primaryRemediation)}
                         isPrimary
@@ -999,6 +1141,7 @@ export function IncidentWorkflowDetail() {
                         onExecute={(remediation) => void runRemediationAction(remediation, "execute")}
                         onApprove={(remediation) => void runRemediationAction(remediation, "approve")}
                         onReject={(remediation) => void runRemediationAction(remediation, "reject")}
+                        onRetry={(remediation) => void retryRemediation(remediation)}
                         onEscalate={(remediation) => void escalateFromRemediation(remediation)}
                         onSimulate={(remediation) => reviewSimulation(remediation)}
                       />
@@ -1010,6 +1153,7 @@ export function IncidentWorkflowDetail() {
                           <RemediationActionCard
                             key={remediation.id}
                             remediation={remediation}
+                            activity={remediationActivityById[remediation.id]}
                             titlePrefix={`#${remediation.suggestion_rank}`}
                             description={remediation.description}
                             isFocused={selectedRemediation?.id === remediation.id}
@@ -1021,6 +1165,7 @@ export function IncidentWorkflowDetail() {
                             onExecute={(item) => void runRemediationAction(item, "execute")}
                             onApprove={(item) => void runRemediationAction(item, "approve")}
                             onReject={(item) => void runRemediationAction(item, "reject")}
+                            onRetry={(item) => void retryRemediation(item)}
                             onEscalate={(item) => void escalateFromRemediation(item)}
                             onSimulate={(item) => reviewSimulation(item)}
                           />
@@ -1033,312 +1178,39 @@ export function IncidentWorkflowDetail() {
                       )}
                     </div>
                   </>
+                ) : hasRca ? (
+                  <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
+                    <div className="text-sm font-semibold text-[var(--text-strong)]">Generate ranked remediations</div>
+                    <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                      RCA is ready. Generate ranked manual and automated options before you approve or execute anything.
+                    </p>
+                    <div className="mt-4">
+                      <Button onClick={() => void handleGuideAction("generateRemediations")} disabled={pending}>
+                        {generateRemediationsMutation.isPending ? "Generating..." : "Generate remediations"}
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
                   <InlineEmptyState
                     title="No remediations generated yet"
-                    description="Generate ranked fix options from the current RCA."
+                    description="Generate RCA first, then use this section to review and execute ranked fix options."
                   />
                 )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div ref={knowledgeRef}>
-            <Card>
-              <CardHeader>
-                <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Technical details</div>
-                <CardTitle className="mt-1">Workflow and system details</CardTitle>
-                <CardDescription>Open this section for IDs, scores, evidence links, and related records.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Incident, model, and feature details</summary>
-                  <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <SummaryItem label="Incident ID" value={incident.id} />
-                    <SummaryItem label="Workflow revision" value={String(incident.workflow_revision)} />
-                    <SummaryItem label="Model version" value={incident.model_version} />
-                    <SummaryItem label="Feature window" value={incident.feature_window_id ?? "Unavailable"} />
-                    <SummaryItem label="Plane state" value={data.plane_workflow_state} />
-                    <SummaryItem label="Workflow state" value={<StatusBadge value={incident.status} />} />
-                    <SummaryItem label="Anomaly score" value={formatRelativeNumber(incident.anomaly_score)} />
-                    <SummaryItem label="Updated" value={formatTime(incident.updated_at)} />
-                  </div>
-                </details>
-
-                <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Related evidence and knowledge</summary>
-                  <div className="mt-4 space-y-4">
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      <SummaryItem label="Evidence matches" value={String(relatedData?.evidence.length ?? 0)} />
-                      <SummaryItem label="Reasoning matches" value={String(relatedData?.reasoning.length ?? 0)} />
-                      <SummaryItem label="Resolution matches" value={String(relatedData?.resolution.length ?? 0)} />
-                      <SummaryItem label="Knowledge articles" value={String(relatedData?.knowledge.length ?? 0)} />
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {(incident.explainability ?? []).slice(0, 4).map((item) => (
-                        <div key={item.feature} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
-                          <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{item.label}</div>
-                          <div className="mt-2 text-sm text-[var(--text-strong)]">Weight {formatRelativeNumber(item.weight, 2)}</div>
-                        </div>
-                      ))}
-                    </div>
-                    {relatedQuery.isLoading ? (
-                      <div className="text-sm text-[var(--text-muted)]">Loading related evidence and articles...</div>
-                    ) : (
-                      <div className="space-y-4">
-                        {relatedData?.documents.length ? (
-                          <div className="space-y-3">
-                            <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Related documents</div>
-                            {relatedData.documents.map((document) => (
-                              <div
-                                key={`${document.collection}-${document.reference}`}
-                                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4"
-                              >
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="font-medium text-[var(--text-strong)]">{document.title}</div>
-                                  <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
-                                    {titleize(document.collection)}
-                                  </div>
-                                </div>
-                                <div className="mt-1 text-sm text-[var(--text-secondary)]">{truncateText(document.content, 180)}</div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        {relatedData?.knowledge.length ? (
-                          <div className="space-y-3">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div>
-                                <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Knowledge articles</div>
-                                <div className="mt-1 text-sm text-[var(--text-secondary)]">
-                                  Guidance articles matched to this incident type.
-                                </div>
-                              </div>
-                              <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
-                                {relatedData.knowledge.length} available
-                              </div>
-                            </div>
-                            {relatedData.knowledge.map((article) => (
-                              <div
-                                key={`${article.collection}-${article.reference}`}
-                                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4"
-                              >
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                  <div className="min-w-0 flex-1">
-                                    <div className="font-medium text-[var(--text-strong)]">{article.title}</div>
-                                    <div className="mt-1 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
-                                      {titleize(article.category ?? "knowledge")} · score {formatRelativeNumber(article.score, 2)}
-                                    </div>
-                                  </div>
-                                  <Button asChild variant="secondary" className="shrink-0">
-                                    <Link href={knowledgeArticleHref(incident.id, article.reference)}>View article</Link>
-                                  </Button>
-                                </div>
-                                <div className="mt-2 text-sm text-[var(--text-secondary)]">{truncateText(article.content, 220)}</div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        {!relatedData?.documents.length && !relatedData?.knowledge.length ? (
-                          <InlineEmptyState
-                            title="No related knowledge yet"
-                            description="Related evidence, articles, and past resolutions will appear here when loading completes."
-                          />
-                        ) : null}
-                      </div>
-                    )}
-                  </div>
-                </details>
-
-                <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Step details</summary>
-                  <div className="mt-4">
-                    <StepReferenceCard steps={flowGuide.steps} planeState={data.plane_workflow_state} />
-                  </div>
-                </details>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div ref={timelineRef}>
-            <Card>
-              <CardHeader className="flex-row items-start justify-between gap-4">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Incident timeline</div>
-                  <CardTitle className="mt-1">Timeline</CardTitle>
-                  <CardDescription>Timeline of what happened and what changed during this incident.</CardDescription>
-                </div>
-                <Button variant="secondary" onClick={() => void refreshWorkflow()}>
-                  Refresh
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {incident.timeline?.length ? (
-                  incident.timeline.map((entry) => (
-                    <div key={`${entry.time}-${entry.title}`} className="flex gap-3">
-                      <div className="mt-1 h-3 w-3 rounded-full bg-sky-400" />
-                      <div>
-                        <div className="font-medium text-[var(--text-strong)]">
-                          {entry.title} · <span className="text-[var(--text-muted)]">{formatTime(entry.time)}</span>
-                        </div>
-                        <div className="text-sm leading-6 text-[var(--text-secondary)]">{entry.detail}</div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <InlineEmptyState
-                    title="No timeline entries yet"
-                    description="Generate RCA, choose a remediation, and record verification to build the incident story."
-                  />
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div ref={simulationRef}>
-            <Card>
-              <CardHeader>
-                <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Simulation preview</div>
-                <CardTitle className="mt-1">Estimate impact before execution</CardTitle>
-                <CardDescription>Estimated effect of the selected fix before you run it.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-3">
-                  <SummaryItem label="Predicted effectiveness" value={simulationPreview.effectiveness} />
-                  <SummaryItem label="Latency impact" value={simulationPreview.latencyImpact} />
-                  <SummaryItem label="Preview confidence" value={simulationPreview.confidence} />
-                </div>
-                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
-                  {simulationPreview.summary}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div ref={ticketRef}>
-            <Card className={cn(!ticketUnlocked && "opacity-70")}>
-              <CardHeader className="flex-row items-start justify-between gap-4">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Operator collaboration</div>
-                  <CardTitle className="mt-1">Plane ticket workflow</CardTitle>
-                  <CardDescription>Create the ticket once, then let action and verification notes keep it updated automatically.</CardDescription>
-                </div>
-                <div className="rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-200">
-                  {ticketUnlocked ? "Ready" : "Wait for RCA"}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="rounded-2xl border border-amber-400/20 bg-amber-500/8 p-4 text-sm leading-6 text-[var(--text-secondary)]">
-                  {flowGuide.ticketHint}
-                </div>
-                <div className="rounded-2xl border border-sky-400/20 bg-sky-500/8 p-4 text-sm leading-6 text-[var(--text-secondary)]">
-                  {ticketAutoSyncHint}
-                </div>
-
-                {currentTicket ? (
-                  <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="font-medium text-[var(--text-strong)]">{currentTicket.title ?? "Current ticket"}</div>
-                        <div className="text-sm text-[var(--text-secondary)]">
-                          {currentTicket.provider.toUpperCase()} · {currentTicket.external_key ?? currentTicket.external_id}
-                        </div>
-                      </div>
-                      <StatusBadge value={currentTicket.sync_state ?? "synced"} />
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {currentTicketHref ? (
-                        <Button asChild variant="secondary">
-                          <a href={currentTicketHref} target="_blank" rel="noreferrer">
-                            Open ticket
-                          </a>
-                        </Button>
-                      ) : null}
-                      {incidentWorkspaceHref ? (
-                        <Button asChild variant="outline">
-                          <a href={incidentWorkspaceHref} target="_blank" rel="noreferrer">
-                            Open incident page
-                          </a>
-                        </Button>
-                      ) : null}
-                      <Button
-                        variant="outline"
-                        onClick={() => ticketSyncMutation.mutate(Number(currentTicket.id))}
-                        disabled={ticketSyncMutation.isPending}
-                      >
-                        {ticketSyncMutation.isPending ? "Syncing..." : "Quick resync"}
-                      </Button>
-                    </div>
-                    {currentTicket.comments?.length ? (
-                      <div className="mt-4 space-y-3">
-                        <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Recent ticket updates</div>
-                        {currentTicket.comments.slice(0, 3).map((comment) => (
-                          <div key={comment.external_comment_id} className="rounded-xl bg-[var(--surface-raised)] p-3">
-                            <div className="text-sm font-medium text-[var(--text-strong)]">
-                              {comment.author ?? "IMS Platform"} · {formatTime(comment.updated_at)}
-                            </div>
-                            <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[var(--text-secondary)]">
-                              {comment.body ?? "No comment body recorded."}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                <form
-                  className="space-y-3"
-                  onSubmit={ticketForm.handleSubmit(async (values) => {
-                    if (!ticketUnlocked) {
-                      return;
-                    }
-                    try {
-                      await ticketMutation.mutateAsync(values);
-                    } catch {
-                      // Notice handling is already centralized in the mutation callbacks.
-                    }
-                  })}
-                >
-                  <Label htmlFor="ticket_note">Ticket note</Label>
-                  <Textarea
-                    id="ticket_note"
-                    disabled={!ticketUnlocked || ticketMutation.isPending}
-                    placeholder={
-                      currentTicket
-                        ? "Add a collaboration update before syncing the Plane ticket."
-                        : "Add the initial context to include with the RCA and incident link."
-                    }
-                    {...ticketForm.register("note")}
-                  />
-                  <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-                    <input type="checkbox" disabled={!ticketUnlocked || ticketMutation.isPending} {...ticketForm.register("force")} />
-                    Force creation even if policy would normally skip it
-                  </label>
-                  <Button type="submit" className="w-full" disabled={!ticketUnlocked || ticketMutation.isPending}>
-                    {ticketMutation.isPending
-                      ? "Syncing..."
-                      : currentTicket
-                        ? "Sync Plane ticket with latest RCA"
-                        : "Create Plane ticket with RCA"}
-                  </Button>
-                </form>
               </CardContent>
             </Card>
           </div>
 
           <div ref={verificationRef}>
             <Card>
-              <CardHeader>
-                <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Execution and verification</div>
-                <CardTitle className="mt-1">Latest operator outcome</CardTitle>
-                <CardDescription>Execution status and verification notes remain visible even when the active step moves on.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 p-6">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Execution and verification</div>
+                  <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">Record the outcome before closing</div>
+                  <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+                    Confirm whether the action actually resolved the incident before closing the loop.
+                  </p>
+                </div>
+
                 <div ref={executionRef} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
                   <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Latest execution</div>
                   {latestAction ? (
@@ -1469,50 +1341,329 @@ export function IncidentWorkflowDetail() {
                       </Button>
                     </div>
                   </form>
+                ) : (
+                  <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
+                    Verification opens after the first execution event is recorded.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div ref={knowledgeRef}>
+            <Card>
+              <CardContent className="space-y-4 p-6">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Advanced technical details</div>
+                  <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">Open the system detail only when you need it</div>
+                  <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+                    IDs, feature details, related evidence, and saved resolutions stay available without crowding the main workflow.
+                  </p>
+                </div>
+
+                <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">
+                    Incident, model, and feature details
+                  </summary>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <SummaryItem label="Incident ID" value={incident.id} />
+                    <SummaryItem label="Workflow revision" value={String(incident.workflow_revision)} />
+                    <SummaryItem label="Model version" value={incident.model_version} />
+                    <SummaryItem label="Feature window" value={incident.feature_window_id ?? "Unavailable"} />
+                    <SummaryItem label="Plane state" value={data.plane_workflow_state} />
+                    <SummaryItem label="Workflow state" value={<StatusBadge value={incident.status} />} />
+                    <SummaryItem label="Anomaly score" value={formatRelativeNumber(incident.anomaly_score)} />
+                    <SummaryItem label="Updated" value={formatTime(incident.updated_at)} />
+                  </div>
+                </details>
+
+                <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Related evidence and knowledge</summary>
+                  <div className="mt-4 space-y-4">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      <SummaryItem label="Evidence matches" value={String(relatedData?.evidence.length ?? 0)} />
+                      <SummaryItem label="Reasoning matches" value={String(relatedData?.reasoning.length ?? 0)} />
+                      <SummaryItem label="Resolution matches" value={String(relatedData?.resolution.length ?? 0)} />
+                      <SummaryItem label="Knowledge articles" value={String(relatedData?.knowledge.length ?? 0)} />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {(incident.explainability ?? []).slice(0, 4).map((item) => (
+                        <div key={item.feature} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
+                          <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{item.label}</div>
+                          <div className="mt-2 text-sm text-[var(--text-strong)]">Weight {formatRelativeNumber(item.weight, 2)}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {relatedQuery.isLoading ? (
+                      <div className="text-sm text-[var(--text-muted)]">Loading related evidence and articles...</div>
+                    ) : (
+                      <div className="space-y-4">
+                        {relatedData?.documents.length ? (
+                          <div className="space-y-3">
+                            <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Related documents</div>
+                            {relatedData.documents.map((document) => (
+                              <div
+                                key={`${document.collection}-${document.reference}`}
+                                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4"
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="font-medium text-[var(--text-strong)]">{document.title}</div>
+                                  <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                                    {titleize(document.collection)}
+                                  </div>
+                                </div>
+                                <div className="mt-1 text-sm text-[var(--text-secondary)]">{truncateText(document.content, 180)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {relatedData?.knowledge.length ? (
+                          <div className="space-y-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Knowledge articles</div>
+                                <div className="mt-1 text-sm text-[var(--text-secondary)]">
+                                  Guidance articles matched to this incident type.
+                                </div>
+                              </div>
+                              <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                                {relatedData.knowledge.length} available
+                              </div>
+                            </div>
+                            {relatedData.knowledge.map((article) => (
+                              <div
+                                key={`${article.collection}-${article.reference}`}
+                                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4"
+                              >
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="font-medium text-[var(--text-strong)]">{article.title}</div>
+                                    <div className="mt-1 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                                      {titleize(article.category ?? "knowledge")} · score {formatRelativeNumber(article.score, 2)}
+                                    </div>
+                                  </div>
+                                  <Button asChild variant="secondary" className="shrink-0">
+                                    <Link href={knowledgeArticleHref(incident.id, article.reference)}>View article</Link>
+                                  </Button>
+                                </div>
+                                <div className="mt-2 text-sm text-[var(--text-secondary)]">{truncateText(article.content, 220)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {!relatedData?.documents.length && !relatedData?.knowledge.length ? (
+                          <InlineEmptyState
+                            title="No related knowledge yet"
+                            description="Related evidence, articles, and past resolutions will appear here when loading completes."
+                          />
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                </details>
+
+                <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Step details</summary>
+                  <div className="mt-4">
+                    <StepReferenceCard steps={flowGuide.steps} planeState={data.plane_workflow_state} />
+                  </div>
+                </details>
+
+                <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">History and saved resolutions</summary>
+                  <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                    <ListCard
+                      title="Execution history"
+                      items={buildActionItems(data.actions)}
+                      emptyTitle="No actions yet"
+                      emptyDescription="Approve or run a remediation to start building execution history."
+                    />
+                    <ListCard
+                      title="Verification records"
+                      items={buildVerificationItems(data.verifications)}
+                      emptyTitle="No verifications yet"
+                      emptyDescription="Add a verification record to see entries here."
+                    />
+                    <ListCard
+                      title="Verified knowledge"
+                      items={buildResolutionItems(data.resolution_extracts)}
+                      emptyTitle="No verified knowledge yet"
+                      emptyDescription="Verified fixes are saved here for similar incidents later."
+                    />
+                  </div>
+                </details>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+
+        <aside className="space-y-6 xl:sticky xl:top-24 xl:self-start">
+          <div ref={timelineRef}>
+            <Card>
+              <CardContent className="space-y-6 p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Incident ticket</div>
+                    <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">
+                      {currentTicket?.external_key ?? currentTicket?.external_id ?? "Ticket not created"}
+                    </div>
+                  </div>
+                  <StatusBadge value={currentTicket?.sync_state ?? (currentTicket ? "synced" : "pending")} />
+                </div>
+
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <div className="text-sm font-medium text-[var(--text-strong)]">
+                    {currentTicket?.title ?? "This incident has not been synced to a collaboration ticket yet."}
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{flowGuide.ticketHint}</p>
+                </div>
+
+                <div className="space-y-4 border-l-2 border-[var(--border-subtle)] pl-5">
+                  {incident.timeline?.length ? (
+                    incident.timeline.map((entry, index) => (
+                      <div key={`${entry.time}-${entry.title}`} className="relative">
+                        <span className="absolute -left-[29px] top-1.5 h-3 w-3 rounded-full bg-sky-400 ring-4 ring-[var(--surface-raised)]" />
+                        <div className={cn(index > 1 && "opacity-80")}>
+                          <div className="text-sm font-semibold text-[var(--text-strong)]">{entry.title}</div>
+                          <div className="mt-1 text-xs text-[var(--text-muted)]">{formatTime(entry.time)}</div>
+                          <div className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{entry.detail}</div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <InlineEmptyState
+                      title="No timeline entries yet"
+                      description="Generate RCA, choose a remediation, and record verification to build the incident story."
+                    />
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {currentTicketHref ? (
+                    <Button asChild variant="secondary">
+                      <a href={currentTicketHref} target="_blank" rel="noreferrer">
+                        Open ticket
+                      </a>
+                    </Button>
+                  ) : null}
+                  {incidentWorkspaceHref ? (
+                    <Button asChild variant="outline">
+                      <a href={incidentWorkspaceHref} target="_blank" rel="noreferrer">
+                        Open incident page
+                      </a>
+                    </Button>
+                  ) : null}
+                  <Button variant="outline" onClick={() => void refreshWorkflow()}>
+                    Refresh timeline
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div ref={ticketRef}>
+            <Card className={cn(!ticketUnlocked && !hasTicket && "opacity-70")}>
+              <CardContent className="space-y-4 p-6">
+                <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Planned ticket note</div>
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
+                  {plannedTicketNote}
+                </div>
+
+                <form
+                  className="space-y-3"
+                  onSubmit={ticketForm.handleSubmit(async (values) => {
+                    if (!ticketUnlocked) {
+                      return;
+                    }
+                    try {
+                      await ticketMutation.mutateAsync(values);
+                    } catch {
+                      // Notice handling is already centralized in the mutation callbacks.
+                    }
+                  })}
+                >
+                  <Label htmlFor="ticket_note">Ticket note</Label>
+                  <Textarea
+                    id="ticket_note"
+                    disabled={!ticketUnlocked || ticketMutation.isPending}
+                    placeholder={
+                      currentTicket
+                        ? "Add a collaboration update before syncing the Plane ticket."
+                        : "Add the initial context to include with the RCA and incident link."
+                    }
+                    {...ticketForm.register("note")}
+                  />
+                  <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                    <input type="checkbox" disabled={!ticketUnlocked || ticketMutation.isPending} {...ticketForm.register("force")} />
+                    Force creation even if policy would normally skip it
+                  </label>
+                  <Button type="submit" className="w-full" disabled={!ticketUnlocked || ticketMutation.isPending}>
+                    {ticketMutation.isPending
+                      ? "Syncing..."
+                      : currentTicket
+                        ? "Sync Plane ticket with latest RCA"
+                        : "Create Plane ticket with RCA"}
+                  </Button>
+                </form>
+
+                {currentTicket ? (
+                  <div className="rounded-2xl border border-sky-400/20 bg-sky-500/8 p-4 text-sm leading-6 text-[var(--text-secondary)]">
+                    {ticketAutoSyncHint}
+                  </div>
+                ) : null}
+
+                {currentTicket?.comments?.length ? (
+                  <div className="space-y-3">
+                    <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Recent ticket updates</div>
+                    {currentTicket.comments.slice(0, 3).map((comment) => (
+                      <div key={comment.external_comment_id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-3">
+                        <div className="text-sm font-medium text-[var(--text-strong)]">
+                          {comment.author ?? "IMS Platform"} · {formatTime(comment.updated_at)}
+                        </div>
+                        <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[var(--text-secondary)]">
+                          {comment.body ?? "No comment body recorded."}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 ) : null}
               </CardContent>
             </Card>
           </div>
-        </div>
-      </div>
 
-      <Card>
-        <CardHeader>
-          <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">History and knowledge</div>
-          <CardTitle className="mt-1">History and saved resolutions</CardTitle>
-          <CardDescription>Open this section to review execution history, verification records, and saved resolutions.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <details className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-            <summary className="cursor-pointer text-sm font-semibold text-[var(--text-strong)]">Show history</summary>
-            <div className="mt-4 grid gap-4 xl:grid-cols-3">
-              <ListCard
-                title="Execution history"
-                items={buildActionItems(data.actions)}
-                emptyTitle="No actions yet"
-                emptyDescription="Approve or run a remediation to start building execution history."
-              />
-              <ListCard
-                title="Verification records"
-                items={buildVerificationItems(data.verifications)}
-                emptyTitle="No verifications yet"
-                emptyDescription="Add a verification record to see entries here."
-              />
-              <ListCard
-                title="Verified knowledge"
-                items={buildResolutionItems(data.resolution_extracts)}
-                emptyTitle="No verified knowledge yet"
-                emptyDescription="Verified fixes are saved here for similar incidents later."
-              />
-            </div>
-          </details>
-        </CardContent>
-      </Card>
-
-      <div className="text-sm text-[var(--text-muted)]">
-        <Link href="/incidents" className="text-[var(--accent)]">
-          Back to incident queue
-        </Link>
+          <div ref={simulationRef}>
+            <Card className="border-slate-900 bg-slate-900 text-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+              <CardContent className="space-y-4 p-6">
+                <div className="text-xs uppercase tracking-[0.24em] text-slate-300">Primary workflow action</div>
+                <div className="text-lg font-semibold">{flowGuide.primary.label}</div>
+                <p className="text-sm leading-6 text-slate-300">{describeGuideAction(flowGuide.primary.action, hasTicket)}</p>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="rounded-2xl bg-white/10 p-3">
+                    <div className="text-[11px] uppercase tracking-[0.2em] text-slate-300">Predicted effectiveness</div>
+                    <div className="mt-2 text-sm font-medium text-white">{simulationPreview.effectiveness}</div>
+                  </div>
+                  <div className="rounded-2xl bg-white/10 p-3">
+                    <div className="text-[11px] uppercase tracking-[0.2em] text-slate-300">Latency impact</div>
+                    <div className="mt-2 text-sm font-medium text-white">{simulationPreview.latencyImpact}</div>
+                  </div>
+                  <div className="rounded-2xl bg-white/10 p-3">
+                    <div className="text-[11px] uppercase tracking-[0.2em] text-slate-300">Preview confidence</div>
+                    <div className="mt-2 text-sm font-medium text-white">{simulationPreview.confidence}</div>
+                  </div>
+                </div>
+                <Button
+                  className="w-full bg-white text-slate-900 hover:bg-slate-100"
+                  onClick={() => void handleGuideAction(flowGuide.primary.action)}
+                  disabled={pending || Boolean(flowGuide.primary.disabled)}
+                >
+                  {flowGuide.primary.label}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </aside>
       </div>
     </div>
   );
@@ -1520,6 +1671,7 @@ export function IncidentWorkflowDetail() {
 
 function RemediationActionCard({
   remediation,
+  activity,
   titlePrefix,
   description,
   isPrimary = false,
@@ -1532,10 +1684,12 @@ function RemediationActionCard({
   onExecute,
   onApprove,
   onReject,
+  onRetry,
   onEscalate,
   onSimulate,
 }: {
   remediation: RemediationRecord;
+  activity: RemediationActivity;
   titlePrefix: string;
   description: string;
   isPrimary?: boolean;
@@ -1548,10 +1702,14 @@ function RemediationActionCard({
   onExecute: (remediation: RemediationRecord) => void;
   onApprove: (remediation: RemediationRecord) => void;
   onReject: (remediation: RemediationRecord) => void;
+  onRetry: (remediation: RemediationRecord) => void;
   onEscalate: (remediation: RemediationRecord) => void;
   onSimulate: (remediation: RemediationRecord) => void;
 }) {
   const noteId = `remediation-note-${remediation.id}`;
+  const decisionLocked = activity.decisionLocked;
+  const attemptLabel =
+    activity.attemptCount > 0 ? `${activity.attemptCount} ${activity.attemptCount === 1 ? "attempt" : "attempts"}` : "Ready";
 
   return (
     <div
@@ -1562,12 +1720,19 @@ function RemediationActionCard({
       )}
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
+        <div className="min-w-0 flex-1">
           <div className={cn("text-xs uppercase tracking-[0.2em]", isPrimary ? "text-cyan-200/80" : "text-[var(--text-muted)]")}>
             {titlePrefix}
           </div>
-          <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">{remediation.title}</div>
-          <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{description}</p>
+          <div
+            className={cn(
+              "mt-2 text-lg font-semibold text-[var(--text-strong)] [overflow-wrap:anywhere]",
+              decisionLocked && "line-through decoration-2 decoration-[var(--text-muted)] opacity-85",
+            )}
+          >
+            {remediation.title}
+          </div>
+          <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)] [overflow-wrap:anywhere]">{description}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {isFocused ? (
@@ -1575,7 +1740,10 @@ function RemediationActionCard({
               Previewing
             </div>
           ) : null}
-          <StatusBadge value={remediation.status || remediation.risk_level} />
+          <RemediationDecisionPill state={activity.decisionState} />
+          <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+            {attemptLabel}
+          </div>
         </div>
       </div>
 
@@ -1585,6 +1753,13 @@ function RemediationActionCard({
         <SummaryItem label="Automation" value={titleize(remediation.automation_level ?? "pending")} />
         <SummaryItem label="Revision scope" value={`Revision ${remediation.based_on_revision ?? "current"}`} />
       </div>
+
+      {decisionLocked ? (
+        <div className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
+          <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Workflow state</div>
+          <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)] [overflow-wrap:anywhere]">{activity.summary}</p>
+        </div>
+      ) : null}
 
       <div className="mt-4">
         <Label htmlFor={noteId}>Operator note</Label>
@@ -1602,13 +1777,26 @@ function RemediationActionCard({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
+        {activity.canRetry && activity.retryLabel ? (
+          <Button
+            size="sm"
+            onClick={() => {
+              onFocus(remediation.id);
+              onRetry(remediation);
+            }}
+            disabled={pending}
+          >
+            {activity.retryLabel}
+          </Button>
+        ) : null}
         <Button
           size="sm"
           onClick={() => {
             onFocus(remediation.id);
             onExecute(remediation);
           }}
-          disabled={pending}
+          disabled={pending || decisionLocked}
+          className={cn(decisionLocked && "line-through")}
         >
           Approve & execute
         </Button>
@@ -1641,7 +1829,8 @@ function RemediationActionCard({
             onFocus(remediation.id);
             onApprove(remediation);
           }}
-          disabled={pending}
+          disabled={pending || decisionLocked}
+          className={cn(decisionLocked && "line-through")}
         >
           Approve only
         </Button>
@@ -1652,12 +1841,34 @@ function RemediationActionCard({
             onFocus(remediation.id);
             onReject(remediation);
           }}
-          disabled={pending}
+          disabled={pending || decisionLocked}
+          className={cn(decisionLocked && "line-through")}
         >
           Reject
         </Button>
       </div>
     </div>
+  );
+}
+
+function RemediationDecisionPill({ state }: { state: RemediationDecisionState }) {
+  return (
+    <span
+      className={cn(
+        "rounded-full border px-3 py-1 text-xs font-semibold",
+        state === "executed"
+          ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-200"
+          : state === "approved"
+            ? "border-amber-400/25 bg-amber-500/10 text-amber-200"
+            : state === "executing"
+              ? "border-sky-400/25 bg-sky-500/10 text-sky-200"
+              : state === "failed" || state === "rejected"
+                ? "border-rose-400/25 bg-rose-500/10 text-rose-200"
+                : "border-[var(--border-subtle)] bg-[var(--surface-raised)] text-[var(--text-secondary)]",
+      )}
+    >
+      {titleize(state)}
+    </span>
   );
 }
 
@@ -1748,6 +1959,49 @@ function StepReferenceCard({ steps, planeState }: { steps: GuideStep[]; planeSta
   );
 }
 
+function buildIncidentViewSteps(status: WorkflowState): IncidentViewStep[] {
+  return INCIDENT_VIEW_STEP_TEMPLATES.map((step, index) => ({
+    number: index + 1,
+    title: step.title,
+    description: step.description,
+    action: step.action,
+    status: INCIDENT_VIEW_STATUS_MAP[status][index],
+  }));
+}
+
+function describeGuideAction(action: GuideActionId, hasTicket: boolean) {
+  switch (action) {
+    case "generateRca":
+      return "Create AI-assisted root cause analysis from the current evidence and move the incident into RCA review.";
+    case "generateRemediations":
+      return "Turn the current RCA into ranked manual and automation-backed remediation options.";
+    case "openEvidence":
+      return "Review business impact, leading signals, and evidence references before taking the next step.";
+    case "reviewRca":
+      return "Review the AI analysis, confidence, and evidence before you choose or approve a fix.";
+    case "focusRemediation":
+      return "Review ranked remediations, add operator notes, and approve, run, simulate, or reject the selected path.";
+    case "focusVerification":
+      return "Record whether the action worked, update the ticket, and decide whether the incident can close.";
+    case "focusTicket":
+      return hasTicket
+        ? "Open the linked ticket workflow, recent comments, and sync controls without leaving this incident page."
+        : "Create or sync the incident ticket once RCA and operator context are ready.";
+    case "focusTimeline":
+      return "Review the incident timeline to see what changed at each stage of the workflow.";
+    case "focusKnowledge":
+      return "Open advanced details for IDs, related evidence, saved resolutions, and matched knowledge articles.";
+    case "reviewExecution":
+      return "Inspect the latest execution result and verification outcome before deciding on the next action.";
+    case "executeSelected":
+      return "Approve and launch the selected remediation through the normal audited workflow path.";
+    case "closeIncident":
+      return "Close the incident after successful verification confirms the issue is resolved.";
+    case "none":
+      return "Stay on the current step.";
+  }
+}
+
 function AiGeneratedBadge({ generation }: { generation: RcaGenerationInfo }) {
   return (
     <div
@@ -1794,12 +2048,12 @@ function SummaryItem({
   meta?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{label}</div>
+    <div className="min-w-0 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)] [overflow-wrap:anywhere]">{label}</div>
         {meta}
       </div>
-      <div className="mt-2 text-sm text-[var(--text-strong)]">{value}</div>
+      <div className="mt-2 min-w-0 text-sm text-[var(--text-strong)] [overflow-wrap:anywhere]">{value}</div>
     </div>
   );
 }
@@ -2016,8 +2270,8 @@ function deriveFlowGuide({
         badge: "Step 5 of 5",
         title: "Verify the outcome",
         description:
-          "Execution finished. Confirm whether the issue is resolved before closing the incident.",
-        subtext: "Record verification before closing the incident.",
+          "Execution finished. Confirm whether the issue is resolved, or return to the remediation options if the first action did not fully recover the service.",
+        subtext: "Record verification before closing, or choose another suggested fix if recovery is incomplete.",
         helpers: [
           {
             title: "What is ready",
@@ -2025,7 +2279,7 @@ function deriveFlowGuide({
           },
           {
             title: "What to confirm",
-            text: "Confirm service recovery, record the actual fix, and state whether the RCA was correct.",
+            text: "Confirm service recovery, record the actual fix, and if recovery is incomplete, try another suggestion from the remediation section.",
           },
           {
             title: "Expected output",
@@ -2035,7 +2289,7 @@ function deriveFlowGuide({
         ticketHint:
           "If a ticket exists, add the verified outcome so collaborators can see what actually fixed the incident.",
         primary: { label: "Record verification", action: "focusVerification" },
-        secondary: { label: "Review execution history", action: "reviewExecution" },
+        secondary: { label: "Review remediations", action: "focusRemediation" },
         steps,
       };
     case "VERIFIED":
@@ -2516,6 +2770,119 @@ function buildSimulationPreview(
       ? `${remediation.expected_outcome} This preview keeps the first move scoped to workflow revision ${remediation.based_on_revision}.`
       : `This preview assumes ${remediation.title.toLowerCase()} is applied first and focuses on reducing customer-facing pressure before broader escalation.`,
   };
+}
+
+function buildRemediationActivityMap(
+  remediations: RemediationRecord[],
+  actions: IncidentActionRecord[],
+): Record<number, RemediationActivity> {
+  return remediations.reduce<Record<number, RemediationActivity>>((result, remediation) => {
+    const relatedActions = actions
+      .filter((action) => action.remediation_id === remediation.id)
+      .sort(compareIncidentActionRecency);
+    const latestAction = relatedActions[0];
+    const decisionState = normalizeRemediationDecisionState(remediation.status, latestAction?.execution_status);
+    const attemptCount = relatedActions.length || (decisionState === "rejected" ? 1 : 0);
+
+    result[remediation.id] = {
+      attemptCount,
+      canRetry: decisionState === "approved" || decisionState === "executed" || decisionState === "failed",
+      decisionLocked: decisionState !== "available",
+      decisionState,
+      latestAction,
+      retryLabel: decisionState === "approved" ? "Run approved action" : attemptCount > 0 ? "Retry action" : undefined,
+      summary: buildRemediationActivitySummary(decisionState, latestAction, attemptCount),
+    };
+    return result;
+  }, {});
+}
+
+function compareIncidentActionRecency(left: IncidentActionRecord, right: IncidentActionRecord) {
+  return incidentActionSortKey(right) - incidentActionSortKey(left);
+}
+
+function incidentActionSortKey(action: IncidentActionRecord) {
+  const timestamp = action.finished_at ?? action.started_at;
+  const parsed = timestamp ? Date.parse(timestamp) : Number.NaN;
+  return Number.isNaN(parsed) ? action.id : parsed;
+}
+
+function normalizeRemediationDecisionState(
+  remediationStatus?: string | null,
+  actionStatus?: string | null,
+): RemediationDecisionState {
+  const normalized = String(actionStatus || remediationStatus || "available").trim().toLowerCase();
+  if (!normalized) {
+    return "available";
+  }
+  if (normalized.includes("reject")) {
+    return "rejected";
+  }
+  if (normalized.includes("fail") || normalized.includes("error")) {
+    return "failed";
+  }
+  if (normalized.includes("executing")) {
+    return "executing";
+  }
+  if (normalized.includes("executed")) {
+    return "executed";
+  }
+  if (normalized.includes("approval") || normalized.includes("approved")) {
+    return "approved";
+  }
+  return "available";
+}
+
+function buildRemediationActivitySummary(
+  decisionState: RemediationDecisionState,
+  latestAction: IncidentActionRecord | undefined,
+  attemptCount: number,
+) {
+  const actor = latestAction?.triggered_by?.trim();
+  const decisionTime = latestAction ? formatTime(latestAction.finished_at ?? latestAction.started_at ?? null) : "";
+  const actorSummary = [actor, decisionTime].filter(Boolean).join(" · ");
+
+  switch (decisionState) {
+    case "approved":
+      return actorSummary
+        ? `Approved for this workflow revision by ${actorSummary}. Run this fix when you are ready.`
+        : "Approved for this workflow revision. Run this fix when you are ready.";
+    case "executing":
+      return actorSummary
+        ? `Execution is in progress after ${actorSummary}. Wait for the current run to finish before retrying.`
+        : "Execution is in progress. Wait for the current run to finish before retrying.";
+    case "executed":
+      return latestAction?.result_summary
+        ? truncateText(latestAction.result_summary, 200)
+        : `This solution was already tried ${attemptCount > 1 ? `${attemptCount} times` : "once"}. Retry it only if you want to run the same fix again.`;
+    case "failed":
+      return latestAction?.result_summary
+        ? truncateText(latestAction.result_summary, 200)
+        : "The latest run failed. Retry this fix or choose a different remediation.";
+    case "rejected":
+      return "Rejected for the current review cycle. This decision stays visible for audit, and the one-time actions remain disabled.";
+    case "available":
+      return "No decision recorded yet.";
+  }
+}
+
+function remediationDecisionPriority(activity: RemediationActivity | undefined) {
+  switch (activity?.decisionState) {
+    case "executing":
+      return 0;
+    case "approved":
+      return 1;
+    case "available":
+      return 2;
+    case "failed":
+      return 3;
+    case "executed":
+      return 4;
+    case "rejected":
+      return 5;
+    default:
+      return 6;
+  }
 }
 
 function buildActionItems(actions: IncidentActionRecord[]) {
