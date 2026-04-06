@@ -19,10 +19,13 @@ import requests
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SERVICES_ROOT = REPO_ROOT / "services"
-if str(SERVICES_ROOT) not in sys.path:
-    sys.path.insert(0, str(SERVICES_ROOT))
+# Support both repo execution (`services/sipp-runner/run_scenario.py`) and
+# container execution (`/sipp/run_scenario.py` with `/sipp/shared` copied in).
+SCRIPT_ROOT = Path(__file__).resolve().parent
+for import_root in [SCRIPT_ROOT, SCRIPT_ROOT.parent]:
+    import_root_str = str(import_root)
+    if import_root.exists() and import_root_str not in sys.path:
+        sys.path.insert(0, import_root_str)
 
 from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type, normalize_scenario_name, scenario_definition
 

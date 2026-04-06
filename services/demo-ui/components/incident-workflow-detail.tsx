@@ -867,22 +867,6 @@ export function IncidentWorkflowDetail() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="space-y-4 p-5">
-              <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Operator guidance</div>
-              <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                <div className="text-sm font-semibold text-[var(--text-strong)]">What should I do next?</div>
-                <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{flowGuide.description}</p>
-              </div>
-              <Button
-                className="w-full"
-                onClick={() => void handleGuideAction(flowGuide.primary.action)}
-                disabled={pending || Boolean(flowGuide.primary.disabled)}
-              >
-                {flowGuide.primary.label}
-              </Button>
-            </CardContent>
-          </Card>
         </aside>
 
         <section className="space-y-6">

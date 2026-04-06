@@ -19,7 +19,7 @@ spec:
           restartPolicy: Never
           containers:
             - name: demo-incident-pulse
-              image: control-plane:latest
+              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/control-plane:latest
               imagePullPolicy: Always
               command:
                 - python

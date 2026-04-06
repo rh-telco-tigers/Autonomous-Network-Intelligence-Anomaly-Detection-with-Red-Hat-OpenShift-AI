@@ -10,5 +10,6 @@ COPY services/sipp-runner/requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY services/sipp-runner/run_scenario.py run_scenario.py
+COPY services/shared shared
 
 ENTRYPOINT ["python", "/sipp/run_scenario.py"]
