@@ -3355,10 +3355,17 @@ def related_incident_records(
         raise HTTPException(status_code=404, detail="Incident not found")
     ensure_project_access(auth, incident["project"])
     query = _related_context_query(incident)
-    documents = retrieve_context(query, limit=payload.limit, collections=RELATED_CONTEXT_COLLECTIONS)
+    anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE))
+    documents = retrieve_context(
+        query,
+        limit=payload.limit,
+        collections=RELATED_CONTEXT_COLLECTIONS,
+        anomaly_type=anomaly_type,
+    )
     knowledge_articles = retrieve_knowledge_articles(
         query,
         category=_incident_category(incident),
+        anomaly_type=anomaly_type,
         limit=payload.knowledge_limit,
     )
     categorized = _categorize_related_documents(documents)

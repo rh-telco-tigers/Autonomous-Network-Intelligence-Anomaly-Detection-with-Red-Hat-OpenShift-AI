@@ -184,6 +184,10 @@ export type RelatedDocument = {
   category?: string;
   incident_id?: string;
   knowledge_weight?: number;
+  summary?: string;
+  anomaly_types?: string[];
+  match_reasons?: string[];
+  score_breakdown?: Record<string, number>;
 };
 
 export type EvidenceSource = {

@@ -10,6 +10,7 @@ import type {
   IncidentRecord,
   IncidentWorkflow,
   KnowledgeArticleResponse,
+  RelatedRecords,
   ScenarioRunResponse,
   TicketLookupResponse,
 } from "@/lib/types";
@@ -20,6 +21,7 @@ const CONSOLE_STALE_TIME_MS = 30_000;
 const INCIDENT_LIST_STALE_TIME_MS = 20_000;
 const INCIDENT_WORKFLOW_STALE_TIME_MS = 15_000;
 const DEBUG_TRACE_STALE_TIME_MS = 60_000;
+const RELATED_RECORDS_STALE_TIME_MS = 45_000;
 
 export async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
@@ -158,6 +160,27 @@ export function useKnowledgeArticleQuery(reference: string) {
     queryKey: ["knowledge-article", reference, token],
     queryFn: () => request<KnowledgeArticleResponse>(`/api/knowledge/articles/${normalizedReference}`, token),
     enabled: Boolean(reference),
+  });
+}
+
+export function useRelatedRecordsQuery(incidentId: string, options?: { limit?: number; knowledgeLimit?: number }) {
+  const { token } = useApiToken();
+  return useQuery({
+    queryKey: ["related-records", incidentId, options?.limit ?? 6, options?.knowledgeLimit ?? 4, token],
+    queryFn: () =>
+      request<RelatedRecords>(`/api/incidents/${encodeURIComponent(incidentId)}/related`, token, {
+        method: "POST",
+        body: JSON.stringify({
+          limit: options?.limit ?? 6,
+          knowledge_limit: options?.knowledgeLimit ?? 4,
+        }),
+      }),
+    enabled: Boolean(incidentId),
+    refetchInterval: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    staleTime: RELATED_RECORDS_STALE_TIME_MS,
+    retry: 2,
   });
 }
 

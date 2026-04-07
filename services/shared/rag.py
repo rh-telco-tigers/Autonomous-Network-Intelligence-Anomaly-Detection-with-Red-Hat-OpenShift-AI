@@ -23,8 +23,34 @@ LEGACY_MILVUS_COLLECTIONS = ("ims_incidents",)
 VECTOR_DIMENSION = 64
 MAX_CONTENT_LENGTH = 16384
 MAX_EMBEDDING_TEXT_LENGTH = 4096
+MAX_RETRIEVAL_CANDIDATES = 24
 RUNBOOK_COLLECTION = "ims_runbooks"
 KNOWLEDGE_ARTICLE_DOC_TYPE = "knowledge_article"
+RUNBOOK_SCHEMA_VERSION = "2026-04-06"
+TOKEN_PATTERN = re.compile(r"[a-z0-9_]{2,}")
+STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "if",
+    "in",
+    "into",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "with",
+}
 LOCAL_COLLECTION_DIRS = {
     "ims_runbooks": "runbooks",
     "incident_evidence": "incidents",
@@ -141,6 +167,135 @@ def _normalize_category(value: object) -> str:
     return str(value or "").strip().lower()
 
 
+def _normalize_string_list(value: object) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _structured_content_payload(content: object) -> Dict[str, object] | None:
+    if isinstance(content, dict):
+        return content
+    text = str(content or "").strip()
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _flatten_text_fragments(value: object) -> List[str]:
+    if value in (None, "", [], {}):
+        return []
+    if isinstance(value, dict):
+        fragments: List[str] = []
+        for key, nested in value.items():
+            label = str(key or "").replace("_", " ").strip()
+            nested_fragments = _flatten_text_fragments(nested)
+            if nested_fragments:
+                fragments.append(f"{label}: {' '.join(nested_fragments)}" if label else " ".join(nested_fragments))
+        return fragments
+    if isinstance(value, list):
+        fragments: List[str] = []
+        for item in value:
+            fragments.extend(_flatten_text_fragments(item))
+        return fragments
+    return [str(value).strip()]
+
+
+def _clean_article_value(value: object) -> object | None:
+    if value in (None, "", [], {}):
+        return None
+    if isinstance(value, list):
+        cleaned = [item for item in value if item not in (None, "", [], {})]
+        return cleaned or None
+    return value
+
+
+def _structured_runbook_article(
+    article: Dict[str, Any],
+    *,
+    title: str,
+    summary: str,
+    category: str,
+    anomaly_labels: List[str],
+) -> Dict[str, object]:
+    raw_content = article.get("content")
+    if isinstance(raw_content, dict):
+        structured: Dict[str, object] = dict(raw_content)
+    else:
+        guidance: List[str] = []
+        if isinstance(raw_content, list):
+            guidance = [str(item).strip() for item in raw_content if str(item).strip()]
+        else:
+            text = str(raw_content or "").strip()
+            if text:
+                guidance = [text]
+        structured = {"guidance": guidance} if guidance else {}
+
+    content: Dict[str, object] = {
+        "schema_version": RUNBOOK_SCHEMA_VERSION,
+        "slug": _slugify(article.get("slug") or title),
+        "doc_type": str(article.get("doc_type") or KNOWLEDGE_ARTICLE_DOC_TYPE),
+        "title": title,
+        "summary": summary,
+        "category": category,
+        "anomaly_types": anomaly_labels,
+    }
+    for field in (
+        "keywords",
+        "service_scope",
+        "symptom_profile",
+        "differential_diagnosis",
+        "evidence_to_collect",
+        "recommended_rca",
+        "operator_actions",
+        "safe_actions",
+        "escalation_signals",
+        "pitfalls",
+        "telemetry_queries",
+        "reference_incident_pattern",
+    ):
+        cleaned = _clean_article_value(article.get(field))
+        if cleaned is not None:
+            content[field] = cleaned
+    for key, value in structured.items():
+        cleaned = _clean_article_value(value)
+        if cleaned is not None and key not in content:
+            content[str(key)] = cleaned
+    return {key: value for key, value in content.items() if _clean_article_value(value) is not None}
+
+
+def _runbook_embedding_text(title: str, summary: str, content: Dict[str, object], anomaly_labels: List[str]) -> str:
+    parts = [title, summary]
+    category = str(content.get("category") or "").strip()
+    if category:
+        parts.append(f"category: {category}")
+    if anomaly_labels:
+        parts.append(f"anomaly_types: {', '.join(anomaly_labels)}")
+    for field in (
+        "keywords",
+        "service_scope",
+        "symptom_profile",
+        "differential_diagnosis",
+        "evidence_to_collect",
+        "recommended_rca",
+        "operator_actions",
+        "safe_actions",
+        "escalation_signals",
+        "pitfalls",
+        "telemetry_queries",
+        "reference_incident_pattern",
+        "guidance",
+    ):
+        fragments = _flatten_text_fragments(content.get(field))
+        if fragments:
+            parts.append(f"{field}: {' '.join(fragments)}")
+    return "\n\n".join(part for part in parts if part)
+
+
 def hash_embedding(text: str, size: int = VECTOR_DIMENSION) -> List[float]:
     vector = [0.0] * size
     tokens = [token.strip(".,:;()[]{}").lower() for token in text.split()]
@@ -230,6 +385,156 @@ def build_semantic_record(
     }
 
 
+def _document_payload(document: Dict[str, object]) -> Dict[str, object] | None:
+    return _structured_content_payload(document.get("content"))
+
+
+def _document_anomaly_types(document: Dict[str, object]) -> List[str]:
+    payload = _document_payload(document)
+    return _normalize_string_list((payload or {}).get("anomaly_types"))
+
+
+def _document_summary(document: Dict[str, object]) -> str:
+    payload = _document_payload(document)
+    if not payload:
+        return str(document.get("content") or "").strip()
+    parts = [str(payload.get("summary") or "").strip()]
+    recommended_rca = payload.get("recommended_rca")
+    if isinstance(recommended_rca, dict):
+        parts.append(str(recommended_rca.get("root_cause") or "").strip())
+    primary_signals = _flatten_text_fragments((payload.get("symptom_profile") or {}).get("primary_signals"))
+    if primary_signals:
+        parts.append(primary_signals[0])
+    return " ".join(part for part in parts if part).strip()
+
+
+def _document_keywords(document: Dict[str, object]) -> List[str]:
+    payload = _document_payload(document) or {}
+    keywords = _normalize_string_list(payload.get("keywords"))
+    keywords.extend(_normalize_string_list(payload.get("service_scope")))
+    return keywords
+
+
+def _document_sections_text(document: Dict[str, object]) -> str:
+    payload = _document_payload(document)
+    if not payload:
+        return str(document.get("content") or "")
+    return " ".join(
+        fragment
+        for field in (
+            "summary",
+            "keywords",
+            "service_scope",
+            "symptom_profile",
+            "differential_diagnosis",
+            "evidence_to_collect",
+            "recommended_rca",
+            "operator_actions",
+            "safe_actions",
+            "escalation_signals",
+            "pitfalls",
+            "telemetry_queries",
+            "reference_incident_pattern",
+            "guidance",
+        )
+        for fragment in _flatten_text_fragments(payload.get(field))
+    )
+
+
+def _tokenize(text: object) -> List[str]:
+    raw_tokens = TOKEN_PATTERN.findall(str(text or "").lower())
+    return [token for token in raw_tokens if token not in STOP_WORDS]
+
+
+def _token_overlap(query_tokens: Sequence[str], doc_tokens: Sequence[str]) -> float:
+    if not query_tokens or not doc_tokens:
+        return 0.0
+    query_set = set(query_tokens)
+    doc_set = set(doc_tokens)
+    return min(1.0, len(query_set & doc_set) / max(min(len(query_set), 10), 1))
+
+
+def _document_lexical_score(document: Dict[str, object], query_tokens: Sequence[str]) -> float:
+    if not query_tokens:
+        return 0.0
+    title_tokens = _tokenize(document.get("title"))
+    summary_tokens = _tokenize(_document_summary(document))
+    keyword_tokens = _tokenize(" ".join(_document_keywords(document)))
+    body_tokens = _tokenize(_document_sections_text(document))[:160]
+    return min(
+        1.0,
+        (_token_overlap(query_tokens, title_tokens) * 0.35)
+        + (_token_overlap(query_tokens, summary_tokens) * 0.3)
+        + (_token_overlap(query_tokens, keyword_tokens) * 0.2)
+        + (_token_overlap(query_tokens, body_tokens) * 0.15),
+    )
+
+
+def _document_structure_score(
+    document: Dict[str, object],
+    *,
+    collection_name: str,
+    anomaly_type: str | None,
+    category: str | None,
+    query_tokens: Sequence[str],
+) -> Tuple[float, float, List[str]]:
+    reasons: List[str] = []
+    payload = _document_payload(document) or {}
+    score = 0.0
+    penalty = 1.0
+    required_category = _normalize_category(category)
+    document_category = _normalize_category(document.get("category") or payload.get("category"))
+    anomaly_labels = _document_anomaly_types(document)
+    normalized_anomaly = str(anomaly_type or "").strip().lower()
+
+    if required_category and document_category == required_category:
+        score += 0.18
+        reasons.append(f"Category match: {required_category}")
+    if collection_name == RUNBOOK_COLLECTION and normalized_anomaly:
+        if normalized_anomaly in anomaly_labels:
+            score += 0.52
+            reasons.append(f"Exact anomaly match: {normalized_anomaly}")
+        elif anomaly_labels:
+            penalty = 0.42
+    shared_hints = sorted(set(_tokenize(" ".join(_document_keywords(document)))) & set(query_tokens))
+    if shared_hints:
+        score += min(0.16, 0.04 * len(shared_hints))
+        reasons.append(f"Shared hints: {', '.join(shared_hints[:4])}")
+    if isinstance(payload.get("recommended_rca"), dict):
+        score += 0.08
+        reasons.append("Structured RCA guidance")
+    return min(score, 1.0), penalty, reasons
+
+
+def _hybrid_document_score(
+    document: Dict[str, object],
+    *,
+    collection_name: str,
+    query: str,
+    anomaly_type: str | None,
+    category: str | None,
+) -> Tuple[float, Dict[str, float], List[str]]:
+    query_tokens = _tokenize(query)
+    vector_score = _cosine(hash_embedding(query), hash_embedding(str(document.get("embedding_text") or document.get("content") or document.get("title") or "")))
+    lexical_score = _document_lexical_score(document, query_tokens)
+    structure_score, penalty, reasons = _document_structure_score(
+        document,
+        collection_name=collection_name,
+        anomaly_type=anomaly_type,
+        category=category,
+        query_tokens=query_tokens,
+    )
+    breakdown = {
+        "vector": round(vector_score, 4),
+        "lexical": round(lexical_score, 4),
+        "structure": round(structure_score, 4),
+        "penalty": round(penalty, 4),
+    }
+    combined = ((vector_score * 0.4) + (lexical_score * 0.36) + (structure_score * 0.24)) * penalty
+    weighted = combined * max(_coerce_float(document.get("knowledge_weight"), 1.0), 0.25)
+    return weighted, breakdown, reasons
+
+
 def _normalize_retrieved_entity(collection_name: str, entity: Dict[str, object], score: float | None = None) -> Dict[str, object]:
     document = {
         "title": str(entity.get("title") or ""),
@@ -243,6 +548,12 @@ def _normalize_retrieved_entity(collection_name: str, entity: Dict[str, object],
         "knowledge_weight": _coerce_float(entity.get("knowledge_weight"), 1.0),
         "score": round(score if score is not None else 0.0, 4),
     }
+    payload = _document_payload(document)
+    if payload:
+        document["summary"] = str(payload.get("summary") or "")
+        document["anomaly_types"] = _normalize_string_list(payload.get("anomaly_types"))
+        document["match_reasons"] = []
+        document["score_breakdown"] = {}
     return document
 
 
@@ -397,30 +708,32 @@ def _build_runbook_bundle_records(path: Path, payload: Dict[str, Any]) -> List[D
             continue
         title = str(article.get("title") or f"{category or 'knowledge'} article {index}").strip()
         summary = str(article.get("summary") or "").strip()
+        if not title or not summary:
+            raise ValueError(f"Runbook article {path.name}#{index} is missing a title or summary")
         slug = _slugify(article.get("slug") or title)
         anomaly_types = article.get("anomaly_types") or []
         if not isinstance(anomaly_types, list):
             anomaly_types = []
         anomaly_labels = [str(item).strip() for item in anomaly_types if str(item).strip()]
+        if not anomaly_labels:
+            raise ValueError(f"Runbook article {path.name}#{index} must declare at least one anomaly type")
         article_category = _normalize_category(article.get("category") or category)
-        raw_content = article.get("content") or ""
-        if isinstance(raw_content, list):
-            content = "\n".join(str(item) for item in raw_content).strip()
-        else:
-            content = str(raw_content).strip()
-        body = content if content.startswith("#") else f"# {title}\n\n{content}".strip()
-        embedding_parts = [title, summary, body]
-        if anomaly_labels:
-            embedding_parts.append(f"anomaly_types: {', '.join(anomaly_labels)}")
-        reference = f"knowledge/{article_category or 'general'}/{slug}.md"
+        content = _structured_runbook_article(
+            article,
+            title=title,
+            summary=summary,
+            category=article_category or "general",
+            anomaly_labels=anomaly_labels,
+        )
+        reference = f"knowledge/{article_category or 'general'}/{slug}.json"
         records.append(
             build_semantic_record(
                 RUNBOOK_COLLECTION,
                 reference,
                 title,
-                body,
+                content,
                 doc_type=str(article.get("doc_type") or KNOWLEDGE_ARTICLE_DOC_TYPE),
-                embedding_text="\n\n".join(part for part in embedding_parts if part),
+                embedding_text=_runbook_embedding_text(title, summary, content, anomaly_labels),
                 metadata={
                     "stage": _collection_stage(RUNBOOK_COLLECTION),
                     "status": "seeded",
@@ -506,8 +819,8 @@ def local_retrieve(
     *,
     collections: Sequence[str] | None = None,
     category: str | None = None,
+    anomaly_type: str | None = None,
 ) -> List[Dict[str, object]]:
-    query_embedding = hash_embedding(query)
     selected_collections = set(collections or [])
     required_category = _normalize_category(category)
     docs = []
@@ -516,13 +829,22 @@ def local_retrieve(
             continue
         if required_category and _normalize_category(doc.get("category")) != required_category:
             continue
-        similarity = _cosine(query_embedding, hash_embedding(str(doc["embedding_text"])))
-        weighted_score = similarity * max(_coerce_float(doc.get("knowledge_weight"), 1.0), 0.25)
+        weighted_score, breakdown, reasons = _hybrid_document_score(
+            doc,
+            collection_name=collection,
+            query=query,
+            anomaly_type=anomaly_type,
+            category=required_category,
+        )
         docs.append(
             {
                 **doc,
                 "collection": collection,
                 "score": round(weighted_score, 4),
+                "summary": _document_summary(doc),
+                "anomaly_types": _document_anomaly_types(doc),
+                "match_reasons": reasons,
+                "score_breakdown": breakdown,
             }
         )
     docs.sort(key=lambda item: item["score"], reverse=True)
@@ -539,6 +861,7 @@ def milvus_retrieve(
     *,
     collections: Sequence[str] | None = None,
     category: str | None = None,
+    anomaly_type: str | None = None,
 ) -> List[Dict[str, object]]:
     client = milvus_client()
     if client is None:
@@ -547,12 +870,13 @@ def milvus_retrieve(
     docs = []
     selected_collections = list(collections or _milvus_collections())
     required_category = _normalize_category(category)
+    candidate_limit = min(MAX_RETRIEVAL_CANDIDATES, max(limit * 8, limit))
     for collection in selected_collections:
         search_kwargs: Dict[str, object] = {
             "collection_name": collection,
             "data": [hash_embedding(query)],
             "output_fields": list(MILVUS_OUTPUT_FIELDS),
-            "limit": limit,
+            "limit": candidate_limit,
         }
         if required_category:
             search_kwargs["filter"] = f'category == "{_milvus_filter_literal(required_category)}"'
@@ -571,9 +895,23 @@ def milvus_retrieve(
             entity = hit["entity"]
             if required_category and _normalize_category(entity.get("category")) != required_category:
                 continue
-            knowledge_weight = _coerce_float(entity.get("knowledge_weight"), 1.0)
-            weighted_score = float(hit["distance"]) * max(knowledge_weight, 0.25)
-            docs.append(_normalize_retrieved_entity(collection, entity, score=weighted_score))
+            document = _normalize_retrieved_entity(collection, entity)
+            weighted_score, breakdown, reasons = _hybrid_document_score(
+                {
+                    **document,
+                    "embedding_text": entity.get("embedding_text") or "",
+                },
+                collection_name=collection,
+                query=query,
+                anomaly_type=anomaly_type,
+                category=required_category,
+            )
+            document["score"] = round(weighted_score, 4)
+            document["summary"] = _document_summary(document)
+            document["anomaly_types"] = _document_anomaly_types(document)
+            document["match_reasons"] = reasons
+            document["score_breakdown"] = breakdown
+            docs.append(document)
     docs.sort(key=lambda item: item["score"], reverse=True)
     return docs[:limit]
 
@@ -635,24 +973,81 @@ def retrieve_context(
     *,
     collections: Sequence[str] | None = None,
     category: str | None = None,
+    anomaly_type: str | None = None,
 ) -> List[Dict[str, object]]:
-    docs = milvus_retrieve(query, limit=limit, collections=collections, category=category)
-    if docs:
-        return docs
-    return local_retrieve(query, limit=limit, collections=collections, category=category)
+    candidate_limit = min(MAX_RETRIEVAL_CANDIDATES, max(limit * 4, limit))
+    candidates = milvus_retrieve(
+        query,
+        limit=candidate_limit,
+        collections=collections,
+        category=category,
+        anomaly_type=anomaly_type,
+    )
+    local_candidates = local_retrieve(
+        query,
+        limit=candidate_limit,
+        collections=collections,
+        category=category,
+        anomaly_type=anomaly_type,
+    )
+    merged: Dict[Tuple[str, str], Dict[str, object]] = {}
+    for document in [*candidates, *local_candidates]:
+        key = (str(document.get("collection") or ""), str(document.get("reference") or ""))
+        existing = merged.get(key)
+        if not existing or float(document.get("score") or 0.0) > float(existing.get("score") or 0.0):
+            merged[key] = dict(document)
+        elif existing is not None:
+            merged_reasons = list(dict.fromkeys([*(existing.get("match_reasons") or []), *(document.get("match_reasons") or [])]))
+            existing["match_reasons"] = merged_reasons
+    docs = sorted(merged.values(), key=lambda item: float(item.get("score") or 0.0), reverse=True)
+    return docs[:limit]
 
 
-def retrieve_knowledge_articles(query: str, category: str | None = None, limit: int = 10) -> List[Dict[str, object]]:
-    return retrieve_context(query, limit=limit, collections=[RUNBOOK_COLLECTION], category=category)
+def retrieve_knowledge_articles(
+    query: str,
+    category: str | None = None,
+    *,
+    anomaly_type: str | None = None,
+    limit: int = 10,
+) -> List[Dict[str, object]]:
+    return retrieve_context(
+        query,
+        limit=limit,
+        collections=[RUNBOOK_COLLECTION],
+        category=category,
+        anomaly_type=anomaly_type,
+    )
 
 
 def build_prompt(incident_context: Dict[str, object], documents: List[Dict[str, object]]) -> str:
+    def _document_prompt_content(document: Dict[str, object]) -> str:
+        payload = _document_payload(document)
+        if not payload:
+            return str(document.get("content") or "")[:1200]
+        summary = str(payload.get("summary") or "")
+        recommended_rca = payload.get("recommended_rca") or {}
+        primary_signals = _flatten_text_fragments((payload.get("symptom_profile") or {}).get("primary_signals"))[:3]
+        operator_actions = _flatten_text_fragments(payload.get("operator_actions"))[:3]
+        return "\n".join(
+            part
+            for part in [
+                f"Summary: {summary}" if summary else "",
+                f"Anomaly types: {', '.join(_normalize_string_list(payload.get('anomaly_types')))}" if payload.get("anomaly_types") else "",
+                f"Primary signals: {' | '.join(primary_signals)}" if primary_signals else "",
+                f"Root cause guidance: {str(recommended_rca.get('root_cause') or '').strip()}" if isinstance(recommended_rca, dict) else "",
+                f"Recommended response: {str(recommended_rca.get('recommendation') or '').strip()}" if isinstance(recommended_rca, dict) else "",
+                f"Operator actions: {' | '.join(operator_actions)}" if operator_actions else "",
+            ]
+            if part
+        )
+
     evidence = "\n\n".join(
         f"Collection: {doc.get('collection', 'unknown')}\n"
         f"Stage: {doc.get('stage', 'unknown')}\n"
         f"Type: {doc.get('doc_type', 'unknown')}\n"
         f"Document: {doc['reference']}\n"
-        f"Content:\n{str(doc['content'])[:1200]}"
+        f"Match reasons: {', '.join(doc.get('match_reasons') or [])}\n"
+        f"Content:\n{_document_prompt_content(doc)}"
         for doc in documents
     )
     return (

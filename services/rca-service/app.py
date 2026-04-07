@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Dict, List
 
@@ -9,7 +10,7 @@ from shared.cors import install_cors
 from shared.debug_trace import make_trace_packet, trace_now
 from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type, metric_weights, scenario_definition
 from shared.metrics import install_metrics, record_rca
-from shared.rag import build_prompt, generate_with_llm_trace, retrieve_context
+from shared.rag import DEFAULT_MILVUS_COLLECTIONS, RUNBOOK_COLLECTION, build_prompt, generate_with_llm_trace, retrieve_context, retrieve_knowledge_articles
 from shared.security import require_api_key
 
 
@@ -21,9 +22,133 @@ class RCARequest(BaseModel):
 app = FastAPI(title="rca-service", version="0.1.0")
 install_cors(app)
 install_metrics(app, "rca-service")
+RCA_SUPPORT_COLLECTIONS = [collection for collection in DEFAULT_MILVUS_COLLECTIONS if collection != RUNBOOK_COLLECTION]
 
 
-def infer_root_cause(anomaly_type: str) -> str:
+def _structured_runbook_payload(document: Dict[str, object]) -> Dict[str, object] | None:
+    raw_content = document.get("content")
+    if isinstance(raw_content, dict):
+        return raw_content
+    text = str(raw_content or "").strip()
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _structured_runbook_guidance(documents: List[Dict[str, object]]) -> Dict[str, object]:
+    for document in documents:
+        payload = _structured_runbook_payload(document)
+        if not payload:
+            continue
+        recommended_rca = payload.get("recommended_rca")
+        if isinstance(recommended_rca, dict) and recommended_rca:
+            return recommended_rca
+    return {}
+
+
+def _prioritize_rca_documents(documents: List[Dict[str, object]], anomaly_type: str) -> List[Dict[str, object]]:
+    def _sort_key(document: Dict[str, object]) -> tuple[int, int, int, float]:
+        guidance = _structured_runbook_guidance([document])
+        anomaly_types = document.get("anomaly_types") or []
+        exact_anomaly_match = 1 if isinstance(anomaly_types, list) and anomaly_type in anomaly_types else 0
+        return (
+            exact_anomaly_match,
+            1 if str(document.get("collection") or "") == RUNBOOK_COLLECTION else 0,
+            1 if guidance else 0,
+            float(document.get("score") or 0.0),
+        )
+
+    return sorted(documents, key=_sort_key, reverse=True)
+
+
+def _incident_category(anomaly_type: str) -> str:
+    definition = scenario_definition(anomaly_type)
+    return str(definition.get("category") or "").strip().lower()
+
+
+def _flatten_context(value: object) -> List[str]:
+    if value in (None, "", [], {}):
+        return []
+    if isinstance(value, dict):
+        fragments: List[str] = []
+        for key, nested in value.items():
+            if key in {"debug_trace", "retrieved_documents"}:
+                continue
+            nested_fragments = _flatten_context(nested)
+            if nested_fragments:
+                fragments.append(f"{key}={' ; '.join(nested_fragments)}")
+        return fragments
+    if isinstance(value, list):
+        fragments: List[str] = []
+        for item in value:
+            fragments.extend(_flatten_context(item))
+        return fragments
+    return [str(value).strip()]
+
+
+def _retrieval_query(incident_id: str, anomaly_type: str, context: Dict[str, object]) -> str:
+    category = _incident_category(anomaly_type)
+    fragments = [
+        f"incident_id={incident_id}",
+        f"anomaly_type={anomaly_type}",
+        f"category={category}",
+    ]
+    for key in (
+        "scenario_name",
+        "recommendation",
+        "root_cause",
+        "severity",
+        "source_system",
+    ):
+        value = str(context.get(key) or "").strip()
+        if value:
+            fragments.append(f"{key}={value}")
+    for fragment in _flatten_context(context.get("feature_snapshot"))[:8]:
+        fragments.append(f"feature={fragment}")
+    for fragment in _flatten_context(context.get("evidence"))[:6]:
+        fragments.append(f"evidence={fragment}")
+    for fragment in _flatten_context(context)[:10]:
+        if fragment not in fragments:
+            fragments.append(f"context={fragment}")
+    return " | ".join(fragment for fragment in fragments if fragment)
+
+
+def _dedupe_documents(documents: List[Dict[str, object]]) -> List[Dict[str, object]]:
+    deduped: Dict[tuple[str, str], Dict[str, object]] = {}
+    for document in documents:
+        key = (str(document.get("collection") or ""), str(document.get("reference") or ""))
+        existing = deduped.get(key)
+        if not existing or float(document.get("score") or 0.0) > float(existing.get("score") or 0.0):
+            deduped[key] = document
+    return list(deduped.values())
+
+
+def _retrieve_rca_documents(query: str, anomaly_type: str) -> List[Dict[str, object]]:
+    category = _incident_category(anomaly_type)
+    knowledge_documents = retrieve_knowledge_articles(
+        query,
+        category=category,
+        anomaly_type=anomaly_type,
+        limit=4,
+    )
+    support_documents = retrieve_context(
+        query,
+        limit=4,
+        collections=RCA_SUPPORT_COLLECTIONS,
+        anomaly_type=anomaly_type,
+    )
+    return _prioritize_rca_documents(_dedupe_documents([*knowledge_documents, *support_documents]), anomaly_type)[:4]
+
+
+def infer_root_cause(anomaly_type: str, documents: List[Dict[str, object]] | None = None) -> str:
+    guidance = _structured_runbook_guidance(documents or [])
+    structured_root_cause = str(guidance.get("root_cause") or "").strip()
+    if structured_root_cause:
+        return structured_root_cause
     definition = scenario_definition(anomaly_type)
     return str(definition.get("root_cause") or "Unexpected IMS behavior detected on the control plane.")
 
@@ -56,10 +181,29 @@ def infer_explanation(anomaly_type: str, root_cause: str, documents: List[Dict[s
         elif label:
             evidence_refs.append(label)
 
+    guidance = _structured_runbook_guidance(documents)
+    structured_explanation = str(guidance.get("explanation") or "").strip()
+    if structured_explanation:
+        if evidence_refs:
+            return f"{structured_explanation} Matched operational guidance came from {_human_join(evidence_refs)}."
+        return structured_explanation
+
     explanation = f"{summary} This matches the observed {anomaly_type.replace('_', ' ')} incident pattern."
     if evidence_refs:
         explanation += f" Supporting context was retrieved from {_human_join(evidence_refs)}, which aligns with the current platform signals."
     return explanation
+
+
+def infer_recommendation(anomaly_type: str, documents: List[Dict[str, object]]) -> str:
+    guidance = _structured_runbook_guidance(documents)
+    structured_recommendation = str(guidance.get("recommendation") or "").strip()
+    if structured_recommendation:
+        return structured_recommendation
+    definition = scenario_definition(anomaly_type)
+    return str(
+        definition.get("recommendation")
+        or "Scale the relevant IMS function and review the active SIP traffic scenario before approving remediation."
+    )
 
 
 def build_evidence(anomaly_type: str, documents: List[Dict[str, object]]) -> List[Dict[str, object]]:
@@ -124,6 +268,8 @@ def normalize_evidence_items(evidence: object) -> List[Dict[str, object]]:
 def summarize_documents(documents: List[Dict[str, object]]) -> List[Dict[str, object]]:
     summaries = []
     for doc in documents:
+        content = _structured_runbook_payload(doc) or {}
+        excerpt = str(content.get("summary") or doc.get("summary") or doc.get("content", ""))[:220]
         summaries.append(
             {
                 "title": str(doc.get("title", "")),
@@ -131,7 +277,10 @@ def summarize_documents(documents: List[Dict[str, object]]) -> List[Dict[str, ob
                 "doc_type": str(doc.get("doc_type", "")),
                 "collection": str(doc.get("collection", "")),
                 "score": float(doc.get("score", 0.0)),
-                "excerpt": str(doc.get("content", ""))[:220],
+                "category": str(doc.get("category", "")),
+                "anomaly_types": doc.get("anomaly_types") or content.get("anomaly_types") or [],
+                "match_reasons": doc.get("match_reasons") or [],
+                "excerpt": excerpt,
             }
         )
     return summaries
@@ -139,16 +288,9 @@ def summarize_documents(documents: List[Dict[str, object]]) -> List[Dict[str, ob
 
 def normalize_response(response: Dict[str, object], documents: List[Dict[str, object]], anomaly_type: str, incident_id: str) -> Dict[str, object]:
     normalized = dict(response)
-    definition = scenario_definition(anomaly_type)
     normalized["incident_id"] = incident_id
-    normalized.setdefault("root_cause", infer_root_cause(anomaly_type))
-    normalized.setdefault(
-        "recommendation",
-        str(
-            definition.get("recommendation")
-            or "Scale the relevant IMS function and review the active SIP traffic scenario before approving remediation."
-        ),
-    )
+    normalized.setdefault("root_cause", infer_root_cause(anomaly_type, documents))
+    normalized.setdefault("recommendation", infer_recommendation(anomaly_type, documents))
     explanation = str(normalized.get("explanation") or "").strip()
     root_cause = str(normalized.get("root_cause") or "").strip()
     if len(explanation.split()) < 8 or explanation == root_cause:
@@ -213,10 +355,9 @@ def healthz():
 @app.post("/rca", dependencies=[Depends(require_api_key)])
 def rca(request: RCARequest):
     anomaly_type = canonical_anomaly_type(str(request.context.get("anomaly_type", NORMAL_ANOMALY_TYPE)))
-    definition = scenario_definition(anomaly_type)
-    query = f"incident={request.incident_id} anomaly_type={anomaly_type} context={request.context}"
+    query = _retrieval_query(request.incident_id, anomaly_type, request.context)
     retrieval_started_at = trace_now()
-    documents = retrieve_context(query, limit=3)
+    documents = _retrieve_rca_documents(query, anomaly_type)
     retrieval_finished_at = trace_now()
     evidence = build_evidence(anomaly_type, documents)
     confidence = compute_confidence(evidence, documents)
@@ -242,14 +383,11 @@ def rca(request: RCARequest):
 
     response = {
         "incident_id": request.incident_id,
-        "root_cause": infer_root_cause(anomaly_type),
-        "explanation": infer_explanation(anomaly_type, infer_root_cause(anomaly_type), documents),
+        "root_cause": infer_root_cause(anomaly_type, documents),
+        "explanation": infer_explanation(anomaly_type, infer_root_cause(anomaly_type, documents), documents),
         "confidence": confidence,
         "evidence": evidence,
-        "recommendation": str(
-            definition.get("recommendation")
-            or "Scale the relevant IMS function and review the active SIP traffic scenario before approving remediation."
-        ),
+        "recommendation": infer_recommendation(anomaly_type, documents),
         "retrieved_documents": summarize_documents(documents),
         **_generation_metadata("local-rag"),
     }

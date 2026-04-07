@@ -1,0 +1,1085 @@
+{
+  "category": "anomaly-rca",
+  "articles": [
+    {
+      "slug": "registration-failure-identity-or-auth-state-rca",
+      "title": "Registration failure RCA: identity or challenge state defects on the signaling path",
+      "summary": "Use this article when registrations fail repeatedly for a cohort of subscribers, 4xx or timeout patterns dominate instead of raw surge volume, and the platform needs a precise diagnosis rather than a generic registration-storm narrative.",
+      "category": "signaling",
+      "doc_type": "knowledge_article",
+      "anomaly_types": ["registration_failure"],
+      "knowledge_weight": 1.28,
+      "keywords": ["registration_failure", "register", "pcscf", "scscf", "401 loop", "challenge state", "subscriber batch", "reject codes"],
+      "service_scope": ["UE", "P-CSCF", "S-CSCF", "HSS", "Authentication"],
+      "symptom_profile": {
+        "primary_signals": [
+          "REGISTER attempts fail repeatedly for the same subscriber group instead of converting cleanly to 200 OK.",
+          "Failure buckets such as 401 loops, 403 rejects, or 408 timeouts stay concentrated on the registration path without a broad multi-service outage.",
+          "Unique subscriber failures rise, but transaction volume does not show the runaway retry amplification typical of a pure registration storm."
+        ],
+        "supporting_signals": [
+          "The same IMPU, IMSI, or tenant cohort appears in the failing population.",
+          "One ingress shard or one service replica may behave worse if challenge state or cache continuity is broken.",
+          "HSS or auth lookups may succeed slowly, but the dominant operator problem is failed registration completion."
+        ],
+        "signals_that_do_not_fit": [
+          "Mass worker saturation and explosive retransmissions suggest registration_storm instead of a targeted registration_failure diagnosis.",
+          "Broad 5xx across call setup and mid-session traffic usually points to server or network degradation rather than isolated registration failure."
+        ]
+      },
+      "differential_diagnosis": [
+        {
+          "condition": "Broken authentication challenge continuity",
+          "what_to_check": [
+            "Look for repeated 401 exchanges for the same subscriber across different replicas.",
+            "Verify whether cache affinity or sticky behavior is required and currently missing."
+          ],
+          "why_it_matters": "Losing challenge state creates deterministic registration failure even when downstream capacity is healthy."
+        },
+        {
+          "condition": "Bad subscriber data or a broken import batch",
+          "what_to_check": [
+            "Compare failing identities with a known-good subscriber profile.",
+            "Check whether a recent sync, migration, or bulk import aligns with the incident start."
+          ],
+          "why_it_matters": "Data defects can look like a signaling incident until failure is correlated by subscriber cohort."
+        }
+      ],
+      "evidence_to_collect": [
+        {
+          "signal": "REGISTER result-code distribution",
+          "expected_if_true": "One reject class dominates, which narrows the RCA away from generic registration pressure."
+        },
+        {
+          "signal": "Failing subscriber cohort or tenant concentration",
+          "expected_if_true": "A specific imported batch, realm, or subscriber family is overrepresented in the failures."
+        },
+        {
+          "signal": "Challenge continuity across replicas",
+          "expected_if_true": "The same subscriber fails after state changes hands between replicas or cache nodes."
+        }
+      ],
+      "recommended_rca": {
+        "root_cause": "Registration is failing because the signaling path cannot complete a clean challenge-to-success sequence for affected subscribers, most commonly due to broken challenge continuity, incorrect subscriber state, or a narrow downstream dependency fault on the registration path.",
+        "explanation": "A true registration failure incident is not defined only by high REGISTER traffic. The stronger pattern is persistent per-subscriber failure with one dominant reject class, no broad downstream collapse, and evidence that either challenge state or subscriber data is preventing a clean 200 OK outcome. When the same cohort fails repeatedly while overall signaling capacity remains mostly intact, the RCA should stay focused on registration completion defects rather than describing the event as generic overload.",
+        "recommendation": "Bucket failures by reject class first, isolate whether the defect is challenge continuity or subscriber data, and only then scale or roll traffic if the evidence shows real capacity pressure."
+      },
+      "operator_actions": [
+        {
+          "step": 1,
+          "action": "Group failing registrations by SIP status and by subscriber cohort.",
+          "expected_signal": "One failure class or cohort should emerge as the dominant pattern."
+        },
+        {
+          "step": 2,
+          "action": "Trace one failing registration across replicas and auth lookups.",
+          "expected_signal": "The trace should show whether challenge state or downstream identity data breaks the flow."
+        },
+        {
+          "step": 3,
+          "action": "Compare the affected subscriber profiles with one known-good record.",
+          "expected_signal": "Profile drift or tenant-specific defects should become obvious if data is the cause."
+        }
+      ],
+      "safe_actions": [
+        "Quarantine a bad subscriber batch before changing shared signaling policy.",
+        "Replace one suspect replica if the failures stay pinned to that instance.",
+        "Preserve one sanitized failing registration trace for future retrieval."
+      ],
+      "escalation_signals": [
+        "Registration failures spread across many subscriber groups after data and challenge continuity look healthy.",
+        "S-CSCF or HSS latency rises materially during the same window and points to a broader control-plane fault."
+      ],
+      "pitfalls": [
+        "Do not describe all registration failure as a registration storm.",
+        "Do not blame HSS immediately when the strongest signal is broken edge challenge continuity.",
+        "Do not apply broad policy rollback before separating subscriber-data defects from platform faults."
+      ],
+      "telemetry_queries": [
+        "REGISTER failures by SIP status, subscriber cohort, and ingress replica",
+        "401 or 403 loop persistence for the same IMPU over a short interval",
+        "challenge-cache hit ratio and replica handoff behavior on the registration path"
+      ],
+      "reference_incident_pattern": {
+        "timeline": [
+          "A subset of registrations begins failing repeatedly with one dominant reject pattern.",
+          "Operators notice the same identities or tenant cohort recurring in traces.",
+          "Challenge continuity or subscriber-data evidence narrows the issue away from broad overload."
+        ],
+        "why_this_pattern_is_realistic": "Real registration failures are often cohort- or state-driven before they become visible as a wider service symptom."
+      }
+    },
+    {
+      "slug": "authentication-failure-stale-vector-or-backend-latency-rca",
+      "title": "Authentication failure RCA: stale vectors, nonce drift, or backend lookup degradation",
+      "summary": "Use this article when REGISTER or challenge flows stay trapped in repeated auth exchanges, backend identity lookups are suspect, and the incident looks like failed authentication rather than malformed SIP or general network slowness.",
+      "category": "auth",
+      "doc_type": "knowledge_article",
+      "anomaly_types": ["authentication_failure"],
+      "knowledge_weight": 1.29,
+      "keywords": ["authentication_failure", "aka", "401", "407", "nonce", "diameter", "hss", "udm", "vectors"],
+      "service_scope": ["P-CSCF", "S-CSCF", "HSS", "UDM", "Diameter", "Authentication"],
+      "symptom_profile": {
+        "primary_signals": [
+          "Subscribers remain stuck in 401 or 407 challenge loops without stable completion.",
+          "Auth failures correlate with vector retrieval, nonce validation, or subscriber-backend latency rather than malformed request syntax.",
+          "The same credentials succeed only after retries or on one backend path, indicating inconsistent auth state."
+        ],
+        "supporting_signals": [
+          "Recent secret rotation, nonce TTL drift, or time-sync issues line up with the incident start.",
+          "Backend lookup latency or Diameter peer health worsens while SIP challenge volume rises.",
+          "Failure is sharper on one realm, subscriber domain, or backend peer."
+        ],
+        "signals_that_do_not_fit": [
+          "Malformed SDP or missing SIP headers indicate malformed_sip, not authentication failure.",
+          "Broad transport loss and retransmission spikes without challenge loops point to network degradation instead."
+        ]
+      },
+      "differential_diagnosis": [
+        {
+          "condition": "Stale or incorrect AKA vectors",
+          "what_to_check": [
+            "Confirm the affected subscribers receive fresh vectors from HSS or UDM.",
+            "Compare failing vector age and backend responses with a healthy example."
+          ],
+          "why_it_matters": "Bad vectors cause deterministic challenge failure no matter how many times the SIP flow is retried."
+        },
+        {
+          "condition": "Nonce or clock drift between auth participants",
+          "what_to_check": [
+            "Compare nonce lifetime and node time offset across the auth path.",
+            "Look for stale or invalid nonce errors clustering around one replica or node."
+          ],
+          "why_it_matters": "Healthy credentials still fail when replay windows or timestamps drift out of alignment."
+        }
+      ],
+      "evidence_to_collect": [
+        {
+          "signal": "Challenge loop persistence by subscriber",
+          "expected_if_true": "The same subscribers repeat 401 or 407 exchanges without crossing into a stable success state."
+        },
+        {
+          "signal": "Backend auth lookup latency and peer health",
+          "expected_if_true": "The backend path is slow, inconsistent, or failing at the same time challenge loops increase."
+        },
+        {
+          "signal": "Nonce, vector age, or secret-revision alignment",
+          "expected_if_true": "One auth state variable is clearly stale, inconsistent, or recently changed."
+        }
+      ],
+      "recommended_rca": {
+        "root_cause": "Authentication is failing because the challenge flow cannot validate subscriber credentials consistently, most often due to stale auth vectors, nonce or time drift, or degraded subscriber-backend lookups on the auth path.",
+        "explanation": "The distinguishing signal is a persistent auth loop, not just a rejected registration. When the same subscribers remain trapped in repeated challenge exchanges and the strongest evidence sits in vector freshness, nonce validity, or backend lookup health, the RCA should describe the auth control path directly. This separates authentication_failure from malformed signaling or generic network delay and keeps remediation focused on auth state and subscriber dependencies.",
+        "recommendation": "Check vector freshness, nonce timing, and backend peer health before touching SIP routing or scaling unrelated tiers. If the issue follows one realm, backend peer, or secret revision, isolate that path first."
+      },
+      "operator_actions": [
+        {
+          "step": 1,
+          "action": "Trace one full challenge cycle for a failing subscriber.",
+          "expected_signal": "The break point should land on vector retrieval, nonce validation, or backend lookup latency."
+        },
+        {
+          "step": 2,
+          "action": "Compare auth-node time and nonce settings across replicas.",
+          "expected_signal": "Clock or TTL drift should stand out if nonce handling is the issue."
+        },
+        {
+          "step": 3,
+          "action": "Check HSS, UDM, or Diameter peer health for the affected path.",
+          "expected_signal": "One backend peer or lookup path often aligns with the challenge failures."
+        }
+      ],
+      "safe_actions": [
+        "Drain a bad auth replica or clear stale auth cache after confirming the backend is healthy.",
+        "Roll back a recent auth secret or config change if the incident started immediately after rollout.",
+        "Preserve one sanitized AKA exchange for future RCA grounding."
+      ],
+      "escalation_signals": [
+        "Multiple subscriber domains fail after vector freshness and nonce timing look healthy.",
+        "Backend identity services are degraded across more than one peer or environment."
+      ],
+      "pitfalls": [
+        "Do not blame end-user credentials before checking platform auth-state drift.",
+        "Do not widen nonce windows as the first fix if the real issue is time skew or stale vectors.",
+        "Do not call the incident generic registration failure when auth loops are explicit in the trace."
+      ],
+      "telemetry_queries": [
+        "401 or 407 loop persistence by subscriber and realm",
+        "Diameter or subscriber-backend latency, failures, and peer health",
+        "auth secret revision, node time offset, and nonce-expiry mismatch indicators"
+      ],
+      "reference_incident_pattern": {
+        "timeline": [
+          "Subscribers begin to loop in repeated challenge exchanges.",
+          "Backend auth lookups or nonce validation show inconsistent behavior.",
+          "One auth-state defect explains the failures more cleanly than broad signaling overload."
+        ],
+        "why_this_pattern_is_realistic": "Authentication incidents usually reveal themselves through deterministic challenge behavior long before operators need to consider unrelated routing or media components."
+      }
+    },
+    {
+      "slug": "malformed-sip-validation-failure-rca",
+      "title": "Malformed SIP RCA: generator, rewrite, or body-format defects breaking validation",
+      "summary": "Use this article when 4xx validation errors cluster around specific SIP payload shapes, one sender or generator revision dominates the failures, and the incident is clearly about malformed requests rather than routing or auth.",
+      "category": "validation",
+      "doc_type": "knowledge_article",
+      "anomaly_types": ["malformed_sip"],
+      "knowledge_weight": 1.27,
+      "keywords": ["malformed_sip", "invalid header", "content-length", "sdp", "invite", "parser", "sipp", "rewrite"],
+      "service_scope": ["Ingress", "P-CSCF", "S-CSCF", "Validator", "SIP Generator", "SBC"],
+      "symptom_profile": {
+        "primary_signals": [
+          "The validator rejects traffic with concentrated 4xx or parser-error signatures tied to one message family.",
+          "Good traffic still succeeds while a specific sender, scenario revision, or rewritten payload repeatedly fails schema checks.",
+          "The failure stays close to message syntax, header integrity, or SDP formatting rather than subscriber identity or routing logic."
+        ],
+        "supporting_signals": [
+          "INVITE or REGISTER bodies show line-ending, Content-Length, or mandatory-header inconsistencies.",
+          "A recent SIPp template or edge rewrite rule was introduced just before the incident.",
+          "The malformed pattern is highly repeatable and visible in captured payload diffs."
+        ],
+        "signals_that_do_not_fit": [
+          "Auth challenge loops without parser errors point to authentication_failure instead.",
+          "Correctly formed messages that fail only after route selection suggest routing_error, not malformed_sip."
+        ]
+      },
+      "differential_diagnosis": [
+        {
+          "condition": "Broken generator or template revision",
+          "what_to_check": [
+            "Compare the active SIPp or client template to a known-good message.",
+            "Check whether the malformed class began right after a generator rollout."
+          ],
+          "why_it_matters": "Many malformed bursts are synthetic or source-driven rather than a defect in the validator itself."
+        },
+        {
+          "condition": "Header rewrite corruption at the edge",
+          "what_to_check": [
+            "Compare ingress and egress copies of the same message.",
+            "Inspect topology-hiding or SBC rewrite rules for dropped or mutated fields."
+          ],
+          "why_it_matters": "Valid source messages can become malformed only after the edge transforms them."
+        }
+      ],
+      "evidence_to_collect": [
+        {
+          "signal": "One good versus one bad payload diff",
+          "expected_if_true": "A small but deterministic shape difference explains the dominant parser failure."
+        },
+        {
+          "signal": "Malformed class by sender, scenario revision, or user-agent",
+          "expected_if_true": "One traffic source or template revision dominates the invalid messages."
+        },
+        {
+          "signal": "Validator error buckets by header, body, or policy stage",
+          "expected_if_true": "The incident concentrates in one malformed class instead of broad opaque validation noise."
+        }
+      ],
+      "recommended_rca": {
+        "root_cause": "Malformed SIP is being introduced by a broken message template, payload rewrite, or body-format defect, causing the validator to reject otherwise routable traffic before normal call control can proceed.",
+        "explanation": "The strongest malformed_sip pattern is consistent validator failure on one message family while healthy traffic continues to pass. When a single template, sender fingerprint, or edge rewrite path accounts for the bad payloads, the RCA should focus on how the message shape was corrupted rather than treating the incident as generic signaling degradation. This keeps remediation on the offending generator or transformation point instead of loosening core validation.",
+        "recommendation": "Capture one passing and one failing payload, isolate the bad sender or rewrite path, and correct the source format before relaxing validation or changing unrelated routing policy."
+      },
+      "operator_actions": [
+        {
+          "step": 1,
+          "action": "Compare one failing payload against a passing sample from the same path.",
+          "expected_signal": "The malformed field or body mismatch should become obvious."
+        },
+        {
+          "step": 2,
+          "action": "Check whether the malformed traffic is tied to one sender, generator, or revision.",
+          "expected_signal": "A single source fingerprint usually dominates the error class."
+        },
+        {
+          "step": 3,
+          "action": "Inspect edge rewrite rules if the source insists the original message is valid.",
+          "expected_signal": "Ingress and egress captures should reveal whether transformation corrupts the request."
+        }
+      ],
+      "safe_actions": [
+        "Quarantine one bad sender or scenario revision while preserving healthy traffic.",
+        "Reject oversized malformed bodies at the edge instead of weakening core parser rules.",
+        "Keep a sanitized good-versus-bad payload diff attached to the incident."
+      ],
+      "escalation_signals": [
+        "Malformed classes spread across several unrelated senders with no recent template change.",
+        "The validator path itself becomes resource-constrained while malformed traffic continues."
+      ],
+      "pitfalls": [
+        "Do not relax SIP validation globally to mask one bad source.",
+        "Do not call the incident authentication or routing failure when parser evidence is explicit.",
+        "Do not ignore edge rewrites; the source system may be healthy."
+      ],
+      "telemetry_queries": [
+        "validator rejects by malformed class, sender fingerprint, and scenario revision",
+        "diff of one passing versus one failing INVITE or REGISTER payload",
+        "edge rewrite or topology-hiding changes aligned to the incident start"
+      ],
+      "reference_incident_pattern": {
+        "timeline": [
+          "A new sender, template, or rewrite change begins introducing malformed traffic.",
+          "Validator error counts spike while healthy traffic still passes.",
+          "Payload comparison isolates the exact malformed field or transformation point."
+        ],
+        "why_this_pattern_is_realistic": "Malformed SIP incidents usually become obvious once operators compare message shape instead of looking only at high-level rejection totals."
+      }
+    },
+    {
+      "slug": "routing-error-policy-or-data-drift-rca",
+      "title": "Routing error RCA: policy, realm, or route-data drift on the call path",
+      "summary": "Use this article when requests are valid but take the wrong path, peer selection fails for one domain or trunk, and the strongest evidence points to route logic or route data rather than malformed signaling.",
+      "category": "routing",
+      "doc_type": "knowledge_article",
+      "anomaly_types": ["routing_error"],
+      "knowledge_weight": 1.27,
+      "keywords": ["routing_error", "realm", "ifc", "route header", "srv", "enum", "trunk", "peer health"],
+      "service_scope": ["P-CSCF", "S-CSCF", "Routing Engine", "DNS", "ENUM", "Peer Gateway"],
+      "symptom_profile": {
+        "primary_signals": [
+          "Requests remain syntactically valid but are sent to the wrong peer, wrong service chain, or dead next hop.",
+          "Routing failures cluster around one realm, domain, destination, or route policy revision.",
+          "The same call path breaks repeatedly after route lookup or policy evaluation rather than during parsing or auth."
+        ],
+        "supporting_signals": [
+          "DNS, SRV, ENUM, or least-cost-routing data recently changed.",
+          "Initial filter criteria or topology-hiding rules were updated just before the incident.",
+          "Healthy alternative peers or trunks exist but traffic keeps steering to the degraded preference."
+        ],
+        "signals_that_do_not_fit": [
+          "Parser rejects indicate malformed_sip, not routing_error.",
+          "Mass edge retransmissions and packet loss without route-specific symptoms point to network degradation instead."
+        ]
+      },
+      "differential_diagnosis": [
+        {
+          "condition": "Bad realm or route-data mapping",
+          "what_to_check": [
+            "Inspect the domain or realm map used for the affected destination.",
+            "Compare the current route candidate list with a known-good baseline."
+          ],
+          "why_it_matters": "A single mapping defect can redirect an entire domain into a dead path."
+        },
+        {
+          "condition": "Healthy routing logic but degraded selected peer",
+          "what_to_check": [
+            "Verify the chosen peer gateway health and admission state.",
+            "Confirm whether alternative trunks succeed when policy is temporarily shifted."
+          ],
+          "why_it_matters": "Good routing data still fails if the selected peer is unhealthy."
+        }
+      ],
+      "evidence_to_collect": [
+        {
+          "signal": "Route candidate list and final selected next hop",
+          "expected_if_true": "One wrong route decision or stale data source explains the call failures."
+        },
+        {
+          "signal": "Realm, SRV, or ENUM data revision around incident start",
+          "expected_if_true": "A recent route-data change aligns with the outage window."
+        },
+        {
+          "signal": "Peer health for the selected route",
+          "expected_if_true": "The chosen path is degraded or mismapped compared with healthy alternatives."
+        }
+      ],
+      "recommended_rca": {
+        "root_cause": "Routing is failing because valid requests are being evaluated against stale or incorrect route data, policy, or peer-health assumptions, causing the platform to choose the wrong next hop or an unavailable service chain.",
+        "explanation": "Routing_error should be diagnosed from the decision point where a valid request takes the wrong path. When one realm, destination, or trunk policy dominates the failures and the route candidate list no longer matches the expected topology, the RCA should name route-data or policy drift directly. This prevents teams from chasing malformed SIP or auth symptoms that occur only after the request has already been misrouted.",
+        "recommendation": "Validate route data and policy ordering first, then confirm whether the selected peer is actually healthy. Shift traffic to a known-good alternative only after preserving the bad route decision for later analysis."
+      },
+      "operator_actions": [
+        {
+          "step": 1,
+          "action": "Capture the expected versus actual route decision for one failing request.",
+          "expected_signal": "The misroute should become explicit at one policy or data lookup step."
+        },
+        {
+          "step": 2,
+          "action": "Check realm, SRV, ENUM, or route-table changes aligned to the incident.",
+          "expected_signal": "One route-data revision often explains the failure start."
+        },
+        {
+          "step": 3,
+          "action": "Verify health of the peer or trunk selected by policy.",
+          "expected_signal": "Either the selected peer is unhealthy or policy is choosing the wrong path."
+        }
+      ],
+      "safe_actions": [
+        "Lower priority on one degraded trunk if healthy backup capacity exists.",
+        "Refresh stale routing caches only after confirming the source-of-truth data is correct.",
+        "Attach the captured route decision and rule match to the incident."
+      ],
+      "escalation_signals": [
+        "Several unrelated domains fail without one route-data or policy common point.",
+        "The selected peers are healthy and route decisions still diverge across nodes."
+      ],
+      "pitfalls": [
+        "Do not blame DNS alone before checking iFC or route-policy ordering.",
+        "Do not rewrite broad routing policy without preserving the exact bad decision for RCA.",
+        "Do not call it malformed SIP if the request shape is valid up to the routing decision."
+      ],
+      "telemetry_queries": [
+        "route candidate list and selected next hop for failing calls",
+        "realm and route-data revision history around the incident start",
+        "peer gateway health and admission state for the chosen route"
+      ],
+      "reference_incident_pattern": {
+        "timeline": [
+          "Valid requests begin failing on one domain or destination path.",
+          "Route decisions diverge from the expected candidate set.",
+          "One route-data or policy drift point explains the dominant failures."
+        ],
+        "why_this_pattern_is_realistic": "Routing incidents usually show up as repeated wrong decisions for one domain long before they look like a full-system outage."
+      }
+    },
+    {
+      "slug": "call-setup-timeout-progress-stall-rca",
+      "title": "Call setup timeout RCA: downstream progress stall before Timer B expires",
+      "summary": "Use this article when INVITE requests are accepted but provisional or final progress does not return before the caller times out, and the platform needs to locate the exact hop or dependency where setup stalls.",
+      "category": "session",
+      "doc_type": "knowledge_article",
+      "anomaly_types": ["call_setup_timeout"],
+      "knowledge_weight": 1.28,
+      "keywords": ["call_setup_timeout", "invite", "timer b", "183", "180", "provisional response", "media anchor", "downstream progress"],
+      "service_scope": ["P-CSCF", "S-CSCF", "Application Server", "Media Anchor", "Peer Gateway"],
+      "symptom_profile": {
+        "primary_signals": [
+          "INVITE enters the platform, but progress stops before enough signaling arrives to complete setup.",
+          "Timer B or a similar setup watchdog expires while the call still waits on downstream response.",
+          "The failure is tied to one hop, peer, service tier, or media dependency rather than malformed ingress."
+        ],
+        "supporting_signals": [
+          "Early media, provisional responses, or media-anchor allocation arrive late or not at all.",
+          "Busy spikes or 5xx may appear secondarily if the stalled path backs up.",
+          "A degraded session pool or one downstream trunk is overrepresented in failures."
+        ],
+        "signals_that_do_not_fit": [
+          "Calls that complete and drop later fit call_drop_mid_session instead.",
+          "Immediate route lookup failure with valid signaling fits routing_error more closely."
+        ]
+      },
+      "differential_diagnosis": [
+        {
+          "condition": "Downstream signaling hop never returns progress",
+          "what_to_check": [
+            "Trace the first hop after the platform accepts the INVITE.",
+            "Identify which service or peer stops returning 180, 183, or final response."
+          ],
+          "why_it_matters": "Setup timeout incidents are defined by where progress stops, not by the eventual timeout alone."
+        },
+        {
+          "condition": "Media-anchor or session-resource allocation lag",
+          "what_to_check": [
+            "Compare media allocation latency and pool pressure to healthy call samples.",
+            "Check whether anchored paths fail more often than bypass paths."
+          ],
+          "why_it_matters": "The SIP flow may look healthy until a media dependency delays call completion."
+        }
+      ],
+      "evidence_to_collect": [
+        {
+          "signal": "Hop-by-hop setup timeline through Timer B",
+          "expected_if_true": "One hop clearly stops returning progress before timeout."
+        },
+        {
+          "signal": "Provisional-response latency and completion ratio",
+          "expected_if_true": "180 or 183 timing drifts upward before the timeout wave appears."
+        },
+        {
+          "signal": "Media or session-resource allocation timing",
+          "expected_if_true": "One resource dependency stalls the setup path."
+        }
+      ],
+      "recommended_rca": {
+        "root_cause": "Call setup is timing out because the INVITE path stalls before downstream progress returns, usually at one signaling hop, resource-allocation stage, or degraded peer path that prevents completion before the setup watchdog expires.",
+        "explanation": "The important signal is not just that calls time out, but where progress stops before Timer B or the equivalent limit expires. When INVITE requests enter successfully and then wait too long for provisional or final response, the RCA should identify the exact hop, peer, or media dependency that stalled setup. This distinguishes call_setup_timeout from malformed ingress, routing lookup failure, or mid-session instability.",
+        "recommendation": "Build a hop-by-hop setup timeline first, isolate the stalled stage, and shift load or capacity only on the affected downstream path instead of restarting unrelated signaling tiers."
+      },
+      "operator_actions": [
+        {
+          "step": 1,
+          "action": "Trace a failing call against Timer B or the setup watchdog.",
+          "expected_signal": "One hop should emerge as the first point where progress stops."
+        },
+        {
+          "step": 2,
+          "action": "Compare provisional-response timing with a healthy call sample.",
+          "expected_signal": "Latency drift should reveal whether setup is slowly degrading before full timeout."
+        },
+        {
+          "step": 3,
+          "action": "Check media or downstream session-resource allocation if signaling looks otherwise healthy.",
+          "expected_signal": "One resource gate may lag just enough to force timeout."
+        }
+      ],
+      "safe_actions": [
+        "Drain one degraded session-processing pool if healthy capacity exists elsewhere.",
+        "Reduce reliance on one unhealthy peer or media path after capturing the failing timeline.",
+        "Keep one annotated timeout trace with hop timing in the incident."
+      ],
+      "escalation_signals": [
+        "Timeouts spread across several peer paths with no single stalled hop.",
+        "Downstream gateways or media pools are broadly capacity constrained."
+      ],
+      "pitfalls": [
+        "Do not call setup timeout a route failure unless the wrong path is selected at decision time.",
+        "Do not assume media is irrelevant; many setup incidents stall after signaling acceptance.",
+        "Do not restart core signaling tiers before identifying the first stalled hop."
+      ],
+      "telemetry_queries": [
+        "INVITE setup timeline through 180, 183, and final answer by hop",
+        "Timer B expirations by destination pool, peer, and media path",
+        "media-anchor allocation latency and resource pressure"
+      ],
+      "reference_incident_pattern": {
+        "timeline": [
+          "INVITE acceptance stays normal at ingress.",
+          "Downstream progress slows or disappears for one path.",
+          "Timer B expirations rise once the stalled hop crosses the latency budget."
+        ],
+        "why_this_pattern_is_realistic": "Operators usually solve call setup timeout fastest when they focus on the first missing progress event rather than the eventual timeout symptom."
+      }
+    },
+    {
+      "slug": "call-drop-mid-session-refresh-or-path-expiry-rca",
+      "title": "Mid-session call drop RCA: refresh failure, teardown loss, or path expiry after setup",
+      "summary": "Use this article when calls establish successfully but fail later around refresh, re-INVITE, keepalive, or teardown behavior, and the problem is clearly post-setup rather than call admission.",
+      "category": "session",
+      "doc_type": "knowledge_article",
+      "anomaly_types": ["call_drop_mid_session"],
+      "knowledge_weight": 1.28,
+      "keywords": ["call_drop_mid_session", "session refresh", "re-invite", "bye", "nat timeout", "keepalive", "mid-call"],
+      "service_scope": ["P-CSCF", "S-CSCF", "Media Anchor", "Firewall", "NAT", "Peer Gateway"],
+      "symptom_profile": {
+        "primary_signals": [
+          "Calls complete setup but terminate unexpectedly after a predictable active-session window.",
+          "Drops cluster around session refresh, re-INVITE, keepalive, or path-idle thresholds.",
+          "The failure occurs after successful answer, which separates it from call_setup_timeout."
+        ],
+        "supporting_signals": [
+          "One-way media, missing BYE handling, or silent NAT expiry appears in affected traces.",
+          "Calls on one path, codec pairing, or NAT boundary fail more often than others.",
+          "Refresh ownership or timer negotiation differs from healthy calls."
+        ],
+        "signals_that_do_not_fit": [
+          "Immediate failure before answer indicates call_setup_timeout instead.",
+          "Busy or congestion responses at initial routing time fit busy_destination more closely."
+        ]
+      },
+      "differential_diagnosis": [
+        {
+          "condition": "Broken session refresh or re-INVITE handling",
+          "what_to_check": [
+            "Compare refresh ownership and timer negotiation between good and bad calls.",
+            "Trace whether the refresh message reaches completion on time."
+          ],
+          "why_it_matters": "Predictable mid-call drops often result from failed refresh rather than random transport loss."
+        },
+        {
+          "condition": "NAT or firewall state expiry",
+          "what_to_check": [
+            "Compare keepalive cadence to actual network state timeout.",
+            "Check whether drops happen after idle windows or reduced media activity."
+          ],
+          "why_it_matters": "Sessions can die underneath otherwise healthy SIP logic when path state silently expires."
+        }
+      ],
+      "evidence_to_collect": [
+        {
+          "signal": "Call age at drop time versus configured refresh interval",
+          "expected_if_true": "Drops cluster near one timer boundary or idle threshold."
+        },
+        {
+          "signal": "Refresh and BYE trace completion",
+          "expected_if_true": "One maintenance or teardown message path is missing, delayed, or inconsistent."
+        },
+        {
+          "signal": "NAT or keepalive state for the affected path",
+          "expected_if_true": "The network path expires before the session-maintenance pattern keeps it alive."
+        }
+      ],
+      "recommended_rca": {
+        "root_cause": "Mid-session calls are dropping because a session-maintenance path is failing after setup, typically through broken refresh handling, silent path-state expiry, or incomplete teardown signaling on one network or service path.",
+        "explanation": "The defining characteristic of call_drop_mid_session is successful answer followed by later instability. When drops align with refresh boundaries, idle windows, or teardown anomalies, the RCA should describe the failing maintenance path directly instead of treating the issue as initial call admission or routing. That keeps investigation on refresh logic, NAT keepalive, and mid-call signaling behavior where the real evidence lives.",
+        "recommendation": "Compare one stable and one failing call beyond setup, focus on refresh and keepalive behavior, and adjust only the affected path or timer policy once the drop boundary is confirmed."
+      },
+      "operator_actions": [
+        {
+          "step": 1,
+          "action": "Measure call age at the time of failure and compare it with refresh timers.",
+          "expected_signal": "A narrow time boundary often reveals refresh-related failure."
+        },
+        {
+          "step": 2,
+          "action": "Trace re-INVITE, refresh, and BYE handling for one failing call.",
+          "expected_signal": "One mid-call maintenance step should fail or disappear."
+        },
+        {
+          "step": 3,
+          "action": "Check keepalive cadence against NAT or firewall timeout on the affected path.",
+          "expected_signal": "Path expiry becomes clear when calls drop after idle windows."
+        }
+      ],
+      "safe_actions": [
+        "Tune keepalive on one affected path instead of broad global changes.",
+        "Drain one degraded media or session pool after capturing a full failing trace.",
+        "Retain one stable versus one failing mid-call trace pair for future RCA."
+      ],
+      "escalation_signals": [
+        "Several independent paths drop mid-session with no common refresh or NAT pattern.",
+        "Media-anchor or core session infrastructure is broadly saturated."
+      ],
+      "pitfalls": [
+        "Do not collapse this into call_setup_timeout when calls are already established.",
+        "Do not blame random network loss before checking refresh and keepalive behavior.",
+        "Do not change global session timers without proving which boundary is failing."
+      ],
+      "telemetry_queries": [
+        "call age at drop time versus session refresh interval",
+        "re-INVITE, refresh, and BYE completion on failing calls",
+        "NAT timeout, keepalive cadence, and path-idle correlation"
+      ],
+      "reference_incident_pattern": {
+        "timeline": [
+          "Calls answer successfully and remain stable briefly.",
+          "Drops begin near one refresh or idle boundary.",
+          "Refresh, keepalive, or teardown evidence isolates the failing mid-session path."
+        ],
+        "why_this_pattern_is_realistic": "Mid-session incidents nearly always become easier to diagnose once operators stop treating them as generic call failures and look at post-setup maintenance behavior."
+      }
+    },
+    {
+      "slug": "busy-destination-capacity-or-admission-rca",
+      "title": "Busy destination RCA: downstream capacity or admission controls generating artificial busy",
+      "summary": "Use this article when busy or congestion responses spike beyond normal user behavior, one destination group or service pool dominates the failures, and platform capacity or admission policy is the likely reason callers hear busy.",
+      "category": "session",
+      "doc_type": "knowledge_article",
+      "anomaly_types": ["busy_destination"],
+      "knowledge_weight": 1.25,
+      "keywords": ["busy_destination", "486", "congestion", "admission control", "queue depth", "downstream capacity", "destination group"],
+      "service_scope": ["Routing Engine", "Application Server", "Session Pool", "Peer Gateway", "Destination Service"],
+      "symptom_profile": {
+        "primary_signals": [
+          "Busy or congestion responses rise across many calls or one destination group in a way that exceeds normal user-unavailable behavior.",
+          "Downstream queue depth, session caps, or admission thresholds climb at the same time busy responses spike.",
+          "Busy responses fall when traffic is shifted away from one degraded pool or destination path."
+        ],
+        "supporting_signals": [
+          "The incident aligns with one service pool, destination realm, or downstream application cluster.",
+          "Overall user traffic may stay normal while busy ratio becomes abnormal, which points to platform-generated busy.",
+          "Recent threshold or policy changes line up with the spike."
+        ],
+        "signals_that_do_not_fit": [
+          "Timeout before answer fits call_setup_timeout instead of busy_destination.",
+          "Wrong route selection with valid alternatives fits routing_error more closely."
+        ]
+      },
+      "differential_diagnosis": [
+        {
+          "condition": "Overloaded destination pool",
+          "what_to_check": [
+            "Inspect queue depth, concurrency caps, and per-pool load on the affected destination.",
+            "Compare busy rate for that pool with healthy peers."
+          ],
+          "why_it_matters": "Artificial busy is often a sign the platform is shielding a saturated downstream pool."
+        },
+        {
+          "condition": "Admission thresholds set too conservatively",
+          "what_to_check": [
+            "Review the protection thresholds for the affected path.",
+            "Check whether they trip below the platform's real sustainable capacity."
+          ],
+          "why_it_matters": "Busy_destination can be self-inflicted by overly strict admission policy."
+        }
+      ],
+      "evidence_to_collect": [
+        {
+          "signal": "Busy ratio by destination group or pool",
+          "expected_if_true": "One destination cohort clearly dominates the artificial busy responses."
+        },
+        {
+          "signal": "Admission-control threshold and trip frequency",
+          "expected_if_true": "A protection rule starts rejecting traffic around the same time busy rises."
+        },
+        {
+          "signal": "Destination queue depth and backlog",
+          "expected_if_true": "Platform congestion, not user behavior, explains the busy outcome."
+        }
+      ],
+      "recommended_rca": {
+        "root_cause": "Busy responses are being generated because one downstream destination path is capacity constrained or protected by aggressive admission controls, making the platform present artificial busy instead of completing normal call setup.",
+        "explanation": "busy_destination should be treated as a resource or admission signal when the response pattern clusters on one destination group and moves with queue depth or threshold trips. In that case, the platform is not simply reporting normal callee availability; it is shielding a constrained path. The RCA should name the destination pool, queue, or admission setting that turned normal demand into widespread busy responses.",
+        "recommendation": "Validate destination capacity and threshold behavior first, then shift traffic or tune one constrained path rather than broadening the diagnosis to generic routing or signaling failure."
+      },
+      "operator_actions": [
+        {
+          "step": 1,
+          "action": "Break busy responses down by destination group and service pool.",
+          "expected_signal": "One destination cohort should dominate if the issue is platform-generated busy."
+        },
+        {
+          "step": 2,
+          "action": "Compare queue depth and admission thresholds on the busiest destination path.",
+          "expected_signal": "Backlog or early threshold trips usually align with the spike."
+        },
+        {
+          "step": 3,
+          "action": "Test whether traffic succeeds through an alternate healthy pool or trunk.",
+          "expected_signal": "Recovery on the alternate path confirms the busy is localized."
+        }
+      ],
+      "safe_actions": [
+        "Shift load away from one degraded destination pool if healthy headroom exists.",
+        "Tune one admission threshold with close observation instead of broad global expansion.",
+        "Attach destination-group and queue evidence to the incident for future retrieval."
+      ],
+      "escalation_signals": [
+        "Busy responses stay high across all destination groups with no single constrained path.",
+        "Downstream application owners confirm a wider service degradation beyond one pool."
+      ],
+      "pitfalls": [
+        "Do not assume busy means normal user behavior during a concentrated spike.",
+        "Do not scale unrelated signaling tiers when one downstream pool is the real bottleneck.",
+        "Do not relax all admission controls without proving which one is creating artificial busy."
+      ],
+      "telemetry_queries": [
+        "busy response ratio by destination group, pool, and route",
+        "destination queue depth, concurrency cap usage, and threshold trips",
+        "success rate through alternate healthy destination paths"
+      ],
+      "reference_incident_pattern": {
+        "timeline": [
+          "Busy ratios rise on one destination cohort.",
+          "Queue or admission pressure appears on the same path.",
+          "Traffic shifted to a healthy alternative succeeds while the original path remains constrained."
+        ],
+        "why_this_pattern_is_realistic": "Artificial busy is usually a localized capacity-protection signal long before it becomes a platform-wide symptom."
+      }
+    },
+    {
+      "slug": "server-internal-error-worker-or-dependency-saturation-rca",
+      "title": "Server internal error RCA: worker saturation, bad rollout, or dependency collapse",
+      "summary": "Use this article when 5xx responses, queueing, and service latency rise together on one server tier, and the incident clearly reflects server-side execution failure rather than malformed requests or pure transport loss.",
+      "category": "server",
+      "doc_type": "knowledge_article",
+      "anomaly_types": ["server_internal_error"],
+      "knowledge_weight": 1.29,
+      "keywords": ["server_internal_error", "5xx", "queue depth", "worker pool", "dependency timeout", "config rollout", "memory pressure", "scscf"],
+      "service_scope": ["S-CSCF", "Application Server", "Database", "Cache", "Dependency Pool", "Cluster Node"],
+      "symptom_profile": {
+        "primary_signals": [
+          "5xx responses increase with rising queue depth and service latency on one server-side control-plane tier.",
+          "A specific revision, pod, node, or dependency path is materially worse than its peers.",
+          "The failure is internal to service execution and persists even when request shape is valid."
+        ],
+        "supporting_signals": [
+          "A recent rollout, feature flag, or config change aligns with the incident start.",
+          "Dependency pools, database calls, or connection churn degrade before or alongside 5xx spikes.",
+          "Memory pressure, GC churn, or one noisy node can amplify the failures."
+        ],
+        "signals_that_do_not_fit": [
+          "Explicit parser errors indicate malformed_sip instead.",
+          "Packet loss and retransmission spikes across multiple services point to network degradation first."
+        ]
+      },
+      "differential_diagnosis": [
+        {
+          "condition": "Worker or thread-pool saturation",
+          "what_to_check": [
+            "Inspect queue depth, CPU saturation, and per-pod latency on the affected service tier.",
+            "Compare the hottest pods or nodes with healthy peers."
+          ],
+          "why_it_matters": "Many server_internal_error incidents begin with one overloaded execution tier."
+        },
+        {
+          "condition": "Dependency timeout or bad connection pool state",
+          "what_to_check": [
+            "Check backend latency and stuck connection pools for the failing service.",
+            "Look for repeated dependency retry behavior or timeout bursts."
+          ],
+          "why_it_matters": "The service may only be surfacing dependency collapse as generic 5xx."
+        }
+      ],
+      "evidence_to_collect": [
+        {
+          "signal": "5xx and latency by pod, node, and revision",
+          "expected_if_true": "One server cohort or release stands out as the failure center."
+        },
+        {
+          "signal": "Dependency latency and timeout budget alignment",
+          "expected_if_true": "Backend slowness or pool collapse correlates directly with internal errors."
+        },
+        {
+          "signal": "Recent rollout or config diff",
+          "expected_if_true": "A small change set explains the widened blast radius."
+        }
+      ],
+      "recommended_rca": {
+        "root_cause": "Server internal errors are being generated because one control-plane service tier is either saturated itself or failing against a degraded dependency path, often after a rollout, resource-pressure event, or bad connection-pool state.",
+        "explanation": "server_internal_error should focus on the execution tier that is actually returning 5xx. When queue depth, per-pod latency, and dependency failures all line up on one server cohort, the RCA should name that service or dependency boundary directly instead of describing the incident as generic signaling instability. This keeps remediation on the overloaded tier, failing revision, or backend timeout path where the blast radius started.",
+        "recommendation": "Check per-tier saturation and dependency health first, roll back a suspect change if the timing fits, and isolate one bad replica or node before making broader platform moves."
+      },
+      "operator_actions": [
+        {
+          "step": 1,
+          "action": "Identify the worst server cohort by pod, node, and revision.",
+          "expected_signal": "One replica set or revision often explains the majority of 5xx."
+        },
+        {
+          "step": 2,
+          "action": "Compare dependency latency and connection-pool health with the error spike.",
+          "expected_signal": "One backend path usually aligns with the service failures."
+        },
+        {
+          "step": 3,
+          "action": "Check whether a recent rollout or config push matches the incident start.",
+          "expected_signal": "Rollback value becomes clear if a small change widened the blast radius."
+        }
+      ],
+      "safe_actions": [
+        "Drain one poisoned replica if healthy peers have headroom.",
+        "Rollback one suspect config or release before tuning every server parameter.",
+        "Capture the failing revision diff and dependency timing evidence."
+      ],
+      "escalation_signals": [
+        "Several unrelated services return 5xx with no shared dependency or revision.",
+        "Node-level contention or storage/network faults affect more than one service tier."
+      ],
+      "pitfalls": [
+        "Do not call every 5xx spike a code regression before checking dependency collapse.",
+        "Do not scale blindly if one bad revision or node is the real issue.",
+        "Do not ignore resource-pressure evidence such as GC or descriptor exhaustion."
+      ],
+      "telemetry_queries": [
+        "5xx, latency, and queue depth by pod, node, and revision",
+        "dependency timeout, connection-pool pressure, and retry behavior",
+        "recent rollout or config-diff timeline matched to the error spike"
+      ],
+      "reference_incident_pattern": {
+        "timeline": [
+          "One service tier starts returning 5xx while latency and queueing climb.",
+          "One backend dependency or new revision becomes the common factor.",
+          "Isolating that server cohort or dependency sharply reduces the error rate."
+        ],
+        "why_this_pattern_is_realistic": "Real server incidents are usually owned by one failing execution boundary, not by the entire signaling stack at once."
+      }
+    },
+    {
+      "slug": "network-degradation-path-quality-rca",
+      "title": "Network degradation RCA: path quality loss, policy regression, or localized transport instability",
+      "summary": "Use this article when signaling succeeds intermittently, latency and jitter rise on one transport path, and the strongest evidence points to degraded network quality rather than malformed or server-side processing errors.",
+      "category": "network",
+      "doc_type": "knowledge_article",
+      "anomaly_types": ["network_degradation"],
+      "knowledge_weight": 1.27,
+      "keywords": ["network_degradation", "latency", "jitter", "packet loss", "dns", "qos", "mtu", "network policy"],
+      "service_scope": ["Ingress", "P-CSCF", "S-CSCF", "Resolver", "Load Balancer", "Cluster Network"],
+      "symptom_profile": {
+        "primary_signals": [
+          "Transaction latency rises and signaling succeeds only intermittently across one path, node group, or zone.",
+          "Loss, jitter, queueing, or name-resolution delay appears on the same path as the user-facing degradation.",
+          "Application logic remains mostly correct, but the transport quality no longer supports stable signaling."
+        ],
+        "supporting_signals": [
+          "One zone, rack, NIC, or east-west policy path is materially worse than peers.",
+          "MTU or fragmentation issues affect larger messages more than small control traffic.",
+          "QoS or DNS changes align with the start of the degradation."
+        ],
+        "signals_that_do_not_fit": [
+          "Route decisions going to the wrong peer indicate routing_error instead.",
+          "Deterministic 5xx without path-quality symptoms point to server_internal_error."
+        ]
+      },
+      "differential_diagnosis": [
+        {
+          "condition": "Loss or jitter on one transport segment",
+          "what_to_check": [
+            "Compare packet loss, jitter, and queueing across each hop in the affected path.",
+            "Look for one node, rack, or interface that is materially worse than peers."
+          ],
+          "why_it_matters": "Localized path-quality loss often explains intermittent signaling better than generic service blame."
+        },
+        {
+          "condition": "DNS or east-west policy regression",
+          "what_to_check": [
+            "Check resolver latency, cache health, and recent network-policy changes.",
+            "Compare failing service-to-service paths with healthy ones."
+          ],
+          "why_it_matters": "Name-resolution or cluster-policy regressions often present as generic network slowness until isolated."
+        }
+      ],
+      "evidence_to_collect": [
+        {
+          "signal": "Hop-level latency, loss, and jitter comparison",
+          "expected_if_true": "One path segment clearly carries the degraded quality signature."
+        },
+        {
+          "signal": "DNS latency or policy-change timeline",
+          "expected_if_true": "A network-control change aligns with the incident window."
+        },
+        {
+          "signal": "Per-zone or per-node transport quality",
+          "expected_if_true": "The fault localizes to one rack, zone, or node cohort."
+        }
+      ],
+      "recommended_rca": {
+        "root_cause": "Signaling is degraded because one transport path has lost enough quality through latency, jitter, loss, or control-plane network regression that otherwise valid transactions cannot complete reliably.",
+        "explanation": "network_degradation should be anchored on path quality, not only on application symptoms. When one zone, node group, or resolver path shows worse latency, jitter, or loss than the rest of the platform, that transport segment becomes the most credible root cause. The RCA should describe the degraded path directly and avoid collapsing the incident into generic routing or server failure when transport evidence is stronger.",
+        "recommendation": "Localize the degraded segment first, move traffic to a healthy path if possible, and correct the network-control or transport issue before changing application logic."
+      },
+      "operator_actions": [
+        {
+          "step": 1,
+          "action": "Compare hop-level loss, latency, and jitter across the failing path.",
+          "expected_signal": "One segment should stand out as the degraded transport boundary."
+        },
+        {
+          "step": 2,
+          "action": "Check DNS, QoS, MTU, and network-policy changes tied to the incident window.",
+          "expected_signal": "One control-plane network change often explains the degradation."
+        },
+        {
+          "step": 3,
+          "action": "Test whether the issue follows one zone, node, or interface.",
+          "expected_signal": "Localized degradation is easier to mitigate than a truly global network fault."
+        }
+      ],
+      "safe_actions": [
+        "Shift traffic away from one degraded zone or node if safe capacity exists elsewhere.",
+        "Repair one MTU, policy, or DNS defect before touching service rollout state.",
+        "Attach hop-level path-quality evidence to the incident."
+      ],
+      "escalation_signals": [
+        "Transport degradation appears across several zones with no single segment or control change.",
+        "Peer network owners confirm wider infrastructure instability outside the IMS cluster."
+      ],
+      "pitfalls": [
+        "Do not assume app overload when the strongest signal is localized path-quality loss.",
+        "Do not tune retransmission first if the network path is clearly degraded.",
+        "Do not ignore DNS and policy regressions; not all network incidents are raw packet loss."
+      ],
+      "telemetry_queries": [
+        "hop-level latency, jitter, and loss for the failing signaling path",
+        "resolver latency, cache health, and network-policy changes around incident start",
+        "path quality by zone, node, or interface cohort"
+      ],
+      "reference_incident_pattern": {
+        "timeline": [
+          "One transport path begins showing higher latency, jitter, or intermittent loss.",
+          "Signaling degrades on that path while peer paths remain healthier.",
+          "Localizing the degraded segment explains the user-facing symptoms better than server blame."
+        ],
+        "why_this_pattern_is_realistic": "Real network degradation incidents usually localize to one transport segment or control-plane network change before they look global."
+      }
+    },
+    {
+      "slug": "retransmission-spike-loss-or-timer-mismatch-rca",
+      "title": "Retransmission spike RCA: path loss, hot-spot congestion, or timer mismatch amplifying duplicates",
+      "summary": "Use this article when duplicate transactions and retries grow faster than unique work, the same call or registration attempts recur repeatedly, and the incident is dominated by retransmission amplification rather than new demand.",
+      "category": "network",
+      "doc_type": "knowledge_article",
+      "anomaly_types": ["retransmission_spike"],
+      "knowledge_weight": 1.28,
+      "keywords": ["retransmission_spike", "duplicate transactions", "packet loss", "timer mismatch", "hot spot", "retry amplification", "queueing"],
+      "service_scope": ["UE", "P-CSCF", "S-CSCF", "Load Balancer", "Network Path"],
+      "symptom_profile": {
+        "primary_signals": [
+          "Retransmission count rises much faster than unique transaction or subscriber growth.",
+          "The same Call-ID, branch, or transaction identifiers recur in a tight time window.",
+          "Moderate latency or localized path loss is enough to trigger repeated duplicate sends."
+        ],
+        "supporting_signals": [
+          "One interface, node, or load-balanced target is much hotter or lossier than its peers.",
+          "Timer settings are aggressive relative to the real latency envelope on the path.",
+          "The spike can accompany registration_storm or network_degradation but is itself defined by duplicate amplification."
+        ],
+        "signals_that_do_not_fit": [
+          "Unique-demand growth without strong duplicate patterns suggests a true traffic burst instead.",
+          "Deterministic parser or auth failures without duplicate send behavior point elsewhere."
+        ]
+      },
+      "differential_diagnosis": [
+        {
+          "condition": "Localized path loss or saturation",
+          "what_to_check": [
+            "Inspect the hottest interface, node, or segment for loss and queueing.",
+            "Compare duplicate volume by ingress target or zone."
+          ],
+          "why_it_matters": "Retransmission spikes often begin at one hot spot rather than across the full network."
+        },
+        {
+          "condition": "Retry timers too aggressive for current latency",
+          "what_to_check": [
+            "Compare retransmission timers with the actual latency envelope during the incident.",
+            "Check whether duplicates fall sharply when the path is stabilized or pacing is reduced."
+          ],
+          "why_it_matters": "Timer mismatch can amplify a moderate path issue into a much larger duplicate storm."
+        }
+      ],
+      "evidence_to_collect": [
+        {
+          "signal": "Retransmission count versus unique transaction volume",
+          "expected_if_true": "Duplicates dominate the incident instead of genuinely new work."
+        },
+        {
+          "signal": "Top repeating Call-ID or branch identifiers",
+          "expected_if_true": "A narrow duplicate signature proves the spike is amplification."
+        },
+        {
+          "signal": "Loss or queueing on the hottest path",
+          "expected_if_true": "One transport hot spot correlates with the duplicate flood."
+        }
+      ],
+      "recommended_rca": {
+        "root_cause": "Retransmissions are spiking because a degraded or overloaded path is delaying transactions beyond the current retry tolerance, causing clients or peers to resend the same work far faster than the platform can retire it.",
+        "explanation": "retransmission_spike is best diagnosed by duplicate amplification, not by total traffic volume alone. When repeated Call-ID or branch patterns dominate and one hot path shows loss, queueing, or latency beyond the timer budget, the RCA should describe the retransmission feedback loop directly. This explains why the system appears busier than the true level of unique work and prevents teams from treating the incident as simple demand growth.",
+        "recommendation": "Prove duplicate amplification first, then repair the hottest lossy path or rebalance traffic before widening timers. If timers are clearly too aggressive for the real path latency, tune them only after the transport issue is understood."
+      },
+      "operator_actions": [
+        {
+          "step": 1,
+          "action": "Compare retransmission count to unique transaction identifiers.",
+          "expected_signal": "A large gap confirms duplicate amplification."
+        },
+        {
+          "step": 2,
+          "action": "Find the hottest path, target, or interface contributing to duplicates.",
+          "expected_signal": "One hot spot usually dominates the spike."
+        },
+        {
+          "step": 3,
+          "action": "Check whether retry timers are too short for the measured latency envelope.",
+          "expected_signal": "Timer mismatch becomes obvious once the real latency is measured."
+        }
+      ],
+      "safe_actions": [
+        "Rebalance traffic away from one hot target or interface if healthy peers exist.",
+        "Reduce synthetic pacing or upstream burst rate while preserving evidence of the duplicate loop.",
+        "Store top repeating Call-ID examples with the incident."
+      ],
+      "escalation_signals": [
+        "Duplicate spikes remain broad after the hottest path is repaired or bypassed.",
+        "Several peer networks contribute equally to the retransmission wave."
+      ],
+      "pitfalls": [
+        "Do not call the incident organic traffic growth when duplicates dominate the work.",
+        "Do not stretch timers first if a specific lossy path is already visible.",
+        "Do not ignore localized hot spots hidden behind healthy aggregate metrics."
+      ],
+      "telemetry_queries": [
+        "retransmission count versus unique transaction identifiers over the same window",
+        "top repeating Call-ID or branch values during the incident",
+        "loss, queueing, and latency on the hottest ingress target or path"
+      ],
+      "reference_incident_pattern": {
+        "timeline": [
+          "Moderate path impairment begins on one target or segment.",
+          "Duplicate sends accelerate faster than unique work.",
+          "The retransmission loop itself becomes the dominant source of system pressure."
+        ],
+        "why_this_pattern_is_realistic": "Retransmission incidents often look larger than the underlying path fault because duplicates rapidly amplify otherwise moderate degradation."
+      }
+    }
+  ]
+}

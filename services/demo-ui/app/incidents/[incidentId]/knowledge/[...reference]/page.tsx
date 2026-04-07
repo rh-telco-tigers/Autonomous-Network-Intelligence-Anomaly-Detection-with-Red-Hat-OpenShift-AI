@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
+import { KnowledgeArticleView } from "@/components/knowledge-article-view";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +25,6 @@ export default function KnowledgeArticlePage() {
   }
 
   const article = data.article;
-  const articleBody = stripLeadingHeading(article.title, article.content);
 
   return (
     <div className="space-y-8">
@@ -69,10 +69,11 @@ export default function KnowledgeArticlePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Article content</CardTitle>
+          <CardTitle>Structured article</CardTitle>
+          <CardDescription>Operator-focused evidence, RCA guidance, and safe actions for this incident pattern.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="whitespace-pre-wrap text-sm leading-7 text-[var(--text-strong)]">{articleBody}</div>
+          <KnowledgeArticleView article={article} />
         </CardContent>
       </Card>
     </div>
@@ -91,13 +92,4 @@ function SummaryItem({ label, value, fullWidth = false }: { label: string; value
       <div className="mt-2 break-words text-sm text-[var(--text-strong)]">{value}</div>
     </div>
   );
-}
-
-function stripLeadingHeading(title: string, content: string) {
-  const lines = String(content ?? "").split("\n");
-  const firstLine = (lines[0] ?? "").trim();
-  if (firstLine.replace(/^#\s*/, "") === title.trim()) {
-    return lines.slice(2).join("\n").trim();
-  }
-  return String(content ?? "").trim();
 }

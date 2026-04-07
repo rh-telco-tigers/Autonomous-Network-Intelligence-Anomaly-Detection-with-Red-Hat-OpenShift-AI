@@ -54,10 +54,14 @@ class KnowledgeBundleTests(unittest.TestCase):
                 records = rag.build_local_seed_records(bundle, rag.RUNBOOK_COLLECTION)
 
         self.assertEqual(len(records), 2)
-        self.assertEqual(records[0]["reference"], "knowledge/signaling/scale-pcscf.md")
-        self.assertEqual(records[1]["reference"], "knowledge/signaling/rebalance-edge.md")
+        self.assertEqual(records[0]["reference"], "knowledge/signaling/scale-pcscf.json")
+        self.assertEqual(records[1]["reference"], "knowledge/signaling/rebalance-edge.json")
         self.assertEqual(records[0]["category"], "signaling")
         self.assertEqual(records[0]["doc_type"], rag.KNOWLEDGE_ARTICLE_DOC_TYPE)
+        first_content = json.loads(records[0]["content"])
+        self.assertEqual(first_content["title"], "Scale P-CSCF workers")
+        self.assertEqual(first_content["anomaly_types"], ["registration_storm"])
+        self.assertEqual(first_content["guidance"][0], "When to use: REGISTER surge.")
 
     def test_local_retrieve_filters_to_requested_knowledge_category(self) -> None:
         signaling_payload = {
@@ -99,7 +103,72 @@ class KnowledgeBundleTests(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["category"], "signaling")
-        self.assertEqual(results[0]["reference"], "knowledge/signaling/scale-pcscf.md")
+        self.assertEqual(results[0]["reference"], "knowledge/signaling/scale-pcscf.json")
+
+    def test_local_retrieve_prefers_exact_anomaly_anchor_article(self) -> None:
+        payload = {
+            "category": "signaling",
+            "articles": [
+                {
+                    "slug": "registration-storm-anchor",
+                    "title": "Registration storm RCA",
+                    "summary": "Retry amplification on the edge causes a storm.",
+                    "anomaly_types": ["registration_storm"],
+                    "keywords": ["retry amplification", "pcscf", "register"],
+                    "recommended_rca": {
+                        "root_cause": "REGISTER retry amplification is saturating the edge."
+                    },
+                    "content": ["Edge retry loops dominate transaction load."],
+                },
+                {
+                    "slug": "registration-failure-anchor",
+                    "title": "Registration failure RCA",
+                    "summary": "A subscriber cohort cannot complete registration successfully.",
+                    "anomaly_types": ["registration_failure"],
+                    "keywords": ["subscriber cohort", "reject codes", "challenge state"],
+                    "recommended_rca": {
+                        "root_cause": "Registration completion is failing for a targeted cohort."
+                    },
+                    "content": ["The same subscribers fail repeatedly without a raw surge."],
+                },
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_bundle(root, "signaling.json", payload)
+            with patch.dict(rag.os.environ, {"RAG_ROOT_DIR": str(root)}, clear=False):
+                results = rag.local_retrieve(
+                    "reject codes are concentrated on one subscriber cohort and challenge state looks broken",
+                    limit=2,
+                    collections=[rag.RUNBOOK_COLLECTION],
+                    category="signaling",
+                    anomaly_type="registration_failure",
+                )
+
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["reference"], "knowledge/signaling/registration-failure-anchor.json")
+        self.assertIn("registration_failure", results[0]["anomaly_types"])
+        self.assertTrue(any("Exact anomaly match" in reason for reason in results[0]["match_reasons"]))
+
+    def test_bundle_file_requires_summary_and_anomaly_types(self) -> None:
+        payload = {
+            "category": "server",
+            "articles": [
+                {
+                    "slug": "broken-article",
+                    "title": "Broken article",
+                    "content": ["Missing required schema fields."],
+                }
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            bundle = self._write_bundle(root, "server.json", payload)
+            with patch.dict(rag.os.environ, {"RAG_ROOT_DIR": str(root)}, clear=False):
+                with self.assertRaises(ValueError):
+                    rag.build_local_seed_records(bundle, rag.RUNBOOK_COLLECTION)
 
 
 if __name__ == "__main__":

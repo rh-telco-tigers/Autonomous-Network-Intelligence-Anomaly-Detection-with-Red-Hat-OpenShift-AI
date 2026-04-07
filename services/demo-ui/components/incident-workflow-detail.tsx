@@ -9,6 +9,7 @@ import { Bot, Info, Sparkles } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { KnowledgeArticleView } from "@/components/knowledge-article-view";
 import { useApiToken } from "@/components/providers/app-providers";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { request, useIncidentWorkflowQuery } from "@/lib/api";
+import { request, useIncidentWorkflowQuery, useRelatedRecordsQuery } from "@/lib/api";
 import { resolveTicketHref } from "@/lib/ticket-links";
 import type {
   IncidentActionRecord,
@@ -240,6 +241,10 @@ export function IncidentWorkflowDetail() {
   const executionRef = React.useRef<HTMLDivElement>(null);
 
   const { data, isLoading, error } = useIncidentWorkflowQuery(incidentId);
+  const { data: relatedData, isLoading: relatedLoading, error: relatedError } = useRelatedRecordsQuery(incidentId, {
+    limit: 6,
+    knowledgeLimit: 4,
+  });
   const incident = data?.incident;
 
   React.useEffect(() => {
@@ -251,6 +256,7 @@ export function IncidentWorkflowDetail() {
   const refreshWorkflow = React.useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["incident-workflow", incidentId, token] }),
+      queryClient.invalidateQueries({ queryKey: ["related-records", incidentId] }),
       queryClient.invalidateQueries({ queryKey: ["incidents"] }),
       queryClient.invalidateQueries({ queryKey: ["console-state"] }),
     ]);
@@ -511,6 +517,8 @@ export function IncidentWorkflowDetail() {
     return data.tickets[0] ?? data.current_ticket ?? null;
   }, [data]);
   const currentTicketHref = resolveTicketHref(currentTicket);
+  const knowledgeArticles = relatedData?.knowledge ?? [];
+  const featuredKnowledgeArticles = knowledgeArticles.slice(0, 2);
 
   const updateRemediationNote = React.useCallback((remediationId: number, value: string) => {
     setRemediationNotes((current) => ({ ...current, [remediationId]: value }));
@@ -1256,30 +1264,93 @@ export function IncidentWorkflowDetail() {
           </div>
 
           <div ref={knowledgeRef}>
-            <Card>
-              <CardContent className="space-y-4 p-6">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Advanced technical details</div>
-                  <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">Open the dedicated debug trace only when you need it</div>
-                  <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
-                    Raw request and response packets, model inputs and outputs, LLM prompts and responses, and lifecycle trace data now live on a separate deep-dive page.
-                  </p>
-                </div>
-                <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-6">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="max-w-3xl">
-                      <div className="text-sm font-medium text-[var(--text-strong)]">Detailed execution trace</div>
-                      <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
-                        Open the deep dive view for the full timestamped flow across API calls, model inference, RCA generation, ticket sync, and workflow events.
-                      </p>
-                    </div>
-                    <Button asChild className="shrink-0">
-                      <Link href={`/incidents/${encodeURIComponent(incident.id)}/debug`}>View Detailed Execution Trace</Link>
-                    </Button>
+            <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+              <Card>
+                <CardContent className="space-y-5 p-6">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Knowledge guidance</div>
+                    <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">Structured runbooks matched to this incident</div>
+                    <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+                      These articles are reranked against the current anomaly type, category, and incident evidence so operators see the most relevant KB guidance first.
+                    </p>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+
+                  {relatedLoading && !featuredKnowledgeArticles.length ? (
+                    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm text-[var(--text-secondary)]">
+                      Loading matched knowledge articles...
+                    </div>
+                  ) : null}
+
+                  {relatedError ? (
+                    <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm leading-6 text-[var(--text-strong)]">
+                      Could not load knowledge guidance right now. The debug trace is still available below.
+                    </div>
+                  ) : null}
+
+                  {featuredKnowledgeArticles.length ? (
+                    featuredKnowledgeArticles.map((article) => (
+                      <div key={article.reference} className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="max-w-3xl">
+                            <div className="text-sm font-semibold text-[var(--text-strong)]">{article.title}</div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                                Category: {titleize(article.category ?? "knowledge")}
+                              </div>
+                              <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                                Score: {article.score.toFixed(2)}
+                              </div>
+                              {(article.anomaly_types ?? []).slice(0, 3).map((label) => (
+                                <div
+                                  key={`${article.reference}-${label}`}
+                                  className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]"
+                                >
+                                  {label.replace(/_/g, " ")}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <Button asChild variant="secondary" className="shrink-0">
+                            <Link href={knowledgeArticleHref(incident.id, article.reference)}>Open full article</Link>
+                          </Button>
+                        </div>
+                        <div className="mt-4">
+                          <KnowledgeArticleView article={article} compact />
+                        </div>
+                      </div>
+                    ))
+                  ) : !relatedLoading && !relatedError ? (
+                    <InlineEmptyState
+                      title="No matched knowledge articles yet"
+                      description="Generate or refresh RCA to pull the strongest KB guidance for this incident."
+                    />
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="space-y-4 p-6">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Deep trace</div>
+                    <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">Open the raw execution packets only when needed</div>
+                    <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+                      The debug trace keeps the full request and response flow, model payloads, RCA prompts, and ticket sync history available without cluttering the workflow view.
+                    </p>
+                  </div>
+                  <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
+                    <div className="text-sm font-medium text-[var(--text-strong)]">Detailed execution trace</div>
+                    <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                      Use the deep dive page when you need exact timestamps, request bodies, model responses, or workflow event packets.
+                    </p>
+                    <div className="mt-4">
+                      <Button asChild className="w-full">
+                        <Link href={`/incidents/${encodeURIComponent(incident.id)}/debug`}>View Detailed Execution Trace</Link>
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </section>
 
@@ -2434,4 +2505,12 @@ function evidenceDocumentHref(incidentId: string, collection: string, reference:
     .map((segment) => encodeURIComponent(segment))
     .join("/");
   return `/incidents/${encodeURIComponent(incidentId)}/evidence/${encodeURIComponent(collection)}/${encodedReference}`;
+}
+
+function knowledgeArticleHref(incidentId: string, reference: string) {
+  const encodedReference = reference
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return `/incidents/${encodeURIComponent(incidentId)}/knowledge/${encodedReference}`;
 }

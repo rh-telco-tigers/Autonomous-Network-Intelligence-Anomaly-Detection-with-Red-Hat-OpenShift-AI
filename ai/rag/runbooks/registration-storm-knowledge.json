@@ -1,0 +1,167 @@
+{
+  "category": "signaling",
+  "articles": [
+    {
+      "slug": "registration-storm-retry-amplification-rca",
+      "title": "Registration storm RCA on the P-CSCF edge: retry amplification before downstream collapse",
+      "summary": "Use this article when REGISTER traffic spikes faster than unique subscribers, retransmissions dominate new work, and the registration path degrades at the P-CSCF edge before S-CSCF or HSS show a full outage.",
+      "doc_type": "knowledge_article",
+      "anomaly_types": [
+        "registration_storm"
+      ],
+      "knowledge_weight": 1.35,
+      "keywords": [
+        "registration_storm",
+        "register_rate",
+        "retransmission_count",
+        "pcscf",
+        "retry amplification",
+        "challenge latency",
+        "401 loop",
+        "423 interval too brief",
+        "shard imbalance"
+      ],
+      "service_scope": [
+        "UE",
+        "P-CSCF",
+        "S-CSCF",
+        "HSS",
+        "Authentication"
+      ],
+      "symptom_profile": {
+        "primary_signals": [
+          "REGISTER transactions rise sharply while unique subscriber count grows much more slowly.",
+          "Retransmission count accelerates with the REGISTER spike, which means the edge is reprocessing the same registration attempts instead of only handling new work.",
+          "P-CSCF queue depth, worker saturation, or transaction-table pressure rise before S-CSCF and HSS show comparable failure severity."
+        ],
+        "supporting_signals": [
+          "Repeated Call-ID, Contact, or IMPU values appear across a short time window.",
+          "401 or 423 responses remain common for too long before the flow converts to 200 OK.",
+          "Latency expands on the registration path quickly enough to trigger additional UE retries."
+        ],
+        "signals_that_do_not_fit": [
+          "Broad 5xx failures from S-CSCF or HSS across multiple call types usually indicate downstream service failure, not a pure registration storm.",
+          "Healthy retransmission levels with high REGISTER volume more often indicate a planned burst or provisioning event than retry amplification."
+        ]
+      },
+      "differential_diagnosis": [
+        {
+          "condition": "Synthetic load burst or bad traffic profile",
+          "what_to_check": [
+            "Compare REGISTER TPS with the active SIPp or generator rate profile.",
+            "Check whether the same source range or same scenario revision started immediately before the spike."
+          ],
+          "why_it_matters": "In the demo and many lab environments, the fastest path to recovery is reducing the injector rate, not treating the event as a core-network outage."
+        },
+        {
+          "condition": "Lost authentication challenge state across edge replicas",
+          "what_to_check": [
+            "Look for repeated 401 loops on the same subscriber without a stable 200 conversion.",
+            "Check whether traffic is bouncing between replicas without preserving challenge continuity."
+          ],
+          "why_it_matters": "Challenge-state loss turns one registration into several incomplete attempts and can create a storm with normal downstream capacity."
+        },
+        {
+          "condition": "Short registration expiry or bad refresh margin",
+          "what_to_check": [
+            "Review the configured expiry returned to subscribers and the observed refresh spacing.",
+            "Confirm whether registrations succeed but renew far earlier than expected."
+          ],
+          "why_it_matters": "A policy defect can sustain high REGISTER load even when the network and platform are otherwise healthy."
+        },
+        {
+          "condition": "Downstream S-CSCF saturation masquerading as edge overload",
+          "what_to_check": [
+            "Compare P-CSCF ingress timing with S-CSCF processing latency and backlog.",
+            "Check whether call setup or mid-session transactions are also degrading, not just registration."
+          ],
+          "why_it_matters": "If the downstream tier is the real bottleneck, scaling only the edge will lengthen the incident and hide the actual failure domain."
+        }
+      ],
+      "evidence_to_collect": [
+        {
+          "signal": "REGISTER TPS versus unique subscriber count",
+          "expected_if_true": "Transaction volume rises much faster than unique users, proving the incident is dominated by retries or premature refresh rather than organic subscriber growth."
+        },
+        {
+          "signal": "Retransmission count and repeated Call-ID patterns",
+          "expected_if_true": "The same registration attempts recur frequently within one short interval, which is the strongest sign of retry amplification."
+        },
+        {
+          "signal": "P-CSCF shard or pod hot spotting",
+          "expected_if_true": "One ingress shard, pod, or load-balancer target runs materially hotter than its peers while registration latency clusters on that path."
+        },
+        {
+          "signal": "401, 423, and 200 conversion ratio",
+          "expected_if_true": "Challenge or interval responses dominate longer than normal and successful completion lags until the retry source is damped."
+        },
+        {
+          "signal": "S-CSCF and HSS health relative to edge pressure",
+          "expected_if_true": "Downstream components remain comparatively stable while edge transaction pressure and latency rise first."
+        }
+      ],
+      "recommended_rca": {
+        "root_cause": "Retry amplification on the registration path is saturating the P-CSCF edge before downstream IMS tiers fully fail, usually because synthetic pacing, premature refresh behavior, or delayed challenge completion causes the same subscribers to reattempt registration too quickly.",
+        "explanation": "A real registration storm is usually not just high REGISTER volume. The more reliable pattern is REGISTER transactions increasing faster than unique subscribers while retransmissions, repeated Call-ID values, and delayed challenge-to-success conversion pile up on the P-CSCF edge. When that happens, the edge consumes capacity reprocessing the same work, latency stretches enough to trigger more retries, and the incident looks severe even though S-CSCF or HSS may still be comparatively healthy. If shard-level pressure and retry evidence align, the RCA should describe edge retry amplification first and treat downstream collapse as a later or secondary risk.",
+        "recommendation": "Confirm whether the surge is synthetic or policy-driven, reduce the retry source before making broad platform changes, then add P-CSCF capacity only if legitimate demand still exceeds the edge envelope. Capture shard-level edge evidence and challenge-conversion ratios before escalating to S-CSCF or HSS owners."
+      },
+      "operator_actions": [
+        {
+          "step": 1,
+          "action": "Compare REGISTER TPS with unique IMPU or IMSI count for the same incident window.",
+          "expected_signal": "If retries dominate, transaction volume grows much faster than the subscriber population."
+        },
+        {
+          "step": 2,
+          "action": "Sample repeating Call-ID, Contact, or subscriber identifiers from the hottest window.",
+          "expected_signal": "Repeated identity patterns confirm the storm is recycled work, not only new registrations."
+        },
+        {
+          "step": 3,
+          "action": "Check whether one P-CSCF shard or ingress target is materially hotter than the rest.",
+          "expected_signal": "Localized overload indicates load-distribution or sticky-state problems before a global capacity shortfall."
+        },
+        {
+          "step": 4,
+          "action": "Review 401, 423, timeout, and 200 conversion timing on the registration path.",
+          "expected_signal": "A long challenge loop or delayed completion points to retry amplification rather than a simple surge of legitimate successes."
+        },
+        {
+          "step": 5,
+          "action": "Compare edge distress with S-CSCF and HSS health before escalating.",
+          "expected_signal": "If downstream health is still mostly stable, keep the RCA focused on edge retry behavior and pacing."
+        }
+      ],
+      "safe_actions": [
+        "Throttle or stagger the traffic generator if the burst is synthetic.",
+        "Scale the P-CSCF edge only after confirming the issue is not purely caused by bad pacing or lost challenge state.",
+        "Preserve a few repeated subscriber or Call-ID examples in the incident note so future RCA can reference exact evidence."
+      ],
+      "escalation_signals": [
+        "S-CSCF latency, timeout rate, or worker saturation rises in lockstep with the REGISTER storm.",
+        "HSS vector or auth failures affect multiple unrelated subscriber cohorts after edge pressure is reduced.",
+        "The incident persists after the generator rate is lowered and challenge-state continuity is verified."
+      ],
+      "pitfalls": [
+        "Do not call it a generic capacity incident if the dominant symptom is the same subscribers retrying registration.",
+        "Do not scale blindly before checking whether one ingress shard is hot or whether the traffic is synthetic.",
+        "Do not blame HSS first when the strongest evidence still points to P-CSCF queueing and retry loops."
+      ],
+      "telemetry_queries": [
+        "register_rate over 1m compared with unique subscriber count over the same 1m window",
+        "top repeating Call-ID or IMPU values during the hottest registration interval",
+        "P-CSCF per-pod request rate, queue depth, and latency distribution",
+        "401 or 423 to 200 conversion ratio on the registration path"
+      ],
+      "reference_incident_pattern": {
+        "timeline": [
+          "Synthetic registration burst begins and REGISTER TPS climbs sharply.",
+          "P-CSCF queue depth rises first, followed by higher retransmission count and repeated identities.",
+          "Challenge completion falls behind and subscribers reattempt registration before previous attempts settle.",
+          "Only after sustained edge pressure do downstream symptoms begin to appear."
+        ],
+        "why_this_pattern_is_realistic": "This sequence matches how registration storms commonly present in real IMS operations: retry feedback and edge admission pressure are visible before the rest of the control plane fully degrades."
+      }
+    }
+  ]
+}
