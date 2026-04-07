@@ -1264,7 +1264,7 @@ export function IncidentWorkflowDetail() {
           </div>
 
           <div ref={knowledgeRef}>
-            <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+            <div className="space-y-6">
               <Card>
                 <CardContent className="space-y-5 p-6">
                   <div>
@@ -1329,23 +1329,25 @@ export function IncidentWorkflowDetail() {
               </Card>
 
               <Card>
-                <CardContent className="space-y-4 p-6">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Deep trace</div>
-                    <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">Open the raw execution packets only when needed</div>
-                    <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
-                      The debug trace keeps the full request and response flow, model payloads, RCA prompts, and ticket sync history available without cluttering the workflow view.
-                    </p>
-                  </div>
-                  <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
-                    <div className="text-sm font-medium text-[var(--text-strong)]">Detailed execution trace</div>
-                    <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
-                      Use the deep dive page when you need exact timestamps, request bodies, model responses, or workflow event packets.
-                    </p>
-                    <div className="mt-4">
-                      <Button asChild className="w-full">
-                        <Link href={`/incidents/${encodeURIComponent(incident.id)}/debug`}>View Detailed Execution Trace</Link>
-                      </Button>
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="max-w-3xl">
+                      <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Deep trace</div>
+                      <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">Open the raw execution packets only when needed</div>
+                      <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                        The debug trace keeps the full request and response flow, model payloads, RCA prompts, and ticket sync history available without cluttering the workflow view.
+                      </p>
+                    </div>
+                    <div className="w-full rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5 lg:max-w-md">
+                      <div className="text-sm font-medium text-[var(--text-strong)]">Detailed execution trace</div>
+                      <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                        Use the deep dive page when you need exact timestamps, request bodies, model responses, or workflow event packets.
+                      </p>
+                      <div className="mt-4">
+                        <Button asChild className="w-full">
+                          <Link href={`/incidents/${encodeURIComponent(incident.id)}/debug`}>View Detailed Execution Trace</Link>
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
