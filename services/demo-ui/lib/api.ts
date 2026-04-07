@@ -16,6 +16,10 @@ import type {
 
 const defaultProject = process.env.NEXT_PUBLIC_IMS_PROJECT ?? "ims-demo";
 const REQUEST_TIMEOUT_MS = 12_000;
+const CONSOLE_STALE_TIME_MS = 30_000;
+const INCIDENT_LIST_STALE_TIME_MS = 20_000;
+const INCIDENT_WORKFLOW_STALE_TIME_MS = 15_000;
+const DEBUG_TRACE_STALE_TIME_MS = 60_000;
 
 export async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
@@ -64,10 +68,10 @@ export function useConsoleStateQuery(refetchInterval = 15_000) {
     queryFn: () => request<ConsoleState>(`/api/console/state?project=${encodeURIComponent(defaultProject)}`, token),
     placeholderData: (previousData) => previousData,
     refetchInterval,
-    refetchIntervalInBackground: true,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-    staleTime: Math.max(5_000, Math.floor(refetchInterval * 0.75)),
+    refetchIntervalInBackground: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    staleTime: Math.max(CONSOLE_STALE_TIME_MS, Math.floor(refetchInterval * 0.75)),
     retry: 2,
     retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 8_000),
   });
@@ -91,11 +95,11 @@ export function useIncidentsQuery(filters: { status?: string; severity?: string;
       return request<IncidentRecord[]>(`/api/incidents?${params.toString()}`, token);
     },
     placeholderData: (previousData) => previousData,
-    refetchInterval: 20_000,
-    refetchIntervalInBackground: true,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-    staleTime: 10_000,
+    refetchInterval: 45_000,
+    refetchIntervalInBackground: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    staleTime: INCIDENT_LIST_STALE_TIME_MS,
     retry: 2,
     retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 8_000),
   });
@@ -107,8 +111,11 @@ export function useIncidentWorkflowQuery(incidentId: string) {
     queryKey: ["incident-workflow", incidentId, token],
     queryFn: () => request<IncidentWorkflow>(`/api/incidents/${encodeURIComponent(incidentId)}`, token),
     enabled: Boolean(incidentId),
-    refetchInterval: 12_000,
-    staleTime: 5_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    staleTime: INCIDENT_WORKFLOW_STALE_TIME_MS,
     retry: 2,
   });
 }
@@ -119,8 +126,10 @@ export function useIncidentDebugTraceQuery(incidentId: string) {
     queryKey: ["incident-debug-trace", incidentId, token],
     queryFn: () => request<IncidentDebugTraceResponse>(`/api/incidents/${encodeURIComponent(incidentId)}/debug-trace`, token),
     enabled: Boolean(incidentId),
-    refetchInterval: 12_000,
-    staleTime: 5_000,
+    refetchInterval: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    staleTime: DEBUG_TRACE_STALE_TIME_MS,
     retry: 2,
   });
 }
@@ -131,8 +140,10 @@ export function useTicketLookupQuery(provider: string, externalId: string) {
     queryKey: ["ticket-lookup", provider, externalId, token],
     queryFn: () => request<TicketLookupResponse>(`/api/tickets/${encodeURIComponent(provider)}/${encodeURIComponent(externalId)}`, token),
     enabled: Boolean(provider) && Boolean(externalId),
-    refetchInterval: 15_000,
-    staleTime: 5_000,
+    refetchInterval: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    staleTime: DEBUG_TRACE_STALE_TIME_MS,
     retry: 2,
   });
 }
