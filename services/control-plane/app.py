@@ -145,6 +145,7 @@ RELATED_CONTEXT_COLLECTIONS = [name for name in DEFAULT_MILVUS_COLLECTIONS if na
 _AUTOMATION_BOOTSTRAP_LOCK = threading.Lock()
 _AUTOMATION_BOOTSTRAP_STARTED = False
 DEBUG_TRACE_EVENT_TYPE = "debug_trace_packet"
+DEFAULT_INCIDENT_AUTO_RCA_SAMPLE_RATE = 1.0
 
 
 class IncidentCreate(BaseModel):
@@ -163,7 +164,7 @@ class IncidentCreate(BaseModel):
     status: str = NEW
     severity: Optional[str] = None
     source_system: str = "anomaly-service"
-    auto_generate_rca: bool = True
+    auto_generate_rca: Optional[bool] = None
     debug_trace: List[Dict[str, object]] = Field(default_factory=list)
 
 
@@ -181,6 +182,61 @@ class RCAAttach(BaseModel):
     llm_runtime: Optional[str] = None
     retrieved_documents: List[Dict[str, object]] = Field(default_factory=list)
     debug_trace: List[Dict[str, object]] = Field(default_factory=list)
+
+
+def _incident_auto_rca_sample_rate() -> float:
+    raw_value = str(os.getenv("INCIDENT_AUTO_RCA_SAMPLE_RATE", str(DEFAULT_INCIDENT_AUTO_RCA_SAMPLE_RATE))).strip()
+    if not raw_value:
+        return DEFAULT_INCIDENT_AUTO_RCA_SAMPLE_RATE
+    try:
+        return max(0.0, min(float(raw_value), 1.0))
+    except ValueError:
+        logger.warning(
+            "Invalid INCIDENT_AUTO_RCA_SAMPLE_RATE=%r, falling back to %.2f",
+            raw_value,
+            DEFAULT_INCIDENT_AUTO_RCA_SAMPLE_RATE,
+        )
+        return DEFAULT_INCIDENT_AUTO_RCA_SAMPLE_RATE
+
+
+def _stable_sample_ratio(value: str) -> float:
+    digest = hashlib.sha256(value.encode("utf-8")).digest()
+    numerator = int.from_bytes(digest[:8], "big")
+    return numerator / float((1 << 64) - 1)
+
+
+def _auto_rca_policy(auto_generate_rca: Optional[bool], incident_id: str) -> Dict[str, object]:
+    if auto_generate_rca is not None:
+        return {
+            "enabled": bool(auto_generate_rca),
+            "mode": "explicit",
+            "sample_rate": None,
+            "sample_value": None,
+        }
+
+    sample_rate = _incident_auto_rca_sample_rate()
+    if sample_rate <= 0.0:
+        return {
+            "enabled": False,
+            "mode": "sampled",
+            "sample_rate": sample_rate,
+            "sample_value": 1.0,
+        }
+    if sample_rate >= 1.0:
+        return {
+            "enabled": True,
+            "mode": "sampled",
+            "sample_rate": sample_rate,
+            "sample_value": 0.0,
+        }
+
+    sample_value = _stable_sample_ratio(str(incident_id or "incident"))
+    return {
+        "enabled": sample_value < sample_rate,
+        "mode": "sampled",
+        "sample_rate": sample_rate,
+        "sample_value": round(sample_value, 6),
+    }
 
 
 class ModelPromotionRequest(BaseModel):
@@ -2466,11 +2522,24 @@ def post_incident(
     record_incident(incident["project"], incident["anomaly_type"], incident["status"])
     set_active_incidents(list_incidents(project=incident["project"]))
     background_tasks.add_task(_publish_eda_event_best_effort, "incident_created", incident)
-    if payload.auto_generate_rca:
+    auto_rca_policy = _auto_rca_policy(payload.auto_generate_rca, str(incident.get("id") or payload.incident_id))
+    if bool(auto_rca_policy["enabled"]):
         background_tasks.add_task(
             _auto_generate_incident_rca,
             incident["id"],
             f"{incident.get('source_system') or payload.source_system}:auto-rca",
+        )
+    else:
+        record_audit(
+            "rca_auto_generation_deferred",
+            "control-plane:auto-rca-policy",
+            {
+                "mode": auto_rca_policy["mode"],
+                "sample_rate": auto_rca_policy["sample_rate"],
+                "sample_value": auto_rca_policy["sample_value"],
+                "status": incident.get("status"),
+            },
+            incident_id=incident["id"],
         )
     return incident
 

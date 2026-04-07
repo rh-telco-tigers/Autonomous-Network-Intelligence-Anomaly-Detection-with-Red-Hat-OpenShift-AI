@@ -44,6 +44,14 @@ control_plane_app = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(control_plane_app)
 
 
+class _TaskRecorder:
+    def __init__(self) -> None:
+        self.tasks: list[tuple[object, tuple[object, ...], dict[str, object]]] = []
+
+    def add_task(self, func: object, *args: object, **kwargs: object) -> None:
+        self.tasks.append((func, args, kwargs))
+
+
 class PlaneEscalationRemediationTests(unittest.TestCase):
     def test_execute_open_plane_escalation_creates_plane_ticket(self) -> None:
         incident_state = {
@@ -149,6 +157,80 @@ class PlaneEscalationRemediationTests(unittest.TestCase):
             "https://demo-ui.example.com/incidents/inc-123",
         )
         sync_current_ticket.assert_not_called()
+
+
+class IncidentAutoRcaPolicyTests(unittest.TestCase):
+    def _incident_payload(self, **overrides: object) -> control_plane_app.IncidentCreate:
+        values = {
+            "incident_id": "inc-rca-1",
+            "project": "ims-demo",
+            "anomaly_score": 0.98,
+            "anomaly_type": "registration_storm",
+            "predicted_confidence": 0.94,
+            "model_version": "ims-predictive-fs",
+            "feature_snapshot": {"scenario_name": "registration_storm"},
+        }
+        values.update(overrides)
+        return control_plane_app.IncidentCreate(**values)
+
+    def _stored_incident(self) -> dict[str, object]:
+        return {
+            "id": "inc-rca-1",
+            "project": "ims-demo",
+            "status": control_plane_app.NEW,
+            "anomaly_type": "registration_storm",
+            "source_system": "anomaly-service",
+        }
+
+    def test_post_incident_defers_auto_rca_for_sampled_holdout(self) -> None:
+        payload = self._incident_payload()
+        background_tasks = _TaskRecorder()
+
+        with (
+            mock.patch.dict(control_plane_app.os.environ, {"INCIDENT_AUTO_RCA_SAMPLE_RATE": "0.9"}, clear=False),
+            mock.patch.object(control_plane_app, "ensure_project_access"),
+            mock.patch.object(control_plane_app, "create_incident", return_value=self._stored_incident()) as create_incident,
+            mock.patch.object(control_plane_app, "_publish_incident_evidence_record"),
+            mock.patch.object(control_plane_app, "_record_debug_trace_packets"),
+            mock.patch.object(control_plane_app, "record_incident"),
+            mock.patch.object(control_plane_app, "set_active_incidents"),
+            mock.patch.object(control_plane_app, "list_incidents", return_value=[]),
+            mock.patch.object(control_plane_app, "_stable_sample_ratio", return_value=0.95),
+            mock.patch.object(control_plane_app, "record_audit") as record_audit,
+        ):
+            response = control_plane_app.post_incident(payload, background_tasks, auth=None)
+
+        self.assertEqual(response["status"], control_plane_app.NEW)
+        self.assertEqual(create_incident.call_args.args[0]["status"], control_plane_app.NEW)
+        self.assertNotIn("auto_generate_rca", create_incident.call_args.args[0])
+        deferred_audit = next(call for call in record_audit.call_args_list if call.args[0] == "rca_auto_generation_deferred")
+        self.assertEqual(deferred_audit.kwargs["incident_id"], "inc-rca-1")
+        self.assertEqual(deferred_audit.args[2]["sample_rate"], 0.9)
+        self.assertEqual(deferred_audit.args[2]["sample_value"], 0.95)
+        scheduled_funcs = [task[0] for task in background_tasks.tasks]
+        self.assertIn(control_plane_app._publish_eda_event_best_effort, scheduled_funcs)
+        self.assertNotIn(control_plane_app._auto_generate_incident_rca, scheduled_funcs)
+
+    def test_post_incident_honors_explicit_auto_rca_override(self) -> None:
+        payload = self._incident_payload(auto_generate_rca=True)
+        background_tasks = _TaskRecorder()
+
+        with (
+            mock.patch.dict(control_plane_app.os.environ, {"INCIDENT_AUTO_RCA_SAMPLE_RATE": "0.0"}, clear=False),
+            mock.patch.object(control_plane_app, "ensure_project_access"),
+            mock.patch.object(control_plane_app, "create_incident", return_value=self._stored_incident()),
+            mock.patch.object(control_plane_app, "_publish_incident_evidence_record"),
+            mock.patch.object(control_plane_app, "_record_debug_trace_packets"),
+            mock.patch.object(control_plane_app, "record_incident"),
+            mock.patch.object(control_plane_app, "set_active_incidents"),
+            mock.patch.object(control_plane_app, "list_incidents", return_value=[]),
+            mock.patch.object(control_plane_app, "record_audit") as record_audit,
+        ):
+            control_plane_app.post_incident(payload, background_tasks, auth=None)
+
+        scheduled_funcs = [task[0] for task in background_tasks.tasks]
+        self.assertIn(control_plane_app._auto_generate_incident_rca, scheduled_funcs)
+        self.assertFalse(any(call.args[0] == "rca_auto_generation_deferred" for call in record_audit.call_args_list))
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ data:
   PREDICTIVE_ENDPOINT: http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080
   PREDICTIVE_MODEL_NAME: ims-predictive-fs
   PREDICTIVE_MODEL_VERSION_LABEL: ims-predictive-fs
+  INCIDENT_AUTO_RCA_SAMPLE_RATE: "0.9"
   IMS_PCSCF_HOST: ims-pcscf.ims-demo-lab.svc.cluster.local
   IMS_PCSCF_PORT: "5060"
   DATASET_STORE_ENDPOINT: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
