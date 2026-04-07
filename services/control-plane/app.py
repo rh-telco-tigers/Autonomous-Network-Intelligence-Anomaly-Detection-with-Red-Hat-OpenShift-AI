@@ -207,6 +207,7 @@ class RemediationActionRequest(BaseModel):
     notes: str = ""
     execute: bool = False
     source_of_action: str = "platform_ui"
+    source_url: str = ""
 
 
 class VerificationRequest(BaseModel):
@@ -240,6 +241,7 @@ class ResolutionExtractRequest(BaseModel):
 class RemediationDecisionRequest(BaseModel):
     approved_by: str
     notes: str = ""
+    source_url: str = ""
 
 
 class AutomationActionTriggerRequest(BaseModel):
@@ -2761,6 +2763,7 @@ def _execute_incident_action(
 
     execution_status = "approved"
     output = "Approval recorded."
+    skip_ticket_update = False
     if payload.execute and action_ref in PLAYBOOKS:
         incident = _transition_incident_with_audit(
             incident,
@@ -2813,6 +2816,68 @@ def _execute_incident_action(
                     actor,
                     f"Automation for {action_ref} was gated before execution.",
                 )
+    elif payload.execute and action_ref == "open_plane_escalation":
+        execution_status = "executed"
+        finished_at = _now_iso()
+        skip_ticket_update = True
+        action_result_json |= {"backend": "ticket", "raw_status": "escalated"}
+        incident = _transition_incident_with_audit(
+            get_incident(incident_id) or incident,
+            ESCALATED,
+            actor,
+            payload.notes or "Escalated incident for human coordination in Plane.",
+        )
+        ticket_note = _ticket_note(
+            "Incident escalation",
+            [
+                ("Incident", incident_id),
+                ("Workflow state", incident.get("status")),
+                ("Operator", payload.approved_by),
+                ("Action", action_ref),
+                ("Remediation", (remediation or {}).get("title")),
+                ("Comment", payload.notes or "Escalated from the remediation workflow."),
+            ],
+        )
+        try:
+            ticket_result = _sync_ticket_provider(
+                incident,
+                "plane",
+                note=ticket_note,
+                force=True,
+                source_url=payload.source_url,
+            )
+            action_result_json["ticket"] = ticket_result
+            operation = ticket_result.get("operation") if isinstance(ticket_result, dict) else None
+            status_payload = operation if isinstance(operation, dict) else ticket_result if isinstance(ticket_result, dict) else {}
+            ticket_status = str(status_payload.get("status") or "").strip().lower()
+            ticket_key = str(
+                (ticket_result if isinstance(ticket_result, dict) else {}).get("external_key")
+                or (ticket_result if isinstance(ticket_result, dict) else {}).get("external_id")
+                or ""
+            ).strip()
+            if ticket_status == "created":
+                output = f"Incident escalated and Plane ticket {ticket_key or 'created'} is ready for coordination."
+            elif ticket_status == "synced":
+                output = f"Incident escalated and Plane ticket {ticket_key or 'updated'} is ready for coordination."
+            elif ticket_status == "skipped":
+                output = str(
+                    status_payload.get("reason")
+                    or "Incident escalated. Open the ticket workflow to create or sync the Plane ticket."
+                )
+            else:
+                output = "Incident escalated. Open the ticket workflow to review Plane synchronization."
+        except Exception as exc:
+            execution_status = "failed"
+            output = f"Incident escalated but Plane ticket synchronization failed: {exc}"
+            action_result_json |= {"raw_status": "failed", "error": str(exc)}
+            logger.warning("Plane ticket sync failed for escalated remediation on incident %s: %s", incident_id, exc)
+            record_ticket_sync("plane", "outbound", "failed")
+            record_audit(
+                "ticket_sync_failed",
+                actor,
+                {"provider": "plane", "reason": "remediation_open_plane_escalation", "detail": str(exc)},
+                incident_id=incident_id,
+            )
     elif payload.execute:
         execution_status = "executed"
         output = payload.notes or f"Manual or notify action {action_ref} recorded as executed."
@@ -2888,24 +2953,25 @@ def _execute_incident_action(
                 payload.notes,
             )
     refreshed_incident = get_incident(incident_id) or incident
-    _sync_current_ticket_best_effort(
-        refreshed_incident,
-        _ticket_note(
-            "Incident action update",
-            [
-                ("Incident", incident_id),
-                ("Workflow state", refreshed_incident.get("status")),
-                ("Operator", payload.approved_by),
-                ("Action", action_ref),
-                ("Remediation", (remediation or {}).get("title")),
-                ("Execution status", execution_status),
-                ("Result", output),
-                ("Comment", payload.notes or "Action recorded from the incident workflow."),
-            ],
-        ),
-        payload.approved_by,
-        "incident_action",
-    )
+    if not skip_ticket_update:
+        _sync_current_ticket_best_effort(
+            refreshed_incident,
+            _ticket_note(
+                "Incident action update",
+                [
+                    ("Incident", incident_id),
+                    ("Workflow state", refreshed_incident.get("status")),
+                    ("Operator", payload.approved_by),
+                    ("Action", action_ref),
+                    ("Remediation", (remediation or {}).get("title")),
+                    ("Execution status", execution_status),
+                    ("Result", output),
+                    ("Comment", payload.notes or "Action recorded from the incident workflow."),
+                ],
+            ),
+            payload.approved_by,
+            "incident_action",
+        )
     set_active_incidents(list_incidents(project=incident["project"]))
     return {
         "approval": approval,
@@ -2928,6 +2994,7 @@ def approve_remediation(
             approved_by=payload.approved_by,
             notes=payload.notes,
             execute=False,
+            source_url=payload.source_url,
         ),
         auth,
     )
@@ -2948,6 +3015,7 @@ def execute_remediation(
             approved_by=payload.approved_by,
             notes=payload.notes,
             execute=True,
+            source_url=payload.source_url,
         ),
         auth,
         background_tasks,

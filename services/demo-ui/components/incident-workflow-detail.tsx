@@ -333,7 +333,7 @@ export function IncidentWorkflowDetail() {
       const body =
         values.mode === "reject"
           ? { rejected_by: values.actor, notes: values.notes }
-          : { approved_by: values.actor, notes: values.notes };
+          : { approved_by: values.actor, notes: values.notes, source_url: currentPageUrl };
       return request<RemediationActionResponse>(path, token, {
         method: "POST",
         body: JSON.stringify(body),
@@ -545,18 +545,25 @@ export function IncidentWorkflowDetail() {
           mode,
         });
         const executionStatus = payload.action?.execution_status ?? (mode === "reject" ? "rejected" : "approved");
+        const escalatesToPlane = remediation.action_ref === "open_plane_escalation";
         setNotice({
           kind: mode === "execute" && executionStatus === "failed" ? "error" : "success",
           message:
             mode === "reject"
               ? "Remediation rejected."
               : mode === "execute"
-                ? executionStatus === "executing"
-                  ? "Remediation approved and launched in AAP."
-                  : executionStatus === "executed"
-                    ? "Remediation approved and executed."
-                    : payload.action?.result_summary ?? "Remediation execution failed."
-                : "Remediation approved.",
+                ? escalatesToPlane
+                  ? payload.workflow.current_ticket
+                    ? "Incident escalated. Plane ticket is attached and ready for coordination."
+                    : payload.action?.result_summary ?? "Incident escalated. Open the ticket workflow to create or sync the Plane ticket."
+                  : executionStatus === "executing"
+                    ? "Remediation approved and launched in AAP."
+                    : executionStatus === "executed"
+                      ? "Remediation approved and executed."
+                      : payload.action?.result_summary ?? "Remediation execution failed."
+                : escalatesToPlane
+                  ? "Escalation approved. Execute it to create the Plane ticket."
+                  : "Remediation approved.",
         });
         clearRemediationNote(remediation.id);
       } catch (mutationError) {

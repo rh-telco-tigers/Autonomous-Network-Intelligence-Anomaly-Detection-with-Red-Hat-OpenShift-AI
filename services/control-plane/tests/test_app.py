@@ -1,0 +1,155 @@
+import importlib.util
+import sys
+import types
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+
+SERVICES_ROOT = Path(__file__).resolve().parents[2]
+if str(SERVICES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICES_ROOT))
+
+if "prometheus_client" not in sys.modules:
+    prometheus_client = types.ModuleType("prometheus_client")
+
+    class _NoopMetric:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def labels(self, *_args: object, **_kwargs: object) -> "_NoopMetric":
+            return self
+
+        def inc(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+        def set(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+        def observe(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+    prometheus_client.CONTENT_TYPE_LATEST = "text/plain"
+    prometheus_client.Counter = _NoopMetric
+    prometheus_client.Gauge = _NoopMetric
+    prometheus_client.Histogram = _NoopMetric
+    prometheus_client.generate_latest = lambda: b""
+    sys.modules["prometheus_client"] = prometheus_client
+
+MODULE_PATH = Path(__file__).resolve().parents[1] / "app.py"
+SPEC = importlib.util.spec_from_file_location("control_plane_app", MODULE_PATH)
+assert SPEC and SPEC.loader
+control_plane_app = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(control_plane_app)
+
+
+class PlaneEscalationRemediationTests(unittest.TestCase):
+    def test_execute_open_plane_escalation_creates_plane_ticket(self) -> None:
+        incident_state = {
+            "incident": {
+                "id": "inc-123",
+                "project": "ims-demo",
+                "status": control_plane_app.REMEDIATION_SUGGESTED,
+                "workflow_revision": 1,
+            },
+            "ticket": None,
+        }
+        remediation = {
+            "id": 7,
+            "action_ref": "open_plane_escalation",
+            "action_mode": "notify",
+            "title": "Escalate to Plane for human coordination",
+            "status": "pending",
+        }
+        sync_result = {
+            "id": 99,
+            "provider": "plane",
+            "external_key": "PLANE-42",
+            "operation": {"status": "created"},
+        }
+
+        def get_incident(_: str) -> dict[str, object]:
+            return dict(incident_state["incident"])
+
+        def transition(incident: dict[str, object], target_state: str, _: str, __: str) -> dict[str, object]:
+            updated = dict(incident)
+            updated["status"] = target_state
+            updated["workflow_revision"] = int(updated.get("workflow_revision") or 1) + 1
+            incident_state["incident"] = updated
+            return updated
+
+        def record_incident_action(**kwargs: object) -> dict[str, object]:
+            return {
+                "id": 501,
+                "execution_status": kwargs["execution_status"],
+                "result_summary": kwargs["result_summary"],
+            }
+
+        def workflow_payload(incident: dict[str, object]) -> dict[str, object]:
+            ticket = incident_state["ticket"]
+            return {
+                "incident": incident,
+                "tickets": [ticket] if ticket else [],
+                "current_ticket": ticket,
+            }
+
+        def sync_ticket(
+            incident: dict[str, object],
+            provider_name: str,
+            note: str = "",
+            force: bool = False,
+            source_url: str = "",
+        ) -> dict[str, object]:
+            incident_state["ticket"] = sync_result
+            incident_state["sync_call"] = {
+                "status": incident["status"],
+                "provider": provider_name,
+                "note": note,
+                "force": force,
+                "source_url": source_url,
+            }
+            return sync_result
+
+        auth = SimpleNamespace(subject="demo-operator")
+        payload = control_plane_app.RemediationActionRequest(
+            remediation_id=7,
+            approved_by="demo-operator",
+            notes="Need human coordination.",
+            execute=True,
+            source_url="https://demo-ui.example.com/incidents/inc-123",
+        )
+
+        with (
+            mock.patch.object(control_plane_app, "ensure_role"),
+            mock.patch.object(control_plane_app, "ensure_project_access"),
+            mock.patch.object(control_plane_app, "get_incident", side_effect=get_incident),
+            mock.patch.object(control_plane_app, "get_incident_remediation", return_value=remediation),
+            mock.patch.object(control_plane_app, "_transition_incident_with_audit", side_effect=transition),
+            mock.patch.object(control_plane_app, "record_approval", return_value={"id": 301}),
+            mock.patch.object(control_plane_app, "record_incident_action", side_effect=record_incident_action),
+            mock.patch.object(control_plane_app, "record_audit"),
+            mock.patch.object(control_plane_app, "_sync_ticket_provider", side_effect=sync_ticket),
+            mock.patch.object(control_plane_app, "_sync_current_ticket_best_effort") as sync_current_ticket,
+            mock.patch.object(control_plane_app, "list_incidents", return_value=[]),
+            mock.patch.object(control_plane_app, "set_active_incidents"),
+            mock.patch.object(control_plane_app, "_workflow_payload", side_effect=workflow_payload),
+        ):
+            response = control_plane_app._execute_incident_action("inc-123", payload, auth=auth)
+
+        self.assertEqual(incident_state["incident"]["status"], control_plane_app.ESCALATED)
+        self.assertEqual(response["action"]["execution_status"], "executed")
+        self.assertEqual(response["workflow"]["current_ticket"]["external_key"], "PLANE-42")
+        self.assertIn("Plane ticket PLANE-42", response["action"]["result_summary"])
+        self.assertEqual(incident_state["sync_call"]["provider"], "plane")
+        self.assertEqual(incident_state["sync_call"]["status"], control_plane_app.ESCALATED)
+        self.assertTrue(incident_state["sync_call"]["force"])
+        self.assertEqual(
+            incident_state["sync_call"]["source_url"],
+            "https://demo-ui.example.com/incidents/inc-123",
+        )
+        sync_current_ticket.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()
