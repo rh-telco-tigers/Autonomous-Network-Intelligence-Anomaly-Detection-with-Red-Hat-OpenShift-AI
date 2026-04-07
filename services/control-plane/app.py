@@ -26,6 +26,13 @@ from shared.aap import (
     wait_for_job as aap_wait_for_job,
     wait_for_runner_job as aap_wait_for_runner_job,
 )
+from shared.cluster_env import (
+    anomaly_service_url,
+    console_cluster_name,
+    feature_gateway_url,
+    predictive_service_url,
+    rca_service_url,
+)
 from shared.cors import install_cors
 from shared.debug_trace import interaction_trace_packets, make_trace_packet
 from shared.eda import (
@@ -318,7 +325,7 @@ def _safe_imsi_for_automation(incident: Dict[str, object]) -> str:
 
 
 CONSOLE_SCENARIOS = set(console_scenario_names())
-CONSOLE_CLUSTER_NAME = os.getenv("CONSOLE_CLUSTER_NAME", "ims-demo-lab")
+CONSOLE_CLUSTER_NAME = console_cluster_name()
 CONSOLE_AUTO_REFRESH_SECONDS = _positive_int_from_env("CONSOLE_AUTO_REFRESH_SECONDS", 5)
 CONSOLE_RECENT_INCIDENT_LIMIT = _positive_int_from_env("CONSOLE_RECENT_INCIDENT_LIMIT", 24)
 UPSTREAM_TIMEOUT_SECONDS = float(os.getenv("CONSOLE_UPSTREAM_TIMEOUT_SECONDS", "20"))
@@ -326,13 +333,12 @@ HEALTH_PROBE_TIMEOUT_SECONDS = float(os.getenv("CONSOLE_HEALTH_PROBE_TIMEOUT_SEC
 SERVICE_SNAPSHOT_CACHE_SECONDS = float(os.getenv("CONSOLE_SERVICE_SNAPSHOT_CACHE_SECONDS", "10"))
 AAP_JOB_TIMEOUT_SECONDS = _positive_int_from_env("AAP_JOB_TIMEOUT_SECONDS", 300)
 AAP_JOB_POLL_SECONDS = _positive_int_from_env("AAP_JOB_POLL_SECONDS", 5)
-FEATURE_GATEWAY_URL = os.getenv("FEATURE_GATEWAY_URL", "http://feature-gateway.ims-demo-lab.svc.cluster.local:8080").rstrip("/")
-ANOMALY_SERVICE_URL = os.getenv("ANOMALY_SERVICE_URL", "http://anomaly-service.ims-demo-lab.svc.cluster.local:8080").rstrip("/")
-RCA_SERVICE_URL = os.getenv("RCA_SERVICE_URL", "http://rca-service.ims-demo-lab.svc.cluster.local:8080").rstrip("/")
+FEATURE_GATEWAY_URL = feature_gateway_url().rstrip("/")
+ANOMALY_SERVICE_URL = anomaly_service_url().rstrip("/")
+RCA_SERVICE_URL = rca_service_url().rstrip("/")
 PREDICTIVE_SERVICE_URL = (
-    os.getenv("PREDICTIVE_SERVICE_URL", "").strip()
-    or os.getenv("PREDICTIVE_FS_SERVICE_URL", "").strip()
-    or "http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080"
+    os.getenv("PREDICTIVE_FS_SERVICE_URL", "").strip()
+    or predictive_service_url()
 ).rstrip("/")
 _SERVICE_SNAPSHOT_CACHE_LOCK = threading.Lock()
 _SERVICE_SNAPSHOT_CACHE: List[Dict[str, object]] | None = None

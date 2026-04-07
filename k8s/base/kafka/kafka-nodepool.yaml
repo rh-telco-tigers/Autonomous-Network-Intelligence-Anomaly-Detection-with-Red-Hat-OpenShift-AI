@@ -2,6 +2,8 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaNodePool
 metadata:
   name: dual-role
+  annotations:
+    argocd.argoproj.io/sync-wave: "15"
   labels:
     strimzi.io/cluster: ims-release-kafka
 spec:

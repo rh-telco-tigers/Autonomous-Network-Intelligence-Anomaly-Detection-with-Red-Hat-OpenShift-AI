@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ims-platform-config
+  namespace: ims-demo-lab
+data:
+  IMS_NAMESPACE: ims-demo-lab
+  IMS_PROJECT: ims-demo
+  DEMO_PROJECT: ims-demo
+  CONTROL_PLANE_PROJECT: ims-demo
+  CONSOLE_CLUSTER_NAME: ims-demo-lab
+  CONTROL_PLANE_URL: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+  CONTROL_PLANE_PROXY_URL: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+  FEATURE_GATEWAY_URL: http://feature-gateway.ims-demo-lab.svc.cluster.local:8080
+  ANOMALY_SERVICE_URL: http://anomaly-service.ims-demo-lab.svc.cluster.local:8080
+  RCA_SERVICE_URL: http://rca-service.ims-demo-lab.svc.cluster.local:8080
+  PREDICTIVE_SERVICE_URL: http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080
+  PREDICTIVE_ENDPOINT: http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080
+  PREDICTIVE_MODEL_NAME: ims-predictive-fs
+  PREDICTIVE_MODEL_VERSION_LABEL: ims-predictive-fs
+  IMS_PCSCF_HOST: ims-pcscf.ims-demo-lab.svc.cluster.local
+  IMS_PCSCF_PORT: "5060"
+  DATASET_STORE_ENDPOINT: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+  DATASET_STORE_BUCKET: ims-models
+  DATASET_STORE_PREFIX: pipelines/ims-demo-lab/datasets
+  FEAST_S3_ENDPOINT_URL: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+  FEATURESTORE_REGISTRY_PATH: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+  FEATURESTORE_ONLINE_STORE_PATH: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+  MODEL_REGISTRY_ENDPOINT: http://ims-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080
+  MODEL_REGISTRY_NAMESPACE: rhoai-model-registries
+  MODEL_REGISTRY_SERVICE: ims-demo-modelregistry
+  MILVUS_URI: http://milvus.ims-demo-lab.svc.cluster.local:19530
+  MILVUS_COLLECTIONS: ims_runbooks,incident_evidence,incident_reasoning,incident_resolution,ims_topology,ims_signal_patterns
+  DEMO_SCENARIOS: registration_storm,registration_failure,authentication_failure,malformed_invite,routing_error,busy_destination,call_setup_timeout,call_drop_mid_session,server_internal_error,network_degradation,retransmission_spike

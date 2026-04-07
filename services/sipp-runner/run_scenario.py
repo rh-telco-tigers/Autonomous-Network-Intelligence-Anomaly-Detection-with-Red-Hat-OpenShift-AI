@@ -27,16 +27,17 @@ for import_root in [SCRIPT_ROOT, SCRIPT_ROOT.parent]:
     if import_root.exists() and import_root_str not in sys.path:
         sys.path.insert(0, import_root_str)
 
+from shared.cluster_env import anomaly_service_url, control_plane_url, dataset_store_bucket, dataset_store_endpoint, dataset_store_prefix
 from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type, normalize_scenario_name, scenario_definition
 
 
 FEATURE_SCHEMA_VERSION = "feature_schema_v1"
 DEFAULT_DATASET_VERSION = "live-sipp-v1"
-DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000"
-DEFAULT_DATASET_STORE_BUCKET = "ims-models"
-DEFAULT_DATASET_STORE_PREFIX = "pipelines/ims-demo-lab/datasets"
-DEFAULT_CONTROL_PLANE_URL = "http://control-plane.ims-demo-lab.svc.cluster.local:8080"
-DEFAULT_ANOMALY_SERVICE_URL = "http://anomaly-service.ims-demo-lab.svc.cluster.local:8080"
+DEFAULT_DATASET_STORE_ENDPOINT = dataset_store_endpoint()
+DEFAULT_DATASET_STORE_BUCKET = dataset_store_bucket()
+DEFAULT_DATASET_STORE_PREFIX = dataset_store_prefix()
+DEFAULT_CONTROL_PLANE_URL = control_plane_url()
+DEFAULT_ANOMALY_SERVICE_URL = anomaly_service_url()
 NUMERIC_FEATURES = [
     "register_rate",
     "invite_rate",

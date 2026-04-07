@@ -20,9 +20,12 @@ spec:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ims-platform-config
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - $(IMS_PCSCF_HOST)
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -38,12 +41,6 @@ spec:
                 - --dataset-version
                 - live-sipp-v1
               env:
-                - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-                - name: DATASET_STORE_BUCKET
-                  value: ims-models
-                - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -54,12 +51,11 @@ spec:
                     secretKeyRef:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
-                - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
-                  value: demo-token
-                - name: CONTROL_PLANE_PROJECT
-                  value: ims-demo
+                  valueFrom:
+                    secretKeyRef:
+                      name: demo-api-auth
+                      key: API_KEY
                 - name: CONTROL_PLANE_INCIDENT_STATUS
                   value: resolved
                 - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
@@ -105,9 +101,12 @@ spec:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ims-platform-config
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - $(IMS_PCSCF_HOST)
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -123,12 +122,6 @@ spec:
                 - --dataset-version
                 - live-sipp-v1
               env:
-                - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-                - name: DATASET_STORE_BUCKET
-                  value: ims-models
-                - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -139,12 +132,11 @@ spec:
                     secretKeyRef:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
-                - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
-                  value: demo-token
-                - name: CONTROL_PLANE_PROJECT
-                  value: ims-demo
+                  valueFrom:
+                    secretKeyRef:
+                      name: demo-api-auth
+                      key: API_KEY
                 - name: CONTROL_PLANE_INCIDENT_STATUS
                   value: resolved
                 - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
@@ -190,9 +182,12 @@ spec:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ims-platform-config
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - $(IMS_PCSCF_HOST)
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -208,12 +203,6 @@ spec:
                 - --dataset-version
                 - live-sipp-v1
               env:
-                - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-                - name: DATASET_STORE_BUCKET
-                  value: ims-models
-                - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -224,12 +213,11 @@ spec:
                     secretKeyRef:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
-                - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
-                  value: demo-token
-                - name: CONTROL_PLANE_PROJECT
-                  value: ims-demo
+                  valueFrom:
+                    secretKeyRef:
+                      name: demo-api-auth
+                      key: API_KEY
                 - name: CONTROL_PLANE_INCIDENT_STATUS
                   value: resolved
                 - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION

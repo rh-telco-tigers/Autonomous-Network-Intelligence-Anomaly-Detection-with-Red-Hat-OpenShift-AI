@@ -19,6 +19,11 @@ spec:
       containers:
         - name: publish-pipeline
           image: registry.access.redhat.com/ubi9/python-311:latest
+          envFrom:
+            - configMapRef:
+                name: ims-platform-config
+            - configMapRef:
+                name: ims-featurestore-config
           env:
             - name: HOME
               value: /tmp
@@ -36,16 +41,80 @@ spec:
               value: ims-featurestore
             - name: RUN_NAME
               value: ims-featurestore-demo
-            - name: PIPELINE_PARAMETERS_JSON
-              value: |
-                {"bundle_version":"ims-feature-bundle-v1","feature_service_name":"ims_anomaly_scoring_v1","baseline_version":"baseline-fs-v1","candidate_version":"candidate-fs-v1","automl_engine":"autogluon","model_name":"ims-anomaly-featurestore","model_version_name":"ims-anomaly-featurestore-v1","serving_model_name":"ims-predictive-fs","serving_runtime_name":"nvidia-triton-runtime","serving_model_format_name":"triton","serving_model_format_version":"2","serving_protocol_version":"v2","serving_prefix":"predictive-featurestore","serving_alias":"current","mlserver_serving_model_name":"ims-predictive-fs-mlserver","mlserver_serving_runtime_name":"mlserver-sklearn-runtime","mlserver_serving_model_format_name":"sklearn","mlserver_serving_model_format_version":"1","mlserver_serving_protocol_version":"v2","mlserver_serving_prefix":"predictive-featurestore-mlserver","mlserver_serving_alias":"current"}
             - name: PIPELINE_SKIP_DEMO_RUN
               value: "true"
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: CONTROL_PLANE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: demo-api-auth
+                  key: API_KEY
           command:
             - /bin/bash
             - -lc
           args:
             - |
+              export PIPELINE_PARAMETERS_JSON="$(python - <<'PY'
+              import json
+              import os
+
+              print(
+                  json.dumps(
+                      {
+                          "bundle_version": os.getenv("FEATURESTORE_BUNDLE_VERSION", "ims-feature-bundle-v1"),
+                          "feature_service_name": os.getenv("FEATURE_SERVICE_NAME", "ims_anomaly_scoring_v1"),
+                          "baseline_version": os.getenv("FEATURESTORE_BASELINE_VERSION", "baseline-fs-v1"),
+                          "candidate_version": os.getenv("FEATURESTORE_CANDIDATE_VERSION", "candidate-fs-v1"),
+                          "automl_engine": os.getenv("FEATURESTORE_AUTOML_ENGINE", "autogluon"),
+                          "model_name": os.getenv("FEATURESTORE_MODEL_NAME", "ims-anomaly-featurestore"),
+                          "model_version_name": os.getenv("FEATURESTORE_MODEL_VERSION_NAME", "ims-anomaly-featurestore-v1"),
+                          "serving_model_name": os.getenv("PREDICTIVE_MODEL_NAME", "ims-predictive-fs"),
+                          "serving_runtime_name": os.getenv("FEATURESTORE_SERVING_RUNTIME_NAME", "nvidia-triton-runtime"),
+                          "serving_model_format_name": os.getenv("FEATURESTORE_SERVING_MODEL_FORMAT_NAME", "triton"),
+                          "serving_model_format_version": os.getenv("FEATURESTORE_SERVING_MODEL_FORMAT_VERSION", "2"),
+                          "serving_protocol_version": os.getenv("FEATURESTORE_SERVING_PROTOCOL_VERSION", "v2"),
+                          "serving_prefix": os.getenv("FEATURESTORE_SERVING_PREFIX", "predictive-featurestore"),
+                          "serving_alias": os.getenv("FEATURESTORE_SERVING_ALIAS", "current"),
+                          "mlserver_serving_model_name": os.getenv("MLSERVER_SERVING_MODEL_NAME", "ims-predictive-fs-mlserver"),
+                          "mlserver_serving_runtime_name": os.getenv("MLSERVER_SERVING_RUNTIME_NAME", "mlserver-sklearn-runtime"),
+                          "mlserver_serving_model_format_name": os.getenv("MLSERVER_SERVING_MODEL_FORMAT_NAME", "sklearn"),
+                          "mlserver_serving_model_format_version": os.getenv("MLSERVER_SERVING_MODEL_FORMAT_VERSION", "1"),
+                          "mlserver_serving_protocol_version": os.getenv("MLSERVER_SERVING_PROTOCOL_VERSION", "v2"),
+                          "mlserver_serving_prefix": os.getenv("MLSERVER_SERVING_PREFIX", "predictive-featurestore-mlserver"),
+                          "mlserver_serving_alias": os.getenv("MLSERVER_SERVING_ALIAS", "current"),
+                          "control_plane_url": os.environ["CONTROL_PLANE_URL"],
+                          "control_plane_api_key": os.environ["CONTROL_PLANE_API_KEY"],
+                          "dataset_store_mode": os.getenv("DATASET_STORE_MODE", "s3"),
+                          "dataset_store_endpoint": os.environ["DATASET_STORE_ENDPOINT"],
+                          "dataset_store_bucket": os.environ["DATASET_STORE_BUCKET"],
+                          "dataset_store_prefix": os.environ["DATASET_STORE_PREFIX"],
+                          "dataset_store_access_key": os.environ["DATASET_STORE_ACCESS_KEY"],
+                          "dataset_store_secret_key": os.environ["DATASET_STORE_SECRET_KEY"],
+                          "featurestore_mode": os.getenv("FEATURESTORE_MODE", "remote"),
+                          "featurestore_project": os.getenv("FEATURE_STORE_PROJECT", "ims_anomaly_featurestore"),
+                          "featurestore_registry_path": os.environ["FEATURESTORE_REGISTRY_PATH"],
+                          "featurestore_online_store_path": os.environ["FEATURESTORE_ONLINE_STORE_PATH"],
+                          "featurestore_ca_cert_path": os.getenv("FEATURESTORE_CA_CERT_PATH", "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"),
+                          "featurestore_auth_type": os.getenv("FEATURESTORE_AUTH_TYPE", "no_auth"),
+                          "featurestore_s3_endpoint_url": os.environ["FEAST_S3_ENDPOINT_URL"],
+                          "featurestore_aws_region": os.getenv("AWS_REGION", "us-east-1"),
+                          "featurestore_aws_access_key_id": os.environ["DATASET_STORE_ACCESS_KEY"],
+                          "featurestore_aws_secret_access_key": os.environ["DATASET_STORE_SECRET_KEY"],
+                          "model_registry_endpoint": os.environ["MODEL_REGISTRY_ENDPOINT"],
+                      }
+                  )
+              )
+              PY
+              )"
               python -m pip install --no-cache-dir --target /tmp/kfp-site kfp==2.8.0
               export PYTHONPATH="/tmp/kfp-site:${PYTHONPATH}"
               python /opt/kfp/publish_featurestore_pipeline.py

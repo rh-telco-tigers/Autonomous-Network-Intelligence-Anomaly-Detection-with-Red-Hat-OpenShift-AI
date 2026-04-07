@@ -65,20 +65,31 @@ def validate_bundle(
     )
 
 
-def _configure_bundle_task(task) -> None:
+def _configure_bundle_task(
+    task,
+    *,
+    control_plane_url: str,
+    control_plane_api_key: str,
+    dataset_store_mode: str,
+    dataset_store_endpoint: str,
+    dataset_store_bucket: str,
+    dataset_store_prefix: str,
+    dataset_store_access_key: str,
+    dataset_store_secret_key: str,
+) -> None:
     task.set_env_variable("HOME", "/tmp")
-    task.set_env_variable("CONTROL_PLANE_URL", CONTROL_PLANE_URL)
-    task.set_env_variable("CONTROL_PLANE_API_KEY", CONTROL_PLANE_API_KEY)
-    task.set_env_variable("DATASET_STORE_MODE", DATASET_STORE_MODE)
-    task.set_env_variable("DATASET_STORE_ENDPOINT", DATASET_STORE_ENDPOINT)
-    task.set_env_variable("DATASET_STORE_BUCKET", DATASET_STORE_BUCKET)
-    task.set_env_variable("DATASET_STORE_ACCESS_KEY", DATASET_STORE_ACCESS_KEY)
-    task.set_env_variable("DATASET_STORE_SECRET_KEY", DATASET_STORE_SECRET_KEY)
-    task.set_env_variable("DATASET_STORE_PREFIX", DATASET_STORE_PREFIX)
-    task.set_env_variable("MINIO_ENDPOINT", DATASET_STORE_ENDPOINT)
-    task.set_env_variable("MINIO_BUCKET", DATASET_STORE_BUCKET)
-    task.set_env_variable("MINIO_ACCESS_KEY", DATASET_STORE_ACCESS_KEY)
-    task.set_env_variable("MINIO_SECRET_KEY", DATASET_STORE_SECRET_KEY)
+    task.set_env_variable("CONTROL_PLANE_URL", str(control_plane_url))
+    task.set_env_variable("CONTROL_PLANE_API_KEY", str(control_plane_api_key))
+    task.set_env_variable("DATASET_STORE_MODE", str(dataset_store_mode))
+    task.set_env_variable("DATASET_STORE_ENDPOINT", str(dataset_store_endpoint))
+    task.set_env_variable("DATASET_STORE_BUCKET", str(dataset_store_bucket))
+    task.set_env_variable("DATASET_STORE_ACCESS_KEY", str(dataset_store_access_key))
+    task.set_env_variable("DATASET_STORE_SECRET_KEY", str(dataset_store_secret_key))
+    task.set_env_variable("DATASET_STORE_PREFIX", str(dataset_store_prefix))
+    task.set_env_variable("MINIO_ENDPOINT", str(dataset_store_endpoint))
+    task.set_env_variable("MINIO_BUCKET", str(dataset_store_bucket))
+    task.set_env_variable("MINIO_ACCESS_KEY", str(dataset_store_access_key))
+    task.set_env_variable("MINIO_SECRET_KEY", str(dataset_store_secret_key))
     task.set_env_variable("BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY", "true")
 
 
@@ -87,6 +98,14 @@ def ims_feature_bundle_pipeline(
     bundle_version: str = "ims-feature-bundle-v1",
     source_dataset_versions_json: str = "[\"live-sipp-v1\"]",
     project: str = "ims-demo",
+    control_plane_url: str = CONTROL_PLANE_URL,
+    control_plane_api_key: str = CONTROL_PLANE_API_KEY,
+    dataset_store_mode: str = DATASET_STORE_MODE,
+    dataset_store_endpoint: str = DATASET_STORE_ENDPOINT,
+    dataset_store_bucket: str = DATASET_STORE_BUCKET,
+    dataset_store_prefix: str = DATASET_STORE_PREFIX,
+    dataset_store_access_key: str = DATASET_STORE_ACCESS_KEY,
+    dataset_store_secret_key: str = DATASET_STORE_SECRET_KEY,
 ):
     published = build_bundle(
         bundle_version=bundle_version,
@@ -94,5 +113,15 @@ def ims_feature_bundle_pipeline(
         project=project,
     )
     validated = validate_bundle(bundle_manifest_path=published.outputs["output_manifest"])
-    _configure_bundle_task(published)
-    _configure_bundle_task(validated)
+    config = {
+        "control_plane_url": control_plane_url,
+        "control_plane_api_key": control_plane_api_key,
+        "dataset_store_mode": dataset_store_mode,
+        "dataset_store_endpoint": dataset_store_endpoint,
+        "dataset_store_bucket": dataset_store_bucket,
+        "dataset_store_prefix": dataset_store_prefix,
+        "dataset_store_access_key": dataset_store_access_key,
+        "dataset_store_secret_key": dataset_store_secret_key,
+    }
+    _configure_bundle_task(published, **config)
+    _configure_bundle_task(validated, **config)

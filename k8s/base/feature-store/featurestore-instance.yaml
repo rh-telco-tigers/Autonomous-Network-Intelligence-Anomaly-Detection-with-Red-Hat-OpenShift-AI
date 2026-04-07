@@ -26,13 +26,25 @@ spec:
           restAPI: true
           env:
             - name: IMS_FEATURESTORE_OFFLINE_SOURCE_PATH
-              value: s3://ims-models/pipelines/ims-demo-lab/datasets/feature-bundles/ims-feature-bundle-v1/feature_store/offline_source.parquet
+              valueFrom:
+                configMapKeyRef:
+                  name: ims-featurestore-config
+                  key: FEATURESTORE_OFFLINE_SOURCE_PATH
             - name: IMS_FEATURESTORE_LABEL_SOURCE_PATH
-              value: s3://ims-models/pipelines/ims-demo-lab/datasets/feature-bundles/ims-feature-bundle-v1/parquet/window_labels.parquet
+              valueFrom:
+                configMapKeyRef:
+                  name: ims-featurestore-config
+                  key: FEATURESTORE_LABEL_SOURCE_PATH
             - name: FEAST_S3_ENDPOINT_URL
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+              valueFrom:
+                configMapKeyRef:
+                  name: ims-platform-config
+                  key: FEAST_S3_ENDPOINT_URL
             - name: AWS_S3_ENDPOINT
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+              valueFrom:
+                configMapKeyRef:
+                  name: ims-platform-config
+                  key: FEAST_S3_ENDPOINT_URL
             - name: AWS_REGION
               value: us-east-1
           envFrom:
@@ -52,13 +64,25 @@ spec:
       server:
         env:
           - name: IMS_FEATURESTORE_OFFLINE_SOURCE_PATH
-            value: s3://ims-models/pipelines/ims-demo-lab/datasets/feature-bundles/ims-feature-bundle-v1/feature_store/offline_source.parquet
+            valueFrom:
+              configMapKeyRef:
+                name: ims-featurestore-config
+                key: FEATURESTORE_OFFLINE_SOURCE_PATH
           - name: IMS_FEATURESTORE_LABEL_SOURCE_PATH
-            value: s3://ims-models/pipelines/ims-demo-lab/datasets/feature-bundles/ims-feature-bundle-v1/parquet/window_labels.parquet
+            valueFrom:
+              configMapKeyRef:
+                name: ims-featurestore-config
+                key: FEATURESTORE_LABEL_SOURCE_PATH
           - name: FEAST_S3_ENDPOINT_URL
-            value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            valueFrom:
+              configMapKeyRef:
+                name: ims-platform-config
+                key: FEAST_S3_ENDPOINT_URL
           - name: AWS_S3_ENDPOINT
-            value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+            valueFrom:
+              configMapKeyRef:
+                name: ims-platform-config
+                key: FEAST_S3_ENDPOINT_URL
           - name: AWS_REGION
             value: us-east-1
         envFrom:

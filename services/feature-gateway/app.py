@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel, Field
 import requests
 
+from shared.cluster_env import dataset_store_bucket, dataset_store_endpoint, dataset_store_prefix, ims_pcscf_host, ims_pcscf_port
 from shared.cors import install_cors
 from shared.incident_taxonomy import (
     NORMAL_ANOMALY_TYPE,
@@ -48,17 +49,17 @@ app = FastAPI(title="feature-gateway", version="0.1.0")
 install_cors(app)
 install_metrics(app, "feature-gateway")
 
-IMS_PCSCF_HOST = os.getenv("IMS_PCSCF_HOST", "ims-pcscf.ims-demo-lab.svc.cluster.local")
-IMS_PCSCF_PORT = int(os.getenv("IMS_PCSCF_PORT", "5060"))
+IMS_PCSCF_HOST = os.getenv("IMS_PCSCF_HOST", ims_pcscf_host())
+IMS_PCSCF_PORT = int(os.getenv("IMS_PCSCF_PORT", str(ims_pcscf_port())))
 IMS_PCSCF_TELEMETRY = os.getenv("IMS_PCSCF_TELEMETRY_URL", "")
 IMS_SCSCF_TELEMETRY = os.getenv("IMS_SCSCF_TELEMETRY_URL", "")
 IMS_HSS_TELEMETRY = os.getenv("IMS_HSS_TELEMETRY_URL", "")
 IMS_TELEMETRY_RESET_TIMEOUT = float(os.getenv("IMS_TELEMETRY_RESET_TIMEOUT_SECONDS", "0.5"))
 IMS_TELEMETRY_FETCH_TIMEOUT = float(os.getenv("IMS_TELEMETRY_FETCH_TIMEOUT_SECONDS", "1.5"))
 FEATURE_WINDOW_DATASET_VERSION = os.getenv("FEATURE_WINDOW_DATASET_VERSION", "live-sipp-v1")
-DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000"
-DEFAULT_DATASET_STORE_BUCKET = "ims-models"
-DEFAULT_DATASET_STORE_PREFIX = "pipelines/ims-demo-lab/datasets"
+DEFAULT_DATASET_STORE_ENDPOINT = dataset_store_endpoint()
+DEFAULT_DATASET_STORE_BUCKET = dataset_store_bucket()
+DEFAULT_DATASET_STORE_PREFIX = dataset_store_prefix()
 
 
 def _dataset_store_endpoint() -> str:

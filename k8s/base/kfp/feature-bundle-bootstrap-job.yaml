@@ -19,6 +19,9 @@ spec:
       containers:
         - name: publish-pipeline
           image: registry.access.redhat.com/ubi9/python-311:latest
+          envFrom:
+            - configMapRef:
+                name: ims-platform-config
           env:
             - name: HOME
               value: /tmp
@@ -36,16 +39,51 @@ spec:
               value: ims-featurestore
             - name: RUN_NAME
               value: ims-feature-bundle-demo
-            - name: PIPELINE_PARAMETERS_JSON
-              value: |
-                {"bundle_version":"ims-feature-bundle-v1","source_dataset_versions_json":"[\"live-sipp-v1\"]","project":"ims-demo"}
             - name: PIPELINE_SKIP_DEMO_RUN
               value: "true"
+            - name: DATASET_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: DATASET_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: model-storage-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: CONTROL_PLANE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: demo-api-auth
+                  key: API_KEY
           command:
             - /bin/bash
             - -lc
           args:
             - |
+              export PIPELINE_PARAMETERS_JSON="$(python - <<'PY'
+              import json
+              import os
+
+              print(
+                  json.dumps(
+                      {
+                          "bundle_version": os.getenv("FEATURESTORE_BUNDLE_VERSION", "ims-feature-bundle-v1"),
+                          "source_dataset_versions_json": os.getenv("FEATURESTORE_SOURCE_DATASET_VERSIONS_JSON", "[\"live-sipp-v1\"]"),
+                          "project": os.getenv("IMS_PROJECT", os.getenv("DEMO_PROJECT", "ims-demo")),
+                          "control_plane_url": os.environ["CONTROL_PLANE_URL"],
+                          "control_plane_api_key": os.environ["CONTROL_PLANE_API_KEY"],
+                          "dataset_store_mode": os.getenv("DATASET_STORE_MODE", "s3"),
+                          "dataset_store_endpoint": os.environ["DATASET_STORE_ENDPOINT"],
+                          "dataset_store_bucket": os.environ["DATASET_STORE_BUCKET"],
+                          "dataset_store_prefix": os.environ["DATASET_STORE_PREFIX"],
+                          "dataset_store_access_key": os.environ["DATASET_STORE_ACCESS_KEY"],
+                          "dataset_store_secret_key": os.environ["DATASET_STORE_SECRET_KEY"],
+                      }
+                  )
+              )
+              PY
+              )"
               python -m pip install --no-cache-dir --target /tmp/kfp-site kfp==2.8.0
               export PYTHONPATH="/tmp/kfp-site:${PYTHONPATH}"
               python /opt/kfp/publish_feature_bundle_pipeline.py

@@ -14,10 +14,12 @@ Make sure the following items are ready:
 - the `live-sipp-v1` dataset exists in MinIO
 - a recent KFP workflow completed successfully
 - the feature-store predictive model is available through both Triton and MLServer serving
+- any optional integrations you want to demonstrate, such as live LLM-backed RCA or Plane/AAP flows, have been enabled explicitly after bootstrap
 
 Recommended checks:
 
 ```sh
+make check-fresh-cluster
 oc get deploy -n ims-demo-lab
 oc get cronjob -n ims-demo-lab | rg 'demo-incident-pulse|sipp-'
 oc get workflow -n ims-demo-lab
@@ -42,10 +44,10 @@ oc get pods -n ims-demo-lab
 9. Use the UI or scoring API to confirm that the anomaly is detected and an incident is created.
 10. Open the incident details and confirm that the record includes the feature window and model version.
 11. Open the detailed trace route and show the ordered feature-gateway, model, API, and RCA/LLM packets for the incident.
-12. Open the RCA result and review the evidence and recommendation fields.
+12. Open the RCA result and review the evidence and recommendation fields. Call out whether the source label shows local fallback or live LLM generation.
 13. Review the ranked remediation options and explain that execution stays human-approved.
 14. Approve and execute `Scale the S-CSCF path`.
-15. Confirm that the incident transitions through approval and execution states and that the action result shows AAP-backed execution.
+15. Confirm that the incident transitions through approval and execution states and that the action result reflects the automation mode you configured for the cluster.
 16. Show the latest workflow in OpenShift AI and confirm that `ims-predictive-fs` and `ims-predictive-fs-mlserver` are present.
 17. If needed, open Attu and confirm that the `ims_runbooks`, `incident_evidence`, `incident_reasoning`, and `incident_resolution` collections are available.
 18. If you want to prove the runtime effect, show that the `ims-scscf` deployment replica count increased after the approved action.
@@ -59,7 +61,7 @@ oc get pods -n ims-demo-lab
 - the incident record includes the feature window ID
 - the incident record includes the model version
 - the detailed trace route shows the pre-model feature fetch, model infer payloads, and RCA/LLM activity
-- RCA is available for the incident
+- RCA is available for the incident, even if the fresh-cluster default is local fallback instead of a live LLM
 - remediation options are generated from the RCA context
 - the approved `Scale the S-CSCF path` action updates the incident to `EXECUTING` and then `EXECUTED`
 - `ims-predictive-fs` and `ims-predictive-fs-mlserver` are ready in the cluster
@@ -82,8 +84,8 @@ If you need a shorter run:
 - If the UI does not load, check the route and the backing pods.
 - If the dashboard is stale, confirm that auto refresh is enabled and that both `demo-incident-pulse` and the `sipp-*` CronJobs are healthy.
 - If no incident is created, confirm that model serving is ready and inspect the latest `demo-incident-pulse` and `sipp-*` Job logs.
-- If RCA is missing, confirm that the control-plane and retrieval services are healthy.
+- If RCA is missing, confirm that the control-plane and retrieval services are healthy. A blank `LLM_ENDPOINT` does not block fallback RCA.
 - If the detailed trace route is missing packets, confirm that the latest control-plane, anomaly-service, and rca-service images were rolled out.
-- If the approved remediation stays in `EXECUTING`, inspect the control-plane logs and the AAP job or fallback runner job in the `aap` namespace.
-- If controller-backed AAP launch is blocked by license, the runner-job fallback is the expected behavior in this demo.
+- If the approved remediation stays in `EXECUTING`, inspect the control-plane logs and the configured automation backend. Fresh clusters ship with external automation integrations disabled by default.
+- If controller-backed AAP launch is blocked by license, the runner-job fallback is the expected behavior once automation has been enabled.
 - If the latest training run failed, open the failed workflow before retrying the demo.

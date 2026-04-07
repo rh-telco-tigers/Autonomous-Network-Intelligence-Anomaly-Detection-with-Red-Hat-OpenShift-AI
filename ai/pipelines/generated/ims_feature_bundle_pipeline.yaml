@@ -2,6 +2,14 @@
 # Name: ims-feature-bundle-publish
 # Inputs:
 #    bundle_version: str [Default: 'ims-feature-bundle-v1']
+#    control_plane_api_key: str [Default: 'demo-token']
+#    control_plane_url: str [Default: 'http://control-plane.ims-demo-lab.svc.cluster.local:8080']
+#    dataset_store_access_key: str [Default: 'minioadmin']
+#    dataset_store_bucket: str [Default: 'ims-models']
+#    dataset_store_endpoint: str [Default: 'http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000']
+#    dataset_store_mode: str [Default: 's3']
+#    dataset_store_prefix: str [Default: 'pipelines/ims-demo-lab/datasets']
+#    dataset_store_secret_key: str [Default: 'minioadmin']
 #    project: str [Default: 'ims-demo']
 #    source_dataset_versions_json: str [Default: '["live-sipp-v1"]']
 components:
@@ -61,29 +69,29 @@ deploymentSpec:
         - name: HOME
           value: /tmp
         - name: CONTROL_PLANE_URL
-          value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+          value: '{{channel:task=;name=control_plane_url;type=String;}}'
         - name: CONTROL_PLANE_API_KEY
-          value: demo-token
+          value: '{{channel:task=;name=control_plane_api_key;type=String;}}'
         - name: DATASET_STORE_MODE
-          value: s3
+          value: '{{channel:task=;name=dataset_store_mode;type=String;}}'
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: '{{channel:task=;name=dataset_store_endpoint;type=String;}}'
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: '{{channel:task=;name=dataset_store_bucket;type=String;}}'
         - name: DATASET_STORE_ACCESS_KEY
-          value: minioadmin
+          value: '{{channel:task=;name=dataset_store_access_key;type=String;}}'
         - name: DATASET_STORE_SECRET_KEY
-          value: minioadmin
+          value: '{{channel:task=;name=dataset_store_secret_key;type=String;}}'
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: '{{channel:task=;name=dataset_store_prefix;type=String;}}'
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: '{{channel:task=;name=dataset_store_endpoint;type=String;}}'
         - name: MINIO_BUCKET
-          value: ims-models
+          value: '{{channel:task=;name=dataset_store_bucket;type=String;}}'
         - name: MINIO_ACCESS_KEY
-          value: minioadmin
+          value: '{{channel:task=;name=dataset_store_access_key;type=String;}}'
         - name: MINIO_SECRET_KEY
-          value: minioadmin
+          value: '{{channel:task=;name=dataset_store_secret_key;type=String;}}'
         - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
           value: 'true'
         image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
@@ -105,29 +113,29 @@ deploymentSpec:
         - name: HOME
           value: /tmp
         - name: CONTROL_PLANE_URL
-          value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+          value: '{{channel:task=;name=control_plane_url;type=String;}}'
         - name: CONTROL_PLANE_API_KEY
-          value: demo-token
+          value: '{{channel:task=;name=control_plane_api_key;type=String;}}'
         - name: DATASET_STORE_MODE
-          value: s3
+          value: '{{channel:task=;name=dataset_store_mode;type=String;}}'
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: '{{channel:task=;name=dataset_store_endpoint;type=String;}}'
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: '{{channel:task=;name=dataset_store_bucket;type=String;}}'
         - name: DATASET_STORE_ACCESS_KEY
-          value: minioadmin
+          value: '{{channel:task=;name=dataset_store_access_key;type=String;}}'
         - name: DATASET_STORE_SECRET_KEY
-          value: minioadmin
+          value: '{{channel:task=;name=dataset_store_secret_key;type=String;}}'
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: '{{channel:task=;name=dataset_store_prefix;type=String;}}'
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: '{{channel:task=;name=dataset_store_endpoint;type=String;}}'
         - name: MINIO_BUCKET
-          value: ims-models
+          value: '{{channel:task=;name=dataset_store_bucket;type=String;}}'
         - name: MINIO_ACCESS_KEY
-          value: minioadmin
+          value: '{{channel:task=;name=dataset_store_access_key;type=String;}}'
         - name: MINIO_SECRET_KEY
-          value: minioadmin
+          value: '{{channel:task=;name=dataset_store_secret_key;type=String;}}'
         - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
           value: 'true'
         image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
@@ -170,6 +178,38 @@ root:
     parameters:
       bundle_version:
         defaultValue: ims-feature-bundle-v1
+        isOptional: true
+        parameterType: STRING
+      control_plane_api_key:
+        defaultValue: demo-token
+        isOptional: true
+        parameterType: STRING
+      control_plane_url:
+        defaultValue: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+        isOptional: true
+        parameterType: STRING
+      dataset_store_access_key:
+        defaultValue: minioadmin
+        isOptional: true
+        parameterType: STRING
+      dataset_store_bucket:
+        defaultValue: ims-models
+        isOptional: true
+        parameterType: STRING
+      dataset_store_endpoint:
+        defaultValue: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        isOptional: true
+        parameterType: STRING
+      dataset_store_mode:
+        defaultValue: s3
+        isOptional: true
+        parameterType: STRING
+      dataset_store_prefix:
+        defaultValue: pipelines/ims-demo-lab/datasets
+        isOptional: true
+        parameterType: STRING
+      dataset_store_secret_key:
+        defaultValue: minioadmin
         isOptional: true
         parameterType: STRING
       project:

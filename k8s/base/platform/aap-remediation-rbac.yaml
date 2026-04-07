@@ -10,15 +10,15 @@ metadata:
   name: aap-automation-config
   namespace: ims-demo-lab
 data:
-  AAP_AUTOMATION_ENABLED: "true"
-  AAP_CONTROLLER_URL: http://aap-controller-service.aap.svc.cluster.local
-  AAP_CONTROLLER_APP_URL: https://aap-controller-aap.apps.ocp.4h2g6.sandbox195.opentlc.com
+  AAP_AUTOMATION_ENABLED: "false"
+  AAP_CONTROLLER_URL: ""
+  AAP_CONTROLLER_APP_URL: ""
   AAP_CONTROLLER_USERNAME: admin
   AAP_ORGANIZATION: Default
   AAP_INVENTORY_NAME: IMS Incident Local Inventory
   AAP_INVENTORY_HOST: localhost
   AAP_PROJECT_NAME: IMS Incident Automation
-  AAP_PROJECT_SCM_URL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+  AAP_PROJECT_SCM_URL: ""
   AAP_PROJECT_BRANCH: main
   AAP_JOB_TEMPLATE_SCALE_SCSCF: IMS Scale S-CSCF Path
   AAP_JOB_TEMPLATE_RATE_LIMIT_PCSCF: IMS Rate Limit P-CSCF Ingress
@@ -43,20 +43,20 @@ data:
   AAP_QUARANTINE_CONFIGMAP: ims-remediation-state
   AAP_QUARANTINE_KEY: quarantined_imsi
   AAP_QUARANTINE_DEFAULT_IMSI: "001010000000001"
-  EDA_AUTOMATION_ENABLED: "true"
-  EDA_API_URL: http://aap-eda-api.aap.svc.cluster.local:8000
-  EDA_APP_URL: https://aap-eda-aap.apps.ocp.4h2g6.sandbox195.opentlc.com
+  EDA_AUTOMATION_ENABLED: "false"
+  EDA_API_URL: ""
+  EDA_APP_URL: ""
   EDA_ORGANIZATION: Default
   EDA_PROJECT_NAME: IMS Incident Event Policies
-  EDA_PROJECT_URL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+  EDA_PROJECT_URL: ""
   EDA_PROJECT_BRANCH: main
   EDA_DECISION_ENVIRONMENT_NAME: IMS Incident Decisions
   EDA_DECISION_ENVIRONMENT_IMAGE: registry.redhat.io/ansible-automation-platform-26/de-minimal-rhel9:latest
-  EDA_CONTROL_PLANE_URL: http://control-plane.ims-demo-lab.svc.cluster.local:8080
-  EDA_CONTROL_PLANE_API_KEY: eda-token
+  EDA_CONTROL_PLANE_URL: ""
+  EDA_CONTROL_PLANE_API_KEY: ""
   EDA_AUTOMATION_ACTOR: eda-automation
   EDA_EVENT_VERIFY_SSL: "false"
-  AUTOMATION_BOOTSTRAP_ON_STARTUP: "true"
+  AUTOMATION_BOOTSTRAP_ON_STARTUP: "false"
   AUTOMATION_BOOTSTRAP_RETRY_SECONDS: "15"
   AUTOMATION_BOOTSTRAP_MAX_ATTEMPTS: "0"
 ---

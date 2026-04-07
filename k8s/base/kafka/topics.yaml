@@ -2,6 +2,8 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
   name: ims-incidents-bronze
+  annotations:
+    argocd.argoproj.io/sync-wave: "17"
   labels:
     strimzi.io/cluster: ims-release-kafka
 spec:
@@ -14,6 +16,8 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
   name: ims-feature-windows-bronze
+  annotations:
+    argocd.argoproj.io/sync-wave: "17"
   labels:
     strimzi.io/cluster: ims-release-kafka
 spec:
@@ -26,6 +30,8 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
   name: ims-release-artifacts
+  annotations:
+    argocd.argoproj.io/sync-wave: "17"
   labels:
     strimzi.io/cluster: ims-release-kafka
 spec:

@@ -17,6 +17,37 @@ spec:
             - -lc
             - |
               set -euo pipefail
+              wait_for_application() {
+                local name="$1"
+                local timeout_seconds="${2:-1800}"
+                local deadline=$(( $(date +%s) + timeout_seconds ))
+                while true; do
+                  local sync_status health_status
+                  sync_status="$(oc get application.argoproj.io "${name}" -n openshift-gitops -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
+                  health_status="$(oc get application.argoproj.io "${name}" -n openshift-gitops -o jsonpath='{.status.health.status}' 2>/dev/null || true)"
+                  if [ "${sync_status}" = "Synced" ] && [ "${health_status}" = "Healthy" ]; then
+                    break
+                  fi
+                  if [ "$(date +%s)" -ge "${deadline}" ]; then
+                    oc get application.argoproj.io "${name}" -n openshift-gitops -o yaml || true
+                    echo "Timed out waiting for application ${name} to become Synced/Healthy" >&2
+                    exit 1
+                  fi
+                  sleep 15
+                done
+              }
+              wait_for_crd() {
+                local name="$1"
+                local timeout_seconds="${2:-1800}"
+                local deadline=$(( $(date +%s) + timeout_seconds ))
+                until oc get crd "${name}" >/dev/null 2>&1; do
+                  if [ "$(date +%s)" -ge "${deadline}" ]; then
+                    echo "Timed out waiting for CRD ${name}" >&2
+                    exit 1
+                  fi
+                  sleep 15
+                done
+              }
               until oc get argocd openshift-gitops -n openshift-gitops >/dev/null 2>&1; do
                 sleep 10
               done
@@ -33,6 +64,18 @@ spec:
               done
               oc apply -f /manifests/ims-demo-project.yaml
               oc apply -f /manifests/operators-application.yaml
+              wait_for_application ims-demo-operators 1800
+              for crd in \
+                datascienceclusters.datasciencecluster.opendatahub.io \
+                datasciencepipelinesapplications.datasciencepipelinesapplications.opendatahub.io \
+                featurestores.feast.dev \
+                inferenceservices.serving.kserve.io \
+                servingruntimes.serving.kserve.io \
+                kafkas.kafka.strimzi.io \
+                kafkanodepools.kafka.strimzi.io \
+                kafkatopics.kafka.strimzi.io; do
+                wait_for_crd "${crd}" 1800
+              done
               oc apply -f /manifests/platform-application.yaml
           volumeMounts:
             - name: manifests

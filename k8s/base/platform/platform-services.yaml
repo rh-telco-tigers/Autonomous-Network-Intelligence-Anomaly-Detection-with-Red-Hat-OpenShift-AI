@@ -37,12 +37,12 @@ metadata:
   namespace: ims-demo-lab
 type: Opaque
 stringData:
-  PLANE_BASE_URL: http://plane-api.ims-demo-lab.svc.cluster.local:8000
-  PLANE_APP_URL: https://plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
-  PLANE_WORKSPACE_SLUG: ims-demo
-  PLANE_PROJECT_ID: 0ef04bba-a220-4915-ab0d-fa3734d77c46
-  PLANE_API_KEY: plane_api_e45e4623aa664519bcea31c71e8d44f2
-  PLANE_WEBHOOK_SECRET: plane_wh_3dc715aef91a491caaecebf50e73108d
+  PLANE_BASE_URL: ""
+  PLANE_APP_URL: ""
+  PLANE_WORKSPACE_SLUG: ""
+  PLANE_PROJECT_ID: ""
+  PLANE_API_KEY: ""
+  PLANE_WEBHOOK_SECRET: ""
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -50,8 +50,8 @@ metadata:
   name: llm-provider-config
   namespace: ims-demo-lab
 data:
-  LLM_ENDPOINT: http://ims-generative-proxy.ims-demo-lab.svc.cluster.local:8080
-  LLM_MODEL: llama-32-3b-instruct
+  LLM_ENDPOINT: ""
+  LLM_MODEL: ""
   LLM_REQUEST_TIMEOUT_SECONDS: "20"
 ---
 apiVersion: v1
@@ -98,6 +98,9 @@ spec:
       containers:
         - name: control-plane
           image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/control-plane:latest
+          envFrom:
+            - configMapRef:
+                name: ims-platform-config
           ports:
             - containerPort: 8080
           env:
@@ -363,9 +366,7 @@ spec:
                   name: aap-automation-config
                   key: AUTOMATION_BOOTSTRAP_MAX_ATTEMPTS
             - name: DEMO_INTEGRATIONS_ENABLED
-              value: "true"
-            - name: CONSOLE_CLUSTER_NAME
-              value: ims-demo-lab
+              value: "false"
             - name: CONSOLE_AUTO_REFRESH_SECONDS
               value: "15"
             - name: CONSOLE_RECENT_INCIDENT_LIMIT
@@ -376,20 +377,8 @@ spec:
               value: "15"
             - name: INTEGRATION_STATUS_CACHE_SECONDS
               value: "20"
-            - name: FEATURE_GATEWAY_URL
-              value: http://feature-gateway.ims-demo-lab.svc.cluster.local:8080
-            - name: ANOMALY_SERVICE_URL
-              value: http://anomaly-service.ims-demo-lab.svc.cluster.local:8080
-            - name: RCA_SERVICE_URL
-              value: http://rca-service.ims-demo-lab.svc.cluster.local:8080
-            - name: MILVUS_URI
-              value: http://milvus.ims-demo-lab.svc.cluster.local:19530
-            - name: MILVUS_COLLECTIONS
-              value: ims_runbooks,incident_evidence,incident_reasoning,incident_resolution,ims_topology,ims_signal_patterns
             - name: RAG_ROOT_DIR
               value: /app/ai/rag
-            - name: PREDICTIVE_SERVICE_URL
-              value: http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080
             - name: PLANE_BASE_URL
               valueFrom:
                 secretKeyRef:
@@ -492,25 +481,18 @@ spec:
       containers:
         - name: feature-gateway
           image: feature-gateway:latest
+          envFrom:
+            - configMapRef:
+                name: ims-platform-config
           ports:
             - containerPort: 8080
           env:
-            - name: IMS_PCSCF_HOST
-              value: ims-pcscf.ims-demo-lab.svc.cluster.local
-            - name: IMS_PCSCF_PORT
-              value: "5060"
             - name: IMS_PCSCF_TELEMETRY_URL
               value: ""
             - name: IMS_SCSCF_TELEMETRY_URL
               value: ""
             - name: IMS_HSS_TELEMETRY_URL
               value: ""
-            - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-            - name: DATASET_STORE_BUCKET
-              value: ims-models
-            - name: DATASET_STORE_PREFIX
-              value: pipelines/ims-demo-lab/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -586,6 +568,9 @@ spec:
       containers:
         - name: anomaly-service
           image: anomaly-service:latest
+          envFrom:
+            - configMapRef:
+                name: ims-platform-config
           ports:
             - containerPort: 8080
           env:
@@ -599,16 +584,8 @@ spec:
                 secretKeyRef:
                   name: demo-api-auth
                   key: API_KEYS_JSON
-            - name: CONTROL_PLANE_URL
-              value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
             - name: MODEL_REGISTRY_PATH
               value: /app/ai/registry/model_registry.json
-            - name: PREDICTIVE_ENDPOINT
-              value: http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080
-            - name: PREDICTIVE_MODEL_NAME
-              value: ims-predictive-fs
-            - name: PREDICTIVE_MODEL_VERSION_LABEL
-              value: ims-predictive-fs
           readinessProbe:
             httpGet:
               path: /healthz
@@ -674,6 +651,9 @@ spec:
       containers:
         - name: rca-service
           image: rca-service:latest
+          envFrom:
+            - configMapRef:
+                name: ims-platform-config
           ports:
             - containerPort: 8080
           env:
@@ -687,12 +667,6 @@ spec:
                 secretKeyRef:
                   name: demo-api-auth
                   key: API_KEYS_JSON
-            - name: CONTROL_PLANE_URL
-              value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
-            - name: MILVUS_URI
-              value: http://milvus.ims-demo-lab.svc.cluster.local:19530
-            - name: MILVUS_COLLECTIONS
-              value: ims_runbooks,incident_evidence,incident_reasoning,incident_resolution,ims_topology,ims_signal_patterns
             - name: LLM_ENDPOINT
               valueFrom:
                 configMapKeyRef:
@@ -806,14 +780,20 @@ spec:
       containers:
         - name: demo-ui
           image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/demo-ui:latest
+          envFrom:
+            - configMapRef:
+                name: ims-platform-config
           ports:
             - name: http
               containerPort: 8080
           env:
-            - name: CONTROL_PLANE_PROXY_URL
-              value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
             - name: NEXT_TELEMETRY_DISABLED
               value: "1"
+            - name: NEXT_PUBLIC_IMS_PROJECT
+              valueFrom:
+                configMapKeyRef:
+                  name: ims-platform-config
+                  key: IMS_PROJECT
           readinessProbe:
             httpGet:
               path: /

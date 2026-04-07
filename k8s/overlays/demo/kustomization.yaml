@@ -5,12 +5,15 @@ resources:
   - ../../base/builds
   - ../../base/ims
   - ../../base/traffic
+  - ../../base/kafka
   - ../../base/milvus
   - ../../base/minio
   - ../../base/platform
   - ../../base/plane
+  - ../../base/feature-store
   - ../../base/serving
   - ../../base/observability
+  - ../../base/kfp
   - ../../base/pipelines
   - ../../base/rhoai
   - ../../base/aap-platform

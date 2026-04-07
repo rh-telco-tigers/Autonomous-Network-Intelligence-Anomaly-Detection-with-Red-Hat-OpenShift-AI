@@ -3,6 +3,7 @@ kind: Kafka
 metadata:
   name: ims-release-kafka
   annotations:
+    argocd.argoproj.io/sync-wave: "16"
     strimzi.io/node-pools: enabled
     strimzi.io/kraft: enabled
 spec:

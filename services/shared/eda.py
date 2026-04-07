@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 import requests
 
 from shared.aap import controller_callback_template_name
+from shared.cluster_env import control_plane_url
 
 
 class EDAAutomationError(RuntimeError):
@@ -302,14 +303,11 @@ def _decision_environment_image() -> str:
 
 
 def _control_plane_url() -> str:
-    return (
-        os.getenv("EDA_CONTROL_PLANE_URL", "").strip()
-        or "http://control-plane.ims-demo-lab.svc.cluster.local:8080"
-    ).rstrip("/")
+    return (os.getenv("EDA_CONTROL_PLANE_URL", "").strip() or control_plane_url()).rstrip("/")
 
 
 def _control_plane_api_key() -> str:
-    return os.getenv("EDA_CONTROL_PLANE_API_KEY", "eda-token").strip() or "eda-token"
+    return os.getenv("EDA_CONTROL_PLANE_API_KEY", "").strip()
 
 
 def _automation_actor() -> str:

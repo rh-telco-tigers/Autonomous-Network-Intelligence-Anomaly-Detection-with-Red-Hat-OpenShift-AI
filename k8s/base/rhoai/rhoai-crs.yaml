@@ -3,6 +3,8 @@ kind: DSCInitialization
 metadata:
   name: default-dsci
   namespace: redhat-ods-operator
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
 spec:
   applicationsNamespace: redhat-ods-applications
   monitoring:
@@ -19,6 +21,8 @@ kind: DataScienceCluster
 metadata:
   name: default-dsc
   namespace: redhat-ods-operator
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
 spec:
   components:
     codeflare:

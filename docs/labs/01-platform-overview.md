@@ -28,8 +28,9 @@ The demo shows an IMS assurance workflow running natively on OpenShift:
 
 ## Fresh-Cluster Sequence
 
-- Labs 01-03 bring up the GitOps-managed core demo overlay and the internal image build pipeline.
-- Lab 04 applies the AI extras that are intentionally outside `k8s/overlays/demo`: `k8s/base/feature-store`, `k8s/base/kafka`, and `k8s/base/kfp`.
+- Labs 01-03 bring up the GitOps-managed demo overlay and the internal image build pipeline.
+- The demo overlay now includes the OpenShift AI, Feature Store, Kafka, and KFP resources needed for the full bring-up path.
+- Lab 04 validates that those AI resources reconciled correctly and enables optional integrations such as live LLM-backed RCA only when needed.
 - Lab 05 validates the live operator flow, including scheduled incident generation, multiclass scoring, detailed trace inspection, RCA, and remediation.
 
 ## What the customer should see

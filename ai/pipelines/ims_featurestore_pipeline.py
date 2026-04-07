@@ -327,46 +327,72 @@ def publish_deployment_manifest(
     )
 
 
-def _configure_bundle_task(task) -> None:
-    _configure_storage_task(task)
-    task.set_env_variable("CONTROL_PLANE_URL", CONTROL_PLANE_URL)
-    task.set_env_variable("CONTROL_PLANE_API_KEY", CONTROL_PLANE_API_KEY)
+def _configure_bundle_task(task, *, control_plane_url: str, control_plane_api_key: str, storage_config: dict[str, str]) -> None:
+    _configure_storage_task(task, **storage_config)
+    task.set_env_variable("CONTROL_PLANE_URL", str(control_plane_url))
+    task.set_env_variable("CONTROL_PLANE_API_KEY", str(control_plane_api_key))
     task.set_env_variable("BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY", "true")
 
 
-def _configure_storage_task(task) -> None:
+def _configure_storage_task(
+    task,
+    *,
+    dataset_store_mode: str,
+    dataset_store_endpoint: str,
+    dataset_store_bucket: str,
+    dataset_store_prefix: str,
+    dataset_store_access_key: str,
+    dataset_store_secret_key: str,
+    aws_region: str,
+    aws_access_key_id: str,
+    aws_secret_access_key: str,
+) -> None:
     task.set_env_variable("HOME", "/tmp")
     task.set_env_variable("MPLCONFIGDIR", "/tmp/matplotlib")
-    task.set_env_variable("DATASET_STORE_MODE", DATASET_STORE_MODE)
-    task.set_env_variable("DATASET_STORE_ENDPOINT", DATASET_STORE_ENDPOINT)
-    task.set_env_variable("DATASET_STORE_BUCKET", DATASET_STORE_BUCKET)
-    task.set_env_variable("DATASET_STORE_PREFIX", DATASET_STORE_PREFIX)
-    task.set_env_variable("DATASET_STORE_ACCESS_KEY", DATASET_STORE_ACCESS_KEY)
-    task.set_env_variable("DATASET_STORE_SECRET_KEY", DATASET_STORE_SECRET_KEY)
-    task.set_env_variable("MINIO_ENDPOINT", DATASET_STORE_ENDPOINT)
-    task.set_env_variable("MINIO_BUCKET", DATASET_STORE_BUCKET)
-    task.set_env_variable("MINIO_ACCESS_KEY", DATASET_STORE_ACCESS_KEY)
-    task.set_env_variable("MINIO_SECRET_KEY", DATASET_STORE_SECRET_KEY)
-    task.set_env_variable("AWS_DEFAULT_REGION", FEATURESTORE_AWS_REGION)
-    task.set_env_variable("AWS_REGION", FEATURESTORE_AWS_REGION)
-    task.set_env_variable("AWS_ACCESS_KEY_ID", FEATURESTORE_AWS_ACCESS_KEY_ID)
-    task.set_env_variable("AWS_SECRET_ACCESS_KEY", FEATURESTORE_AWS_SECRET_ACCESS_KEY)
+    task.set_env_variable("DATASET_STORE_MODE", str(dataset_store_mode))
+    task.set_env_variable("DATASET_STORE_ENDPOINT", str(dataset_store_endpoint))
+    task.set_env_variable("DATASET_STORE_BUCKET", str(dataset_store_bucket))
+    task.set_env_variable("DATASET_STORE_PREFIX", str(dataset_store_prefix))
+    task.set_env_variable("DATASET_STORE_ACCESS_KEY", str(dataset_store_access_key))
+    task.set_env_variable("DATASET_STORE_SECRET_KEY", str(dataset_store_secret_key))
+    task.set_env_variable("MINIO_ENDPOINT", str(dataset_store_endpoint))
+    task.set_env_variable("MINIO_BUCKET", str(dataset_store_bucket))
+    task.set_env_variable("MINIO_ACCESS_KEY", str(dataset_store_access_key))
+    task.set_env_variable("MINIO_SECRET_KEY", str(dataset_store_secret_key))
+    task.set_env_variable("AWS_DEFAULT_REGION", str(aws_region))
+    task.set_env_variable("AWS_REGION", str(aws_region))
+    task.set_env_variable("AWS_ACCESS_KEY_ID", str(aws_access_key_id))
+    task.set_env_variable("AWS_SECRET_ACCESS_KEY", str(aws_secret_access_key))
 
 
-def _configure_featurestore_task(task) -> None:
-    _configure_storage_task(task)
-    task.set_env_variable("IMS_FEATURESTORE_MODE", FEATURESTORE_MODE)
-    task.set_env_variable("IMS_FEATURESTORE_PROJECT", FEATURESTORE_PROJECT)
-    task.set_env_variable("IMS_FEATURESTORE_REGISTRY_PATH", FEATURESTORE_REGISTRY_PATH)
-    task.set_env_variable("IMS_FEATURESTORE_ONLINE_STORE_PATH", FEATURESTORE_ONLINE_STORE_PATH)
-    task.set_env_variable("IMS_FEATURESTORE_CA_CERT_PATH", FEATURESTORE_CA_CERT_PATH)
-    task.set_env_variable("IMS_FEATURESTORE_AUTH_TYPE", FEATURESTORE_AUTH_TYPE)
-    task.set_env_variable("FEAST_S3_ENDPOINT_URL", FEATURESTORE_S3_ENDPOINT_URL)
-    task.set_env_variable("AWS_S3_ENDPOINT", FEATURESTORE_S3_ENDPOINT_URL)
-    task.set_env_variable("AWS_DEFAULT_REGION", FEATURESTORE_AWS_REGION)
-    task.set_env_variable("AWS_REGION", FEATURESTORE_AWS_REGION)
-    task.set_env_variable("AWS_ACCESS_KEY_ID", FEATURESTORE_AWS_ACCESS_KEY_ID)
-    task.set_env_variable("AWS_SECRET_ACCESS_KEY", FEATURESTORE_AWS_SECRET_ACCESS_KEY)
+def _configure_featurestore_task(
+    task,
+    *,
+    storage_config: dict[str, str],
+    featurestore_mode: str,
+    featurestore_project: str,
+    featurestore_registry_path: str,
+    featurestore_online_store_path: str,
+    featurestore_ca_cert_path: str,
+    featurestore_auth_type: str,
+    featurestore_s3_endpoint_url: str,
+    featurestore_aws_region: str,
+    featurestore_aws_access_key_id: str,
+    featurestore_aws_secret_access_key: str,
+) -> None:
+    _configure_storage_task(task, **storage_config)
+    task.set_env_variable("IMS_FEATURESTORE_MODE", str(featurestore_mode))
+    task.set_env_variable("IMS_FEATURESTORE_PROJECT", str(featurestore_project))
+    task.set_env_variable("IMS_FEATURESTORE_REGISTRY_PATH", str(featurestore_registry_path))
+    task.set_env_variable("IMS_FEATURESTORE_ONLINE_STORE_PATH", str(featurestore_online_store_path))
+    task.set_env_variable("IMS_FEATURESTORE_CA_CERT_PATH", str(featurestore_ca_cert_path))
+    task.set_env_variable("IMS_FEATURESTORE_AUTH_TYPE", str(featurestore_auth_type))
+    task.set_env_variable("FEAST_S3_ENDPOINT_URL", str(featurestore_s3_endpoint_url))
+    task.set_env_variable("AWS_S3_ENDPOINT", str(featurestore_s3_endpoint_url))
+    task.set_env_variable("AWS_DEFAULT_REGION", str(featurestore_aws_region))
+    task.set_env_variable("AWS_REGION", str(featurestore_aws_region))
+    task.set_env_variable("AWS_ACCESS_KEY_ID", str(featurestore_aws_access_key_id))
+    task.set_env_variable("AWS_SECRET_ACCESS_KEY", str(featurestore_aws_secret_access_key))
 
 
 @dsl.pipeline(name="ims-featurestore-train-and-register")
@@ -392,9 +418,52 @@ def ims_featurestore_pipeline(
     mlserver_serving_protocol_version: str = "v2",
     mlserver_serving_prefix: str = "predictive-featurestore-mlserver",
     mlserver_serving_alias: str = "current",
+    control_plane_url: str = CONTROL_PLANE_URL,
+    control_plane_api_key: str = CONTROL_PLANE_API_KEY,
+    dataset_store_mode: str = DATASET_STORE_MODE,
+    dataset_store_endpoint: str = DATASET_STORE_ENDPOINT,
+    dataset_store_bucket: str = DATASET_STORE_BUCKET,
+    dataset_store_prefix: str = DATASET_STORE_PREFIX,
+    dataset_store_access_key: str = DATASET_STORE_ACCESS_KEY,
+    dataset_store_secret_key: str = DATASET_STORE_SECRET_KEY,
+    featurestore_mode: str = FEATURESTORE_MODE,
+    featurestore_project: str = FEATURESTORE_PROJECT,
+    featurestore_registry_path: str = FEATURESTORE_REGISTRY_PATH,
+    featurestore_online_store_path: str = FEATURESTORE_ONLINE_STORE_PATH,
+    featurestore_ca_cert_path: str = FEATURESTORE_CA_CERT_PATH,
+    featurestore_auth_type: str = FEATURESTORE_AUTH_TYPE,
+    featurestore_s3_endpoint_url: str = FEATURESTORE_S3_ENDPOINT_URL,
+    featurestore_aws_region: str = FEATURESTORE_AWS_REGION,
+    featurestore_aws_access_key_id: str = FEATURESTORE_AWS_ACCESS_KEY_ID,
+    featurestore_aws_secret_access_key: str = FEATURESTORE_AWS_SECRET_ACCESS_KEY,
+    model_registry_endpoint: str = MODEL_REGISTRY_ENDPOINT,
 ):
+    storage_config = {
+        "dataset_store_mode": dataset_store_mode,
+        "dataset_store_endpoint": dataset_store_endpoint,
+        "dataset_store_bucket": dataset_store_bucket,
+        "dataset_store_prefix": dataset_store_prefix,
+        "dataset_store_access_key": dataset_store_access_key,
+        "dataset_store_secret_key": dataset_store_secret_key,
+        "aws_region": featurestore_aws_region,
+        "aws_access_key_id": featurestore_aws_access_key_id,
+        "aws_secret_access_key": featurestore_aws_secret_access_key,
+    }
+    featurestore_config = {
+        "storage_config": storage_config,
+        "featurestore_mode": featurestore_mode,
+        "featurestore_project": featurestore_project,
+        "featurestore_registry_path": featurestore_registry_path,
+        "featurestore_online_store_path": featurestore_online_store_path,
+        "featurestore_ca_cert_path": featurestore_ca_cert_path,
+        "featurestore_auth_type": featurestore_auth_type,
+        "featurestore_s3_endpoint_url": featurestore_s3_endpoint_url,
+        "featurestore_aws_region": featurestore_aws_region,
+        "featurestore_aws_access_key_id": featurestore_aws_access_key_id,
+        "featurestore_aws_secret_access_key": featurestore_aws_secret_access_key,
+    }
     resolved = resolve_bundle(bundle_version=bundle_version)
-    _configure_featurestore_task(resolved)
+    _configure_featurestore_task(resolved, **featurestore_config)
 
     validated = validate_bundle(bundle_manifest_path=resolved.outputs["output_manifest"])
     synced = sync_feature_store_definitions(bundle_manifest_path=resolved.outputs["output_manifest"])
@@ -403,7 +472,7 @@ def ims_featurestore_pipeline(
         feature_service_name=feature_service_name,
     )
     for task in (validated, synced, training_data):
-        _configure_featurestore_task(task)
+        _configure_featurestore_task(task, **featurestore_config)
     training_data.after(validated, synced)
 
     baseline = train_baseline(
@@ -461,6 +530,6 @@ def ims_featurestore_pipeline(
     )
 
     for task in (baseline, automl, evaluated, selected, exported, mlserver_exported, registered, published, published_mlserver):
-        _configure_featurestore_task(task)
-    registered.set_env_variable("RHOAI_MODEL_REGISTRY_ENDPOINT", MODEL_REGISTRY_ENDPOINT)
+        _configure_featurestore_task(task, **featurestore_config)
+    registered.set_env_variable("RHOAI_MODEL_REGISTRY_ENDPOINT", str(model_registry_endpoint))
     registered.set_env_variable("RHOAI_MODEL_REGISTRY_REQUIRED", "true")

@@ -14,7 +14,7 @@ import type {
   TicketLookupResponse,
 } from "@/lib/types";
 
-const defaultProject = "ims-demo";
+const defaultProject = process.env.NEXT_PUBLIC_IMS_PROJECT ?? "ims-demo";
 const REQUEST_TIMEOUT_MS = 12_000;
 
 export async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {

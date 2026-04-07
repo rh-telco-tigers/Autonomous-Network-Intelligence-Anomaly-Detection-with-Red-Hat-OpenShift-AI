@@ -21,6 +21,9 @@ spec:
             - name: demo-incident-pulse
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/control-plane:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ims-platform-config
               command:
                 - python
                 - -c
@@ -65,12 +68,6 @@ spec:
                       )
                   )
               env:
-                - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
-                - name: DEMO_PROJECT
-                  value: ims-demo
-                - name: DEMO_SCENARIOS
-                  value: registration_storm,registration_failure,authentication_failure,malformed_invite,routing_error,busy_destination,call_setup_timeout,call_drop_mid_session,server_internal_error,network_degradation,retransmission_spike
                 - name: API_KEY
                   valueFrom:
                     secretKeyRef:

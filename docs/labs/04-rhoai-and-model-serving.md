@@ -12,7 +12,7 @@ Run the training pipeline in OpenShift AI, verify that it uses the captured data
 - Make sure the Tekton image build from Lab 03 has already populated the internal registry tags used by the trainer and serving components.
 - Do not create a Feature Store manually in the OpenShift AI UI. This repo bootstraps `FeatureStore/ims-featurestore` from repo-managed manifests.
 - Verify that a model registry service is reachable as `ims-demo-modelregistry` in `rhoai-model-registries`, or be ready to patch the repo's model registry endpoint references for your cluster.
-- If your fresh cluster does not already host the demo vLLM predictor in `my-first-model`, patch `llm-provider-config` before expecting live LLM-backed RCA.
+- Live LLM-backed RCA is disabled by default on a fresh cluster. Enable it only after the core AI path is healthy.
 
 ## What This Lab Uses
 
@@ -24,34 +24,33 @@ Run the training pipeline in OpenShift AI, verify that it uses the captured data
 
 ## Fresh-Cluster Note
 
-The GitOps demo overlay in `k8s/overlays/demo` intentionally stops at the core platform. It does not include:
+The GitOps demo overlay in `k8s/overlays/demo` now includes the AI extras needed for the full demo path:
 
 - `k8s/base/feature-store`
 - `k8s/base/kafka`
 - `k8s/base/kfp`
 
-Apply those resources explicitly in this lab with `make apply-demo-ai-extras`.
+If Argo CD is the source of truth, prefer waiting for `ims-demo-platform` to reconcile. Use `make apply-demo-ai-extras` only as an imperative recovery path.
 
 ## RCA LLM Provider Configuration
 
-The RCA service calls an OpenAI-compatible chat completions endpoint. In the current demo deployment it uses the in-cluster vLLM model served from the `my-first-model` namespace through the `ims-generative-proxy` service in `ims-demo-lab`.
+The RCA service can call an OpenAI-compatible chat completions endpoint, but the fresh-cluster default is local RAG fallback until you configure a provider.
 
 Runtime settings now live in:
 
 - `ConfigMap/llm-provider-config` for `LLM_ENDPOINT`, `LLM_MODEL`, and `LLM_REQUEST_TIMEOUT_SECONDS`
 - `Secret/llm-provider-auth` for `LLM_API_KEY`
 
-Current default values:
+Fresh-cluster default values:
 
-- `LLM_ENDPOINT=http://ims-generative-proxy.ims-demo-lab.svc.cluster.local:8080`
-- `LLM_MODEL=llama-32-3b-instruct`
+- `LLM_ENDPOINT=` (blank, which keeps RCA on the local fallback path)
+- `LLM_MODEL=` (blank)
 - `LLM_REQUEST_TIMEOUT_SECONDS=20`
-- `LLM_API_KEY` is blank because the in-cluster vLLM endpoint does not require bearer auth
+- `LLM_API_KEY` is blank
 
 Fresh-cluster note:
 
-- the default `ims-generative-proxy` service expects `llama-32-3b-instruct-predictor` in namespace `my-first-model`
-- if that predictor does not exist in your cluster, patch `llm-provider-config` before relying on live RCA generation
+- if you want live LLM-backed RCA, patch `llm-provider-config` and `llm-provider-auth` after the rest of the platform is healthy
 
 ## Swap To Another OpenAI-Compatible Endpoint Later
 
@@ -96,7 +95,13 @@ Notes:
 oc get csv -n redhat-ods-operator
 ```
 
-2. Apply the AI extras that are not part of the demo overlay:
+2. Verify that the AI extras are being reconciled by the demo overlay:
+
+```sh
+oc get application.argoproj.io ims-demo-platform -n openshift-gitops -o jsonpath='{.status.sync.status}{" / "}{.status.health.status}{"\n"}'
+```
+
+If you need an imperative recovery path outside GitOps, you can still run:
 
 ```sh
 make apply-demo-ai-extras
@@ -105,6 +110,7 @@ make apply-demo-ai-extras
 3. Verify that the DSPA, Feature Store, Kafka, and model registry endpoint are ready:
 
 ```sh
+make check-fresh-cluster-ai
 oc get dspa,featurestore -n ims-demo-lab
 oc get kafka -n ims-demo-lab
 oc get svc -n rhoai-model-registries | rg 'ims-demo-modelregistry'
@@ -197,4 +203,4 @@ The pipeline prefers the `live-sipp-v1` dataset, but it can fall back to bootstr
 - If a training or serving pod is stuck in `ImagePullBackOff`, confirm that Lab 03 finished building the demo images into `image-registry.openshift-image-registry.svc:5000/ims-demo-lab`.
 - If model registration fails early, confirm that `ims-demo-modelregistry` exists in `rhoai-model-registries` or patch the model registry endpoint config before rerunning.
 - If model serving is not ready, check `oc describe inferenceservice -n ims-demo-lab`.
-- If RCA falls back or the LLM path is unavailable, confirm the `my-first-model` predictor exists or patch `llm-provider-config` to a reachable OpenAI-compatible endpoint.
+- If RCA stays on the local fallback path, that is expected until you configure `llm-provider-config`.
