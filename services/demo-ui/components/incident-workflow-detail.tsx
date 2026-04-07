@@ -158,13 +158,8 @@ const INCIDENT_VIEW_STEP_TEMPLATES = [
     action: "openEvidence",
   },
   {
-    title: "Investigate",
-    description: "Review evidence and impact",
-    action: "openEvidence",
-  },
-  {
     title: "RCA",
-    description: "Generate and review cause",
+    description: "Review evidence and determine cause",
     action: "reviewRca",
   },
   {
@@ -197,20 +192,20 @@ const STEP_STATUS_MAP: Record<WorkflowState, StepStatus[]> = {
 };
 
 const INCIDENT_VIEW_STATUS_MAP: Record<WorkflowState, StepStatus[]> = {
-  NEW: ["done", "current", "todo", "todo", "todo"],
-  RCA_GENERATED: ["done", "done", "current", "todo", "todo"],
-  REMEDIATION_SUGGESTED: ["done", "done", "done", "current", "todo"],
-  AWAITING_APPROVAL: ["done", "done", "done", "current", "todo"],
-  APPROVED: ["done", "done", "done", "current", "todo"],
-  EXECUTING: ["done", "done", "done", "current", "todo"],
-  EXECUTED: ["done", "done", "done", "done", "current"],
-  VERIFIED: ["done", "done", "done", "done", "done"],
-  CLOSED: ["done", "done", "done", "done", "done"],
-  RCA_REJECTED: ["done", "attention", "attention", "todo", "todo"],
-  EXECUTION_FAILED: ["done", "done", "done", "attention", "todo"],
-  VERIFICATION_FAILED: ["done", "done", "done", "done", "attention"],
-  FALSE_POSITIVE: ["done", "done", "done", "done", "done"],
-  ESCALATED: ["done", "done", "done", "attention", "todo"],
+  NEW: ["done", "current", "todo", "todo"],
+  RCA_GENERATED: ["done", "current", "todo", "todo"],
+  REMEDIATION_SUGGESTED: ["done", "done", "current", "todo"],
+  AWAITING_APPROVAL: ["done", "done", "current", "todo"],
+  APPROVED: ["done", "done", "current", "todo"],
+  EXECUTING: ["done", "done", "current", "todo"],
+  EXECUTED: ["done", "done", "done", "current"],
+  VERIFIED: ["done", "done", "done", "done"],
+  CLOSED: ["done", "done", "done", "done"],
+  RCA_REJECTED: ["done", "attention", "todo", "todo"],
+  EXECUTION_FAILED: ["done", "done", "attention", "todo"],
+  VERIFICATION_FAILED: ["done", "done", "done", "attention"],
+  FALSE_POSITIVE: ["done", "done", "done", "done"],
+  ESCALATED: ["done", "done", "attention", "todo"],
 };
 
 const TONE_CARD_CLASSES = {
