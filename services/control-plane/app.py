@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -28,6 +29,7 @@ from shared.aap import (
 )
 from shared.cluster_env import (
     anomaly_service_url,
+    control_plane_url,
     console_cluster_name,
     feature_gateway_url,
     predictive_service_url,
@@ -73,6 +75,7 @@ from shared.db import (
     transition_incident_state,
     upsert_incident_ticket,
     upsert_ticket_comment,
+    update_incident_remediation,
     update_approval,
     update_incident_action,
     update_incident_status,
@@ -126,6 +129,7 @@ from shared.workflow import (
     NEW,
     RCA_GENERATED,
     RCA_REJECTED,
+    AI_PLAYBOOK_GENERATION_ACTION,
     REMEDIATION_SUGGESTED,
     VERIFIED,
     VERIFICATION_FAILED,
@@ -300,6 +304,29 @@ class RemediationDecisionRequest(BaseModel):
     source_url: str = ""
 
 
+class PlaybookGenerationRequest(BaseModel):
+    requested_by: str
+    notes: str = ""
+    source_url: str = ""
+
+
+class PlaybookGenerationCallbackRequest(BaseModel):
+    correlation_id: str
+    status: str = "generated"
+    title: str = ""
+    description: str = ""
+    summary: str = ""
+    expected_outcome: str = ""
+    preconditions: List[str] = Field(default_factory=list)
+    playbook_yaml: str = ""
+    playbook_ref: str = ""
+    action_ref: str = ""
+    provider_name: str = "watsonx"
+    provider_run_id: str = ""
+    error: str = ""
+    metadata: Dict[str, object] = Field(default_factory=dict)
+
+
 class AutomationActionTriggerRequest(BaseModel):
     approved_by: str
     notes: str = ""
@@ -326,6 +353,8 @@ PLAYBOOKS = {
     "rate_limit_pcscf": "/app/automation/ansible/playbooks/rate-limit-pcscf.yaml",
     "quarantine_imsi": "/app/automation/ansible/playbooks/quarantine-imsi.yaml",
 }
+AI_PLAYBOOK_GENERATION_TOPIC = "aiops-ansible-playbook-generate-instruction"
+AI_PLAYBOOK_GENERATION_PROVIDER = "watsonx"
 
 WORKFLOW_STATE_OPTIONS = [
     NEW,
@@ -640,6 +669,180 @@ def _generate_and_store_remediations(incident_id: str, actor: str = "control-pla
     return remediations
 
 
+def _request_ai_playbook_generation(
+    incident: Dict[str, object],
+    remediation: Dict[str, object],
+    requested_by: str,
+    notes: str,
+    source_url: str,
+) -> Dict[str, object]:
+    if not _ai_playbook_generation_enabled():
+        raise HTTPException(status_code=400, detail="AI playbook generation is disabled")
+    if not _is_ai_playbook_generation_request(remediation):
+        raise HTTPException(status_code=400, detail="Selected remediation is not an AI playbook generation request")
+    if not isinstance(incident.get("rca_payload"), dict) or not incident.get("rca_payload"):
+        raise HTTPException(status_code=400, detail="RCA must exist before requesting AI playbook generation")
+
+    correlation_id = uuid.uuid4().hex
+    instruction = _build_playbook_generation_instruction(incident, remediation, correlation_id, notes, source_url)
+    try:
+        publish_result = _publish_playbook_generation_instruction(correlation_id, instruction)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Failed to publish AI playbook generation instruction: {exc}") from exc
+
+    metadata = _merge_remediation_metadata(
+        remediation,
+        {
+            "ai_generated": True,
+            "generation_kind": "request",
+            "generation_status": "requested",
+            "generation_provider": AI_PLAYBOOK_GENERATION_PROVIDER,
+            "generation_correlation_id": correlation_id,
+            "generation_error": "",
+            "generation_requested_at": _now_iso(),
+            "generation_requested_by": requested_by,
+            "generation_notes": notes,
+            "generation_source_url": source_url,
+            "generation_topic": publish_result["topic"],
+            "generation_instruction": instruction,
+        },
+    )
+    updated_remediation = update_incident_remediation(
+        str(incident.get("id") or ""),
+        int(remediation.get("id") or 0),
+        status="available",
+        metadata=metadata,
+    )
+    if not updated_remediation:
+        raise HTTPException(status_code=500, detail="Failed to persist AI playbook generation request")
+    record_audit(
+        "ai_playbook_generation_requested",
+        requested_by,
+        {
+            "remediation_id": updated_remediation.get("id"),
+            "correlation_id": correlation_id,
+            "topic": publish_result["topic"],
+            "source_url": source_url,
+            "notes": notes,
+        },
+        incident_id=str(incident.get("id") or ""),
+    )
+    return {
+        "remediation": updated_remediation,
+        "publish": publish_result,
+    }
+
+
+def _apply_ai_playbook_generation_callback(
+    incident_id: str,
+    payload: PlaybookGenerationCallbackRequest,
+) -> Dict[str, object]:
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    remediation = _find_ai_playbook_generation_remediation(incident_id, payload.correlation_id)
+    if remediation is None:
+        raise HTTPException(status_code=404, detail="No AI playbook generation request matches this correlation id")
+
+    provider_name = str(payload.provider_name or AI_PLAYBOOK_GENERATION_PROVIDER).strip() or AI_PLAYBOOK_GENERATION_PROVIDER
+    normalized_status = str(payload.status or "generated").strip().lower() or "generated"
+    current_revision = int((get_incident(incident_id) or incident).get("workflow_revision") or remediation.get("based_on_revision") or 1)
+    metadata = _merge_remediation_metadata(
+        remediation,
+        {
+            "ai_generated": True,
+            "generation_provider": provider_name,
+            "generation_correlation_id": payload.correlation_id,
+            "generation_updated_at": _now_iso(),
+            "provider_run_id": str(payload.provider_run_id or "").strip(),
+        },
+    )
+
+    if normalized_status == "failed":
+        updated = update_incident_remediation(
+            incident_id,
+            int(remediation.get("id") or 0),
+            based_on_revision=current_revision,
+            metadata=metadata
+            | {
+                "generation_kind": "request",
+                "generation_status": "failed",
+                "generation_error": str(payload.error or "External playbook generation failed").strip(),
+            },
+            playbook_yaml="",
+            status="available",
+        )
+        record_audit(
+            "ai_playbook_generation_failed",
+            provider_name,
+            {
+                "remediation_id": remediation.get("id"),
+                "correlation_id": payload.correlation_id,
+                "error": str(payload.error or "External playbook generation failed").strip(),
+            },
+            incident_id=incident_id,
+        )
+        if not updated:
+            raise HTTPException(status_code=500, detail="Failed to persist AI playbook generation failure")
+        return updated
+
+    if normalized_status not in {"generated", "ready", "completed", "success"}:
+        raise HTTPException(status_code=400, detail=f"Unsupported playbook generation status '{payload.status}'")
+
+    playbook_yaml = str(payload.playbook_yaml or "").strip()
+    if not playbook_yaml:
+        raise HTTPException(status_code=400, detail="playbook_yaml is required when status=generated")
+
+    action_ref = str(payload.action_ref or "").strip() or _generated_playbook_action_ref(payload.correlation_id)
+    playbook_ref = str(payload.playbook_ref or "").strip() or action_ref
+    updated = update_incident_remediation(
+        incident_id,
+        int(remediation.get("id") or 0),
+        based_on_revision=current_revision,
+        title=str(payload.title or remediation.get("title") or "AI generated Ansible playbook").strip(),
+        suggestion_type="ansible_playbook",
+        description=str(
+            payload.description
+            or payload.summary
+            or remediation.get("description")
+            or "AI-generated playbook returned from the external watsonx workflow."
+        ).strip(),
+        risk_level=str(remediation.get("risk_level") or "medium"),
+        confidence=max(float(remediation.get("confidence") or 0.0), 0.55),
+        automation_level="human_approved",
+        requires_approval=True,
+        playbook_ref=playbook_ref,
+        action_ref=action_ref,
+        preconditions=_string_list(payload.preconditions) or _string_list(remediation.get("preconditions")),
+        expected_outcome=str(payload.expected_outcome or remediation.get("expected_outcome") or "").strip(),
+        status="available",
+        metadata=metadata
+        | {
+            "generation_kind": "generated",
+            "generation_status": "generated",
+            "generation_error": "",
+            "generated_action_ref": action_ref,
+            "generated_playbook_ref": playbook_ref,
+        },
+        playbook_yaml=playbook_yaml,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to persist AI-generated playbook")
+    record_audit(
+        "ai_playbook_generated",
+        provider_name,
+        {
+            "remediation_id": updated.get("id"),
+            "correlation_id": payload.correlation_id,
+            "action_ref": action_ref,
+            "playbook_ref": playbook_ref,
+            "provider_run_id": str(payload.provider_run_id or "").strip(),
+        },
+        incident_id=incident_id,
+    )
+    return updated
+
+
 def _find_matching_remediation(incident_id: str, action_ref: str) -> Dict[str, object] | None:
     normalized_action = str(action_ref or "").strip()
     if not normalized_action:
@@ -755,6 +958,206 @@ def _feature_signal_summary(features: Dict[str, object]) -> str:
             continue
         fragments.append(f"{key}={value}")
     return ", ".join(fragments[:8]) or "no summarized feature signals"
+
+
+def _ai_playbook_generation_enabled() -> bool:
+    return _bool_from_env("AI_PLAYBOOK_GENERATION_ENABLED", True)
+
+
+def _ai_playbook_generation_topic() -> str:
+    return _string_from_env("AI_PLAYBOOK_GENERATION_KAFKA_TOPIC", AI_PLAYBOOK_GENERATION_TOPIC)
+
+
+def _ai_playbook_generation_bootstrap_servers() -> List[str]:
+    raw = (
+        os.getenv("AI_PLAYBOOK_GENERATION_KAFKA_BOOTSTRAP_SERVERS", "").strip()
+        or os.getenv("KAFKA_BOOTSTRAP_SERVERS", "").strip()
+        or "ims-release-kafka-kafka-bootstrap.ims-demo-lab.svc.cluster.local:9092"
+    )
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _ai_playbook_generation_client_id() -> str:
+    return _string_from_env("AI_PLAYBOOK_GENERATION_KAFKA_CLIENT_ID", "ims-control-plane-playbook-generator")
+
+
+def _ai_playbook_generation_security_protocol() -> str:
+    return _string_from_env("AI_PLAYBOOK_GENERATION_KAFKA_SECURITY_PROTOCOL", "PLAINTEXT")
+
+
+def _public_control_plane_base_url() -> str:
+    return (
+        os.getenv("PLAYBOOK_GENERATION_CALLBACK_BASE_URL", "").strip()
+        or os.getenv("CONTROL_PLANE_PUBLIC_URL", "").strip()
+        or control_plane_url()
+    ).rstrip("/")
+
+
+def _playbook_generation_callback_url(incident_id: str) -> str:
+    return f"{_public_control_plane_base_url()}/incidents/{incident_id}/playbook-generation/callback"
+
+
+def _remediation_metadata(remediation: Dict[str, object] | None) -> Dict[str, object]:
+    if not remediation:
+        return {}
+    value = remediation.get("metadata")
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _merge_remediation_metadata(remediation: Dict[str, object] | None, extra: Dict[str, object]) -> Dict[str, object]:
+    metadata = _remediation_metadata(remediation)
+    metadata.update(extra)
+    return metadata
+
+
+def _is_ai_playbook_generation_request(remediation: Dict[str, object] | None) -> bool:
+    if not remediation:
+        return False
+    metadata = _remediation_metadata(remediation)
+    return (
+        str(remediation.get("action_ref") or "") == AI_PLAYBOOK_GENERATION_ACTION
+        or str(metadata.get("generation_kind") or "") == "request"
+    )
+
+
+def _generated_playbook_yaml(remediation: Dict[str, object] | None) -> str:
+    if not remediation:
+        return ""
+    direct_yaml = str(remediation.get("playbook_yaml") or "").strip()
+    if direct_yaml:
+        return direct_yaml
+    metadata = _remediation_metadata(remediation)
+    return str(metadata.get("playbook_yaml") or "").strip()
+
+
+def _candidate_remediation_titles(incident_id: str, ignored_id: int | None = None) -> List[str]:
+    items: List[str] = []
+    for remediation in list_incident_remediations(incident_id):
+        if ignored_id is not None and int(remediation.get("id") or 0) == ignored_id:
+            continue
+        if _is_ai_playbook_generation_request(remediation):
+            continue
+        title = str(remediation.get("title") or "").strip()
+        if title:
+            items.append(title)
+    return items[:5]
+
+
+def _build_playbook_generation_instruction(
+    incident: Dict[str, object],
+    remediation: Dict[str, object],
+    correlation_id: str,
+    notes: str,
+    source_url: str,
+) -> str:
+    incident_id = str(incident.get("id") or "")
+    rca_payload = incident.get("rca_payload") if isinstance(incident.get("rca_payload"), dict) else {}
+    feature_snapshot = incident.get("feature_snapshot") if isinstance(incident.get("feature_snapshot"), dict) else {}
+    retrieved_documents = rca_payload.get("retrieved_documents") if isinstance(rca_payload.get("retrieved_documents"), list) else []
+    evidence_refs = [
+        str(item.get("reference") or item.get("title") or "").strip()
+        for item in retrieved_documents
+        if isinstance(item, dict)
+    ]
+    candidate_titles = _candidate_remediation_titles(incident_id, ignored_id=int(remediation.get("id") or 0))
+    callback_url = _playbook_generation_callback_url(incident_id)
+    lines = [
+        f"Generate a reviewable Ansible playbook for IMS incident {incident_id}.",
+        "",
+        "Incident context:",
+        f"- project: {incident.get('project') or 'ims-demo'}",
+        f"- anomaly_type: {canonical_anomaly_type(str(incident.get('anomaly_type') or NORMAL_ANOMALY_TYPE))}",
+        f"- severity: {incident.get('severity') or 'Unknown'}",
+        f"- predicted_confidence: {_incident_confidence(incident):.2f}",
+        f"- workflow_revision: {int(incident.get('workflow_revision') or 1)}",
+        f"- feature_signals: {_feature_signal_summary(feature_snapshot)}",
+        "",
+        "RCA:",
+        f"- root_cause: {str(rca_payload.get('root_cause') or incident.get('recommendation') or 'Not available').strip()}",
+        f"- explanation: {str(rca_payload.get('explanation') or rca_payload.get('recommendation') or 'Not available').strip()}",
+        f"- recommended_response: {str(rca_payload.get('recommendation') or incident.get('recommendation') or 'Not available').strip()}",
+    ]
+    if candidate_titles:
+        lines.extend(
+            [
+                "",
+                "Existing remediation context:",
+                f"- current ranked options: {'; '.join(candidate_titles)}",
+            ]
+        )
+    if evidence_refs:
+        lines.extend(
+            [
+                "",
+                "Evidence references:",
+                f"- supporting_documents: {'; '.join(evidence_refs[:4])}",
+            ]
+        )
+    if notes.strip():
+        lines.extend(["", "Operator note:", f"- {notes.strip()}"])
+    if source_url.strip():
+        lines.extend(["", "Operator context link:", f"- {source_url.strip()}"])
+    lines.extend(
+        [
+            "",
+            "Generation requirements:",
+            "- return one safe, idempotent Ansible playbook in YAML",
+            "- prefer explicit OpenShift or Kubernetes object changes with clear guardrails",
+            "- include concise title, summary, preconditions, and expected outcome",
+            "- avoid destructive, irreversible, or environment-wide changes",
+            "",
+            "Callback contract:",
+            f"- callback_url: {callback_url}",
+            f"- correlation_id: {correlation_id}",
+            "- authenticate using the control-plane API key already provisioned for your service",
+            "- POST JSON with fields: correlation_id, status, title, description, summary, expected_outcome, preconditions, playbook_yaml, playbook_ref, action_ref, provider_name, provider_run_id, error, metadata",
+            "- use status=generated on success or status=failed with error details on failure",
+        ]
+    )
+    return "\n".join(lines).strip()
+
+
+def _publish_playbook_generation_instruction(correlation_id: str, instruction: str) -> Dict[str, object]:
+    from kafka import KafkaProducer  # pyright: ignore[reportMissingImports]
+
+    producer = KafkaProducer(
+        bootstrap_servers=_ai_playbook_generation_bootstrap_servers(),
+        client_id=_ai_playbook_generation_client_id(),
+        security_protocol=_ai_playbook_generation_security_protocol(),
+        acks=os.getenv("AI_PLAYBOOK_GENERATION_KAFKA_ACKS", "all"),
+        retries=max(int(os.getenv("AI_PLAYBOOK_GENERATION_KAFKA_RETRIES", "3")), 0),
+        linger_ms=max(int(os.getenv("AI_PLAYBOOK_GENERATION_KAFKA_LINGER_MS", "0")), 0),
+        request_timeout_ms=max(int(os.getenv("AI_PLAYBOOK_GENERATION_KAFKA_REQUEST_TIMEOUT_MS", "20000")), 1_000),
+        max_block_ms=max(int(os.getenv("AI_PLAYBOOK_GENERATION_KAFKA_MAX_BLOCK_MS", "20000")), 1_000),
+        value_serializer=lambda value: str(value).encode("utf-8"),
+        key_serializer=lambda value: str(value).encode("utf-8"),
+    )
+    try:
+        send_timeout = float(os.getenv("AI_PLAYBOOK_GENERATION_KAFKA_SEND_TIMEOUT_SECONDS", "20"))
+        flush_timeout = float(os.getenv("AI_PLAYBOOK_GENERATION_KAFKA_FLUSH_TIMEOUT_SECONDS", "20"))
+        topic = _ai_playbook_generation_topic()
+        producer.send(topic, key=correlation_id, value=instruction).get(timeout=send_timeout)
+        producer.flush(timeout=flush_timeout)
+    finally:
+        producer.close()
+    return {
+        "topic": _ai_playbook_generation_topic(),
+        "correlation_id": correlation_id,
+        "bootstrap_servers": _ai_playbook_generation_bootstrap_servers(),
+        "instruction_preview": instruction[:400],
+    }
+
+
+def _generated_playbook_action_ref(correlation_id: str) -> str:
+    return f"ai_generated_playbook_{correlation_id[:12]}"
+
+
+def _find_ai_playbook_generation_remediation(incident_id: str, correlation_id: str) -> Dict[str, object] | None:
+    for remediation in list_incident_remediations(incident_id):
+        metadata = _remediation_metadata(remediation)
+        if str(metadata.get("generation_correlation_id") or "") == correlation_id:
+            return remediation
+    return None
 
 
 def _incident_category(incident: Dict[str, object]) -> str:
@@ -2753,6 +3156,73 @@ def generate_incident_remediations(incident_id: str, auth: AuthContext | None = 
     }
 
 
+@app.post("/incidents/{incident_id}/remediation/{remediation_id}/generate-playbook")
+def generate_incident_ai_playbook(
+    incident_id: str,
+    remediation_id: int,
+    payload: PlaybookGenerationRequest,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    ensure_role(auth, "operator")
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+    remediation = get_incident_remediation(incident_id, remediation_id)
+    if not remediation:
+        raise HTTPException(status_code=404, detail="Remediation not found")
+    result = _request_ai_playbook_generation(
+        incident,
+        remediation,
+        payload.requested_by,
+        payload.notes,
+        payload.source_url,
+    )
+    updated = get_incident(incident_id) or incident
+    return {
+        "remediation": result["remediation"],
+        "generation": result["publish"],
+        "workflow": _workflow_payload(updated),
+    }
+
+
+@app.post("/incidents/{incident_id}/playbook-generation/callback")
+def ai_playbook_generation_callback(
+    incident_id: str,
+    payload: PlaybookGenerationCallbackRequest,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    ensure_role(auth, "automation")
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+    updated_remediation = _apply_ai_playbook_generation_callback(incident_id, payload)
+    updated_incident = get_incident(incident_id) or incident
+    actor = str(payload.provider_name or AI_PLAYBOOK_GENERATION_PROVIDER).strip() or AI_PLAYBOOK_GENERATION_PROVIDER
+    _sync_current_ticket_best_effort(
+        updated_incident,
+        _ticket_note(
+            "AI playbook generation update",
+            [
+                ("Incident", incident_id),
+                ("Provider", actor),
+                ("Status", payload.status),
+                ("Correlation", payload.correlation_id),
+                ("Remediation", updated_remediation.get("title")),
+                ("Comment", payload.error or payload.summary or payload.description or "AI playbook generation callback received."),
+            ],
+        ),
+        actor,
+        "ai_playbook_generation",
+    )
+    set_active_incidents(list_incidents(project=incident["project"]))
+    return {
+        "remediation": updated_remediation,
+        "workflow": _workflow_payload(updated_incident),
+    }
+
+
 def _execute_incident_action(
     incident_id: str,
     payload: RemediationActionRequest,
@@ -2773,6 +3243,12 @@ def _execute_incident_action(
     elif payload.action:
         remediation = _find_matching_remediation(incident_id, payload.action)
 
+    if remediation and _is_ai_playbook_generation_request(remediation):
+        raise HTTPException(
+            status_code=400,
+            detail="Use the AI playbook generation endpoint for this remediation before approving or executing it",
+        )
+
     action_ref = str(
         payload.action
         or (remediation or {}).get("action_ref")
@@ -2781,6 +3257,7 @@ def _execute_incident_action(
     ).strip()
     if not action_ref:
         raise HTTPException(status_code=400, detail="Action reference is required")
+    dynamic_playbook_yaml = _generated_playbook_yaml(remediation)
 
     actor = auth.subject if auth else payload.approved_by
     started_at = _now_iso() if payload.execute else None
@@ -2833,14 +3310,51 @@ def _execute_incident_action(
     execution_status = "approved"
     output = "Approval recorded."
     skip_ticket_update = False
-    if payload.execute and action_ref in PLAYBOOKS:
+    if payload.execute and (action_ref in PLAYBOOKS or dynamic_playbook_yaml):
         incident = _transition_incident_with_audit(
             incident,
             EXECUTING,
             actor,
             f"Executing automation for {action_ref}.",
         )
-        if aap_action_supported(action_ref):
+        if dynamic_playbook_yaml:
+            output, raw_status = _execute_playbook(
+                action_ref,
+                playbook_content=dynamic_playbook_yaml,
+                playbook_label=str((remediation or {}).get("playbook_ref") or action_ref),
+            )
+            finished_at = _now_iso()
+            action_result_json |= {
+                "backend": "dynamic-playbook",
+                "playbook": str((remediation or {}).get("playbook_ref") or action_ref),
+                "raw_status": raw_status,
+                "ai_generated": True,
+            }
+            if raw_status in {"executed", "simulated"}:
+                execution_status = "executed"
+                incident = _transition_incident_with_audit(
+                    get_incident(incident_id) or incident,
+                    EXECUTED,
+                    actor,
+                    f"Automation completed for {action_ref}.",
+                )
+            elif raw_status in {"failed", "rejected"}:
+                execution_status = "failed"
+                incident = _transition_incident_with_audit(
+                    get_incident(incident_id) or incident,
+                    EXECUTION_FAILED,
+                    actor,
+                    f"Automation failed for {action_ref}.",
+                )
+            else:
+                execution_status = "approved"
+                incident = _transition_incident_with_audit(
+                    get_incident(incident_id) or incident,
+                    APPROVED,
+                    actor,
+                    f"Automation for {action_ref} was gated before execution.",
+                )
+        elif aap_action_supported(action_ref):
             try:
                 launch = _launch_aap_automation(action_ref, incident, remediation, payload.approved_by, payload.notes)
                 execution_status = "executing"
@@ -2971,7 +3485,7 @@ def _execute_incident_action(
     action_record = record_incident_action(
         incident_id=incident_id,
         remediation_id=int(remediation["id"]) if remediation and remediation.get("id") else None,
-        action_mode=str((remediation or {}).get("action_mode") or ("ansible" if action_ref in PLAYBOOKS else "manual")),
+        action_mode=str((remediation or {}).get("action_mode") or ("ansible" if action_ref in PLAYBOOKS or dynamic_playbook_yaml else "manual")),
         source_of_action=payload.source_of_action,
         approved_revision=int((get_incident(incident_id) or incident).get("workflow_revision") or 1),
         triggered_by=payload.approved_by,
@@ -2999,7 +3513,7 @@ def _execute_incident_action(
         },
         incident_id=incident_id,
     )
-    if action_ref in PLAYBOOKS and execution_status in {"executed", "failed"}:
+    if (action_ref in PLAYBOOKS or dynamic_playbook_yaml) and execution_status in {"executed", "failed"}:
         record_automation(action_ref, execution_status)
     if execution_status == "executing":
         if background_tasks is not None:
@@ -3885,24 +4399,43 @@ def _automation_mode() -> str:
     return "simulate"
 
 
-def _execute_playbook(action: str) -> tuple[str, str]:
-    playbook = PLAYBOOKS.get(action)
-    if not playbook:
+def _execute_playbook(
+    action: str,
+    *,
+    playbook_content: str | None = None,
+    playbook_label: str | None = None,
+) -> tuple[str, str]:
+    playbook = playbook_label or PLAYBOOKS.get(action)
+    if not playbook and not playbook_content:
         return "unknown action", "rejected"
     mode = _automation_mode()
     if mode == "disabled":
-        return f"automation gated; playbook {playbook} not executed", "pending_execution"
+        return f"automation gated; playbook {playbook or action} not executed", "pending_execution"
     if mode == "simulate":
-        return f"demo automation simulated for playbook {playbook}", "simulated"
+        return f"demo automation simulated for playbook {playbook or action}", "simulated"
     binary = shutil.which("ansible-playbook")
     if not binary:
         return "ansible-playbook not installed in runtime", "failed"
 
-    result = subprocess.run(
-        [binary, playbook, "-i", "localhost,", "-c", "local"],
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
-    output = (result.stdout + "\n" + result.stderr).strip()
-    return output, "executed" if result.returncode == 0 else "failed"
+    temp_path = ""
+    target_playbook = playbook or action
+    try:
+        if playbook_content is not None:
+            with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False) as handle:
+                handle.write(playbook_content)
+                temp_path = handle.name
+            target_playbook = temp_path
+        result = subprocess.run(
+            [binary, target_playbook, "-i", "localhost,", "-c", "local"],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        output = (result.stdout + "\n" + result.stderr).strip()
+        return output, "executed" if result.returncode == 0 else "failed"
+    finally:
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except FileNotFoundError:
+                pass

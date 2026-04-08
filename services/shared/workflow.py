@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from typing import Any, Dict, Iterable, List
 
 from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type, severity_for_anomaly_type
@@ -112,6 +113,18 @@ AUTOMATION_BONUSES = {
     "ticket_only": 0.08,
 }
 
+AI_PLAYBOOK_GENERATION_ACTION = "generate_ai_ansible_playbook"
+
+
+def _ai_playbook_generation_enabled() -> bool:
+    return str(os.getenv("AI_PLAYBOOK_GENERATION_ENABLED", "true")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+        "enabled",
+    }
+
 REMEDIATION_LIBRARY: Dict[str, Dict[str, Any]] = {
     "scale_scscf": {
         "action_ref": "scale_scscf",
@@ -163,6 +176,33 @@ REMEDIATION_LIBRARY: Dict[str, Dict[str, Any]] = {
         "policy_bonus": 0.09,
         "execution_cost_penalty": 0.20,
         "keywords": ["quarantine", "subscriber", "imsi", "malformed", "source"],
+    },
+    AI_PLAYBOOK_GENERATION_ACTION: {
+        "action_ref": AI_PLAYBOOK_GENERATION_ACTION,
+        "title": "Generate AI Ansible playbook with watsonx",
+        "suggestion_type": "ai_playbook_generation",
+        "action_mode": "custom",
+        "description": "Send the RCA, feature signals, and current remediation context to the watsonx playbook generator so it can return a reviewable Ansible playbook on demand.",
+        "risk_level": "low",
+        "automation_level": "human_approved",
+        "requires_approval": False,
+        "playbook_ref": "",
+        "preconditions": [
+            "RCA is attached",
+            "Kafka instruction topic is reachable",
+            "External playbook generator callback is configured",
+        ],
+        "expected_outcome": "A reviewable AI-generated Ansible playbook is attached as a new remediation option for this incident.",
+        "base_success_rate": 0.61,
+        "policy_bonus": 0.16,
+        "execution_cost_penalty": 0.08,
+        "keywords": ["ansible", "playbook", "automation", "watsonx", "generated", "rca"],
+        "metadata": {
+            "ai_generated": True,
+            "generation_kind": "request",
+            "generation_provider": "watsonx",
+            "generation_status": "not_requested",
+        },
     },
     "inspect_registration_policy": {
         "action_ref": "inspect_registration_policy",
@@ -479,7 +519,9 @@ def generate_remediation_suggestions(
     historical_success_rates: Dict[str, float] | None = None,
 ) -> List[Dict[str, Any]]:
     anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE))
-    template_ids = REMEDIATION_CATALOG.get(anomaly_type, ["open_plane_escalation"])
+    template_ids = list(REMEDIATION_CATALOG.get(anomaly_type, ["open_plane_escalation"]))
+    if _ai_playbook_generation_enabled() and AI_PLAYBOOK_GENERATION_ACTION not in template_ids:
+        template_ids.append(AI_PLAYBOOK_GENERATION_ACTION)
     historical_success_rates = historical_success_rates or {}
     retrieved_documents = rca_payload.get("retrieved_documents") or []
     retrieval_max = 0.0
@@ -540,6 +582,7 @@ def generate_remediation_suggestions(
             "playbook_ref": str(template.get("playbook_ref") or ""),
             "preconditions": list(template.get("preconditions", [])),
             "expected_outcome": str(template.get("expected_outcome") or ""),
+            "metadata": dict(template.get("metadata") or {}),
             "historical_success_rate": round(historical_success, 4),
             "retrieval_similarity": retrieval_similarity,
             "rca_confidence": round(rca_confidence, 4),

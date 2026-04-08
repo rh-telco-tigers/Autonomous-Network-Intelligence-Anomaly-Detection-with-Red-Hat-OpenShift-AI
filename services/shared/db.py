@@ -127,6 +127,8 @@ def init_db() -> None:
               expected_outcome TEXT,
               rank_score REAL,
               factors_json TEXT,
+              metadata_json TEXT,
+              playbook_yaml TEXT,
               status TEXT NOT NULL,
               created_at TEXT NOT NULL
             );
@@ -234,6 +236,14 @@ def init_db() -> None:
                 "class_probabilities_json": "TEXT",
                 "top_classes_json": "TEXT",
                 "is_anomaly": "INTEGER",
+            },
+        )
+        _ensure_columns(
+            connection,
+            "incident_remediation",
+            {
+                "metadata_json": "TEXT",
+                "playbook_yaml": "TEXT",
             },
         )
         connection.execute(
@@ -461,8 +471,8 @@ def replace_remediations(incident_id: str, rca_id: int | None, suggestions: List
                 INSERT INTO incident_remediation (
                   incident_id, rca_id, based_on_revision, suggestion_rank, title, suggestion_type, description,
                   risk_level, confidence, automation_level, requires_approval, playbook_ref, action_ref,
-                  preconditions_json, expected_outcome, rank_score, factors_json, status, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  preconditions_json, expected_outcome, rank_score, factors_json, metadata_json, playbook_yaml, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     incident_id,
@@ -491,6 +501,8 @@ def replace_remediations(incident_id: str, rca_id: int | None, suggestions: List
                             "execution_cost_penalty": suggestion.get("execution_cost_penalty"),
                         }
                     ),
+                    _json_dumps(suggestion.get("metadata") or {}),
+                    str(suggestion.get("playbook_yaml") or ""),
                     "available",
                     _now(),
                 ),
@@ -542,6 +554,68 @@ def set_incident_remediation_status(incident_id: str, remediation_id: int, statu
         connection.execute(
             "UPDATE incident_remediation SET status = ? WHERE incident_id = ? AND id = ?",
             (status, incident_id, remediation_id),
+        )
+        connection.commit()
+    return get_incident_remediation(incident_id, remediation_id)
+
+
+def update_incident_remediation(
+    incident_id: str,
+    remediation_id: int,
+    *,
+    based_on_revision: int | None = None,
+    title: str | None = None,
+    suggestion_type: str | None = None,
+    description: str | None = None,
+    risk_level: str | None = None,
+    confidence: float | None = None,
+    automation_level: str | None = None,
+    requires_approval: bool | None = None,
+    playbook_ref: str | None = None,
+    action_ref: str | None = None,
+    preconditions: List[str] | None = None,
+    expected_outcome: str | None = None,
+    rank_score: float | None = None,
+    status: str | None = None,
+    metadata: Dict[str, Any] | None = None,
+    playbook_yaml: str | None = None,
+) -> Dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        row = connection.execute(
+            "SELECT * FROM incident_remediation WHERE incident_id = ? AND id = ?",
+            (incident_id, remediation_id),
+        ).fetchone()
+        if not row:
+            return None
+        current = _deserialize_remediation(row)
+        connection.execute(
+            """
+            UPDATE incident_remediation
+            SET based_on_revision = ?, title = ?, suggestion_type = ?, description = ?, risk_level = ?, confidence = ?,
+                automation_level = ?, requires_approval = ?, playbook_ref = ?, action_ref = ?, preconditions_json = ?,
+                expected_outcome = ?, rank_score = ?, status = ?, metadata_json = ?, playbook_yaml = ?
+            WHERE incident_id = ? AND id = ?
+            """,
+            (
+                int(based_on_revision if based_on_revision is not None else current.get("based_on_revision") or 1),
+                str(title if title is not None else current.get("title") or "Untitled remediation"),
+                str(suggestion_type if suggestion_type is not None else current.get("suggestion_type") or "manual"),
+                str(description if description is not None else current.get("description") or ""),
+                str(risk_level if risk_level is not None else current.get("risk_level") or "medium"),
+                float(confidence if confidence is not None else current.get("confidence") or 0.0),
+                str(automation_level if automation_level is not None else current.get("automation_level") or "manual"),
+                int(requires_approval if requires_approval is not None else bool(current.get("requires_approval"))),
+                str(playbook_ref if playbook_ref is not None else current.get("playbook_ref") or ""),
+                str(action_ref if action_ref is not None else current.get("action_ref") or ""),
+                _json_dumps(preconditions if preconditions is not None else current.get("preconditions") or []),
+                str(expected_outcome if expected_outcome is not None else current.get("expected_outcome") or ""),
+                float(rank_score if rank_score is not None else current.get("rank_score") or 0.0),
+                str(status if status is not None else current.get("status") or "available"),
+                _json_dumps(metadata if metadata is not None else current.get("metadata") or {}),
+                str(playbook_yaml if playbook_yaml is not None else current.get("playbook_yaml") or ""),
+                incident_id,
+                remediation_id,
+            ),
         )
         connection.commit()
     return get_incident_remediation(incident_id, remediation_id)
@@ -1165,6 +1239,13 @@ def _deserialize_remediation(row: sqlite3.Row) -> Dict[str, Any]:
     record["rank_score"] = float(record.get("rank_score") or 0.0)
     record["preconditions"] = _json_loads(record.get("preconditions_json"), [])
     record["factors"] = _json_loads(record.get("factors_json"), {})
+    metadata = _json_loads(record.get("metadata_json"), {})
+    record["metadata"] = metadata if isinstance(metadata, dict) else {}
+    record["ai_generated"] = bool(record["metadata"].get("ai_generated"))
+    record["generation_kind"] = str(record["metadata"].get("generation_kind") or "")
+    record["generation_provider"] = str(record["metadata"].get("generation_provider") or "")
+    record["generation_status"] = str(record["metadata"].get("generation_status") or "")
+    record["generation_error"] = str(record["metadata"].get("generation_error") or "")
     return record
 
 

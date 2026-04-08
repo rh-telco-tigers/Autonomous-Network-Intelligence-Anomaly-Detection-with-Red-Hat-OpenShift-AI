@@ -11,6 +11,7 @@ data:
   CONSOLE_CLUSTER_NAME: ims-demo-lab
   CONTROL_PLANE_URL: http://control-plane.ims-demo-lab.svc.cluster.local:8080
   CONTROL_PLANE_PROXY_URL: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+  CONTROL_PLANE_PUBLIC_URL: http://control-plane.ims-demo-lab.svc.cluster.local:8080
   FEATURE_GATEWAY_URL: http://feature-gateway.ims-demo-lab.svc.cluster.local:8080
   ANOMALY_SERVICE_URL: http://anomaly-service.ims-demo-lab.svc.cluster.local:8080
   RCA_SERVICE_URL: http://rca-service.ims-demo-lab.svc.cluster.local:8080
@@ -19,6 +20,10 @@ data:
   PREDICTIVE_MODEL_NAME: ims-predictive-fs
   PREDICTIVE_MODEL_VERSION_LABEL: ims-predictive-fs
   INCIDENT_AUTO_RCA_SAMPLE_RATE: "0.9"
+  AI_PLAYBOOK_GENERATION_ENABLED: "true"
+  AI_PLAYBOOK_GENERATION_KAFKA_BOOTSTRAP_SERVERS: ims-release-kafka-kafka-bootstrap.ims-demo-lab.svc.cluster.local:9092
+  AI_PLAYBOOK_GENERATION_KAFKA_TOPIC: aiops-ansible-playbook-generate-instruction
+  PLAYBOOK_GENERATION_CALLBACK_BASE_URL: http://control-plane.ims-demo-lab.svc.cluster.local:8080
   IMS_PCSCF_HOST: ims-pcscf.ims-demo-lab.svc.cluster.local
   IMS_PCSCF_PORT: "5060"
   DATASET_STORE_ENDPOINT: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000

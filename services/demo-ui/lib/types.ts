@@ -229,6 +229,13 @@ export type RemediationRecord = {
   rank_score: number;
   status: string;
   factors: Record<string, number>;
+  metadata?: Record<string, unknown>;
+  ai_generated?: boolean;
+  generation_kind?: string;
+  generation_provider?: string;
+  generation_status?: string;
+  generation_error?: string;
+  playbook_yaml?: string;
 };
 
 export type IncidentActionRecord = {

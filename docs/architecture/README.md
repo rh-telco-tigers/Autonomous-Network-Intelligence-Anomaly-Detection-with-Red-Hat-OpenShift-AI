@@ -26,7 +26,7 @@ flowchart TD
 | Phase 5: Model Serving | [Phase 05 Overview](./phase-05-overview-model-serving.md) | Expose trained models through a stable inference runtime | OpenShift AI model serving, KServe, NVIDIA Triton, MLServer sklearn runtime, `ims-predictive`, `ims-predictive-fs`, `ims-predictive-fs-mlserver` | REST and gRPC inference endpoints, multiclass probability outputs, side-by-side runtime parity path | [Engineering specification](./engineering-spec.md), [Feature store training path](./feature-store-training-path.md) |
 | Phase 6: Custom Services | [Phase 06 Overview](./phase-06-overview-custom-services.md) | Connect runtime data, inference, incident orchestration, and UI workflows | `feature-gateway`, `anomaly-service`, `control-plane`, `rca-service`, `demo-ui`, shared service library | end-to-end orchestration from traffic to incident state | [Engineering specification](./engineering-spec.md), [RCA and remediation](./rca-remediation.md) |
 | Phase 7: Real-Time Detection + RCA | [Phase 07 Overview](./phase-07-overview-real-time-detection-and-rca.md) | Score live windows, retrieve similar incidents, and generate grounded explanations | anomaly scoring path, control-plane, Milvus, vLLM, incident evidence, reasoning, and resolution embeddings | anomaly decisions, RCA payloads, related evidence, operator-facing explanations | [Engineering specification](./engineering-spec.md), [RCA and remediation](./rca-remediation.md) |
-| Phase 8: Remediation | [Phase 08 Overview](./phase-08-overview-remediation.md) | Suggest, approve, execute, verify, and learn from incident response actions | control-plane workflow, Plane integration, AAP/Ansible automation, verification loop, audit trail | remediation suggestions, approvals, execution records, verification outcomes, reusable knowledge | [RCA and remediation](./rca-remediation.md), [Remediation suggestions and playbooks](./remediation-suggestions-and-playbooks.md), [Event-Driven Ansible](./event-driven-ansible.md) |
+| Phase 8: Remediation | [Phase 08 Overview](./phase-08-overview-remediation.md) | Suggest, approve, execute, verify, and learn from incident response actions | control-plane workflow, Plane integration, AAP/Ansible automation, verification loop, audit trail | remediation suggestions, approvals, execution records, verification outcomes, reusable knowledge | [RCA and remediation](./rca-remediation.md), [Remediation suggestions and playbooks](./remediation-suggestions-and-playbooks.md), [AI playbook generation](./ai-playbook-generation.md), [Event-Driven Ansible](./event-driven-ansible.md) |
 
 ## Phase Files
 
@@ -48,6 +48,7 @@ flowchart TD
 - `feature-store-training-path.md` is the primary deep dive for the current Feature Store, KFP, model registry, and serving rollout across phases 2 to 5.
 - `rca-remediation.md` is the primary deep dive for phases 6 to 8.
 - `remediation-suggestions-and-playbooks.md` is the focused explainer for how Phase 8 ranks remediation actions and maps them to playbooks.
+- `ai-playbook-generation.md` is the focused contract for the watsonx-backed Kafka request and callback flow that turns RCA into an AI-generated Ansible playbook.
 - `event-driven-ansible.md` is the focused explainer for the EDA webhook and callback flow inside Phase 8.
 
 ## Which Docs To Keep
@@ -82,4 +83,5 @@ This separation keeps retrieval grounded by stage: evidence retrieval supports d
 3. Read [Feature store training path](./feature-store-training-path.md) for phases 2 to 5.
 4. Read [RCA and remediation](./rca-remediation.md) for phases 6 to 8.
 5. Read [Remediation suggestions and playbooks](./remediation-suggestions-and-playbooks.md) for the current ranking and playbook-mapping flow.
-6. Read [Event-Driven Ansible](./event-driven-ansible.md) for the event-driven automation path in remediation.
+6. Read [AI playbook generation](./ai-playbook-generation.md) for the watsonx-backed playbook generation request and callback contract.
+7. Read [Event-Driven Ansible](./event-driven-ansible.md) for the event-driven automation path in remediation.

@@ -129,6 +129,18 @@ type RemediationActionResponse = {
   remediation?: RemediationRecord;
 };
 
+type PlaybookGenerationResponse = {
+  workflow: IncidentWorkflow;
+  remediation: RemediationRecord;
+  generation: {
+    topic: string;
+    correlation_id: string;
+    instruction_preview: string;
+  };
+};
+
+const AI_PLAYBOOK_GENERATION_ACTION = "generate_ai_ansible_playbook";
+
 const GUIDE_STEP_TEMPLATES = [
   {
     title: "Generate RCA",
@@ -137,6 +149,10 @@ const GUIDE_STEP_TEMPLATES = [
   {
     title: "Generate remediations",
     description: "Turn the analysis into ranked manual and automated fix options.",
+  },
+  {
+    title: "Optional AI playbook",
+    description: "Ask watsonx to draft a reviewable Ansible playbook from the RCA.",
   },
   {
     title: "Approve a fix",
@@ -176,20 +192,20 @@ const INCIDENT_VIEW_STEP_TEMPLATES = [
 ] as const;
 
 const STEP_STATUS_MAP: Record<WorkflowState, StepStatus[]> = {
-  NEW: ["current", "todo", "todo", "todo", "todo"],
-  RCA_GENERATED: ["done", "current", "todo", "todo", "todo"],
-  REMEDIATION_SUGGESTED: ["done", "done", "current", "todo", "todo"],
-  AWAITING_APPROVAL: ["done", "done", "current", "todo", "todo"],
-  APPROVED: ["done", "done", "done", "current", "todo"],
-  EXECUTING: ["done", "done", "done", "current", "todo"],
-  EXECUTED: ["done", "done", "done", "done", "current"],
-  VERIFIED: ["done", "done", "done", "done", "current"],
-  CLOSED: ["done", "done", "done", "done", "done"],
-  RCA_REJECTED: ["attention", "todo", "todo", "todo", "todo"],
-  EXECUTION_FAILED: ["done", "done", "done", "attention", "todo"],
-  VERIFICATION_FAILED: ["done", "done", "done", "done", "attention"],
-  FALSE_POSITIVE: ["done", "done", "done", "done", "done"],
-  ESCALATED: ["done", "done", "attention", "todo", "todo"],
+  NEW: ["current", "todo", "todo", "todo", "todo", "todo"],
+  RCA_GENERATED: ["done", "current", "todo", "todo", "todo", "todo"],
+  REMEDIATION_SUGGESTED: ["done", "done", "current", "todo", "todo", "todo"],
+  AWAITING_APPROVAL: ["done", "done", "current", "todo", "todo", "todo"],
+  APPROVED: ["done", "done", "done", "done", "current", "todo"],
+  EXECUTING: ["done", "done", "done", "done", "current", "todo"],
+  EXECUTED: ["done", "done", "done", "done", "done", "current"],
+  VERIFIED: ["done", "done", "done", "done", "done", "current"],
+  CLOSED: ["done", "done", "done", "done", "done", "done"],
+  RCA_REJECTED: ["attention", "todo", "todo", "todo", "todo", "todo"],
+  EXECUTION_FAILED: ["done", "done", "done", "done", "attention", "todo"],
+  VERIFICATION_FAILED: ["done", "done", "done", "done", "done", "attention"],
+  FALSE_POSITIVE: ["done", "done", "done", "done", "done", "done"],
+  ESCALATED: ["done", "done", "attention", "todo", "todo", "todo"],
 };
 
 const INCIDENT_VIEW_STATUS_MAP: Record<WorkflowState, StepStatus[]> = {
@@ -322,6 +338,24 @@ export function IncidentWorkflowDetail() {
     onSuccess: refreshWorkflow,
   });
 
+  const generatePlaybookMutation = useMutation({
+    mutationFn: async (values: { remediationId: number; actor: string; notes?: string }) => {
+      return request<PlaybookGenerationResponse>(
+        `/api/incidents/${encodeURIComponent(incidentId)}/remediation/${values.remediationId}/generate-playbook`,
+        token,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            requested_by: values.actor,
+            notes: values.notes,
+            source_url: currentPageUrl,
+          }),
+        },
+      );
+    },
+    onSuccess: refreshWorkflow,
+  });
+
   const actionMutation = useMutation({
     mutationFn: async (values: {
       remediationId?: number;
@@ -443,16 +477,26 @@ export function IncidentWorkflowDetail() {
     return data.remediations.filter((item) => item.based_on_revision === remediationRevision);
   }, [data, remediationRevision]);
 
+  const aiPlaybookRequest = React.useMemo(
+    () => displayedRemediations.find((item) => isAiPlaybookGenerationRemediation(item)),
+    [displayedRemediations],
+  );
+
+  const actionableRemediations = React.useMemo(
+    () => displayedRemediations.filter((item) => !isAiPlaybookGenerationRemediation(item)),
+    [displayedRemediations],
+  );
+
   const remediationActivityById = React.useMemo(
-    () => buildRemediationActivityMap(displayedRemediations, data?.actions ?? []),
-    [displayedRemediations, data?.actions],
+    () => buildRemediationActivityMap(actionableRemediations, data?.actions ?? []),
+    [actionableRemediations, data?.actions],
   );
 
   const preferredRemediation = React.useMemo(() => {
-    if (!displayedRemediations.length) {
+    if (!actionableRemediations.length) {
       return undefined;
     }
-    return [...displayedRemediations].sort((left, right) => {
+    return [...actionableRemediations].sort((left, right) => {
       const priorityDelta =
         remediationDecisionPriority(remediationActivityById[left.id]) - remediationDecisionPriority(remediationActivityById[right.id]);
       if (priorityDelta !== 0) {
@@ -460,7 +504,7 @@ export function IncidentWorkflowDetail() {
       }
       return left.suggestion_rank - right.suggestion_rank;
     })[0];
-  }, [displayedRemediations, remediationActivityById]);
+  }, [actionableRemediations, remediationActivityById]);
 
   React.useEffect(() => {
     if (!data) {
@@ -478,27 +522,27 @@ export function IncidentWorkflowDetail() {
   }, [data, verificationForm]);
 
   React.useEffect(() => {
-    if (!displayedRemediations.length) {
+    if (!actionableRemediations.length) {
       setFocusedRemediationId(null);
       return;
     }
     setFocusedRemediationId((current) => {
-      if (current && displayedRemediations.some((item) => item.id === current)) {
+      if (current && actionableRemediations.some((item) => item.id === current)) {
         return current;
       }
-      return preferredRemediation?.id ?? displayedRemediations[0]?.id ?? null;
+      return preferredRemediation?.id ?? actionableRemediations[0]?.id ?? null;
     });
-  }, [displayedRemediations, preferredRemediation]);
+  }, [actionableRemediations, preferredRemediation]);
 
   const selectedRemediation = React.useMemo(() => {
-    if (!displayedRemediations.length) {
+    if (!actionableRemediations.length) {
       return undefined;
     }
     if (focusedRemediationId != null) {
-      return displayedRemediations.find((item) => item.id === focusedRemediationId) ?? preferredRemediation;
+      return actionableRemediations.find((item) => item.id === focusedRemediationId) ?? preferredRemediation;
     }
     return preferredRemediation;
-  }, [displayedRemediations, focusedRemediationId, preferredRemediation]);
+  }, [actionableRemediations, focusedRemediationId, preferredRemediation]);
 
   const latestRca = data?.rca_history[0];
   const latestRcaGeneration = buildRcaGenerationInfo(latestRca);
@@ -582,6 +626,34 @@ export function IncidentWorkflowDetail() {
       }
     },
     [actionMutation, actorName, clearRemediationNote, remediationNote],
+  );
+
+  const requestAiPlaybook = React.useCallback(
+    async (remediation: RemediationRecord) => {
+      setFocusedRemediationId(remediation.id);
+      try {
+        const payload = await generatePlaybookMutation.mutateAsync({
+          remediationId: remediation.id,
+          actor: actorName,
+          notes: remediationNote(remediation.id),
+        });
+        setNotice({
+          kind: "success",
+          message:
+            "AI playbook generation requested. The instruction was published to Kafka and the remediation card will update when the external generator posts the result back.",
+        });
+        clearRemediationNote(remediation.id);
+        if (payload.remediation?.generation_status === "requested") {
+          scrollToSection(remediationRef);
+        }
+      } catch (mutationError) {
+        setNotice({
+          kind: "error",
+          message: mutationError instanceof Error ? mutationError.message : "AI playbook generation request failed.",
+        });
+      }
+    },
+    [actorName, clearRemediationNote, generatePlaybookMutation, remediationNote, remediationRef, scrollToSection],
   );
 
   const retryRemediation = React.useCallback(
@@ -719,7 +791,7 @@ export function IncidentWorkflowDetail() {
   }
 
   const hasRca = Boolean(latestRca);
-  const hasRemediations = displayedRemediations.length > 0;
+  const hasRemediations = actionableRemediations.length > 0;
   const hasTicket = Boolean(currentTicket);
   const hasActionHistory = data.actions.length > 0;
   const hasVerification = data.verifications.length > 0 || ["VERIFIED", "CLOSED", "FALSE_POSITIVE"].includes(incident.status);
@@ -738,6 +810,7 @@ export function IncidentWorkflowDetail() {
   const pending =
     generateRcaMutation.isPending ||
     generateRemediationsMutation.isPending ||
+    generatePlaybookMutation.isPending ||
     actionMutation.isPending ||
     verificationMutation.isPending ||
     escalateIncidentMutation.isPending ||
@@ -757,7 +830,7 @@ export function IncidentWorkflowDetail() {
   const commandCenterSummary = headlineRemediation ? buildRemediationPreview(headlineRemediation) : latestRcaRecommendation;
   const decisionRisk = titleize(headlineRemediation?.risk_level ?? (incident.severity === "Critical" ? "medium" : "low"));
   const rcaConfidenceLabel = hasRca ? `${Math.round(Number(latestRca?.confidence ?? 0) * 100)}%` : "Pending";
-  const alternativeRemediations = displayedRemediations.filter((item) => item.id !== primaryRemediation?.id);
+  const alternativeRemediations = actionableRemediations.filter((item) => item.id !== primaryRemediation?.id);
   const incidentViewSteps = buildIncidentViewSteps(incident.status);
   const currentIncidentStep =
     incidentViewSteps.find((step) => step.status === "current" || step.status === "attention") ??
@@ -1018,9 +1091,9 @@ export function IncidentWorkflowDetail() {
                       Each remediation keeps its own decision history. Completed one-time actions disable automatically, tried fixes stay visible, and retries are explicit.
                     </p>
                   </div>
-                  {displayedRemediations.length ? (
+                  {actionableRemediations.length ? (
                     <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
-                      {displayedRemediations.length} suggestions in this review
+                      {actionableRemediations.length} executable suggestions in this review
                     </div>
                   ) : null}
                 </div>
@@ -1042,6 +1115,18 @@ export function IncidentWorkflowDetail() {
                         {ticketAutoSyncHint}
                       </div>
                     </div>
+
+                    {aiPlaybookRequest ? (
+                      <AiPlaybookGenerationCard
+                        remediation={aiPlaybookRequest}
+                        actor={actorName}
+                        note={remediationNote(aiPlaybookRequest.id)}
+                        pending={pending}
+                        onNoteChange={updateRemediationNote}
+                        onFocus={setFocusedRemediationId}
+                        onGenerate={(remediation) => void requestAiPlaybook(remediation)}
+                      />
+                    ) : null}
 
                     {primaryRemediation ? (
                       <RemediationActionCard
@@ -1560,6 +1645,9 @@ function RemediationActionCard({
           <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)] [overflow-wrap:anywhere]">{description}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {isAiGeneratedRemediation(remediation) ? (
+            <AiAutomationPill label={`AI generated${remediation.generation_provider ? ` · ${remediation.generation_provider}` : ""}`} />
+          ) : null}
           {isFocused ? (
             <div className="rounded-full border border-[var(--accent-ring)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
               Selected
@@ -1659,6 +1747,105 @@ function RemediationActionCard({
           className={cn(decisionLocked && "line-through")}
         >
           Reject
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function AiPlaybookGenerationCard({
+  remediation,
+  actor,
+  note,
+  pending,
+  onNoteChange,
+  onFocus,
+  onGenerate,
+}: {
+  remediation: RemediationRecord;
+  actor: string;
+  note: string;
+  pending: boolean;
+  onNoteChange: (remediationId: number, value: string) => void;
+  onFocus: (remediationId: number) => void;
+  onGenerate: (remediation: RemediationRecord) => void;
+}) {
+  const noteId = `ai-playbook-note-${remediation.id}`;
+  const metadata = (remediation.metadata ?? {}) as Record<string, unknown>;
+  const generationStatus = playbookGenerationStatus(remediation);
+  const provider = remediation.generation_provider || asStringValue(metadata.generation_provider) || "watsonx";
+  const correlationId = asStringValue(metadata.generation_correlation_id);
+  const topic = asStringValue(metadata.generation_topic);
+  const statusMessage =
+    generationStatus === "requested"
+      ? "Instruction published to Kafka. Waiting for the external playbook generator to call back with the generated YAML."
+      : generationStatus === "failed"
+        ? remediation.generation_error || "The external generator reported a failure. Update the note and retry when ready."
+        : "Use watsonx to draft a reviewable Ansible playbook from the RCA, feature signals, and ranked remediation context.";
+  const statusClasses =
+    generationStatus === "requested"
+      ? "border-sky-400/20 bg-sky-500/8 text-[var(--text-strong)]"
+      : generationStatus === "failed"
+        ? "border-rose-400/20 bg-rose-500/10 text-[var(--text-strong)]"
+        : "border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-[var(--text-strong)]";
+
+  return (
+    <div className="rounded-3xl border border-violet-400/25 bg-violet-500/8 p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="max-w-3xl">
+          <div className="text-xs uppercase tracking-[0.2em] text-violet-200/80">Optional AI step</div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="text-lg font-semibold text-[var(--text-strong)]">{remediation.title}</div>
+            <AiAutomationPill label={`AI generated via ${provider}`} subtle />
+          </div>
+          <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{remediation.description}</p>
+        </div>
+        <div className={cn("rounded-2xl border px-4 py-3 text-sm leading-6 lg:max-w-md", statusClasses)}>{statusMessage}</div>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-4">
+        <SummaryItem label="Action type" value="AI playbook request" />
+        <SummaryItem label="Provider" value={provider} />
+        <SummaryItem label="Status" value={titleize(generationStatus.replace(/_/g, " "))} />
+        <SummaryItem label="Revision scope" value={`Revision ${remediation.based_on_revision ?? "current"}`} />
+      </div>
+
+      <div className="mt-4">
+        <Label htmlFor={noteId}>Instruction note</Label>
+        <Textarea
+          id={noteId}
+          value={note}
+          onChange={(event) => {
+            onFocus(remediation.id);
+            onNoteChange(remediation.id, event.target.value);
+          }}
+          placeholder="Extra safety constraints, rollout intent, rollback notes, or target hints for the generator"
+          className="mt-2 min-h-[88px]"
+        />
+        <div className="mt-2 text-xs text-[var(--text-muted)]">Recorded as {actor}. This note is included in the plain-text Kafka instruction.</div>
+      </div>
+
+      {(topic || correlationId) && generationStatus !== "not_requested" ? (
+        <div className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4 text-xs leading-6 text-[var(--text-secondary)]">
+          {topic ? <div>Kafka topic: {topic}</div> : null}
+          {correlationId ? <div>Correlation id: {correlationId}</div> : null}
+        </div>
+      ) : null}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          onClick={() => {
+            onFocus(remediation.id);
+            onGenerate(remediation);
+          }}
+          disabled={pending || generationStatus === "requested"}
+        >
+          {generationStatus === "failed"
+            ? "Retry AI playbook generation"
+            : generationStatus === "requested"
+              ? "Waiting for callback..."
+              : "Generate with watsonx"}
         </Button>
       </div>
     </div>
@@ -1776,6 +1963,22 @@ function AiContentPill({ generation }: { generation: RcaGenerationInfo }) {
   );
 }
 
+function AiAutomationPill({ label, subtle = false }: { label: string; subtle?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em]",
+        subtle
+          ? "border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-500/25 dark:bg-violet-500/8 dark:text-violet-200/90"
+          : "border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-500/25 dark:bg-violet-500/8 dark:text-violet-200/90",
+      )}
+    >
+      <Sparkles className="h-3 w-3" aria-hidden="true" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 function SummaryItem({
   label,
   value,
@@ -1831,7 +2034,7 @@ function deriveFlowGuide({
     case "NEW":
       return {
         tone: "info",
-        badge: "Step 1 of 5",
+        badge: "Step 1 of 6",
         title: "Generate RCA first",
         description:
           "This incident is new. RCA is generated automatically for new events, but fixes and verification stay unavailable until the first analysis is ready.",
@@ -1859,11 +2062,11 @@ function deriveFlowGuide({
     case "RCA_GENERATED":
       return {
         tone: "info",
-        badge: "Step 2 of 5",
+        badge: "Step 2 of 6",
         title: "Generate fix options",
         description:
           "Analysis is ready. Next, generate ranked manual and automated fix options.",
-        subtext: "Create fix options before approval or execution.",
+        subtext: "Create fix options first. After that, you can optionally ask watsonx to draft an Ansible playbook from the RCA.",
         helpers: [
           {
             title: "What changed",
@@ -1888,15 +2091,15 @@ function deriveFlowGuide({
     case "AWAITING_APPROVAL":
       return {
         tone: "info",
-        badge: "Step 3 of 5",
-        title: "Choose and approve a fix",
+        badge: "Step 3 of 6",
+        title: "Optionally generate an AI playbook, then choose a fix",
         description:
-          "Review the ranked fix options, choose the safest one, and approve it for this incident version.",
-        subtext: "Approval applies only to the selected fix and current workflow version.",
+          "Review the ranked fix options, request a watsonx-generated Ansible playbook if helpful, then choose the safest remediation for this incident version.",
+        subtext: "AI playbook generation is optional. Approval still applies only to the selected fix and current workflow version.",
         helpers: [
           {
             title: "What is ready",
-            text: "Analysis is ready and the platform has mapped ranked fix options to it.",
+            text: "Analysis is ready, ranked fix options are available, and you can optionally request an AI-generated playbook before approval.",
           },
           {
             title: "Approval rule",
@@ -1904,7 +2107,7 @@ function deriveFlowGuide({
           },
           {
             title: "Expected output",
-            text: "One approved fix that can be run or recorded safely.",
+            text: "Either a new AI-generated playbook to review or one approved fix that can be run or recorded safely.",
           },
         ],
         ticketHint: hasTicket
@@ -1917,7 +2120,7 @@ function deriveFlowGuide({
     case "APPROVED":
       return {
         tone: "info",
-        badge: "Step 4 of 5",
+        badge: "Step 5 of 6",
         title: "Run the approved fix",
         description:
           "A fix is approved. You can now run the mapped Ansible job or record the manual action.",
@@ -1945,7 +2148,7 @@ function deriveFlowGuide({
     case "EXECUTING":
       return {
         tone: "info",
-        badge: "Step 4 of 5",
+        badge: "Step 5 of 6",
         title: "Execution is in progress",
         description:
           "The approved fix is running. Review the execution output and keep the ticket updated if others are involved.",
@@ -1973,7 +2176,7 @@ function deriveFlowGuide({
     case "EXECUTED":
       return {
         tone: "info",
-        badge: "Step 5 of 5",
+        badge: "Step 6 of 6",
         title: "Verify the outcome",
         description:
           "Execution finished. Confirm whether the issue is resolved, or return to the remediation options if the first action did not fully recover the service.",
@@ -2001,7 +2204,7 @@ function deriveFlowGuide({
     case "VERIFIED":
       return {
         tone: "success",
-        badge: "Step 5 of 5",
+        badge: "Step 6 of 6",
         title: "Close the incident",
         description:
           "The issue is resolved. Record the verified outcome and close the incident.",
@@ -2357,9 +2560,34 @@ function buildRcaRecommendation(source: RcaRecord | undefined, incidentRecommend
   );
 }
 
+function isAiPlaybookGenerationRemediation(remediation?: RemediationRecord) {
+  if (!remediation) {
+    return false;
+  }
+  return remediation.action_ref === AI_PLAYBOOK_GENERATION_ACTION || remediation.generation_kind === "request";
+}
+
+function isAiGeneratedRemediation(remediation?: RemediationRecord) {
+  if (!remediation) {
+    return false;
+  }
+  return Boolean(remediation.ai_generated && !isAiPlaybookGenerationRemediation(remediation) && remediation.playbook_ref);
+}
+
+function playbookGenerationStatus(remediation?: RemediationRecord) {
+  const normalized = String(remediation?.generation_status || "").trim().toLowerCase();
+  return normalized || "not_requested";
+}
+
 function remediationMode(remediation?: RemediationRecord) {
   if (!remediation) {
     return "Pending";
+  }
+  if (isAiPlaybookGenerationRemediation(remediation)) {
+    return "AI playbook request";
+  }
+  if (isAiGeneratedRemediation(remediation)) {
+    return "AI Ansible playbook";
   }
   if (remediation.playbook_ref) {
     return "Ansible playbook";
@@ -2371,6 +2599,12 @@ function remediationMode(remediation?: RemediationRecord) {
 }
 
 function buildRemediationPreview(remediation: RemediationRecord) {
+  if (isAiPlaybookGenerationRemediation(remediation)) {
+    return `${remediation.description} The platform publishes a plain-text generation instruction to Kafka and waits for the external watsonx workflow to POST the generated playbook back.`;
+  }
+  if (isAiGeneratedRemediation(remediation)) {
+    return `${remediation.description} This AI-generated playbook maps to ${remediation.playbook_ref} and stays tied to workflow revision ${remediation.based_on_revision}.`;
+  }
   if (remediation.playbook_ref) {
     return `${remediation.description} This path maps to ${remediation.playbook_ref} and should be tied to workflow revision ${remediation.based_on_revision}.`;
   }
