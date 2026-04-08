@@ -42,7 +42,7 @@ make kustomize-demo
 11. The `ims-demo-platform` application now includes the repo-managed AI extras from `k8s/base/feature-store`, `k8s/base/kafka`, and `k8s/base/kfp` as part of the demo overlay.
 12. The Argo bootstrap job now waits for the operator-backed CRDs before it applies the platform application, so a cold cluster does not race the OpenShift AI, Strimzi, and serving APIs.
 13. Do not create a separate Feature Store manually in the OpenShift AI UI. The repo-managed `FeatureStore/ims-featurestore` is part of the GitOps path.
-14. Plane, AAP/EDA, and live LLM RCA are intentionally disabled by default for fresh clusters. Enable them later by patching the relevant config and secrets after the core platform is healthy.
+14. AAP/EDA and live LLM RCA are intentionally disabled by default for fresh clusters. When the in-cluster Plane base is enabled, the Plane bootstrap job now repopulates `plane-integration-auth` automatically after the core platform is healthy.
 
 ## Notes
 
@@ -57,5 +57,5 @@ make kustomize-demo
 - Demo model storage is provided by an in-cluster MinIO deployment with the default credentials `minioadmin` / `minioadmin`.
 - `demo-incident-pulse` and the `sipp-*` CronJobs also depend on the internal registry images from the first Tekton build.
 - This repo assumes a model registry endpoint reachable as `ims-demo-modelregistry` in `rhoai-model-registries`; verify that service in Lab 04 or update the endpoint references for your cluster.
-- `plane-integration-auth`, `llm-provider-config`, and `aap-automation-config` are safe-by-default placeholders for a fresh cluster. Patch them only when you want those integrations live.
+- `plane-integration-auth` remains a safe-by-default placeholder in Git, but the Plane bootstrap job repopulates it automatically when Plane is deployed. `llm-provider-config` and `aap-automation-config` still need a manual patch when you want those integrations live.
 - If GPU-backed generative serving is required, add the appropriate cluster node labeling and accelerator operator prerequisites before applying the vLLM workload.

@@ -8,3 +8,5 @@ patches:
   - path: patch-plane-web-nginx.yaml
   - path: patch-plane-admin-nginx.yaml
   - path: patch-plane-worker-command.yaml
+  - path: patch-plane-rabbitmq-startup.yaml
+  - path: patch-plane-bootstrap-jobs.yaml

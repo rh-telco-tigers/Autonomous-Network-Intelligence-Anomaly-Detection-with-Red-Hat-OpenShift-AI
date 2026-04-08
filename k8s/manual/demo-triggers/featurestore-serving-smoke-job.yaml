@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  generateName: ims-featurestore-serving-smoke-
+  generateName: ims-featurestore-mlserver-smoke-
   namespace: ims-demo-lab
 spec:
   backoffLimit: 1
@@ -9,7 +9,7 @@ spec:
   template:
     metadata:
       labels:
-        app: ims-featurestore-serving-smoke
+        app: ims-featurestore-mlserver-smoke
     spec:
       restartPolicy: Never
       containers:
@@ -17,10 +17,11 @@ spec:
           image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
           command:
             - python
-            - ai/training/serving_smoke_check.py
+            - ai/training/featurestore_runtime_smoke_check.py
           resources:
             requests:
               cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 500m
               memory: 512Mi

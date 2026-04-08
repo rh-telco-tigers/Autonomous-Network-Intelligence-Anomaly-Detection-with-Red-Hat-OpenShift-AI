@@ -54,8 +54,25 @@ def _plane_api_headers(api_key: str) -> Dict[str, str]:
     return {"X-API-Key": api_key, "Content-Type": "application/json"}
 
 
+def _response_json_object(response: requests.Response) -> Dict[str, Any]:
+    try:
+        payload = response.json()
+    except ValueError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def _normalize_plane_label(value: object) -> str:
     return str(value or "").strip().lower()
+
+
+def _plane_existing_issue_id(response: requests.Response) -> str:
+    if response.status_code != 409:
+        return ""
+    payload = _response_json_object(response)
+    if "already exists" not in _normalize_plane_label(payload.get("error")):
+        return ""
+    return str(payload.get("id") or "")
 
 
 def _fetch_plane_project_states(base_url: str, workspace_slug: str, project_id: str, api_key: str) -> List[Dict[str, Any]]:
@@ -308,8 +325,21 @@ class PlaneTicketProvider(TicketProvider):
             json=create_payload,
             timeout=15,
         )
+        existing_issue_id = _plane_existing_issue_id(response)
+        if existing_issue_id:
+            return self.sync_ticket(
+                incident,
+                workflow,
+                {
+                    "provider": self.provider_name,
+                    "external_id": existing_issue_id,
+                    "external_key": existing_issue_id,
+                },
+                note=note,
+                source_url=source_url,
+            )
         response.raise_for_status()
-        payload = response.json()
+        payload = _response_json_object(response)
         external_id = str(payload.get("id") or "")
         payload_state = payload.get("state_detail") if isinstance(payload, dict) else {}
         ticket_status = str((payload_state or {}).get("name") or plane_state.get("name") or "")
@@ -376,6 +406,8 @@ class PlaneTicketProvider(TicketProvider):
                 "external_id": external_id,
                 "external_key": ticket.get("external_key") or external_id,
                 "url": "",
+                "workspace_id": self.workspace_slug or "demo-workspace",
+                "project_id": self.project_id or "demo-project",
                 "title": _ticket_title(incident),
                 "ticket_status": str(plane_state.get("name") or plane_state_for_workflow(str(incident.get("status") or ""))),
                 "source_url": source_url,
@@ -429,6 +461,8 @@ class PlaneTicketProvider(TicketProvider):
             "external_id": external_id,
             "external_key": str(payload.get("sequence_id") or ticket.get("external_key") or external_id),
             "url": f"{self.app_url}/{self.workspace_slug}/projects/{self.project_id}/issues/{external_id}",
+            "workspace_id": self.workspace_slug,
+            "project_id": self.project_id,
             "title": str(payload.get("name") or _ticket_title(incident)),
             "ticket_status": ticket_status,
             "source_url": source_url,

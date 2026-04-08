@@ -7,6 +7,9 @@ from pathlib import Path
 
 from release_runtime import normalize_release, publish_release, snapshot_sources, validate_release
 
+DEFAULT_APPROVAL_LIMIT = 1000
+DEFAULT_AUDIT_LIMIT = 1000
+
 
 def _write_output(path: str | None, payload: dict[str, object], fallback_name: str) -> None:
     target = Path(path) if path else Path("/tmp") / fallback_name
@@ -29,8 +32,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--snapshot-manifest")
     parser.add_argument("--normalized-manifest")
     parser.add_argument("--validation-manifest")
-    parser.add_argument("--approval-limit", type=int, default=50000)
-    parser.add_argument("--audit-limit", type=int, default=50000)
+    parser.add_argument("--approval-limit", type=int, default=DEFAULT_APPROVAL_LIMIT)
+    parser.add_argument("--audit-limit", type=int, default=DEFAULT_AUDIT_LIMIT)
     parser.add_argument("--output")
     return parser.parse_args()
 

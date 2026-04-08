@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: plane-rabbitmq-wl
+  namespace: ims-demo-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: plane-rabbitmq
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              chmod 600 /var/lib/rabbitmq/.erlang.cookie 2>/dev/null || true
+              umask 077
+              exec docker-entrypoint.sh rabbitmq-server

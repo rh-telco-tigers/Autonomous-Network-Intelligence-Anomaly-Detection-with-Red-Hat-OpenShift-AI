@@ -1497,8 +1497,8 @@ def snapshot_sources(
     project: str,
     workspace_root: str,
     source_snapshot_id: str | None = None,
-    approval_limit: int = 50_000,
-    audit_limit: int = 50_000,
+    approval_limit: int = 1_000,
+    audit_limit: int = 1_000,
 ) -> dict[str, Any]:
     snapshot_id = source_snapshot_id or f"snapshot-{_compact_timestamp()}"
     cutoff_ts = _timestamp()

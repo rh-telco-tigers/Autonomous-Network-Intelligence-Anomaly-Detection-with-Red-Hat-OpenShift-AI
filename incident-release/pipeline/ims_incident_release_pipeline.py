@@ -5,6 +5,8 @@ from kfp import dsl
 
 PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-incident-release:latest"
 WORKSPACE_ROOT = "/tmp/ims-incident-release"
+CONTROL_PLANE_APPROVAL_LIMIT = "1000"
+CONTROL_PLANE_AUDIT_LIMIT = "1000"
 
 
 @dsl.container_component
@@ -153,6 +155,10 @@ def run_release(
             workspace_root,
             "--source-snapshot-id",
             source_snapshot_id,
+            "--approval-limit",
+            CONTROL_PLANE_APPROVAL_LIMIT,
+            "--audit-limit",
+            CONTROL_PLANE_AUDIT_LIMIT,
             "--output",
             output_manifest,
         ],

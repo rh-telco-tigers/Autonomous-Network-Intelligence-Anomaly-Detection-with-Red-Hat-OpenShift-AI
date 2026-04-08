@@ -60,6 +60,10 @@ deploymentSpec:
         - '{{$.inputs.parameters[''workspace_root'']}}'
         - --source-snapshot-id
         - '{{$.inputs.parameters[''source_snapshot_id'']}}'
+        - --approval-limit
+        - '1000'
+        - --audit-limit
+        - '1000'
         - --output
         - '{{$.outputs.parameters[''output_manifest''].output_file}}'
         command:

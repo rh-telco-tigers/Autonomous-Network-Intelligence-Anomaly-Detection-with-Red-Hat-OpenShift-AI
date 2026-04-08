@@ -6,7 +6,7 @@ MODEL_REGISTRY_SERVICE ?= ims-demo-modelregistry
 INCIDENT_RELEASE_DATASET_VERSION ?=
 DEMO_TRIGGER_DIR := k8s/manual/demo-triggers
 
-.PHONY: help kustomize-demo apply-demo-ai-extras check-demo-incident-generators check-fresh-cluster-gitops check-fresh-cluster-ai check-fresh-cluster-runtime check-fresh-cluster validate-python repo-tree trigger-build-pipeline trigger-anomaly-platform-pipeline trigger-feature-bundle-pipeline trigger-featurestore-pipeline smoke-check-featurestore-serving trigger-incident-release stop-incident-release
+.PHONY: help kustomize-demo apply-demo-ai-extras check-demo-incident-generators check-fresh-cluster-gitops check-fresh-cluster-ai check-fresh-cluster-runtime check-fresh-cluster validate-python repo-tree trigger-build-pipeline trigger-anomaly-platform-pipeline trigger-feature-bundle-pipeline trigger-featurestore-pipeline trigger-incident-release-pipeline smoke-check-featurestore-serving trigger-incident-release stop-incident-release
 
 help: ## Print available make targets
 	@printf "Available commands:\n"
@@ -64,6 +64,10 @@ trigger-feature-bundle-pipeline: ## Start a fresh demo feature bundle publish ru
 trigger-featurestore-pipeline: ## Start a fresh demo feature-store training run
 	@printf "Creating demo KFP trigger job for ims-featurestore-train-and-register in %s\n" "$(DEMO_NAMESPACE)"
 	oc create -f "$(DEMO_TRIGGER_DIR)/featurestore-run-job.yaml"
+
+trigger-incident-release-pipeline: ## Start a fresh manual incident-release KFP run
+	@printf "Creating demo KFP trigger job for ims-incident-release in %s\n" "$(DEMO_NAMESPACE)"
+	oc create -f "$(DEMO_TRIGGER_DIR)/incident-release-run-job.yaml"
 
 smoke-check-featurestore-serving: ## Run the demo feature-store serving smoke check
 	@printf "Creating feature-store serving smoke check job in %s\n" "$(DEMO_NAMESPACE)"

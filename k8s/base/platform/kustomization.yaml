@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - aap-remediation-rbac.yaml
   - demo-incident-pulse.yaml
+  - plane-integration-bootstrap.yaml
   - platform-runtime-config.yaml
   - platform-services.yaml
 

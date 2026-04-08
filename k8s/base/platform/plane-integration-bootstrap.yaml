@@ -1,0 +1,368 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plane-integration-bootstrap
+  namespace: ims-demo-lab
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: plane-integration-bootstrap
+  namespace: ims-demo-lab
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    resourceNames:
+      - plane-integration-auth
+    verbs:
+      - get
+      - update
+      - patch
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    resourceNames:
+      - control-plane
+    verbs:
+      - get
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plane-integration-bootstrap
+  namespace: ims-demo-lab
+subjects:
+  - kind: ServiceAccount
+    name: plane-integration-bootstrap
+    namespace: ims-demo-lab
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: plane-integration-bootstrap
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: plane-integration-bootstrap
+  namespace: ims-demo-lab
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "70"
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: plane-integration-bootstrap
+    spec:
+      serviceAccountName: plane-integration-bootstrap
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: artifacts.plane.so/makeplane/plane-backend:v1.2.3
+          imagePullPolicy: IfNotPresent
+          workingDir: /code
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: CONTROL_PLANE_API_KEY
+              value: demo-token
+            - name: PLANE_BOOTSTRAP_WAIT_SECONDS
+              value: "900"
+            - name: PLANE_BOOTSTRAP_STATUS_WAIT_SECONDS
+              value: "300"
+            - name: PLANE_ADMIN_EMAIL
+              value: plane-admin@ims-demo.local
+            - name: PLANE_CONTROL_PLANE_TOKEN_LABEL
+              value: ims-demo-control-plane
+            - name: PLANE_CONTROL_PLANE_TOKEN_DESCRIPTION
+              value: PAT for IMS control-plane ticket sync
+          envFrom:
+            - configMapRef:
+                name: plane-app-vars
+            - secretRef:
+                name: plane-app-secrets
+            - secretRef:
+                name: plane-doc-store-secrets
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              python - <<'PY'
+              import base64
+              import json
+              import os
+              import ssl
+              import time
+              import urllib.error
+              import urllib.request
+              import uuid
+
+              os.environ.setdefault("DJANGO_SETTINGS_MODULE", "plane.settings.production")
+
+              import django
+              from django.apps import apps
+              from django.contrib.auth import get_user_model
+              from django.db.utils import OperationalError
+
+              django.setup()
+
+              namespace = (os.getenv("POD_NAMESPACE") or "ims-demo-lab").strip() or "ims-demo-lab"
+              wait_seconds = int(os.getenv("PLANE_BOOTSTRAP_WAIT_SECONDS", "900"))
+              status_wait_seconds = int(os.getenv("PLANE_BOOTSTRAP_STATUS_WAIT_SECONDS", "300"))
+              control_plane_api_key = os.getenv("CONTROL_PLANE_API_KEY", "demo-token").strip() or "demo-token"
+              control_plane_status_url = (
+                  os.getenv("CONTROL_PLANE_STATUS_URL")
+                  or f"http://control-plane.{namespace}.svc.cluster.local:8080/integrations/status"
+              ).rstrip("/")
+              token_label = os.getenv("PLANE_CONTROL_PLANE_TOKEN_LABEL", "ims-demo-control-plane").strip() or "ims-demo-control-plane"
+              token_description = (
+                  os.getenv("PLANE_CONTROL_PLANE_TOKEN_DESCRIPTION", "PAT for IMS control-plane ticket sync").strip()
+                  or "PAT for IMS control-plane ticket sync"
+              )
+              preferred_admin_email = os.getenv("PLANE_ADMIN_EMAIL", "plane-admin@ims-demo.local").strip()
+              preferred_workspace_slug = os.getenv("PLANE_WORKSPACE_SLUG", "ims-demo").strip() or "ims-demo"
+              plane_base_url = f"http://plane-api.{namespace}.svc.cluster.local:8000"
+              plane_app_url = (os.getenv("WEB_URL") or "").strip().rstrip("/")
+              if plane_app_url.startswith("http://"):
+                  plane_app_url = "https://" + plane_app_url.removeprefix("http://")
+
+              service_account_token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+              service_account_ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+              def request_json(
+                  url: str,
+                  *,
+                  method: str = "GET",
+                  payload: dict | None = None,
+                  headers: dict | None = None,
+                  expected_statuses: tuple[int, ...] = (200,),
+                  ignore_statuses: tuple[int, ...] = (),
+                  timeout: int = 30,
+                  cafile: str | None = None,
+              ):
+                  data = None
+                  request_headers = dict(headers or {})
+                  if payload is not None:
+                      data = json.dumps(payload).encode("utf-8")
+                  request = urllib.request.Request(url, data=data, headers=request_headers, method=method)
+                  context = ssl.create_default_context(cafile=cafile) if cafile else None
+                  try:
+                      with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
+                          body = response.read().decode("utf-8")
+                          if not body.strip():
+                              return {}
+                          return json.loads(body)
+                  except urllib.error.HTTPError as exc:
+                      body = exc.read().decode("utf-8")
+                      if exc.code in ignore_statuses:
+                          if not body.strip():
+                              return None
+                          return json.loads(body)
+                      if exc.code not in expected_statuses:
+                          raise
+                      if not body.strip():
+                          return {}
+                      return json.loads(body)
+
+              def k8s_request(
+                  path: str,
+                  *,
+                  method: str = "GET",
+                  payload: dict | None = None,
+                  expected_statuses: tuple[int, ...] = (200,),
+                  ignore_statuses: tuple[int, ...] = (),
+                  content_type: str = "application/json",
+              ):
+                  with open(service_account_token_path, "r", encoding="utf-8") as handle:
+                      token = handle.read().strip()
+                  headers = {"Authorization": f"Bearer {token}"}
+                  if payload is not None:
+                      headers["Content-Type"] = content_type
+                  return request_json(
+                      f"https://kubernetes.default.svc{path}",
+                      method=method,
+                      payload=payload,
+                      headers=headers,
+                      expected_statuses=expected_statuses,
+                      ignore_statuses=ignore_statuses,
+                      cafile=service_account_ca_path,
+                  )
+
+              def decode_secret_data(payload: dict | None) -> dict[str, str]:
+                  if not isinstance(payload, dict):
+                      return {}
+                  decoded: dict[str, str] = {}
+                  for key, value in (payload.get("data") or {}).items():
+                      try:
+                          decoded[key] = base64.b64decode(str(value)).decode("utf-8")
+                      except Exception:
+                          decoded[key] = ""
+                  return decoded
+
+              def current_plane_status() -> dict:
+                  try:
+                      return request_json(
+                          control_plane_status_url,
+                          headers={"x-api-key": control_plane_api_key},
+                          expected_statuses=(200,),
+                      ) or {}
+                  except Exception as exc:
+                      print(f"waiting for control-plane status endpoint: {exc}", flush=True)
+                      return {}
+
+              def plane_live_configured() -> bool:
+                  status_payload = current_plane_status()
+                  plane_status = status_payload.get("plane") if isinstance(status_payload, dict) else {}
+                  return bool((plane_status or {}).get("live_configured"))
+
+              def rollout_control_plane() -> bool:
+                  deployment_path = f"/apis/apps/v1/namespaces/{namespace}/deployments/control-plane"
+                  existing = k8s_request(deployment_path, ignore_statuses=(404,))
+                  if existing is None:
+                      print("control-plane deployment not present yet; skipping rollout", flush=True)
+                      return False
+                  k8s_request(
+                      deployment_path,
+                      method="PATCH",
+                      payload={
+                          "spec": {
+                              "template": {
+                                  "metadata": {
+                                      "annotations": {
+                                          "ims.redhat.com/plane-bootstrap-ts": str(int(time.time()))
+                                      }
+                                  }
+                              }
+                          }
+                      },
+                      expected_statuses=(200,),
+                      content_type="application/strategic-merge-patch+json",
+                  )
+                  print("triggered control-plane rollout for refreshed Plane env", flush=True)
+                  return True
+
+              User = get_user_model()
+              Workspace = apps.get_model("db", "Workspace")
+              Project = apps.get_model("db", "Project")
+              APIToken = apps.get_model("db", "APIToken")
+
+              deadline = time.time() + wait_seconds
+              user = None
+              workspace = None
+              project = None
+              while time.time() < deadline:
+                  try:
+                      user = (
+                          User.objects.filter(email=preferred_admin_email).first()
+                          or User.objects.order_by("id").first()
+                      )
+                      workspace = (
+                          Workspace.objects.filter(slug=preferred_workspace_slug).first()
+                          or Workspace.objects.order_by("id").first()
+                      )
+                      project = (
+                          Project.objects.filter(workspace=workspace).order_by("id").first() if workspace else None
+                      ) or Project.objects.order_by("id").first()
+                  except OperationalError as exc:
+                      print(f"waiting for Plane database: {exc}", flush=True)
+                      time.sleep(10)
+                      continue
+
+                  if user and workspace and project:
+                      break
+
+                  print("waiting for Plane user/workspace/project seed objects", flush=True)
+                  time.sleep(10)
+
+              if not user or not workspace or not project:
+                  raise SystemExit("Plane seed data was not ready before bootstrap timeout")
+
+              token = APIToken.objects.filter(label=token_label, user=user, is_active=True).order_by("-updated_at").first()
+              if token is None:
+                  token = APIToken.objects.create(
+                      label=token_label,
+                      description=token_description,
+                      is_active=True,
+                      token=f"plane_api_{uuid.uuid4().hex}",
+                      user=user,
+                      user_type=0,
+                      workspace=None,
+                      is_service=False,
+                  )
+                  print(f"created Plane PAT {token_label}", flush=True)
+              else:
+                  print(f"reusing Plane PAT {token_label}", flush=True)
+
+              desired_secret_data = {
+                  "PLANE_BASE_URL": plane_base_url,
+                  "PLANE_APP_URL": plane_app_url,
+                  "PLANE_WORKSPACE_SLUG": str(workspace.slug or preferred_workspace_slug),
+                  "PLANE_PROJECT_ID": str(project.id),
+                  "PLANE_API_KEY": str(token.token),
+              }
+
+              secret_path = f"/api/v1/namespaces/{namespace}/secrets/plane-integration-auth"
+              current_secret = k8s_request(secret_path, ignore_statuses=(404,))
+              current_values = decode_secret_data(current_secret)
+
+              if current_secret is None:
+                  k8s_request(
+                      f"/api/v1/namespaces/{namespace}/secrets",
+                      method="POST",
+                      payload={
+                          "apiVersion": "v1",
+                          "kind": "Secret",
+                          "metadata": {"name": "plane-integration-auth", "namespace": namespace},
+                          "type": "Opaque",
+                          "stringData": desired_secret_data,
+                      },
+                      expected_statuses=(201,),
+                  )
+                  print("created plane-integration-auth", flush=True)
+              elif any(current_values.get(key, "") != value for key, value in desired_secret_data.items()):
+                  k8s_request(
+                      secret_path,
+                      method="PATCH",
+                      payload={"stringData": desired_secret_data},
+                      expected_statuses=(200,),
+                      content_type="application/merge-patch+json",
+                  )
+                  print("patched plane-integration-auth", flush=True)
+              else:
+                  print("plane-integration-auth already matches desired Plane settings", flush=True)
+
+              status_deadline = time.time() + status_wait_seconds
+              rolled_out = False
+              while time.time() < status_deadline:
+                  if plane_live_configured():
+                      print("control-plane reports Plane integration live", flush=True)
+                      break
+                  if not rolled_out:
+                      rolled_out = rollout_control_plane()
+                  time.sleep(10)
+              else:
+                  raise SystemExit("control-plane never reported Plane integration as live")
+              PY
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

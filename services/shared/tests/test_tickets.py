@@ -3,6 +3,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import requests
+
 
 SERVICES_ROOT = Path(__file__).resolve().parents[2]
 if str(SERVICES_ROOT) not in sys.path:
@@ -12,12 +14,14 @@ from shared import tickets, workflow
 
 
 class _FakeResponse:
-    def __init__(self, payload: object, text: str = "ok") -> None:
+    def __init__(self, payload: object, text: str = "ok", status_code: int = 200) -> None:
         self._payload = payload
         self.text = text
+        self.status_code = status_code
 
     def raise_for_status(self) -> None:
-        return None
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"{self.status_code} error", response=self)
 
     def json(self) -> object:
         return self._payload
@@ -81,6 +85,46 @@ class PlaneTicketProviderTests(unittest.TestCase):
         self.assertEqual(post_mock.call_args.kwargs["json"]["state"], "state-in-progress")
         self.assertEqual(result["ticket_status"], "In Progress")
 
+    def test_create_ticket_recovers_existing_plane_issue_after_conflict(self) -> None:
+        incident = self._incident(workflow.ESCALATED)
+        workflow_payload = {"incident": incident, "rca_history": [], "remediations": []}
+        conflict_payload = {
+            "error": "Issue with the same external id and external source already exists",
+            "id": "plane-issue-1",
+        }
+        synced_payload = {
+            "id": "plane-issue-1",
+            "sequence_id": 42,
+            "name": "[Critical] IMS Registration Storm (cbf5c405-3405)",
+            "state_detail": {"name": "In Progress"},
+        }
+
+        with (
+            patch.dict(tickets.os.environ, self.env, clear=False),
+            patch.object(tickets.requests, "get", return_value=_FakeResponse(self.states_payload)) as get_mock,
+            patch.object(
+                tickets.requests,
+                "post",
+                return_value=_FakeResponse(
+                    conflict_payload,
+                    text='{"error":"Issue with the same external id and external source already exists","id":"plane-issue-1"}',
+                    status_code=409,
+                ),
+            ) as post_mock,
+            patch.object(tickets.requests, "patch", return_value=_FakeResponse(synced_payload)) as patch_mock,
+        ):
+            provider = tickets.PlaneTicketProvider()
+            result = provider.create_ticket(incident, workflow_payload)
+
+        self.assertEqual(get_mock.call_count, 1)
+        self.assertEqual(post_mock.call_count, 1)
+        self.assertEqual(patch_mock.call_count, 1)
+        self.assertEqual(result["status"], "synced")
+        self.assertEqual(result["external_id"], "plane-issue-1")
+        self.assertEqual(result["external_key"], "42")
+        self.assertEqual(result["workspace_id"], "ims-workspace")
+        self.assertEqual(result["project_id"], "ims-project")
+
     def test_sync_ticket_marks_verified_workflow_as_done(self) -> None:
         incident = self._incident(workflow.VERIFIED)
         workflow_payload = {"incident": incident, "rca_history": [], "remediations": []}
@@ -103,6 +147,8 @@ class PlaneTicketProviderTests(unittest.TestCase):
         self.assertEqual(get_mock.call_count, 1)
         self.assertEqual(patch_mock.call_args.kwargs["json"]["state"], "state-done")
         self.assertEqual(result["ticket_status"], "Done")
+        self.assertEqual(result["workspace_id"], "ims-workspace")
+        self.assertEqual(result["project_id"], "ims-project")
 
 
 if __name__ == "__main__":
