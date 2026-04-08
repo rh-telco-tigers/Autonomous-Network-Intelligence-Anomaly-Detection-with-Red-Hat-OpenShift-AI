@@ -299,6 +299,70 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         self.assertEqual(preview["correlation_id"], control_plane_app.AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID)
         self.assertTrue(preview["draft"])
 
+    def test_request_ai_playbook_generation_uses_instruction_override_when_provided(self) -> None:
+        incident = {
+            "id": "inc-ai-1",
+            "project": "ims-demo",
+            "status": control_plane_app.REMEDIATION_SUGGESTED,
+            "workflow_revision": 3,
+            "anomaly_type": "registration_storm",
+            "severity": "Critical",
+            "feature_snapshot": {"register_rate": 1480},
+            "rca_payload": {"root_cause": "S-CSCF overload", "recommendation": "Scale the S-CSCF path"},
+        }
+        remediation = {
+            "id": 17,
+            "action_ref": control_plane_app.AI_PLAYBOOK_GENERATION_ACTION,
+            "title": "Generate AI Ansible playbook",
+            "description": "Ask the external generator to draft a playbook.",
+            "status": "available",
+            "based_on_revision": 3,
+            "metadata": {"generation_kind": "request", "generation_status": "not_requested"},
+        }
+        captured: dict[str, object] = {}
+
+        def update_remediation(incident_id: str, remediation_id: int, **kwargs: object) -> dict[str, object]:
+            captured["incident_id"] = incident_id
+            captured["remediation_id"] = remediation_id
+            captured["metadata"] = kwargs["metadata"]
+            return remediation | {
+                "metadata": kwargs["metadata"],
+                "generation_status": str((kwargs["metadata"] or {}).get("generation_status") or ""),
+                "generation_provider": str((kwargs["metadata"] or {}).get("generation_provider") or ""),
+            }
+
+        with (
+            mock.patch.object(control_plane_app.uuid, "uuid4", return_value=SimpleNamespace(hex="corr-456")),
+            mock.patch.object(control_plane_app, "_build_playbook_generation_instruction") as build_instruction,
+            mock.patch.object(
+                control_plane_app,
+                "_publish_playbook_generation_instruction",
+                return_value={
+                    "topic": control_plane_app.AI_PLAYBOOK_GENERATION_TOPIC,
+                    "correlation_id": "corr-456",
+                    "bootstrap_servers": ["kafka:9092"],
+                    "instruction": "Use this exact draft",
+                    "instruction_preview": "Use this exact draft",
+                },
+            ) as publish_instruction,
+            mock.patch.object(control_plane_app, "update_incident_remediation", side_effect=update_remediation),
+            mock.patch.object(control_plane_app, "record_audit"),
+        ):
+            control_plane_app._request_ai_playbook_generation(
+                incident,
+                remediation,
+                "demo-operator",
+                "Prefer a low-risk ingress guardrail first.",
+                "https://demo-ui.example.com/incidents/inc-ai-1",
+                "Use this exact draft",
+            )
+
+        build_instruction.assert_not_called()
+        publish_instruction.assert_called_once_with("corr-456", "Use this exact draft")
+        metadata = captured["metadata"]
+        assert isinstance(metadata, dict)
+        self.assertEqual(metadata["generation_instruction"], "Use this exact draft")
+
     def test_request_ai_playbook_generation_publishes_instruction_and_persists_metadata(self) -> None:
         incident = {
             "id": "inc-ai-1",

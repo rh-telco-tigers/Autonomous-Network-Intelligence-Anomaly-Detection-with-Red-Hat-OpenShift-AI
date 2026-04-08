@@ -344,7 +344,7 @@ export function IncidentWorkflowDetail() {
   });
 
   const generatePlaybookMutation = useMutation({
-    mutationFn: async (values: { remediationId: number; actor: string; notes?: string }) => {
+    mutationFn: async (values: { remediationId: number; actor: string; notes?: string; instructionOverride?: string }) => {
       return request<PlaybookGenerationResponse>(
         `/api/incidents/${encodeURIComponent(incidentId)}/remediation/${values.remediationId}/generate-playbook`,
         token,
@@ -354,6 +354,7 @@ export function IncidentWorkflowDetail() {
             requested_by: values.actor,
             notes: values.notes,
             source_url: currentPageUrl,
+            instruction_override: values.instructionOverride,
           }),
         },
       );
@@ -655,13 +656,14 @@ export function IncidentWorkflowDetail() {
   );
 
   const requestAiPlaybook = React.useCallback(
-    async (remediation: RemediationRecord) => {
+    async (remediation: RemediationRecord, instructionOverride?: string) => {
       setFocusedRemediationId(remediation.id);
       try {
         const payload = await generatePlaybookMutation.mutateAsync({
           remediationId: remediation.id,
           actor: actorName,
           notes: remediationNote(remediation.id),
+          instructionOverride: instructionOverride?.trim() ? instructionOverride : undefined,
         });
         setNotice({
           kind: "success",
@@ -1160,7 +1162,7 @@ export function IncidentWorkflowDetail() {
                         pending={pending}
                         onNoteChange={updateRemediationNote}
                         onFocus={setFocusedRemediationId}
-                        onGenerate={(remediation) => void requestAiPlaybook(remediation)}
+                        onGenerate={(remediation, instructionOverride) => void requestAiPlaybook(remediation, instructionOverride)}
                       />
                     ) : null}
 
@@ -1826,15 +1828,26 @@ function AiPlaybookGenerationCard({
   pending: boolean;
   onNoteChange: (remediationId: number, value: string) => void;
   onFocus: (remediationId: number) => void;
-  onGenerate: (remediation: RemediationRecord) => void;
+  onGenerate: (remediation: RemediationRecord, instructionOverride?: string) => void;
 }) {
   const noteId = `ai-playbook-note-${remediation.id}`;
+  const instructionId = `ai-playbook-instruction-${remediation.id}`;
   const metadata = (remediation.metadata ?? {}) as Record<string, unknown>;
   const generationStatus = playbookGenerationStatus(remediation);
   const exactInstruction = asStringValue(publishedInstruction) || asStringValue(metadata.generation_instruction);
-  const displayedInstruction = exactInstruction || asStringValue(instructionDraft);
+  const draftInstruction = asStringValue(instructionDraft);
+  const displayedInstruction = generationStatus === "requested" && exactInstruction ? exactInstruction : draftInstruction || exactInstruction;
+  const [instructionExpanded, setInstructionExpanded] = React.useState(false);
+  const [instructionValue, setInstructionValue] = React.useState(displayedInstruction);
+  const [instructionCustomized, setInstructionCustomized] = React.useState(false);
   const correlationId = asStringValue(metadata.generation_correlation_id);
   const topic = asStringValue(metadata.generation_topic);
+  const canEditInstruction = generationStatus !== "requested";
+  const sectionTitle = generationStatus === "requested" && exactInstruction ? "Exact Kafka instruction" : "Kafka instruction draft";
+  const sectionSummary =
+    generationStatus === "requested" && exactInstruction
+      ? "Expand to review the exact plain-text request that was published to Kafka."
+      : "Expand to review or edit the plain-text request before it is published to Kafka.";
   const statusMessage =
     generationStatus === "requested"
       ? "Instruction published to Kafka. Waiting for the external playbook generator to call back with the generated YAML."
@@ -1847,6 +1860,22 @@ function AiPlaybookGenerationCard({
       : generationStatus === "failed"
         ? "border-rose-400/20 bg-rose-500/10 text-[var(--text-strong)]"
         : "border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-[var(--text-strong)]";
+
+  React.useEffect(() => {
+    setInstructionExpanded(false);
+    setInstructionCustomized(false);
+  }, [remediation.id]);
+
+  React.useEffect(() => {
+    if (generationStatus === "requested" && exactInstruction) {
+      setInstructionValue(exactInstruction);
+      setInstructionCustomized(false);
+      return;
+    }
+    if (!instructionCustomized) {
+      setInstructionValue(displayedInstruction);
+    }
+  }, [displayedInstruction, exactInstruction, generationStatus, instructionCustomized]);
 
   return (
     <div className="rounded-3xl border border-violet-400/25 bg-violet-500/8 p-5">
@@ -1870,7 +1899,7 @@ function AiPlaybookGenerationCard({
       </div>
 
       <div className="mt-4">
-        <Label htmlFor={noteId}>Instruction note</Label>
+        <Label htmlFor={noteId}>Operator note</Label>
         <Textarea
           id={noteId}
           value={note}
@@ -1881,31 +1910,77 @@ function AiPlaybookGenerationCard({
           placeholder="Extra safety constraints, rollout intent, rollback notes, or target hints for the generator"
           className="mt-2 min-h-[88px]"
         />
-        <div className="mt-2 text-xs text-[var(--text-muted)]">Recorded as {actor}. This note is included in the plain-text Kafka instruction.</div>
+        <div className="mt-2 text-xs text-[var(--text-muted)]">
+          Recorded as {actor}. This note feeds the generated draft. If you manually edit the full instruction below, your edited text is what gets published.
+        </div>
       </div>
 
-      <div className="mt-4">
-        <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
-          {exactInstruction ? "Exact Kafka instruction" : "Kafka instruction draft"}
+      <div className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">{sectionTitle}</div>
+            <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{sectionSummary}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {canEditInstruction && instructionCustomized && displayedInstruction ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  onFocus(remediation.id);
+                  setInstructionCustomized(false);
+                  setInstructionValue(displayedInstruction);
+                }}
+              >
+                Reset to generated draft
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => setInstructionExpanded((current) => !current)}
+            >
+              {instructionExpanded ? "Hide instruction" : canEditInstruction ? "Review / edit instruction" : "Show instruction"}
+            </Button>
+          </div>
         </div>
-        {displayedInstruction ? (
-          <div className="mt-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
-            <pre className="whitespace-pre-wrap text-xs leading-6 text-[var(--text-secondary)]">{displayedInstruction}</pre>
-          </div>
-        ) : instructionDraftLoading ? (
-          <div className="mt-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
-            Building the current server-generated instruction draft...
-          </div>
-        ) : (
-          <div className="mt-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
-            The current server-generated instruction draft will appear here before publish, and the exact Kafka text will stay here after the request is sent.
-          </div>
-        )}
-        <div className="mt-2 text-xs text-[var(--text-muted)]">
-          {exactInstruction
-            ? "This block shows the exact plain-text request that was most recently published to Kafka."
-            : "This draft comes from the same control-plane builder that prepares the Kafka request."}
-        </div>
+
+        {instructionExpanded ? (
+          displayedInstruction || instructionValue ? (
+            <div className="mt-4">
+              <Label htmlFor={instructionId}>{sectionTitle}</Label>
+              <Textarea
+                id={instructionId}
+                value={instructionValue}
+                onChange={(event) => {
+                  onFocus(remediation.id);
+                  setInstructionCustomized(true);
+                  setInstructionValue(event.target.value);
+                }}
+                readOnly={!canEditInstruction}
+                disabled={pending || !canEditInstruction}
+                className="mt-2 min-h-[260px] font-mono text-xs leading-6"
+              />
+              <div className="mt-2 text-xs text-[var(--text-muted)]">
+                {generationStatus === "requested" && exactInstruction
+                  ? "This is the exact plain-text request most recently published to Kafka."
+                  : instructionCustomized
+                    ? "Edits in this box will be published to Kafka as written."
+                    : "This draft comes from the control-plane builder. If you leave it untouched, the server rebuilds it from the latest note and incident context at publish time."}
+              </div>
+            </div>
+          ) : instructionDraftLoading ? (
+            <div className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
+              Building the current server-generated instruction draft...
+            </div>
+          ) : (
+            <div className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
+              The current server-generated instruction draft will appear here before publish.
+            </div>
+          )
+        ) : null}
       </div>
 
       {(topic || correlationId) && generationStatus !== "not_requested" ? (
@@ -1920,7 +1995,7 @@ function AiPlaybookGenerationCard({
           size="sm"
           onClick={() => {
             onFocus(remediation.id);
-            onGenerate(remediation);
+            onGenerate(remediation, canEditInstruction && instructionCustomized ? instructionValue : undefined);
           }}
           disabled={pending || generationStatus === "requested"}
         >

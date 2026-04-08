@@ -308,6 +308,7 @@ class PlaybookGenerationRequest(BaseModel):
     requested_by: str
     notes: str = ""
     source_url: str = ""
+    instruction_override: str = ""
 
 
 class PlaybookGenerationCallbackRequest(BaseModel):
@@ -676,6 +677,7 @@ def _request_ai_playbook_generation(
     requested_by: str,
     notes: str,
     source_url: str,
+    instruction_override: str = "",
 ) -> Dict[str, object]:
     if not _ai_playbook_generation_enabled():
         raise HTTPException(status_code=400, detail="AI playbook generation is disabled")
@@ -685,7 +687,12 @@ def _request_ai_playbook_generation(
         raise HTTPException(status_code=400, detail="RCA must exist before requesting AI playbook generation")
 
     correlation_id = uuid.uuid4().hex
-    instruction = _build_playbook_generation_instruction(incident, remediation, correlation_id, notes, source_url)
+    normalized_override = str(instruction_override or "").strip()
+    instruction = (
+        normalized_override
+        if normalized_override
+        else _build_playbook_generation_instruction(incident, remediation, correlation_id, notes, source_url)
+    )
     try:
         publish_result = _publish_playbook_generation_instruction(correlation_id, instruction)
     except Exception as exc:  # noqa: BLE001
@@ -745,12 +752,16 @@ def _preview_ai_playbook_generation_instruction(
     if not isinstance(incident.get("rca_payload"), dict) or not incident.get("rca_payload"):
         raise HTTPException(status_code=400, detail="RCA must exist before previewing AI playbook generation")
 
-    metadata = _remediation_metadata(remediation)
-    correlation_id = str(metadata.get("generation_correlation_id") or "").strip() or AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID
     return {
-        "instruction": _build_playbook_generation_instruction(incident, remediation, correlation_id, notes, source_url),
-        "correlation_id": correlation_id,
-        "draft": correlation_id == AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
+        "instruction": _build_playbook_generation_instruction(
+            incident,
+            remediation,
+            AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
+            notes,
+            source_url,
+        ),
+        "correlation_id": AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
+        "draft": True,
     }
 
 
@@ -3201,6 +3212,7 @@ def generate_incident_ai_playbook(
         payload.requested_by,
         payload.notes,
         payload.source_url,
+        payload.instruction_override,
     )
     updated = get_incident(incident_id) or incident
     return {
