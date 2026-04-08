@@ -23,6 +23,12 @@ const INCIDENT_WORKFLOW_STALE_TIME_MS = 15_000;
 const DEBUG_TRACE_STALE_TIME_MS = 60_000;
 const RELATED_RECORDS_STALE_TIME_MS = 45_000;
 
+type PlaybookInstructionPreviewResponse = {
+  instruction: string;
+  correlation_id: string;
+  draft: boolean;
+};
+
 export async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -181,6 +187,50 @@ export function useRelatedRecordsQuery(incidentId: string, options?: { limit?: n
     refetchOnWindowFocus: false,
     staleTime: RELATED_RECORDS_STALE_TIME_MS,
     retry: 2,
+  });
+}
+
+export function usePlaybookInstructionPreviewQuery(
+  incidentId: string,
+  remediationId: number | null | undefined,
+  options: {
+    requestedBy: string;
+    notes?: string;
+    sourceUrl?: string;
+    enabled?: boolean;
+  },
+) {
+  const { token } = useApiToken();
+  return useQuery({
+    queryKey: [
+      "playbook-instruction-preview",
+      incidentId,
+      remediationId ?? 0,
+      options.requestedBy,
+      options.notes ?? "",
+      options.sourceUrl ?? "",
+      token,
+    ],
+    queryFn: () =>
+      request<PlaybookInstructionPreviewResponse>(
+        `/api/incidents/${encodeURIComponent(incidentId)}/remediation/${remediationId}/playbook-instruction-preview`,
+        token,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            requested_by: options.requestedBy,
+            notes: options.notes ?? "",
+            source_url: options.sourceUrl ?? "",
+          }),
+        },
+      ),
+    enabled: Boolean(incidentId) && Boolean(remediationId) && Boolean(options.enabled ?? true),
+    placeholderData: (previousData) => previousData,
+    refetchInterval: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    staleTime: 5_000,
+    retry: 1,
   });
 }
 

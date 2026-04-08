@@ -23,7 +23,7 @@ The current implementation works like this:
 4. Each template in `REMEDIATION_LIBRARY` contributes metadata such as `action_ref`, `suggestion_type`, `playbook_ref`, risk, preconditions, and a base success rate.
 5. The control-plane scores each suggestion using historical verification success, retrieval similarity, RCA confidence, and policy bonuses, then subtracts risk and execution cost penalties.
 6. Suggestions are stored, ranked, surfaced in the UI, published to the audit trail, and optionally emitted as `remediations_generated` EDA events.
-7. The remediation view can also publish an optional watsonx playbook-generation request to Kafka and wait for the generated YAML to come back through the control-plane callback.
+7. The remediation view can also publish an optional AI playbook-generation request to Kafka and wait for the generated YAML to come back through the control-plane callback.
 8. When an operator approves or executes an action, the same `action_ref` flows into AAP Controller, an AAP runner-job fallback, or the local playbook/simulate path.
 9. Execution, ticket sync, audit, verification, and retry all go back through the control-plane workflow instead of bypassing it.
 
@@ -163,7 +163,7 @@ The current system mixes four action families:
 
 | Family | Examples | How it is used |
 | --- | --- | --- |
-| AI playbook generation | `generate_ai_ansible_playbook` | operator publishes a plain-text Kafka instruction and waits for a watsonx-backed callback that returns a reviewable playbook |
+| AI playbook generation | `generate_ai_ansible_playbook` | operator publishes a plain-text Kafka instruction and waits for an external generator callback that returns a reviewable playbook |
 | Manual analysis | `inspect_registration_policy`, `inspect_authentication_path`, `trace_session_timeout` | operator performs the investigation and records notes or outcome |
 | Automation-backed Ansible | `scale_scscf`, `rate_limit_pcscf`, `quarantine_imsi` | control-plane launches AAP or playbook execution using a fixed `action_ref` |
 | Ticket / coordination | `open_plane_escalation` | incident is moved into Plane-backed coordination without changing cluster resources directly |

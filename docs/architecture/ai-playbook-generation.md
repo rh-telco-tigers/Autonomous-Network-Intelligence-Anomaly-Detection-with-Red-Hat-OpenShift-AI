@@ -1,4 +1,4 @@
-# AI Playbook Generation With watsonx
+# AI Playbook Generation
 
 ## Purpose
 
@@ -14,10 +14,10 @@ Use this file when you need to know:
 ## End-To-End Flow
 
 1. An operator generates remediations for an incident after RCA exists.
-2. The remediation view exposes an optional `Generate AI Ansible playbook with watsonx` step.
+2. The remediation view exposes an optional `Generate AI Ansible playbook` step.
 3. The UI calls `POST /incidents/{incident_id}/remediation/{remediation_id}/generate-playbook`.
 4. The control-plane publishes one plain-text instruction to Kafka topic `aiops-ansible-playbook-generate-instruction`.
-5. The external project consumes that instruction, runs its watsonx-backed generation flow, and produces one reviewable Ansible playbook in YAML.
+5. The external project consumes that instruction, runs its playbook-generation flow, and produces one reviewable Ansible playbook in YAML.
 6. The external project calls back into the control-plane with the generated playbook or a failure status.
 7. The control-plane converts the pending generator remediation into a normal `ansible_playbook` remediation.
 8. The UI shows that remediation as `AI generated`, and operators can approve and execute it like the built-in playbooks.
@@ -99,8 +99,8 @@ Success payload:
   "playbook_yaml": "---\n- hosts: localhost\n  gather_facts: false\n  tasks: []\n",
   "playbook_ref": "ai_generated_playbook_corr-123",
   "action_ref": "ai_generated_playbook_corr-123",
-  "provider_name": "watsonx",
-  "provider_run_id": "wx-run-42",
+  "provider_name": "external-generator",
+  "provider_run_id": "generator-run-42",
   "metadata": {
     "model": "granite",
     "generator_version": "2026-04-06"
@@ -114,8 +114,8 @@ Failure payload:
 {
   "correlation_id": "corr-123",
   "status": "failed",
-  "provider_name": "watsonx",
-  "provider_run_id": "wx-run-42",
+  "provider_name": "external-generator",
+  "provider_run_id": "generator-run-42",
   "error": "Prompt validation failed because no safe target could be derived."
 }
 ```
@@ -149,7 +149,8 @@ On `status=failed`:
 The remediation panel shows:
 
 - an optional AI generation card while the request is pending or failed
-- the Kafka correlation id and topic after the request is sent
+- the current server-generated instruction draft before publish
+- the exact Kafka instruction, correlation id, and topic after the request is sent
 - an `AI generated` badge on the returned playbook remediation
 - the returned playbook as a normal remediation that can be approved and executed
 

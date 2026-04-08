@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { request, useIncidentWorkflowQuery, useRelatedRecordsQuery } from "@/lib/api";
+import { request, useIncidentWorkflowQuery, usePlaybookInstructionPreviewQuery, useRelatedRecordsQuery } from "@/lib/api";
 import { resolveTicketHref } from "@/lib/ticket-links";
 import type {
   IncidentActionRecord,
@@ -135,11 +135,15 @@ type PlaybookGenerationResponse = {
   generation: {
     topic: string;
     correlation_id: string;
+    instruction: string;
     instruction_preview: string;
   };
 };
 
 const AI_PLAYBOOK_GENERATION_ACTION = "generate_ai_ansible_playbook";
+const AI_PLAYBOOK_REQUEST_TITLE = "Generate AI Ansible playbook";
+const AI_PLAYBOOK_REQUEST_DESCRIPTION =
+  "Send the RCA, feature signals, and current remediation context to the external playbook generator so it can return a reviewable Ansible playbook on demand.";
 
 const GUIDE_STEP_TEMPLATES = [
   {
@@ -152,7 +156,7 @@ const GUIDE_STEP_TEMPLATES = [
   },
   {
     title: "Optional AI playbook",
-    description: "Ask watsonx to draft a reviewable Ansible playbook from the RCA.",
+    description: "Ask the external generator to draft a reviewable Ansible playbook from the RCA.",
   },
   {
     title: "Approve a fix",
@@ -245,6 +249,7 @@ export function IncidentWorkflowDetail() {
   const [notice, setNotice] = React.useState<Notice>(null);
   const [currentPageUrl, setCurrentPageUrl] = React.useState("");
   const [actionActor, setActionActor] = React.useState("demo-ui");
+  const [knowledgeGuidanceExpanded, setKnowledgeGuidanceExpanded] = React.useState(false);
   const [focusedRemediationId, setFocusedRemediationId] = React.useState<number | null>(null);
   const [remediationNotes, setRemediationNotes] = React.useState<Record<number, string>>({});
 
@@ -550,6 +555,9 @@ export function IncidentWorkflowDetail() {
   const latestRcaRecommendation = buildRcaRecommendation(latestRca, incident?.recommendation);
   const latestAction = data?.actions[0];
   const latestVerification = data?.verifications[0];
+  React.useEffect(() => {
+    setKnowledgeGuidanceExpanded(false);
+  }, [incidentId]);
   const currentTicket = React.useMemo(() => {
     if (!data) {
       return null;
@@ -562,7 +570,15 @@ export function IncidentWorkflowDetail() {
   }, [data]);
   const currentTicketHref = resolveTicketHref(currentTicket);
   const knowledgeArticles = relatedData?.knowledge ?? [];
+  const matchedKnowledgeCount = knowledgeArticles.length;
   const featuredKnowledgeArticles = knowledgeArticles.slice(0, 2);
+  const knowledgeGuidanceSummary = relatedLoading
+    ? "Loading matched knowledge articles..."
+    : relatedError
+      ? "Knowledge guidance is unavailable right now. The debug trace is still available below."
+      : matchedKnowledgeCount
+        ? `${matchedKnowledgeCount} matched knowledge ${matchedKnowledgeCount === 1 ? "article is" : "articles are"} available.`
+        : "No matched knowledge articles yet.";
 
   const updateRemediationNote = React.useCallback((remediationId: number, value: string) => {
     setRemediationNotes((current) => ({ ...current, [remediationId]: value }));
@@ -585,6 +601,16 @@ export function IncidentWorkflowDetail() {
   );
 
   const actorName = actionActor.trim() || "demo-ui";
+  const aiPlaybookNote = aiPlaybookRequest ? remediationNote(aiPlaybookRequest.id) : "";
+  const debouncedAiPlaybookNote = useDebouncedValue(aiPlaybookNote, 400);
+  const debouncedActorName = useDebouncedValue(actorName, 400);
+  const debouncedCurrentPageUrl = useDebouncedValue(currentPageUrl, 400);
+  const playbookInstructionPreviewQuery = usePlaybookInstructionPreviewQuery(incidentId, aiPlaybookRequest?.id, {
+    requestedBy: debouncedActorName,
+    notes: debouncedAiPlaybookNote,
+    sourceUrl: debouncedCurrentPageUrl,
+    enabled: Boolean(aiPlaybookRequest),
+  });
 
   const runRemediationAction = React.useCallback(
     async (remediation: RemediationRecord, mode: "approve" | "execute" | "reject") => {
@@ -1034,6 +1060,9 @@ export function IncidentWorkflowDetail() {
 
                 <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
                   <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Evidence references</div>
+                  <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                    These are the exact source documents attached to the current RCA as supporting evidence.
+                  </p>
                   <div className="mt-3 space-y-3">
                     {incident.evidence_sources?.length ? (
                       incident.evidence_sources.map((item) => (
@@ -1121,6 +1150,13 @@ export function IncidentWorkflowDetail() {
                         remediation={aiPlaybookRequest}
                         actor={actorName}
                         note={remediationNote(aiPlaybookRequest.id)}
+                        publishedInstruction={
+                          generatePlaybookMutation.data?.remediation?.id === aiPlaybookRequest.id
+                            ? generatePlaybookMutation.data?.generation.instruction
+                            : undefined
+                        }
+                        instructionDraft={playbookInstructionPreviewQuery.data?.instruction}
+                        instructionDraftLoading={playbookInstructionPreviewQuery.isLoading || playbookInstructionPreviewQuery.isFetching}
                         pending={pending}
                         onNoteChange={updateRemediationNote}
                         onFocus={setFocusedRemediationId}
@@ -1351,64 +1387,80 @@ export function IncidentWorkflowDetail() {
           <div ref={knowledgeRef}>
             <div className="space-y-6">
               <Card>
-                <CardContent className="space-y-5 p-6">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Knowledge guidance</div>
-                    <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">Structured runbooks matched to this incident</div>
-                    <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
-                      These articles are reranked against the current anomaly type, category, and incident evidence so operators see the most relevant KB guidance first.
-                    </p>
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Knowledge guidance</div>
+                      <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">Structured runbooks matched to this incident</div>
+                      <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+                        {knowledgeGuidanceExpanded
+                          ? "These are reranked knowledge articles for operator guidance. They may overlap with the evidence references above, but they are a broader KB view rather than the exact RCA citations."
+                          : knowledgeGuidanceSummary}
+                      </p>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      type="button"
+                      size="sm"
+                      onClick={() => setKnowledgeGuidanceExpanded((current) => !current)}
+                    >
+                      {knowledgeGuidanceExpanded ? "Collapse knowledge guidance" : "Expand knowledge guidance"}
+                    </Button>
                   </div>
 
-                  {relatedLoading && !featuredKnowledgeArticles.length ? (
-                    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm text-[var(--text-secondary)]">
-                      Loading matched knowledge articles...
-                    </div>
-                  ) : null}
+                  {knowledgeGuidanceExpanded ? (
+                    <div className="mt-5 space-y-5">
+                      {relatedLoading && !featuredKnowledgeArticles.length ? (
+                        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm text-[var(--text-secondary)]">
+                          Loading matched knowledge articles...
+                        </div>
+                      ) : null}
 
-                  {relatedError ? (
-                    <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm leading-6 text-[var(--text-strong)]">
-                      Could not load knowledge guidance right now. The debug trace is still available below.
-                    </div>
-                  ) : null}
+                      {relatedError ? (
+                        <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm leading-6 text-[var(--text-strong)]">
+                          Could not load knowledge guidance right now. The debug trace is still available below.
+                        </div>
+                      ) : null}
 
-                  {featuredKnowledgeArticles.length ? (
-                    featuredKnowledgeArticles.map((article) => (
-                      <div key={article.reference} className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="max-w-3xl">
-                            <div className="text-sm font-semibold text-[var(--text-strong)]">{article.title}</div>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
-                                Category: {titleize(article.category ?? "knowledge")}
-                              </div>
-                              <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
-                                Score: {article.score.toFixed(2)}
-                              </div>
-                              {(article.anomaly_types ?? []).slice(0, 3).map((label) => (
-                                <div
-                                  key={`${article.reference}-${label}`}
-                                  className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]"
-                                >
-                                  {label.replace(/_/g, " ")}
+                      {featuredKnowledgeArticles.length ? (
+                        featuredKnowledgeArticles.map((article) => (
+                          <div key={article.reference} className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
+                            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                              <div className="max-w-3xl">
+                                <div className="text-sm font-semibold text-[var(--text-strong)]">{article.title}</div>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                                    Category: {titleize(article.category ?? "knowledge")}
+                                  </div>
+                                  <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                                    Score: {article.score.toFixed(2)}
+                                  </div>
+                                  {(article.anomaly_types ?? []).slice(0, 3).map((label) => (
+                                    <div
+                                      key={`${article.reference}-${label}`}
+                                      className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]"
+                                    >
+                                      {label.replace(/_/g, " ")}
+                                    </div>
+                                  ))}
                                 </div>
-                              ))}
+                              </div>
+                              <Button asChild variant="secondary" className="shrink-0">
+                                <Link href={knowledgeArticleHref(incident.id, article.reference)}>Open full article</Link>
+                              </Button>
+                            </div>
+                            <div className="mt-4">
+                              <KnowledgeArticleView article={article} compact />
                             </div>
                           </div>
-                          <Button asChild variant="secondary" className="shrink-0">
-                            <Link href={knowledgeArticleHref(incident.id, article.reference)}>Open full article</Link>
-                          </Button>
-                        </div>
-                        <div className="mt-4">
-                          <KnowledgeArticleView article={article} compact />
-                        </div>
-                      </div>
-                    ))
-                  ) : !relatedLoading && !relatedError ? (
-                    <InlineEmptyState
-                      title="No matched knowledge articles yet"
-                      description="Generate or refresh RCA to pull the strongest KB guidance for this incident."
-                    />
+                        ))
+                      ) : !relatedLoading && !relatedError ? (
+                        <InlineEmptyState
+                          title="No matched knowledge articles yet"
+                          description="Generate or refresh RCA to pull the strongest KB guidance for this incident."
+                        />
+                      ) : null}
+                    </div>
                   ) : null}
                 </CardContent>
               </Card>
@@ -1646,7 +1698,7 @@ function RemediationActionCard({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {isAiGeneratedRemediation(remediation) ? (
-            <AiAutomationPill label={`AI generated${remediation.generation_provider ? ` · ${remediation.generation_provider}` : ""}`} />
+            <AiAutomationPill label="AI generated" />
           ) : null}
           {isFocused ? (
             <div className="rounded-full border border-[var(--accent-ring)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
@@ -1757,6 +1809,9 @@ function AiPlaybookGenerationCard({
   remediation,
   actor,
   note,
+  publishedInstruction,
+  instructionDraft,
+  instructionDraftLoading,
   pending,
   onNoteChange,
   onFocus,
@@ -1765,6 +1820,9 @@ function AiPlaybookGenerationCard({
   remediation: RemediationRecord;
   actor: string;
   note: string;
+  publishedInstruction?: string;
+  instructionDraft?: string;
+  instructionDraftLoading?: boolean;
   pending: boolean;
   onNoteChange: (remediationId: number, value: string) => void;
   onFocus: (remediationId: number) => void;
@@ -1773,7 +1831,8 @@ function AiPlaybookGenerationCard({
   const noteId = `ai-playbook-note-${remediation.id}`;
   const metadata = (remediation.metadata ?? {}) as Record<string, unknown>;
   const generationStatus = playbookGenerationStatus(remediation);
-  const provider = remediation.generation_provider || asStringValue(metadata.generation_provider) || "watsonx";
+  const exactInstruction = asStringValue(publishedInstruction) || asStringValue(metadata.generation_instruction);
+  const displayedInstruction = exactInstruction || asStringValue(instructionDraft);
   const correlationId = asStringValue(metadata.generation_correlation_id);
   const topic = asStringValue(metadata.generation_topic);
   const statusMessage =
@@ -1781,7 +1840,7 @@ function AiPlaybookGenerationCard({
       ? "Instruction published to Kafka. Waiting for the external playbook generator to call back with the generated YAML."
       : generationStatus === "failed"
         ? remediation.generation_error || "The external generator reported a failure. Update the note and retry when ready."
-        : "Use watsonx to draft a reviewable Ansible playbook from the RCA, feature signals, and ranked remediation context.";
+        : "Publish a plain-text playbook request from the RCA, feature signals, and ranked remediation context.";
   const statusClasses =
     generationStatus === "requested"
       ? "border-sky-400/20 bg-sky-500/8 text-[var(--text-strong)]"
@@ -1795,17 +1854,17 @@ function AiPlaybookGenerationCard({
         <div className="max-w-3xl">
           <div className="text-xs uppercase tracking-[0.2em] text-violet-200/80">Optional AI step</div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <div className="text-lg font-semibold text-[var(--text-strong)]">{remediation.title}</div>
-            <AiAutomationPill label={`AI generated via ${provider}`} subtle />
+            <div className="text-lg font-semibold text-[var(--text-strong)]">{AI_PLAYBOOK_REQUEST_TITLE}</div>
+            <AiAutomationPill label="AI playbook request" subtle />
           </div>
-          <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{remediation.description}</p>
+          <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{AI_PLAYBOOK_REQUEST_DESCRIPTION}</p>
         </div>
         <div className={cn("rounded-2xl border px-4 py-3 text-sm leading-6 lg:max-w-md", statusClasses)}>{statusMessage}</div>
       </div>
 
       <div className="mt-4 grid gap-4 md:grid-cols-4">
         <SummaryItem label="Action type" value="AI playbook request" />
-        <SummaryItem label="Provider" value={provider} />
+        <SummaryItem label="Delivery path" value="Kafka -> callback" />
         <SummaryItem label="Status" value={titleize(generationStatus.replace(/_/g, " "))} />
         <SummaryItem label="Revision scope" value={`Revision ${remediation.based_on_revision ?? "current"}`} />
       </div>
@@ -1823,6 +1882,30 @@ function AiPlaybookGenerationCard({
           className="mt-2 min-h-[88px]"
         />
         <div className="mt-2 text-xs text-[var(--text-muted)]">Recorded as {actor}. This note is included in the plain-text Kafka instruction.</div>
+      </div>
+
+      <div className="mt-4">
+        <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
+          {exactInstruction ? "Exact Kafka instruction" : "Kafka instruction draft"}
+        </div>
+        {displayedInstruction ? (
+          <div className="mt-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
+            <pre className="whitespace-pre-wrap text-xs leading-6 text-[var(--text-secondary)]">{displayedInstruction}</pre>
+          </div>
+        ) : instructionDraftLoading ? (
+          <div className="mt-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
+            Building the current server-generated instruction draft...
+          </div>
+        ) : (
+          <div className="mt-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
+            The current server-generated instruction draft will appear here before publish, and the exact Kafka text will stay here after the request is sent.
+          </div>
+        )}
+        <div className="mt-2 text-xs text-[var(--text-muted)]">
+          {exactInstruction
+            ? "This block shows the exact plain-text request that was most recently published to Kafka."
+            : "This draft comes from the same control-plane builder that prepares the Kafka request."}
+        </div>
       </div>
 
       {(topic || correlationId) && generationStatus !== "not_requested" ? (
@@ -1845,7 +1928,7 @@ function AiPlaybookGenerationCard({
             ? "Retry AI playbook generation"
             : generationStatus === "requested"
               ? "Waiting for callback..."
-              : "Generate with watsonx"}
+              : "Generate AI playbook"}
         </Button>
       </div>
     </div>
@@ -2066,7 +2149,7 @@ function deriveFlowGuide({
         title: "Generate fix options",
         description:
           "Analysis is ready. Next, generate ranked manual and automated fix options.",
-        subtext: "Create fix options first. After that, you can optionally ask watsonx to draft an Ansible playbook from the RCA.",
+        subtext: "Create fix options first. After that, you can optionally request an AI-generated Ansible playbook from the RCA.",
         helpers: [
           {
             title: "What changed",
@@ -2094,7 +2177,7 @@ function deriveFlowGuide({
         badge: "Step 3 of 6",
         title: "Optionally generate an AI playbook, then choose a fix",
         description:
-          "Review the ranked fix options, request a watsonx-generated Ansible playbook if helpful, then choose the safest remediation for this incident version.",
+          "Review the ranked fix options, request an AI-generated Ansible playbook if helpful, then choose the safest remediation for this incident version.",
         subtext: "AI playbook generation is optional. Approval still applies only to the selected fix and current workflow version.",
         helpers: [
           {
@@ -2458,6 +2541,17 @@ function asStringValue(value: unknown): string {
   return String(value ?? "").trim();
 }
 
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = React.useState(value);
+
+  React.useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [delayMs, value]);
+
+  return debouncedValue;
+}
+
 function asBooleanValue(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
@@ -2600,7 +2694,7 @@ function remediationMode(remediation?: RemediationRecord) {
 
 function buildRemediationPreview(remediation: RemediationRecord) {
   if (isAiPlaybookGenerationRemediation(remediation)) {
-    return `${remediation.description} The platform publishes a plain-text generation instruction to Kafka and waits for the external watsonx workflow to POST the generated playbook back.`;
+    return `${AI_PLAYBOOK_REQUEST_DESCRIPTION} The platform publishes a plain-text generation instruction to Kafka and waits for the external generator to POST the generated playbook back.`;
   }
   if (isAiGeneratedRemediation(remediation)) {
     return `${remediation.description} This AI-generated playbook maps to ${remediation.playbook_ref} and stays tied to workflow revision ${remediation.based_on_revision}.`;

@@ -233,7 +233,72 @@ class IncidentAutoRcaPolicyTests(unittest.TestCase):
         self.assertFalse(any(call.args[0] == "rca_auto_generation_deferred" for call in record_audit.call_args_list))
 
 
+class IncidentEvidenceSourceTests(unittest.TestCase):
+    def test_evidence_sources_tolerate_non_numeric_document_scores(self) -> None:
+        incident = {
+            "rca_payload": {
+                "retrieved_documents": [
+                    {
+                        "title": "Server internal error RCA",
+                        "reference": "runbooks/server-internal-error",
+                        "collection": "ims_runbooks",
+                        "doc_type": "runbook",
+                        "score": None,
+                        "excerpt": "One service cohort is returning 5xx.",
+                    },
+                    {
+                        "title": "Worker saturation query",
+                        "reference": "queries/worker-saturation",
+                        "collection": "ims_queries",
+                        "doc_type": "query",
+                        "score": "not-a-number",
+                        "excerpt": "Queue depth is rising.",
+                    },
+                ]
+            }
+        }
+
+        evidence = control_plane_app._evidence_sources(incident)
+
+        self.assertEqual(len(evidence), 2)
+        self.assertEqual(evidence[0]["score"], 0.0)
+        self.assertEqual(evidence[1]["score"], 0.0)
+        self.assertIn("score 0.00", evidence[0]["detail"])
+        self.assertIn("score 0.00", evidence[1]["detail"])
+
+
 class AiPlaybookGenerationTests(unittest.TestCase):
+    def test_preview_ai_playbook_generation_instruction_uses_draft_correlation(self) -> None:
+        incident = {
+            "id": "inc-ai-1",
+            "project": "ims-demo",
+            "rca_payload": {"root_cause": "S-CSCF overload"},
+        }
+        remediation = {
+            "id": 17,
+            "action_ref": control_plane_app.AI_PLAYBOOK_GENERATION_ACTION,
+            "metadata": {"generation_kind": "request", "generation_status": "not_requested"},
+        }
+
+        with mock.patch.object(control_plane_app, "_build_playbook_generation_instruction", return_value="draft instruction") as build:
+            preview = control_plane_app._preview_ai_playbook_generation_instruction(
+                incident,
+                remediation,
+                "Prefer a low-risk ingress guardrail first.",
+                "https://demo-ui.example.com/incidents/inc-ai-1",
+            )
+
+        build.assert_called_once_with(
+            incident,
+            remediation,
+            control_plane_app.AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
+            "Prefer a low-risk ingress guardrail first.",
+            "https://demo-ui.example.com/incidents/inc-ai-1",
+        )
+        self.assertEqual(preview["instruction"], "draft instruction")
+        self.assertEqual(preview["correlation_id"], control_plane_app.AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID)
+        self.assertTrue(preview["draft"])
+
     def test_request_ai_playbook_generation_publishes_instruction_and_persists_metadata(self) -> None:
         incident = {
             "id": "inc-ai-1",
@@ -248,8 +313,8 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         remediation = {
             "id": 17,
             "action_ref": control_plane_app.AI_PLAYBOOK_GENERATION_ACTION,
-            "title": "Generate AI Ansible playbook with watsonx",
-            "description": "Ask watsonx to draft a playbook.",
+            "title": "Generate AI Ansible playbook",
+            "description": "Ask the external generator to draft a playbook.",
             "status": "available",
             "based_on_revision": 3,
             "metadata": {"generation_kind": "request", "generation_status": "not_requested"},
@@ -276,6 +341,7 @@ class AiPlaybookGenerationTests(unittest.TestCase):
                     "topic": control_plane_app.AI_PLAYBOOK_GENERATION_TOPIC,
                     "correlation_id": "corr-123",
                     "bootstrap_servers": ["kafka:9092"],
+                    "instruction": "generate this playbook",
                     "instruction_preview": "generate this playbook",
                 },
             ),
@@ -298,7 +364,7 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         self.assertEqual(metadata["generation_correlation_id"], "corr-123")
         self.assertEqual(metadata["generation_topic"], control_plane_app.AI_PLAYBOOK_GENERATION_TOPIC)
         self.assertEqual(metadata["generation_requested_by"], "demo-operator")
-        self.assertEqual(result["remediation"]["generation_provider"], "watsonx")
+        self.assertEqual(result["remediation"]["generation_provider"], control_plane_app.AI_PLAYBOOK_GENERATION_PROVIDER)
         record_audit.assert_called_once()
 
     def test_callback_promotes_request_into_ai_generated_playbook(self) -> None:
@@ -311,8 +377,8 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         remediation = {
             "id": 17,
             "action_ref": control_plane_app.AI_PLAYBOOK_GENERATION_ACTION,
-            "title": "Generate AI Ansible playbook with watsonx",
-            "description": "Ask watsonx to draft a playbook.",
+            "title": "Generate AI Ansible playbook",
+            "description": "Ask the external generator to draft a playbook.",
             "status": "available",
             "risk_level": "low",
             "confidence": 0.42,

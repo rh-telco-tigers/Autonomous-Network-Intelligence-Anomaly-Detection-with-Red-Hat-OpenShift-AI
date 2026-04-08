@@ -48,7 +48,7 @@ flowchart TD
 - `feature-store-training-path.md` is the primary deep dive for the current Feature Store, KFP, model registry, and serving rollout across phases 2 to 5.
 - `rca-remediation.md` is the primary deep dive for phases 6 to 8.
 - `remediation-suggestions-and-playbooks.md` is the focused explainer for how Phase 8 ranks remediation actions and maps them to playbooks.
-- `ai-playbook-generation.md` is the focused contract for the watsonx-backed Kafka request and callback flow that turns RCA into an AI-generated Ansible playbook.
+- `ai-playbook-generation.md` is the focused contract for the Kafka request and callback flow that turns RCA into an AI-generated Ansible playbook.
 - `event-driven-ansible.md` is the focused explainer for the EDA webhook and callback flow inside Phase 8.
 
 ## Which Docs To Keep
@@ -83,5 +83,5 @@ This separation keeps retrieval grounded by stage: evidence retrieval supports d
 3. Read [Feature store training path](./feature-store-training-path.md) for phases 2 to 5.
 4. Read [RCA and remediation](./rca-remediation.md) for phases 6 to 8.
 5. Read [Remediation suggestions and playbooks](./remediation-suggestions-and-playbooks.md) for the current ranking and playbook-mapping flow.
-6. Read [AI playbook generation](./ai-playbook-generation.md) for the watsonx-backed playbook generation request and callback contract.
+6. Read [AI playbook generation](./ai-playbook-generation.md) for the playbook generation request and callback contract.
 7. Read [Event-Driven Ansible](./event-driven-ansible.md) for the event-driven automation path in remediation.

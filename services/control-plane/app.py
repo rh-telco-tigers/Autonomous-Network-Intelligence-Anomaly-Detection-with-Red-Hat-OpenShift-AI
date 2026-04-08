@@ -321,7 +321,7 @@ class PlaybookGenerationCallbackRequest(BaseModel):
     playbook_yaml: str = ""
     playbook_ref: str = ""
     action_ref: str = ""
-    provider_name: str = "watsonx"
+    provider_name: str = ""
     provider_run_id: str = ""
     error: str = ""
     metadata: Dict[str, object] = Field(default_factory=dict)
@@ -354,7 +354,8 @@ PLAYBOOKS = {
     "quarantine_imsi": "/app/automation/ansible/playbooks/quarantine-imsi.yaml",
 }
 AI_PLAYBOOK_GENERATION_TOPIC = "aiops-ansible-playbook-generate-instruction"
-AI_PLAYBOOK_GENERATION_PROVIDER = "watsonx"
+AI_PLAYBOOK_GENERATION_PROVIDER = os.getenv("AI_PLAYBOOK_GENERATION_PROVIDER", "external generator").strip() or "external generator"
+AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID = "generated-at-publish-time"
 
 WORKFLOW_STATE_OPTIONS = [
     NEW,
@@ -733,6 +734,26 @@ def _request_ai_playbook_generation(
     }
 
 
+def _preview_ai_playbook_generation_instruction(
+    incident: Dict[str, object],
+    remediation: Dict[str, object],
+    notes: str,
+    source_url: str,
+) -> Dict[str, object]:
+    if not _is_ai_playbook_generation_request(remediation):
+        raise HTTPException(status_code=400, detail="Selected remediation is not an AI playbook generation request")
+    if not isinstance(incident.get("rca_payload"), dict) or not incident.get("rca_payload"):
+        raise HTTPException(status_code=400, detail="RCA must exist before previewing AI playbook generation")
+
+    metadata = _remediation_metadata(remediation)
+    correlation_id = str(metadata.get("generation_correlation_id") or "").strip() or AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID
+    return {
+        "instruction": _build_playbook_generation_instruction(incident, remediation, correlation_id, notes, source_url),
+        "correlation_id": correlation_id,
+        "draft": correlation_id == AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
+    }
+
+
 def _apply_ai_playbook_generation_callback(
     incident_id: str,
     payload: PlaybookGenerationCallbackRequest,
@@ -805,7 +826,7 @@ def _apply_ai_playbook_generation_callback(
             payload.description
             or payload.summary
             or remediation.get("description")
-            or "AI-generated playbook returned from the external watsonx workflow."
+            or "AI-generated playbook returned from the external generator workflow."
         ).strip(),
         risk_level=str(remediation.get("risk_level") or "medium"),
         confidence=max(float(remediation.get("confidence") or 0.0), 0.55),
@@ -1144,6 +1165,7 @@ def _publish_playbook_generation_instruction(correlation_id: str, instruction: s
         "topic": _ai_playbook_generation_topic(),
         "correlation_id": correlation_id,
         "bootstrap_servers": _ai_playbook_generation_bootstrap_servers(),
+        "instruction": instruction,
         "instruction_preview": instruction[:400],
     }
 
@@ -2523,17 +2545,18 @@ def _evidence_sources(incident: Dict[str, object]) -> List[Dict[str, object]]:
         for document in documents[:3]:
             if not isinstance(document, dict):
                 continue
+            score = _coerce_float(document.get("score"))
             evidence.append(
                 {
                     "title": str(document.get("title") or document.get("reference") or "retrieved-document"),
                     "detail": (
                         f"{document.get('doc_type', 'document')} "
-                        f"· score {float(document.get('score', 0.0)):.2f}"
+                        f"· score {score:.2f}"
                     ),
                     "reference": str(document.get("reference") or ""),
                     "collection": str(document.get("collection") or ""),
                     "doc_type": str(document.get("doc_type") or ""),
-                    "score": float(document.get("score", 0.0)),
+                    "score": score,
                     "excerpt": str(document.get("excerpt") or ""),
                 }
             )
@@ -2546,10 +2569,11 @@ def _evidence_sources(incident: Dict[str, object]) -> List[Dict[str, object]]:
         for item in fallback[:3]:
             if not isinstance(item, dict):
                 continue
+            weight = _coerce_float(item.get("weight"))
             evidence.append(
                 {
                     "title": str(item.get("reference") or item.get("type") or "evidence"),
-                    "detail": f"weight {float(item.get('weight', 0.0)):.2f}",
+                    "detail": f"weight {weight:.2f}",
                     "reference": str(item.get("reference") or ""),
                 }
             )
@@ -3184,6 +3208,29 @@ def generate_incident_ai_playbook(
         "generation": result["publish"],
         "workflow": _workflow_payload(updated),
     }
+
+
+@app.post("/incidents/{incident_id}/remediation/{remediation_id}/playbook-instruction-preview")
+def preview_incident_ai_playbook_instruction(
+    incident_id: str,
+    remediation_id: int,
+    payload: PlaybookGenerationRequest,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    ensure_role(auth, "operator")
+    incident = get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    ensure_project_access(auth, incident["project"])
+    remediation = get_incident_remediation(incident_id, remediation_id)
+    if not remediation:
+        raise HTTPException(status_code=404, detail="Remediation not found")
+    return _preview_ai_playbook_generation_instruction(
+        incident,
+        remediation,
+        payload.notes,
+        payload.source_url,
+    )
 
 
 @app.post("/incidents/{incident_id}/playbook-generation/callback")

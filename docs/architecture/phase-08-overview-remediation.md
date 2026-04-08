@@ -11,7 +11,7 @@ This is active in the current platform. The control-plane now bootstraps AAP Con
 Current live coverage:
 
 - manual UI execution through AAP Controller for `scale_scscf`, `rate_limit_pcscf`, and `quarantine_imsi`
-- optional watsonx-backed AI playbook generation after remediation suggestions, using Kafka request delivery and a control-plane callback
+- optional AI playbook generation after remediation suggestions, using Kafka request delivery and a control-plane callback
 - controller callback templates for event-driven incident transitions and event-driven action execution
 - EDA policy `IMS Critical Incident Escalation` for critical RCA-attached incidents that should move to `ESCALATED` and sync Plane
 - EDA policy `IMS Critical Signal Guardrail` for selected critical signaling incidents that can auto-apply `rate_limit_pcscf`
