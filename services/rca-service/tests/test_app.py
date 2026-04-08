@@ -107,6 +107,69 @@ class RCASelectionTests(unittest.TestCase):
         self.assertEqual(summaries[0]["match_reasons"], ["Exact anomaly match: authentication_failure"])
         self.assertIn("auth challenge loops", summaries[0]["excerpt"])
 
+    def test_infer_explanation_rewrites_meta_runbook_guidance(self) -> None:
+        root_cause = "One server-side control-plane tier is returning 5xx because it is overloaded or blocked on a degraded backend dependency."
+        document = {
+            "title": "Server internal error RCA",
+            "reference": "knowledge/server/server-internal-error.json",
+            "content": json.dumps(
+                {
+                    "summary": "Server-side failures are clustering on one execution tier.",
+                    "anomaly_types": ["server_internal_error"],
+                    "symptom_profile": {
+                        "primary_signals": [
+                            "5xx responses increase with rising queue depth and service latency on one server-side control-plane tier.",
+                            "A specific revision, pod, node, or dependency path is materially worse than its peers.",
+                        ]
+                    },
+                    "recommended_rca": {
+                        "root_cause": root_cause,
+                        "explanation": "server_internal_error should focus on the execution tier that is actually returning 5xx.",
+                    },
+                }
+            ),
+            "doc_type": "knowledge_article",
+            "collection": rca_service_app.RUNBOOK_COLLECTION,
+            "category": "server",
+            "score": 0.95,
+        }
+
+        explanation = rca_service_app.infer_explanation("server_internal_error", root_cause, [document])
+
+        self.assertIn("One server-side control-plane tier is returning 5xx", explanation)
+        self.assertIn("5xx responses increase with rising queue depth", explanation)
+        self.assertIn("A specific revision, pod, node, or dependency path is materially worse than its peers", explanation)
+        self.assertNotIn("server_internal_error should focus", explanation)
+        self.assertNotIn("Matched operational guidance came from", explanation)
+
+    def test_infer_explanation_keeps_user_facing_runbook_copy_clean(self) -> None:
+        root_cause = "Authentication failures are concentrated on one subscriber cohort."
+        document = {
+            "title": "Authentication failure RCA",
+            "reference": "knowledge/auth/authentication-failure.json",
+            "content": json.dumps(
+                {
+                    "summary": "One subscriber cohort is stuck in repeated auth challenge loops.",
+                    "anomaly_types": ["authentication_failure"],
+                    "recommended_rca": {
+                        "root_cause": root_cause,
+                        "explanation": "Authentication failures are concentrated on one subscriber cohort because the auth state or backend lookup path is unstable.",
+                    },
+                }
+            ),
+            "doc_type": "knowledge_article",
+            "collection": rca_service_app.RUNBOOK_COLLECTION,
+            "category": "auth",
+            "score": 0.9,
+        }
+
+        explanation = rca_service_app.infer_explanation("authentication_failure", root_cause, [document])
+
+        self.assertEqual(
+            explanation,
+            "Authentication failures are concentrated on one subscriber cohort because the auth state or backend lookup path is unstable.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

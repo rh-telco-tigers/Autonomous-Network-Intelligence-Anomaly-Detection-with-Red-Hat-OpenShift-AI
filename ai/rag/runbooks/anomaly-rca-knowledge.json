@@ -816,9 +816,9 @@
         }
       ],
       "recommended_rca": {
-        "root_cause": "Server internal errors are being generated because one control-plane service tier is either saturated itself or failing against a degraded dependency path, often after a rollout, resource-pressure event, or bad connection-pool state.",
-        "explanation": "server_internal_error should focus on the execution tier that is actually returning 5xx. When queue depth, per-pod latency, and dependency failures all line up on one server cohort, the RCA should name that service or dependency boundary directly instead of describing the incident as generic signaling instability. This keeps remediation on the overloaded tier, failing revision, or backend timeout path where the blast radius started.",
-        "recommendation": "Check per-tier saturation and dependency health first, roll back a suspect change if the timing fits, and isolate one bad replica or node before making broader platform moves."
+        "root_cause": "One server-side control-plane tier is returning 5xx because it is overloaded itself or blocked on a degraded backend dependency.",
+        "explanation": "The incident pattern fits a localized execution-tier failure rather than a broad signaling fault. Rising 5xx responses with queue growth, per-pod latency, or dependency timeouts usually mean one service cohort, revision, or backend path has become the failure center.",
+        "recommendation": "Identify the server cohort with the worst 5xx and latency profile, compare it with healthy peers, and then relieve saturation, roll back the suspect revision, or isolate the failing dependency path."
       },
       "operator_actions": [
         {

@@ -164,34 +164,102 @@ def _human_join(values: List[str]) -> str:
     return f"{', '.join(items[:-1])}, and {items[-1]}"
 
 
+def _sentence(text: str) -> str:
+    normalized = " ".join(str(text or "").split()).strip()
+    if not normalized:
+        return ""
+    return normalized if normalized[-1] in ".!?" else f"{normalized}."
+
+
+def _runbook_signal_fragments(documents: List[Dict[str, object]], limit: int = 2) -> List[str]:
+    fragments: List[str] = []
+    seen: set[str] = set()
+    for document in documents:
+        payload = _structured_runbook_payload(document) or {}
+        symptom_profile = payload.get("symptom_profile") or {}
+        for field in ("primary_signals", "supporting_signals"):
+            for item in symptom_profile.get(field) or []:
+                fragment = " ".join(str(item or "").split()).strip().rstrip(".")
+                key = fragment.lower()
+                if fragment and key not in seen:
+                    seen.add(key)
+                    fragments.append(fragment)
+                    if len(fragments) >= limit:
+                        return fragments
+    return fragments
+
+
+def _signal_summary_sentence(signals: List[str]) -> str:
+    if not signals:
+        return ""
+    if len(signals) == 1:
+        return f"The strongest supporting signal is {signals[0]}."
+    return f"The strongest supporting signals are {'; '.join(signals)}."
+
+
+def _looks_like_meta_guidance(text: str, anomaly_type: str) -> bool:
+    normalized = " ".join(str(text or "").lower().split())
+    anomaly_label = anomaly_type.lower()
+    meta_patterns = (
+        f"{anomaly_label} should",
+        "the rca should",
+        "should focus on",
+        "should name",
+        "should describe",
+        "should identify",
+        "should be anchored on",
+        "should be treated as",
+        "is best diagnosed by",
+        "the important signal is",
+        "the distinguishing signal is",
+        "the defining characteristic",
+        "this keeps remediation",
+        "this prevents teams from",
+        "that keeps investigation on",
+    )
+    return any(pattern in normalized for pattern in meta_patterns)
+
+
+def _grounded_explanation(anomaly_type: str, root_cause: str, documents: List[Dict[str, object]]) -> str:
+    signals = _runbook_signal_fragments(documents)
+    if not signals:
+        return ""
+    tail = (
+        "That points to the service tier, failing revision, or backend dependency actually emitting 5xx instead of a broad platform fault."
+        if anomaly_type == "server_internal_error"
+        else "That narrows the incident to the failing control-path boundary instead of a broad platform-wide fault."
+    )
+    return " ".join(
+        part
+        for part in (
+            _sentence(root_cause),
+            _signal_summary_sentence(signals),
+            tail,
+        )
+        if part
+    )
+
+
 def infer_explanation(anomaly_type: str, root_cause: str, documents: List[Dict[str, object]]) -> str:
     definition = scenario_definition(anomaly_type)
     summary = str(root_cause or "").strip()
     if len(summary.split()) <= 2:
         summary = str(definition.get("root_cause") or summary or "Unexpected IMS behavior detected on the control plane.")
-    if summary and summary[-1] not in ".!?":
-        summary = f"{summary}."
-
-    evidence_refs: List[str] = []
-    for doc in documents[:2]:
-        label = str(doc.get("title") or doc.get("reference") or "").strip()
-        collection = str(doc.get("collection") or "").strip()
-        if label and collection:
-            evidence_refs.append(f"{label} ({collection})")
-        elif label:
-            evidence_refs.append(label)
+    summary = _sentence(summary)
 
     guidance = _structured_runbook_guidance(documents)
     structured_explanation = str(guidance.get("explanation") or "").strip()
     if structured_explanation:
-        if evidence_refs:
-            return f"{structured_explanation} Matched operational guidance came from {_human_join(evidence_refs)}."
-        return structured_explanation
+        if _looks_like_meta_guidance(structured_explanation, anomaly_type):
+            grounded = _grounded_explanation(anomaly_type, summary, documents)
+            if grounded:
+                return grounded
+        return _sentence(structured_explanation)
 
-    explanation = f"{summary} This matches the observed {anomaly_type.replace('_', ' ')} incident pattern."
-    if evidence_refs:
-        explanation += f" Supporting context was retrieved from {_human_join(evidence_refs)}, which aligns with the current platform signals."
-    return explanation
+    grounded = _grounded_explanation(anomaly_type, summary, documents)
+    if grounded:
+        return grounded
+    return f"{summary} This matches the observed {anomaly_type.replace('_', ' ')} incident pattern."
 
 
 def infer_recommendation(anomaly_type: str, documents: List[Dict[str, object]]) -> str:

@@ -1056,6 +1056,8 @@ def build_prompt(incident_context: Dict[str, object], documents: List[Dict[str, 
         "Use the supplied evidence only.\n"
         "Return JSON with keys: root_cause, explanation, confidence, evidence, recommendation.\n"
         "Keep root_cause concise, but make explanation a grounded 2-4 sentence analysis that explains why the evidence supports the diagnosis.\n\n"
+        "Write the explanation as the incident diagnosis itself, not as authoring guidance.\n"
+        "Do not say things like '<anomaly> should', 'the RCA should', or cite retrieved document titles or collections inside the explanation.\n\n"
         f"{evidence}"
     )
 

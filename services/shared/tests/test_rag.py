@@ -170,6 +170,39 @@ class KnowledgeBundleTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     rag.build_local_seed_records(bundle, rag.RUNBOOK_COLLECTION)
 
+    def test_build_prompt_bans_meta_authoring_language_in_explanation(self) -> None:
+        document = {
+            "reference": "knowledge/server/server-internal-error.json",
+            "collection": rag.RUNBOOK_COLLECTION,
+            "stage": "runbooks",
+            "doc_type": rag.KNOWLEDGE_ARTICLE_DOC_TYPE,
+            "match_reasons": ["Exact anomaly match: server_internal_error"],
+            "content": json.dumps(
+                {
+                    "summary": "5xx responses cluster on one server tier.",
+                    "anomaly_types": ["server_internal_error"],
+                    "symptom_profile": {
+                        "primary_signals": [
+                            "Queue depth and latency rise together on one service cohort.",
+                        ]
+                    },
+                    "recommended_rca": {
+                        "root_cause": "One server tier is overloaded.",
+                        "recommendation": "Scale or isolate the failing tier.",
+                    },
+                    "operator_actions": [
+                        {"action": "Compare the hottest pods with healthy peers."},
+                    ],
+                }
+            ),
+        }
+
+        prompt = rag.build_prompt({"incident_id": "inc-1", "anomaly_type": "server_internal_error"}, [document])
+
+        self.assertIn("Write the explanation as the incident diagnosis itself", prompt)
+        self.assertIn("the RCA should", prompt)
+        self.assertIn("cite retrieved document titles or collections", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
