@@ -429,6 +429,7 @@ spec:
               cpu: 100m
               memory: 192Mi
             limits:
+              cpu: 500m
               memory: 512Mi
 ---
 apiVersion: v1
@@ -516,6 +517,7 @@ spec:
               cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 250m
               memory: 512Mi
 ---
 apiVersion: v1
@@ -599,6 +601,7 @@ spec:
               cpu: 100m
               memory: 128Mi
             limits:
+              cpu: 250m
               memory: 256Mi
 ---
 apiVersion: v1
@@ -702,6 +705,7 @@ spec:
               cpu: 100m
               memory: 128Mi
             limits:
+              cpu: 500m
               memory: 256Mi
 ---
 apiVersion: v1
@@ -807,6 +811,7 @@ spec:
               cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 500m
               memory: 512Mi
         - name: oauth-proxy
           image: registry.redhat.io/openshift4/ose-oauth-proxy-rhel9:v4.20.0
@@ -834,6 +839,7 @@ spec:
               cpu: 50m
               memory: 64Mi
             limits:
+              cpu: 250m
               memory: 128Mi
 ---
 apiVersion: v1

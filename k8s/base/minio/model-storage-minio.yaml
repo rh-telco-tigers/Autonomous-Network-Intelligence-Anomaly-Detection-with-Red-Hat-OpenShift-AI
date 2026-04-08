@@ -164,3 +164,10 @@ spec:
               done
               /usr/bin/mc mb --ignore-existing demo/ims-models
               /usr/bin/mc mb --ignore-existing demo/aap-hub
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi

@@ -95,6 +95,7 @@ spec:
               cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 500m
               memory: 512Mi
 ---
 apiVersion: v1
@@ -161,6 +162,7 @@ spec:
               cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 500m
               memory: 512Mi
 ---
 apiVersion: v1
@@ -232,6 +234,7 @@ spec:
               cpu: 250m
               memory: 1Gi
             limits:
+              cpu: 1
               memory: 2Gi
 ---
 apiVersion: apps/v1
@@ -277,6 +280,7 @@ spec:
               cpu: 50m
               memory: 128Mi
             limits:
+              cpu: 250m
               memory: 256Mi
 ---
 apiVersion: v1
@@ -336,3 +340,10 @@ spec:
               export RAG_ROOT_DIR=ai/rag
               export PYTHONPATH=/app:${PYTHONPATH}
               python ai/rag/bootstrap_knowledge.py
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi

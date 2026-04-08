@@ -112,6 +112,15 @@ spec:
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
+  name: ims-ai-featurestore-trainer
+  namespace: ims-demo-lab
+spec:
+  lookupPolicy:
+    local: false
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
   name: ims-incident-release
   namespace: ims-demo-lab
 spec:
@@ -155,6 +164,8 @@ spec:
             value: $(tt.params.git-revision)
         taskRunTemplate:
           serviceAccountName: pipeline
+        timeouts:
+          pipeline: 4h0m0s
         workspaces:
           - name: source
             volumeClaimTemplate:
@@ -163,7 +174,7 @@ spec:
                   - ReadWriteOnce
                 resources:
                   requests:
-                    storage: 1Gi
+                    storage: 5Gi
 ---
 apiVersion: triggers.tekton.dev/v1beta1
 kind: EventListener

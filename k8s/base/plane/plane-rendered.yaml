@@ -589,6 +589,13 @@ spec:
           - secretRef:
               name: plane-doc-store-secrets
               optional: false
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
         volumeMounts:
         - mountPath: /data
           name: pvc-plane-minio-vol
@@ -639,6 +646,13 @@ spec:
         envFrom:
           - secretRef:
               name: plane-pgdb-secrets
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
         volumeMounts:
         - mountPath: /var/lib/postgresql/data
           name: pvc-plane-pgdb-vol
@@ -687,6 +701,13 @@ spec:
           - secretRef:
               name: plane-rabbitmq-secrets
               optional: false 
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
         volumeMounts:
         - mountPath: /var/lib/rabbitmq
           name: pvc-plane-rabbitmq-vol
@@ -733,6 +754,13 @@ spec:
         name: plane-redis
         stdin: true
         tty: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
         volumeMounts:
         - mountPath: /data
           name: pvc-plane-redis-vol
@@ -786,6 +814,13 @@ spec:
           - secretRef:
               name:  plane-doc-store-secrets
               optional: false
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
       restartPolicy: OnFailure
       serviceAccount: plane-srv-account
       serviceAccountName: plane-srv-account
@@ -808,6 +843,13 @@ spec:
         - name: init
           image: busybox
           command: ['sh', '-c', "until nslookup  plane-minio.ims-demo-lab.svc.cluster.local; do echo waiting for  plane-minio; sleep 2; done"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
       containers:
         - command:
             - /bin/sh
@@ -825,6 +867,13 @@ spec:
           image: minio/mc:latest
           imagePullPolicy: IfNotPresent
           name: plane-minio-bucket
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
       serviceAccount: plane-srv-account
       serviceAccountName: plane-srv-account
       terminationGracePeriodSeconds: 120

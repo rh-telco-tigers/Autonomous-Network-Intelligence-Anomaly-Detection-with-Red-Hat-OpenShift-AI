@@ -51,6 +51,13 @@ spec:
         - name: metrics
           containerPort: 8002
           protocol: TCP
+      resources:
+        requests:
+          cpu: 100m
+          memory: 1Gi
+        limits:
+          cpu: 500m
+          memory: 2Gi
 ---
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
@@ -80,6 +87,7 @@ spec:
           cpu: 100m
           memory: 1Gi
         limits:
+          cpu: 500m
           memory: 2Gi
 ---
 apiVersion: v1

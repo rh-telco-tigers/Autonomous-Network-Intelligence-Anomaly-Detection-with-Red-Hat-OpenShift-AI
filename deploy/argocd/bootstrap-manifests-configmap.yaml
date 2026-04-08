@@ -40,11 +40,11 @@ data:
       controller:
         resources:
           limits:
-            cpu: 100m
-            memory: 2Gi
+            cpu: 1000m
+            memory: 4Gi
           requests:
-            cpu: 5m
-            memory: 512Mi
+            cpu: 250m
+            memory: 1Gi
       rbac:
         defaultPolicy: role:readonly
         policy: |
@@ -81,11 +81,11 @@ data:
         dex:
           resources:
             limits:
-              cpu: 100m
-              memory: 64Mi
+              cpu: 250m
+              memory: 256Mi
             requests:
-              cpu: 5m
-              memory: 32Mi
+              cpu: 50m
+              memory: 64Mi
   operators-application.yaml: |
     apiVersion: argoproj.io/v1alpha1
     kind: Application

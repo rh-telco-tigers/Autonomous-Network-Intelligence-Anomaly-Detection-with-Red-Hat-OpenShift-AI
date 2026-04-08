@@ -13,6 +13,8 @@ spec:
       value: main
   taskRunTemplate:
     serviceAccountName: pipeline
+  timeouts:
+    pipeline: 4h0m0s
   workspaces:
     - name: source
       volumeClaimTemplate:
@@ -21,4 +23,4 @@ spec:
             - ReadWriteOnce
           resources:
             requests:
-              storage: 1Gi
+              storage: 5Gi

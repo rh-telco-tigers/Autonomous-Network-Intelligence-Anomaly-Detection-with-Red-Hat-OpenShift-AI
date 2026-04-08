@@ -37,6 +37,7 @@ spec:
               cpu: 50m
               memory: 128Mi
             limits:
+              cpu: 250m
               memory: 256Mi
       volumes:
         - name: mongo-data
@@ -92,6 +93,7 @@ spec:
               cpu: 50m
               memory: 256Mi
             limits:
+              cpu: 250m
               memory: 512Mi
 ---
 apiVersion: v1
@@ -157,6 +159,7 @@ spec:
               cpu: 100m
               memory: 512Mi
             limits:
+              cpu: 250m
               memory: 1Gi
       volumes:
         - name: webui-config
@@ -264,6 +267,7 @@ spec:
               cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 500m
               memory: 512Mi
       volumes:
         - name: hss-config
@@ -317,6 +321,13 @@ spec:
             - /bin/sh
             - -c
             - mkdir -p /work/db && cp -Lr /mnt/opensips-config/* /work/
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
           volumeMounts:
             - name: icscf-config-src
               mountPath: /mnt/opensips-config
@@ -356,6 +367,7 @@ spec:
               cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 500m
               memory: 512Mi
       volumes:
         - name: icscf-config-src
@@ -411,6 +423,13 @@ spec:
             - /bin/sh
             - -c
             - mkdir -p /work/db && cp -Lr /mnt/opensips-config/* /work/
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
           volumeMounts:
             - name: scscf-config-src
               mountPath: /mnt/opensips-config
@@ -450,6 +469,7 @@ spec:
               cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 500m
               memory: 512Mi
       volumes:
         - name: scscf-config-src
@@ -505,6 +525,13 @@ spec:
             - /bin/sh
             - -c
             - mkdir -p /work/db && cp -Lr /mnt/opensips-config/* /work/
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
           volumeMounts:
             - name: pcscf-config-src
               mountPath: /mnt/opensips-config
@@ -544,6 +571,7 @@ spec:
               cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 500m
               memory: 512Mi
       volumes:
         - name: pcscf-config-src

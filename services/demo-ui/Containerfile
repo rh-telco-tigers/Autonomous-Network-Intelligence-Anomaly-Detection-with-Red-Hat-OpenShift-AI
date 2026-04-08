@@ -1,13 +1,17 @@
 FROM node:20-bookworm-slim AS deps
 
 WORKDIR /app
+ENV NPM_CONFIG_AUDIT=false
+ENV NPM_CONFIG_FUND=false
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 
 COPY services/demo-ui/package.json services/demo-ui/package-lock.json ./
-RUN npm ci
+RUN npm ci --prefer-offline
 
 FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY services/demo-ui ./
@@ -17,6 +21,7 @@ FROM node:20-bookworm-slim AS runner
 
 WORKDIR /app
 ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/app ./app

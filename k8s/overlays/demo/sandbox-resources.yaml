@@ -84,8 +84,10 @@ spec:
           resources:
             $patch: replace
             requests:
+              cpu: 100m
               memory: 64Mi
             limits:
+              cpu: 250m
               memory: 128Mi
 ---
 apiVersion: apps/v1
@@ -103,8 +105,10 @@ spec:
           resources:
             $patch: replace
             requests:
+              cpu: 100m
               memory: 64Mi
             limits:
+              cpu: 250m
               memory: 128Mi
 ---
 apiVersion: apps/v1
@@ -156,8 +160,10 @@ spec:
           resources:
             $patch: replace
             requests:
+              cpu: 100m
               memory: 64Mi
             limits:
+              cpu: 500m
               memory: 128Mi
 ---
 apiVersion: apps/v1
@@ -200,8 +206,10 @@ spec:
           resources:
             $patch: replace
             requests:
+              cpu: 50m
               memory: 128Mi
             limits:
+              cpu: 250m
               memory: 256Mi
 ---
 apiVersion: apps/v1
@@ -219,8 +227,10 @@ spec:
           resources:
             $patch: replace
             requests:
+              cpu: 50m
               memory: 256Mi
             limits:
+              cpu: 250m
               memory: 512Mi
 ---
 apiVersion: apps/v1
@@ -238,8 +248,10 @@ spec:
           resources:
             $patch: replace
             requests:
+              cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 250m
               memory: 512Mi
 ---
 apiVersion: apps/v1
@@ -257,8 +269,10 @@ spec:
           resources:
             $patch: replace
             requests:
+              cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 500m
               memory: 512Mi
 ---
 apiVersion: apps/v1
@@ -276,8 +290,10 @@ spec:
           resources:
             $patch: replace
             requests:
+              cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 500m
               memory: 512Mi
 ---
 apiVersion: apps/v1
@@ -295,8 +311,10 @@ spec:
           resources:
             $patch: replace
             requests:
+              cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 500m
               memory: 512Mi
 ---
 apiVersion: apps/v1
@@ -314,8 +332,10 @@ spec:
           resources:
             $patch: replace
             requests:
+              cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 500m
               memory: 512Mi
 ---
 apiVersion: apps/v1
@@ -333,8 +353,10 @@ spec:
           resources:
             $patch: replace
             requests:
+              cpu: 100m
               memory: 64Mi
             limits:
+              cpu: 250m
               memory: 128Mi
 ---
 apiVersion: apps/v1
@@ -352,8 +374,10 @@ spec:
           resources:
             $patch: replace
             requests:
+              cpu: 100m
               memory: 64Mi
             limits:
+              cpu: 250m
               memory: 128Mi
 ---
 apiVersion: apps/v1
@@ -374,6 +398,7 @@ spec:
               cpu: 100m
               memory: 256Mi
             limits:
+              cpu: 500m
               memory: 512Mi
 ---
 apiVersion: apps/v1
@@ -394,6 +419,7 @@ spec:
               cpu: 250m
               memory: 1Gi
             limits:
+              cpu: 1
               memory: 2Gi
 ---
 apiVersion: apps/v1
@@ -411,8 +437,10 @@ spec:
           resources:
             $patch: replace
             requests:
+              cpu: 50m
               memory: 128Mi
             limits:
+              cpu: 250m
               memory: 256Mi
 ---
 apiVersion: serving.kserve.io/v1beta1
@@ -426,8 +454,10 @@ spec:
       resources:
         $patch: replace
         requests:
+          cpu: 100m
           memory: 1Gi
         limits:
+          cpu: 500m
           memory: 2Gi
 ---
 apiVersion: batch/v1

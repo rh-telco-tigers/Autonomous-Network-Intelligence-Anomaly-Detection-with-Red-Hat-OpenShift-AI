@@ -28,10 +28,11 @@ spec:
       workingDir: $(workspaces.output.path)
       computeResources:
         requests:
-          cpu: 1m
-          memory: 32Mi
+          cpu: 50m
+          memory: 128Mi
         limits:
-          memory: 64Mi
+          cpu: 500m
+          memory: 512Mi
       script: |
         #!/usr/bin/env sh
         set -eu
@@ -85,10 +86,72 @@ spec:
             - SETFCAP
       computeResources:
         requests:
-          cpu: 1m
-          memory: 256Mi
+          cpu: 250m
+          memory: 1Gi
         limits:
-          memory: 512Mi
+          cpu: 2
+          memory: 2Gi
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        buildah --storage-driver="$(params.STORAGE_DRIVER)" \
+          bud \
+          --tls-verify="$(params.TLS_VERIFY)" \
+          --file "$(params.DOCKERFILE)" \
+          --tag "$(params.IMAGE)" \
+          "$(params.CONTEXT)"
+        buildah --storage-driver="$(params.STORAGE_DRIVER)" \
+          push \
+          --tls-verify="$(params.TLS_VERIFY)" \
+          --digestfile /tmp/image-digest \
+          "$(params.IMAGE)" \
+          "docker://$(params.IMAGE)"
+        printf '%s' "$(params.IMAGE)" | tee "$(results.IMAGE_URL.path)"
+        cat /tmp/image-digest | tr -d '\n' | tee "$(results.IMAGE_DIGEST.path)"
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: buildah-heavy
+  namespace: ims-demo-lab
+spec:
+  params:
+    - name: IMAGE
+      type: string
+    - name: DOCKERFILE
+      type: string
+      default: ./Dockerfile
+    - name: CONTEXT
+      type: string
+      default: .
+    - name: STORAGE_DRIVER
+      type: string
+      default: vfs
+    - name: TLS_VERIFY
+      type: string
+      default: "true"
+  results:
+    - name: IMAGE_URL
+      type: string
+    - name: IMAGE_DIGEST
+      type: string
+  workspaces:
+    - name: source
+  steps:
+    - name: build-and-push
+      image: registry.redhat.io/rhel9/buildah@sha256:4e604d18fc609d25b2fc99814281944acaac78e8cd5e47b8359709b8b505db86
+      workingDir: $(workspaces.source.path)
+      securityContext:
+        capabilities:
+          add:
+            - SETFCAP
+      computeResources:
+        requests:
+          cpu: 500m
+          memory: 2Gi
+        limits:
+          cpu: 2
+          memory: 4Gi
       script: |
         #!/usr/bin/env bash
         set -euo pipefail
