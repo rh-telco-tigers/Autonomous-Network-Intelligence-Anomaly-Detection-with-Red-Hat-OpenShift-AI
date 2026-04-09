@@ -56,7 +56,7 @@ metadata:
   name: plane-integration-bootstrap
   namespace: ims-demo-lab
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
     argocd.argoproj.io/sync-wave: "70"
 spec:
@@ -87,6 +87,22 @@ spec:
               value: "300"
             - name: PLANE_ADMIN_EMAIL
               value: plane-admin@ims-demo.local
+            - name: PLANE_ADMIN_USERNAME
+              value: plane-admin
+            - name: PLANE_ADMIN_PASSWORD
+              value: plane
+            - name: PLANE_ADMIN_FIRST_NAME
+              value: Plane
+            - name: PLANE_ADMIN_LAST_NAME
+              value: Admin
+            - name: PLANE_ADMIN_DISPLAY_NAME
+              value: Plane Admin
+            - name: PLANE_WORKSPACE_NAME
+              value: IMS Demo
+            - name: PLANE_PROJECT_NAME
+              value: IMS Demo
+            - name: PLANE_PROJECT_IDENTIFIER
+              value: IMS
             - name: PLANE_CONTROL_PLANE_TOKEN_LABEL
               value: ims-demo-control-plane
             - name: PLANE_CONTROL_PLANE_TOKEN_DESCRIPTION
@@ -122,6 +138,8 @@ spec:
 
               django.setup()
 
+              from plane.license.models import Instance, InstanceAdmin
+
               namespace = (os.getenv("POD_NAMESPACE") or "ims-demo-lab").strip() or "ims-demo-lab"
               wait_seconds = int(os.getenv("PLANE_BOOTSTRAP_WAIT_SECONDS", "900"))
               status_wait_seconds = int(os.getenv("PLANE_BOOTSTRAP_STATUS_WAIT_SECONDS", "300"))
@@ -136,7 +154,19 @@ spec:
                   or "PAT for IMS control-plane ticket sync"
               )
               preferred_admin_email = os.getenv("PLANE_ADMIN_EMAIL", "plane-admin@ims-demo.local").strip()
+              preferred_admin_username = os.getenv("PLANE_ADMIN_USERNAME", "plane-admin").strip() or "plane-admin"
+              preferred_admin_password = os.getenv("PLANE_ADMIN_PASSWORD", "plane").strip() or "plane"
+              preferred_admin_first_name = os.getenv("PLANE_ADMIN_FIRST_NAME", "Plane").strip() or "Plane"
+              preferred_admin_last_name = os.getenv("PLANE_ADMIN_LAST_NAME", "Admin").strip() or "Admin"
+              preferred_admin_display_name = (
+                  os.getenv("PLANE_ADMIN_DISPLAY_NAME", "Plane Admin").strip() or "Plane Admin"
+              )
               preferred_workspace_slug = os.getenv("PLANE_WORKSPACE_SLUG", "ims-demo").strip() or "ims-demo"
+              preferred_workspace_name = os.getenv("PLANE_WORKSPACE_NAME", "IMS Demo").strip() or "IMS Demo"
+              preferred_project_name = os.getenv("PLANE_PROJECT_NAME", "IMS Demo").strip() or "IMS Demo"
+              preferred_project_identifier = (
+                  os.getenv("PLANE_PROJECT_IDENTIFIER", "IMS").strip().upper() or "IMS"
+              )
               plane_base_url = f"http://plane-api.{namespace}.svc.cluster.local:8000"
               plane_app_url = (os.getenv("WEB_URL") or "").strip().rstrip("/")
               if plane_app_url.startswith("http://"):
@@ -259,28 +289,215 @@ spec:
 
               User = get_user_model()
               Workspace = apps.get_model("db", "Workspace")
+              WorkspaceMember = apps.get_model("db", "WorkspaceMember")
               Project = apps.get_model("db", "Project")
+              ProjectMember = apps.get_model("db", "ProjectMember")
+              State = apps.get_model("db", "State")
               APIToken = apps.get_model("db", "APIToken")
+
+              def ensure_admin_user():
+                  user = User.objects.filter(email=preferred_admin_email).first()
+                  if user is None:
+                      user = User.objects.create_superuser(
+                          preferred_admin_username,
+                          preferred_admin_email,
+                          preferred_admin_password,
+                      )
+                      print(f"created Plane admin user {preferred_admin_email}", flush=True)
+
+                  updates = []
+                  desired_user_fields = {
+                      "display_name": preferred_admin_display_name,
+                      "first_name": preferred_admin_first_name,
+                      "last_name": preferred_admin_last_name,
+                      "is_active": True,
+                      "is_email_verified": True,
+                      "is_staff": True,
+                      "is_superuser": True,
+                  }
+                  for field_name, value in desired_user_fields.items():
+                      if getattr(user, field_name) != value:
+                          setattr(user, field_name, value)
+                          updates.append(field_name)
+                  if updates:
+                      user.save(update_fields=updates)
+                      print(f"updated Plane admin user fields: {', '.join(updates)}", flush=True)
+
+                  instance = Instance.objects.order_by("-created_at").first()
+                  if instance is not None:
+                      instance_admin, created = InstanceAdmin.objects.get_or_create(
+                          user=user,
+                          instance=instance,
+                          defaults={"role": 20},
+                      )
+                      if created:
+                          print(f"created Plane instance admin for {preferred_admin_email}", flush=True)
+                      elif instance_admin.role != 20:
+                          instance_admin.role = 20
+                          instance_admin.save(update_fields=["role"])
+                          print(f"updated Plane instance admin role for {preferred_admin_email}", flush=True)
+                  else:
+                      print("waiting for Plane instance record", flush=True)
+
+                  return user
+
+              def ensure_workspace(user):
+                  workspace = Workspace.objects.filter(slug=preferred_workspace_slug).first()
+                  if workspace is None:
+                      workspace = Workspace.objects.create(
+                          name=preferred_workspace_name,
+                          slug=preferred_workspace_slug,
+                          owner=user,
+                      )
+                      print(f"created Plane workspace {preferred_workspace_slug}", flush=True)
+
+                  member, created = WorkspaceMember.objects.get_or_create(
+                      workspace=workspace,
+                      member=user,
+                      defaults={"role": 20},
+                  )
+                  if created:
+                      print(f"created Plane workspace membership for {preferred_admin_email}", flush=True)
+                  elif member.role != 20:
+                      member.role = 20
+                      member.save(update_fields=["role"])
+                      print(f"updated Plane workspace membership for {preferred_admin_email}", flush=True)
+
+                  return workspace
+
+              def ensure_project(user, workspace):
+                  project = (
+                      Project.objects.filter(workspace=workspace, identifier=preferred_project_identifier).order_by("id").first()
+                  )
+                  if project is None:
+                      project = Project.objects.create(
+                          name=preferred_project_name,
+                          description="IMS demo incidents",
+                          workspace=workspace,
+                          identifier=preferred_project_identifier,
+                          project_lead=user,
+                          default_assignee=user,
+                      )
+                      print(f"created Plane project {preferred_project_identifier}", flush=True)
+
+                  updates = []
+                  if project.project_lead_id != user.id:
+                      project.project_lead = user
+                      updates.append("project_lead")
+                  if project.default_assignee_id != user.id:
+                      project.default_assignee = user
+                      updates.append("default_assignee")
+                  if project.name != preferred_project_name:
+                      project.name = preferred_project_name
+                      updates.append("name")
+                  if updates:
+                      project.save(update_fields=updates)
+                      print(f"updated Plane project fields: {', '.join(updates)}", flush=True)
+
+                  member, created = ProjectMember.objects.get_or_create(
+                      project=project,
+                      workspace=workspace,
+                      member=user,
+                      defaults={"role": 20},
+                  )
+                  if created:
+                      print(f"created Plane project membership for {preferred_admin_email}", flush=True)
+                  elif member.role != 20:
+                      member.role = 20
+                      member.save(update_fields=["role"])
+                      print(f"updated Plane project membership for {preferred_admin_email}", flush=True)
+
+                  desired_states = [
+                      {
+                          "name": "Todo",
+                          "slug": "todo",
+                          "group": "unstarted",
+                          "color": "#4F46E5",
+                          "default": True,
+                      },
+                      {
+                          "name": "In Progress",
+                          "slug": "in-progress",
+                          "group": "started",
+                          "color": "#F59E0B",
+                          "default": False,
+                      },
+                      {
+                          "name": "Done",
+                          "slug": "done",
+                          "group": "completed",
+                          "color": "#10B981",
+                          "default": False,
+                      },
+                      {
+                          "name": "Cancelled",
+                          "slug": "cancelled",
+                          "group": "cancelled",
+                          "color": "#6B7280",
+                          "default": False,
+                      },
+                  ]
+                  default_state = None
+                  for sequence, state_spec in enumerate(desired_states, start=1):
+                      state, created = State.objects.get_or_create(
+                          project=project,
+                          workspace=workspace,
+                          slug=state_spec["slug"],
+                          defaults={
+                              "name": state_spec["name"],
+                              "description": state_spec["name"],
+                              "color": state_spec["color"],
+                              "group": state_spec["group"],
+                              "default": state_spec["default"],
+                              "sequence": float(sequence * 1000),
+                          },
+                      )
+                      if created:
+                          print(f"created Plane project state {state_spec['name']}", flush=True)
+                      else:
+                          state_updates = []
+                          desired_state_fields = {
+                              "name": state_spec["name"],
+                              "description": state_spec["name"],
+                              "color": state_spec["color"],
+                              "group": state_spec["group"],
+                              "default": state_spec["default"],
+                          }
+                          for field_name, value in desired_state_fields.items():
+                              if getattr(state, field_name) != value:
+                                  setattr(state, field_name, value)
+                                  state_updates.append(field_name)
+                          if state_updates:
+                              state.save(update_fields=state_updates)
+                              print(f"updated Plane project state {state_spec['name']}", flush=True)
+                      if state_spec["default"]:
+                          default_state = state
+
+                  if default_state is not None and project.default_state_id != default_state.id:
+                      project.default_state = default_state
+                      project.save(update_fields=["default_state"])
+                      print(f"updated Plane default state for {preferred_project_identifier}", flush=True)
+
+                  return project
 
               deadline = time.time() + wait_seconds
               user = None
               workspace = None
               project = None
+              last_error = None
               while time.time() < deadline:
                   try:
-                      user = (
-                          User.objects.filter(email=preferred_admin_email).first()
-                          or User.objects.order_by("id").first()
-                      )
-                      workspace = (
-                          Workspace.objects.filter(slug=preferred_workspace_slug).first()
-                          or Workspace.objects.order_by("id").first()
-                      )
-                      project = (
-                          Project.objects.filter(workspace=workspace).order_by("id").first() if workspace else None
-                      ) or Project.objects.order_by("id").first()
+                      user = ensure_admin_user()
+                      workspace = ensure_workspace(user)
+                      project = ensure_project(user, workspace)
                   except OperationalError as exc:
+                      last_error = exc
                       print(f"waiting for Plane database: {exc}", flush=True)
+                      time.sleep(10)
+                      continue
+                  except Exception as exc:
+                      last_error = exc
+                      print(f"waiting for Plane seed objects: {exc}", flush=True)
                       time.sleep(10)
                       continue
 
@@ -291,7 +508,7 @@ spec:
                   time.sleep(10)
 
               if not user or not workspace or not project:
-                  raise SystemExit("Plane seed data was not ready before bootstrap timeout")
+                  raise SystemExit(f"Plane seed data was not ready before bootstrap timeout: {last_error}")
 
               token = APIToken.objects.filter(label=token_label, user=user, is_active=True).order_by("-updated_at").first()
               if token is None:

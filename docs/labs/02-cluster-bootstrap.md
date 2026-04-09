@@ -41,7 +41,7 @@ oc apply -f deploy/argocd/platform-application.yaml
 10. Review the demo API token secret and service monitors created under `k8s/base/platform` and `k8s/base/observability`.
 11. The `ims-demo-platform` application includes the repo-managed AI extras from `k8s/base/feature-store`, `k8s/base/kafka`, and `k8s/base/kfp` as part of the demo overlay.
 12. Do not create a separate Feature Store manually in the OpenShift AI UI. The repo-managed `FeatureStore/ims-featurestore` is part of the GitOps path.
-13. AAP/EDA and live LLM RCA are intentionally disabled by default for fresh clusters. When the in-cluster Plane base is enabled, the Plane bootstrap job repopulates `plane-integration-auth` automatically after the core platform is healthy.
+13. AAP/EDA and live LLM RCA are intentionally disabled by default for fresh clusters. When the in-cluster Plane base is enabled, the Plane bootstrap job seeds the demo Plane admin, workspace, and project, then populates `plane-integration-auth` automatically.
 
 ## Notes
 
@@ -56,5 +56,5 @@ oc apply -f deploy/argocd/platform-application.yaml
 - Demo model storage is provided by an in-cluster MinIO deployment with the default credentials `minioadmin` / `minioadmin`.
 - `demo-incident-pulse` and the `sipp-*` CronJobs also depend on the internal registry images from the first Tekton build.
 - This repo assumes a model registry endpoint reachable as `ims-demo-modelregistry` in `rhoai-model-registries`; verify that service in Lab 04 or update the endpoint references for your cluster.
-- `plane-integration-auth` remains a safe-by-default placeholder in Git, but the Plane bootstrap job repopulates it automatically when Plane is deployed. `llm-provider-config` and `aap-automation-config` still need a manual patch when you want those integrations live.
+- `plane-integration-auth` remains a safe-by-default placeholder in Git, but the Plane bootstrap job now seeds the demo Plane records and repopulates the secret automatically when Plane is deployed. `llm-provider-config` and `aap-automation-config` still need a manual patch when you want those integrations live.
 - If GPU-backed generative serving is required, add the appropriate cluster node labeling and accelerator operator prerequisites before applying the vLLM workload.
