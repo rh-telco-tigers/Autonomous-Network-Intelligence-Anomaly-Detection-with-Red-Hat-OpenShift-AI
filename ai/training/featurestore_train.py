@@ -29,6 +29,8 @@ from ai.training.model_registry_client import (
     publish_model_version,
 )
 from ai.training.train_and_register import (
+    CANONICAL_LABELS,
+    DEFAULT_MIN_REAL_WINDOWS,
     DEFAULT_MIN_WINDOWS_PER_CLASS,
     FEATURES,
     FEATURE_SCHEMA_VERSION,
@@ -45,6 +47,7 @@ from ai.training.train_and_register import (
     evaluate,
     evaluate_serving_model,
     gate_metrics,
+    generate_dataset,
     persist_model_artifact,
     score_baseline,
     scorer_for_artifact,
@@ -68,6 +71,7 @@ DEFAULT_PIPELINE_NAME = "ims-featurestore-train-and-register"
 DEFAULT_MODEL_FORMAT_NAME = "triton"
 DEFAULT_MODEL_FORMAT_VERSION = "2"
 DEFAULT_PROTOCOL_VERSION = "v2"
+DEFAULT_BOOTSTRAP_SIZE_PER_CLASS = 120
 DEFAULT_MLSERVER_IMPLEMENTATION = "mlserver_sklearn.SKLearnModel"
 DEFAULT_FEATURESTORE_MODE = "local"
 DEFAULT_MANAGED_FEATURESTORE_PROJECT = "ims_anomaly_featurestore"
@@ -328,6 +332,38 @@ def _load_feature_store(repo_path: Path, env: Dict[str, str]):
     return FeatureStore(repo_path=str(repo_path))
 
 
+def _resolve_training_records(records: List[Dict[str, Any]], min_per_class: int) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    live_guard = _multiclass_training_guard(records, min_per_class)
+    min_live_windows = max(int(os.getenv("IMS_MIN_REAL_WINDOWS", str(DEFAULT_MIN_REAL_WINDOWS))), 1)
+    allow_bootstrap = os.getenv("IMS_ALLOW_BOOTSTRAP_DATASET", "true").strip().lower() in {"1", "true", "yes", "on"}
+    minimum_live_records = max(min_live_windows, len(CANONICAL_LABELS) * min_per_class)
+
+    if len(records) >= minimum_live_records and live_guard["all_classes_present"]:
+        return records, {
+            "source": "feast-historical-features",
+            "live_record_count": len(records),
+            "live_class_counts": live_guard["class_counts"],
+            "class_counts": live_guard["class_counts"],
+        }
+
+    if not allow_bootstrap:
+        raise ValueError(
+            "Feature-store training data does not meet minimum class coverage. "
+            f"Required at least {min_per_class} record(s) for each class; "
+            f"missing or underfilled classes: {live_guard['missing_or_underfilled_classes']}"
+        )
+
+    size_per_class = max(int(os.getenv("IMS_BOOTSTRAP_SIZE_PER_CLASS", str(DEFAULT_BOOTSTRAP_SIZE_PER_CLASS))), min_per_class)
+    bootstrap_records = generate_dataset(size_per_class=size_per_class)
+    bootstrap_guard = _multiclass_training_guard(bootstrap_records, min_per_class)
+    return bootstrap_records, {
+        "source": "synthetic-ims-lab-multiclass",
+        "live_record_count": len(records),
+        "live_class_counts": live_guard["class_counts"],
+        "class_counts": bootstrap_guard["class_counts"],
+    }
+
+
 def _retrieve_training_dataset(
     bundle_manifest_path: str,
     workspace_root: str,
@@ -366,14 +402,8 @@ def _retrieve_training_dataset(
         )
 
     min_per_class = max(int(os.getenv("IMS_MIN_WINDOWS_PER_CLASS", str(DEFAULT_MIN_WINDOWS_PER_CLASS))), 1)
-    guard = _multiclass_training_guard(records, min_per_class)
-    if not guard["all_classes_present"]:
-        raise ValueError(
-            "Feature-store training data does not meet multiclass coverage requirements. "
-            f"Missing or underfilled classes: {guard['missing_or_underfilled_classes']}"
-        )
-
-    train_records, eval_records = split_dataset(records)
+    effective_records, training_metadata = _resolve_training_records(records, min_per_class)
+    train_records, eval_records = split_dataset(effective_records)
     workspace = Path(workspace_root)
     bundle_version = localized_manifest["bundle_version"]
     train_path = workspace / "featurestore" / bundle_version / "training" / f"{feature_service_name}-train.json"
@@ -399,7 +429,10 @@ def _retrieve_training_dataset(
         "train_count": len(train_records),
         "eval_count": len(eval_records),
         "label_taxonomy_version": localized_manifest["label_taxonomy_version"],
-        "class_counts": guard["class_counts"],
+        "class_counts": training_metadata["class_counts"],
+        "live_record_count": training_metadata["live_record_count"],
+        "live_class_counts": training_metadata["live_class_counts"],
+        "source": training_metadata["source"],
         "created_at": _now(),
     }
 
