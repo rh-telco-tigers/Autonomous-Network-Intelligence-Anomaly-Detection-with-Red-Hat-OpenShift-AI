@@ -25,31 +25,44 @@ metadata:
     argocd.argoproj.io/sync-wave: "10"
 spec:
   components:
-    codeflare:
-      managementState: Removed
-    dashboard:
-      managementState: Managed
-    datasciencepipelines:
-      managementState: Managed
-      argoWorkflowsControllers:
-        managementState: Managed
-    feastoperator:
-      managementState: Managed
     kserve:
       managementState: Managed
-      defaultDeploymentMode: RawDeployment
-    kueue:
-      managementState: Removed
-    modelmeshserving:
-      managementState: Removed
+      modelsAsService:
+        managementState: Removed
+      nim:
+        managementState: Managed
+      rawDeploymentServiceConfig: Headless
     modelregistry:
+      managementState: Managed
+      registriesNamespace: rhoai-model-registries
+    feastoperator:
+      managementState: Managed
+    trustyai:
+      eval:
+        lmeval:
+          permitCodeExecution: deny
+          permitOnline: deny
+      managementState: Removed
+    aipipelines:
+      argoWorkflowsControllers:
+        managementState: Managed
       managementState: Managed
     ray:
       managementState: Removed
-    trainingoperator:
-      managementState: Removed
-    trustyai:
+    kueue:
+      defaultClusterQueueName: default
+      defaultLocalQueueName: default
       managementState: Removed
     workbenches:
       managementState: Managed
-
+      workbenchNamespace: rhods-notebooks
+    mlflowoperator:
+      managementState: Removed
+    dashboard:
+      managementState: Managed
+    trainer:
+      managementState: Removed
+    llamastackoperator:
+      managementState: Managed
+    trainingoperator:
+      managementState: Removed
