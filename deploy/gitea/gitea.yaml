@@ -290,9 +290,10 @@ spec:
               fi
               HOOKS_JSON="$(curl -fsS -u "$GITEA_ADMIN_USERNAME:$GITEA_ADMIN_PASSWORD" \
                 "$API/api/v1/repos/$GITEA_ADMIN_USERNAME/$GITEA_REPO_NAME/hooks")"
+              HOOKS_BY_OBJECT="$(printf '%s' "$HOOKS_JSON" | sed 's/},[[:space:]]*{/}\n{/g')"
               hook_id_for_url() {
                 hook_url="$1"
-                printf '%s' "$HOOKS_JSON" | tr '{' '\n' | awk -v url="$hook_url" '
+                printf '%s\n' "$HOOKS_BY_OBJECT" | awk -v url="$hook_url" '
                   index($0, "\"url\":\"" url "\"") {
                     if (match($0, /"id":[0-9]+/)) {
                       print substr($0, RSTART + 5, RLENGTH - 5)
