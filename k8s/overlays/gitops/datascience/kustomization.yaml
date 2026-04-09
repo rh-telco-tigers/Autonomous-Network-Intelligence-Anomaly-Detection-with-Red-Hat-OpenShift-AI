@@ -4,6 +4,7 @@ namespace: ims-datascience
 resources:
   - ims-platform-config.yaml
   - image-streams.yaml
+  - model-storage-credentials.yaml
   - tekton-image-access.yaml
   - ../../../base/kfp
   - ../../../base/feature-store

@@ -2,33 +2,22 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: ims-runtime
 resources:
-  - ims-platform-config.yaml
-  - aap-automation-config.yaml
   - image-streams.yaml
+  - model-storage-credentials.yaml
   - plane-bootstrap-env.yaml
   - tekton-image-access.yaml
   - ../../../base/platform
 patches:
-  - target:
+  - path: ims-platform-config.yaml
+    target:
       version: v1
       kind: ConfigMap
       name: ims-platform-config
-    patch: |-
-      $patch: delete
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: ims-platform-config
-  - target:
+  - path: aap-automation-config.yaml
+    target:
       version: v1
       kind: ConfigMap
       name: aap-automation-config
-    patch: |-
-      $patch: delete
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: aap-automation-config
   - target:
       group: rbac.authorization.k8s.io
       version: v1
