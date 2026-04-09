@@ -62,7 +62,7 @@ http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-wi
 - `deploy/gitea` creates a Gitea webhook that targets the Tekton `EventListener` service at `el-ims-platform-gitea.ims-tekton.svc.cluster.local:8080`.
 - That webhook does not become active until the `ims-tekton` child app applies the Tekton trigger resources from `k8s/overlays/gitops/tekton`.
 - The first push in this lab seeds the in-cluster GitOps source for Argo CD, but it does not build images yet.
-- After Argo CD has synced the `ims-platform` root app and the `ims-tekton` child app, a later push to `main` triggers the Tekton build automatically.
+- After Argo CD has synced the `ims-platform` root app and the `ims-tekton` child app, a later push to the active GitOps branch triggers the Tekton build automatically.
 - If you need the first image build without adding another commit, run `make trigger-build-pipeline` to start a `PipelineRun` for `ims-platform-container-build`.
 - The same GitOps sync now includes the repo-managed AI extras in `k8s/base/feature-store`, `k8s/base/kafka`, and `k8s/base/kfp`, so the GitOps path is sufficient for the default fresh-cluster bring-up.
 - Do not create a separate Feature Store manually in the OpenShift AI console; the repo-managed `FeatureStore/ims-featurestore` comes from the overlay-managed manifests.
