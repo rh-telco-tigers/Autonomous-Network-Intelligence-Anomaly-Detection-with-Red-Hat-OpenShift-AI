@@ -45,7 +45,7 @@ from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type
 BUNDLE_CONTRACT_VERSION = "ims_feature_bundle_v1"
 LABEL_TAXONOMY_VERSION = "ims_incident_taxonomy_v2"
 DEFAULT_BUNDLE_WORKSPACE = "/tmp/ims-feature-bundle"
-DEFAULT_CONTROL_PLANE_URL = "http://control-plane.ims-demo-lab.svc.cluster.local:8080"
+DEFAULT_CONTROL_PLANE_URL = "http://control-plane.ims-runtime.svc.cluster.local:8080"
 DEFAULT_PROJECT = "ims-demo"
 DEFAULT_APPROVAL_LIMIT = 1000
 DEFAULT_AUDIT_LIMIT = 1000

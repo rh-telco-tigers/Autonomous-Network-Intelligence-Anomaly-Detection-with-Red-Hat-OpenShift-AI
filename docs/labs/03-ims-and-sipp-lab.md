@@ -7,7 +7,7 @@ Deploy the IMS lab, run SIP traffic scenarios, and confirm that the scenario out
 ## Before You Begin
 
 - Complete the platform bootstrap steps in Labs 01 and 02.
-- Make sure you can access the `ims-demo-lab` namespace with `oc`.
+- Make sure you can access the `ims-sipp`, `ims-runtime`, and `ims-tekton` namespaces with `oc`.
 - Make sure MinIO is available because this lab writes captured data there.
 
 ## What This Lab Deploys
@@ -42,14 +42,14 @@ The current multiclass console and pulse catalog covers:
 
 ## Run The Lab
 
-1. Confirm the demo overlay is being reconciled by Argo CD:
+1. Confirm the split runtime apps are being reconciled by Argo CD:
 
 ```sh
-oc get application.argoproj.io ims-demo-platform -n openshift-gitops
-oc get application.argoproj.io ims-demo-platform -n openshift-gitops -o jsonpath='{.status.sync.status}{" / "}{.status.health.status}{"\n"}'
+oc get application.argoproj.io ims-platform -n openshift-gitops
+oc get application.argoproj.io ims-platform -n openshift-gitops -o jsonpath='{.status.sync.status}{" / "}{.status.health.status}{"\n"}'
 ```
 
-If you have changed the manifests, push the updated repo state to the in-cluster Gitea `main` branch and let Argo CD sync `k8s/overlays/demo`. Do not use `oc apply -k k8s/overlays/demo` in the standard GitOps path, or Argo CD and imperative apply can compete for ownership of the same resources.
+If you have changed the manifests, push the updated repo state to the in-cluster Gitea `main` branch and let Argo CD sync the `ims-platform` root app plus its child apps. Do not use imperative `oc apply` against the runtime overlays in the standard GitOps path, or Argo CD and imperative apply can compete for ownership of the same resources.
 
 2. Trigger the first demo image build if the internal registry has not been populated yet. Subsequent pushes to `main` in the in-cluster Gitea repo will trigger this automatically, but the first build is often easiest to start manually:
 
@@ -60,8 +60,9 @@ make trigger-build-pipeline
 3. Watch the Tekton run until the images are available in the internal registry:
 
 ```sh
-oc get pipelinerun -n ims-demo-lab
-oc get is -n ims-demo-lab
+oc get pipelinerun -n ims-tekton
+oc get is -n ims-runtime
+oc get is -n ims-sipp
 ```
 
 If you skip this build, the overlay can leave workloads in `ImagePullBackOff` while the image stream tags are still empty.
@@ -69,13 +70,13 @@ If you skip this build, the overlay can leave workloads in `ImagePullBackOff` wh
 4. Verify the IMS deployments are healthy:
 
 ```sh
-oc get deploy -n ims-demo-lab
+oc get deploy -n ims-sipp
 ```
 
 5. Verify the IMS services are present:
 
 ```sh
-oc get svc -n ims-demo-lab | rg 'ims-|openimss'
+oc get svc -n ims-sipp | rg 'ims-|openimss'
 ```
 
 6. Verify the scheduled incident generators exist:
@@ -87,26 +88,26 @@ make check-demo-incident-generators
 7. Trigger one traffic run manually if you do not want to wait for the next schedule:
 
 ```sh
-oc create job --from=cronjob/sipp-normal-traffic sipp-normal-check -n ims-demo-lab
+oc create job --from=cronjob/sipp-normal-traffic sipp-normal-check -n ims-sipp
 ```
 
 8. Wait for the job to finish:
 
 ```sh
-oc wait --for=condition=complete job/sipp-normal-check -n ims-demo-lab --timeout=5m
+oc wait --for=condition=complete job/sipp-normal-check -n ims-sipp --timeout=5m
 ```
 
 9. Check the job logs. A successful run prints a `window_uri` that points to the stored feature-window JSON object in MinIO:
 
 ```sh
-oc logs job/sipp-normal-check -n ims-demo-lab
+oc logs job/sipp-normal-check -n ims-sipp
 ```
 
 10. Repeat the same check for the anomaly scenarios when needed:
 
 ```sh
-oc create job --from=cronjob/sipp-registration-storm sipp-storm-check -n ims-demo-lab
-oc create job --from=cronjob/sipp-malformed-invite sipp-malformed-check -n ims-demo-lab
+oc create job --from=cronjob/sipp-registration-storm sipp-storm-check -n ims-sipp
+oc create job --from=cronjob/sipp-malformed-invite sipp-malformed-check -n ims-sipp
 ```
 
 ## Optional On-Demand Check
@@ -114,7 +115,7 @@ oc create job --from=cronjob/sipp-malformed-invite sipp-malformed-check -n ims-d
 If you want to confirm the live scoring path, call `feature-gateway` directly:
 
 ```sh
-oc get route feature-gateway -n ims-demo-lab -o jsonpath='https://{.spec.host}{"\n"}'
+oc get route feature-gateway -n ims-runtime -o jsonpath='https://{.spec.host}{"\n"}'
 ```
 
 Then open:
@@ -135,8 +136,8 @@ After this lab:
 
 ## Quick Troubleshooting
 
-- If `ims-demo-platform` is not synced, check the Argo CD application before debugging the workloads themselves.
-- If the IMS deployments are not ready, check `oc get pods -n ims-demo-lab`.
+- If `ims-platform` is not synced, check the Argo CD application before debugging the workloads themselves.
+- If the IMS deployments are not ready, check `oc get pods -n ims-sipp`.
 - If `demo-incident-pulse` or a `sipp-*` CronJob is in `ImagePullBackOff`, rerun the first Tekton image build from Lab 03.
 - If a SIPp job fails, read the job logs before retrying.
 - If no `window_uri` is printed, confirm MinIO is reachable and the job has the storage credentials.

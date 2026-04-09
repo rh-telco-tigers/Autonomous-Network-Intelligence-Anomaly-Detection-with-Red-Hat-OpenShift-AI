@@ -25,10 +25,10 @@ spec:
   objectStorage:
     externalStorage:
       scheme: http
-      host: model-storage-minio.ims-demo-lab.svc.cluster.local
+      host: model-storage-minio.ims-data.svc.cluster.local
       port: "9000"
       bucket: ims-models
-      basePath: pipelines/ims-demo-lab
+      basePath: pipelines/ims-datascience
       secure: false
       s3CredentialsSecret:
         secretName: dspa-object-storage

@@ -79,6 +79,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: PLANE_NAMESPACE
+              value: plane
             - name: CONTROL_PLANE_API_KEY
               value: demo-token
             - name: PLANE_BOOTSTRAP_WAIT_SECONDS
@@ -86,7 +88,7 @@ spec:
             - name: PLANE_BOOTSTRAP_STATUS_WAIT_SECONDS
               value: "300"
             - name: PLANE_ADMIN_EMAIL
-              value: plane-admin@ims-demo.local
+              value: plane-admin@ims-platform.local
             - name: PLANE_ADMIN_USERNAME
               value: plane-admin
             - name: PLANE_ADMIN_PASSWORD
@@ -97,14 +99,16 @@ spec:
               value: Admin
             - name: PLANE_ADMIN_DISPLAY_NAME
               value: Plane Admin
+            - name: PLANE_WORKSPACE_SLUG
+              value: ims-platform
             - name: PLANE_WORKSPACE_NAME
-              value: IMS Demo
+              value: IMS Platform
             - name: PLANE_PROJECT_NAME
-              value: IMS Demo
+              value: IMS Platform
             - name: PLANE_PROJECT_IDENTIFIER
               value: IMS
             - name: PLANE_CONTROL_PLANE_TOKEN_LABEL
-              value: ims-demo-control-plane
+              value: ims-platform-control-plane
             - name: PLANE_CONTROL_PLANE_TOKEN_DESCRIPTION
               value: PAT for IMS control-plane ticket sync
           envFrom:
@@ -140,20 +144,21 @@ spec:
 
               from plane.license.models import Instance, InstanceAdmin
 
-              namespace = (os.getenv("POD_NAMESPACE") or "ims-demo-lab").strip() or "ims-demo-lab"
+              control_plane_namespace = (os.getenv("POD_NAMESPACE") or "ims-runtime").strip() or "ims-runtime"
+              plane_namespace = (os.getenv("PLANE_NAMESPACE") or "plane").strip() or "plane"
               wait_seconds = int(os.getenv("PLANE_BOOTSTRAP_WAIT_SECONDS", "900"))
               status_wait_seconds = int(os.getenv("PLANE_BOOTSTRAP_STATUS_WAIT_SECONDS", "300"))
               control_plane_api_key = os.getenv("CONTROL_PLANE_API_KEY", "demo-token").strip() or "demo-token"
               control_plane_status_url = (
                   os.getenv("CONTROL_PLANE_STATUS_URL")
-                  or f"http://control-plane.{namespace}.svc.cluster.local:8080/integrations/status"
+                  or f"http://control-plane.{control_plane_namespace}.svc.cluster.local:8080/integrations/status"
               ).rstrip("/")
-              token_label = os.getenv("PLANE_CONTROL_PLANE_TOKEN_LABEL", "ims-demo-control-plane").strip() or "ims-demo-control-plane"
+              token_label = os.getenv("PLANE_CONTROL_PLANE_TOKEN_LABEL", "ims-platform-control-plane").strip() or "ims-platform-control-plane"
               token_description = (
                   os.getenv("PLANE_CONTROL_PLANE_TOKEN_DESCRIPTION", "PAT for IMS control-plane ticket sync").strip()
                   or "PAT for IMS control-plane ticket sync"
               )
-              preferred_admin_email = os.getenv("PLANE_ADMIN_EMAIL", "plane-admin@ims-demo.local").strip()
+              preferred_admin_email = os.getenv("PLANE_ADMIN_EMAIL", "plane-admin@ims-platform.local").strip()
               preferred_admin_username = os.getenv("PLANE_ADMIN_USERNAME", "plane-admin").strip() or "plane-admin"
               preferred_admin_password = os.getenv("PLANE_ADMIN_PASSWORD", "plane").strip() or "plane"
               preferred_admin_first_name = os.getenv("PLANE_ADMIN_FIRST_NAME", "Plane").strip() or "Plane"
@@ -161,16 +166,14 @@ spec:
               preferred_admin_display_name = (
                   os.getenv("PLANE_ADMIN_DISPLAY_NAME", "Plane Admin").strip() or "Plane Admin"
               )
-              preferred_workspace_slug = os.getenv("PLANE_WORKSPACE_SLUG", "ims-demo").strip() or "ims-demo"
-              preferred_workspace_name = os.getenv("PLANE_WORKSPACE_NAME", "IMS Demo").strip() or "IMS Demo"
-              preferred_project_name = os.getenv("PLANE_PROJECT_NAME", "IMS Demo").strip() or "IMS Demo"
+              preferred_workspace_slug = os.getenv("PLANE_WORKSPACE_SLUG", "ims-platform").strip() or "ims-platform"
+              preferred_workspace_name = os.getenv("PLANE_WORKSPACE_NAME", "IMS Platform").strip() or "IMS Platform"
+              preferred_project_name = os.getenv("PLANE_PROJECT_NAME", "IMS Platform").strip() or "IMS Platform"
               preferred_project_identifier = (
                   os.getenv("PLANE_PROJECT_IDENTIFIER", "IMS").strip().upper() or "IMS"
               )
-              plane_base_url = f"http://plane-api.{namespace}.svc.cluster.local:8000"
-              plane_app_url = (os.getenv("WEB_URL") or "").strip().rstrip("/")
-              if plane_app_url.startswith("http://"):
-                  plane_app_url = "https://" + plane_app_url.removeprefix("http://")
+              plane_base_url = f"http://plane-api.{plane_namespace}.svc.cluster.local:8000"
+              plane_app_url = (os.getenv("PLANE_APP_URL") or os.getenv("WEB_URL") or "").strip().rstrip("/")
 
               service_account_token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
               service_account_ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
@@ -234,6 +237,23 @@ spec:
                       cafile=service_account_ca_path,
                   )
 
+              if not plane_app_url:
+                  route_payload = k8s_request(
+                      f"/apis/route.openshift.io/v1/namespaces/{plane_namespace}/routes/plane-web",
+                      ignore_statuses=(404,),
+                  ) or {}
+                  route_spec = route_payload.get("spec") if isinstance(route_payload, dict) else {}
+                  route_status = route_payload.get("status") if isinstance(route_payload, dict) else {}
+                  route_host = str((route_spec or {}).get("host") or "").strip()
+                  if not route_host:
+                      ingress_entries = (route_status or {}).get("ingress") or []
+                      if ingress_entries:
+                          route_host = str((ingress_entries[0] or {}).get("host") or "").strip()
+                  if route_host:
+                      plane_app_url = f"https://{route_host}"
+              if plane_app_url.startswith("http://"):
+                  plane_app_url = "https://" + plane_app_url.removeprefix("http://")
+
               def decode_secret_data(payload: dict | None) -> dict[str, str]:
                   if not isinstance(payload, dict):
                       return {}
@@ -262,7 +282,7 @@ spec:
                   return bool((plane_status or {}).get("live_configured"))
 
               def rollout_control_plane() -> bool:
-                  deployment_path = f"/apis/apps/v1/namespaces/{namespace}/deployments/control-plane"
+                  deployment_path = f"/apis/apps/v1/namespaces/{control_plane_namespace}/deployments/control-plane"
                   existing = k8s_request(deployment_path, ignore_statuses=(404,))
                   if existing is None:
                       print("control-plane deployment not present yet; skipping rollout", flush=True)
@@ -534,18 +554,18 @@ spec:
                   "PLANE_API_KEY": str(token.token),
               }
 
-              secret_path = f"/api/v1/namespaces/{namespace}/secrets/plane-integration-auth"
+              secret_path = f"/api/v1/namespaces/{control_plane_namespace}/secrets/plane-integration-auth"
               current_secret = k8s_request(secret_path, ignore_statuses=(404,))
               current_values = decode_secret_data(current_secret)
 
               if current_secret is None:
                   k8s_request(
-                      f"/api/v1/namespaces/{namespace}/secrets",
+                      f"/api/v1/namespaces/{control_plane_namespace}/secrets",
                       method="POST",
                       payload={
                           "apiVersion": "v1",
                           "kind": "Secret",
-                          "metadata": {"name": "plane-integration-auth", "namespace": namespace},
+                          "metadata": {"name": "plane-integration-auth", "namespace": control_plane_namespace},
                           "type": "Opaque",
                           "stringData": desired_secret_data,
                       },

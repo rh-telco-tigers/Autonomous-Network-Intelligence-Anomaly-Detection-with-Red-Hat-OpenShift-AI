@@ -3,14 +3,14 @@
 from kfp import dsl
 
 
-PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest"
+PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest"
 WORKSPACE_ROOT = "/tmp/ims-featurestore"
-CONTROL_PLANE_URL = "http://control-plane.ims-demo-lab.svc.cluster.local:8080"
+CONTROL_PLANE_URL = "http://control-plane.ims-runtime.svc.cluster.local:8080"
 CONTROL_PLANE_API_KEY = "demo-token"
 DATASET_STORE_MODE = "s3"
-DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000"
+DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-data.svc.cluster.local:9000"
 DATASET_STORE_BUCKET = "ims-models"
-DATASET_STORE_PREFIX = "pipelines/ims-demo-lab/datasets"
+DATASET_STORE_PREFIX = "pipelines/ims-datascience/datasets"
 DATASET_STORE_ACCESS_KEY = "minioadmin"
 DATASET_STORE_SECRET_KEY = "minioadmin"
 

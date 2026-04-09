@@ -2,7 +2,7 @@ apiVersion: tekton.dev/v1
 kind: Task
 metadata:
   name: git-clone-lite
-  namespace: ims-demo-lab
+  namespace: ims-tekton
 spec:
   params:
     - name: URL
@@ -52,7 +52,7 @@ apiVersion: tekton.dev/v1
 kind: Task
 metadata:
   name: buildah-lite
-  namespace: ims-demo-lab
+  namespace: ims-tekton
 spec:
   params:
     - name: IMAGE
@@ -113,7 +113,7 @@ apiVersion: tekton.dev/v1
 kind: Task
 metadata:
   name: buildah-heavy
-  namespace: ims-demo-lab
+  namespace: ims-tekton
 spec:
   params:
     - name: IMAGE

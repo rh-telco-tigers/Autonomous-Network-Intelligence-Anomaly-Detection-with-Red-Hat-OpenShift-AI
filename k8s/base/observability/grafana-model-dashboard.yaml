@@ -52,7 +52,7 @@ spec:
           },
           "targets": [
             {
-              "expr": "sum(nv_inference_count{job=\"ims-demo-lab/ims-predictive-fs-metrics\"})",
+              "expr": "sum(nv_inference_count{job=\"ims-datascience/ims-predictive-fs-metrics\"})",
               "legendFormat": "runtime calls",
               "refId": "A"
             }
@@ -136,7 +136,7 @@ spec:
           },
           "targets": [
             {
-              "expr": "sum(increase(nv_inference_count{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m]))",
+              "expr": "sum(increase(nv_inference_count{job=\"ims-datascience/ims-predictive-fs-metrics\"}[5m]))",
               "legendFormat": "requests",
               "refId": "A"
             }
@@ -211,7 +211,7 @@ spec:
               "refId": "A"
             },
             {
-              "expr": "sum(increase(nv_inference_count{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m]))",
+              "expr": "sum(increase(nv_inference_count{job=\"ims-datascience/ims-predictive-fs-metrics\"}[5m]))",
               "legendFormat": "serving runtime",
               "refId": "B"
             }
@@ -239,22 +239,22 @@ spec:
           "id": 6,
           "targets": [
             {
-              "expr": "sum(rate(nv_inference_queue_duration_us{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])), 0.001) / 1000",
+              "expr": "sum(rate(nv_inference_queue_duration_us{job=\"ims-datascience/ims-predictive-fs-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-datascience/ims-predictive-fs-metrics\"}[5m])), 0.001) / 1000",
               "legendFormat": "queue",
               "refId": "A"
             },
             {
-              "expr": "sum(rate(nv_inference_compute_input_duration_us{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])), 0.001) / 1000",
+              "expr": "sum(rate(nv_inference_compute_input_duration_us{job=\"ims-datascience/ims-predictive-fs-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-datascience/ims-predictive-fs-metrics\"}[5m])), 0.001) / 1000",
               "legendFormat": "input",
               "refId": "B"
             },
             {
-              "expr": "sum(rate(nv_inference_compute_infer_duration_us{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])), 0.001) / 1000",
+              "expr": "sum(rate(nv_inference_compute_infer_duration_us{job=\"ims-datascience/ims-predictive-fs-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-datascience/ims-predictive-fs-metrics\"}[5m])), 0.001) / 1000",
               "legendFormat": "infer",
               "refId": "C"
             },
             {
-              "expr": "sum(rate(nv_inference_compute_output_duration_us{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-demo-lab/ims-predictive-fs-metrics\"}[5m])), 0.001) / 1000",
+              "expr": "sum(rate(nv_inference_compute_output_duration_us{job=\"ims-datascience/ims-predictive-fs-metrics\"}[5m])) / clamp_min(sum(rate(nv_inference_count{job=\"ims-datascience/ims-predictive-fs-metrics\"}[5m])), 0.001) / 1000",
               "legendFormat": "output",
               "refId": "D"
             }
@@ -310,17 +310,17 @@ spec:
           "id": 8,
           "targets": [
             {
-              "expr": "max(up{job=\"ims-demo-lab/ims-predictive-fs-metrics\"})",
+              "expr": "max(up{job=\"ims-datascience/ims-predictive-fs-metrics\"})",
               "legendFormat": "serving runtime",
               "refId": "A"
             },
             {
-              "expr": "max(up{job=\"anomaly-service\",namespace=\"ims-demo-lab\"})",
+              "expr": "max(up{job=\"anomaly-service\",namespace=\"ims-runtime\"})",
               "legendFormat": "anomaly service",
               "refId": "B"
             },
             {
-              "expr": "max(up{job=\"control-plane\",namespace=\"ims-demo-lab\"})",
+              "expr": "max(up{job=\"control-plane\",namespace=\"ims-runtime\"})",
               "legendFormat": "control plane",
               "refId": "C"
             }

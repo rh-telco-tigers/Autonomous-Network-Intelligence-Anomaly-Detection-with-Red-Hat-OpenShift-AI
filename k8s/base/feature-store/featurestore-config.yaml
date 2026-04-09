@@ -8,7 +8,7 @@ data:
   FEATURESTORE_BOOTSTRAP_CRONJOB_NAME: feast-ims-featurestore
   FEATURE_STORE_PROJECT: ims_anomaly_featurestore
   FEATURE_STORE_REPO_PATH: /workspace/ai/featurestore/feature_repo
-  FEATURE_BUNDLE_ROOT_URI: s3://ims-models/pipelines/ims-demo-lab/datasets/feature-bundles/
-  FEATURESTORE_OFFLINE_SOURCE_PATH: s3://ims-models/pipelines/ims-demo-lab/datasets/feature-bundles/ims-feature-bundle-v1/feature_store/offline_source.parquet
-  FEATURESTORE_LABEL_SOURCE_PATH: s3://ims-models/pipelines/ims-demo-lab/datasets/feature-bundles/ims-feature-bundle-v1/parquet/window_labels.parquet
+  FEATURE_BUNDLE_ROOT_URI: s3://ims-models/pipelines/ims-datascience/datasets/feature-bundles/
+  FEATURESTORE_OFFLINE_SOURCE_PATH: s3://ims-models/pipelines/ims-datascience/datasets/feature-bundles/ims-feature-bundle-v1/feature_store/offline_source.parquet
+  FEATURESTORE_LABEL_SOURCE_PATH: s3://ims-models/pipelines/ims-datascience/datasets/feature-bundles/ims-feature-bundle-v1/parquet/window_labels.parquet
   FEATURESTORE_SERVING_ROOT_URI: s3://ims-models/predictive-featurestore/ims-predictive-fs/current/

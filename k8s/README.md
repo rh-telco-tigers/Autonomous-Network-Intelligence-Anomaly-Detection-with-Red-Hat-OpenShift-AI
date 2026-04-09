@@ -6,7 +6,7 @@ This directory contains the OpenShift deployment assets for the full demo platfo
 
 ```text
 base/
-  namespaces/   demo namespaces
+  namespaces/   namespace RBAC and baseline defaults
   builds/       upstream BuildConfig assets for OpenIMSs and SIPp
   ims/          IMS lab workloads
   traffic/      SIPp scenario runners
@@ -15,17 +15,17 @@ base/
   milvus/       vector database stack
   kfp/          OpenShift AI DSPA and Kubeflow pipeline bootstrap
   serving/      KServe runtimes and inference services
-  pipelines/    Tekton pipelines and PipelineRuns
+  rhoai/        OpenShift AI platform operators and cluster config
 manual/
   traffic-backfill-100k/ on-demand SIPp backfill jobs outside the demo overlay
 overlays/
-  demo/         opinionated demo deployment bundle
+  gitops/       split app-specific deployment bundles consumed by Argo CD
 ```
 
-Operator subscriptions are managed separately through `deploy/argocd` and `deploy/gitops/operators` so the demo overlay does not compete with Argo CD ownership.
+Operator subscriptions are managed separately through `deploy/argocd` and `deploy/gitops/operators`, while the root Argo CD app-of-apps is rendered from `deploy/gitops/apps`.
 
 ## Render
 
 ```sh
-kustomize build k8s/overlays/demo
+kustomize build deploy/gitops/apps
 ```

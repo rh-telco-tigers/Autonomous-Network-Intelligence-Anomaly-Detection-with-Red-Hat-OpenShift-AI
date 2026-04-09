@@ -40,7 +40,7 @@ metadata:
 spec:
   namespaceSelector:
     matchNames:
-      - ims-demo-lab
+      - ims-datascience
   selector:
     matchLabels:
       serving.kserve.io/inferenceservice: ims-predictive-fs

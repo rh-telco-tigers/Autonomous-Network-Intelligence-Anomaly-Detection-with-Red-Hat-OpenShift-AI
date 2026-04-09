@@ -4,7 +4,7 @@ metadata:
   name: plane-web
   namespace: ims-demo-lab
 spec:
-  host: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  subdomain: plane
   path: /
   to:
     kind: Service
@@ -23,7 +23,7 @@ metadata:
   name: plane-api
   namespace: ims-demo-lab
 spec:
-  host: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  subdomain: plane
   path: /api
   to:
     kind: Service
@@ -42,7 +42,7 @@ metadata:
   name: plane-auth
   namespace: ims-demo-lab
 spec:
-  host: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  subdomain: plane
   path: /auth
   to:
     kind: Service
@@ -61,7 +61,7 @@ metadata:
   name: plane-live
   namespace: ims-demo-lab
 spec:
-  host: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  subdomain: plane
   path: /live
   to:
     kind: Service
@@ -80,7 +80,7 @@ metadata:
   name: plane-space
   namespace: ims-demo-lab
 spec:
-  host: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  subdomain: plane
   path: /spaces
   to:
     kind: Service
@@ -99,7 +99,7 @@ metadata:
   name: plane-admin
   namespace: ims-demo-lab
 spec:
-  host: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  subdomain: plane
   path: /god-mode
   to:
     kind: Service
@@ -118,7 +118,7 @@ metadata:
   name: plane-uploads
   namespace: ims-demo-lab
 spec:
-  host: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  subdomain: plane
   path: /uploads
   to:
     kind: Service

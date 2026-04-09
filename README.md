@@ -47,12 +47,13 @@ oc apply -k deploy/gitea
 
 ```sh
 GITEA_HOST="$(oc get route gitea -n gitea -o jsonpath='{.spec.host}')"
+GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 if git remote get-url cluster-gitea >/dev/null 2>&1; then
   git remote set-url cluster-gitea "https://${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git"
 else
   git remote add cluster-gitea "https://${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git"
 fi
-GIT_SSL_NO_VERIFY=true git push "https://gitadmin:GiteaAdmin123\!@${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git" main:main
+GIT_SSL_NO_VERIFY=true git push "https://gitadmin:GiteaAdmin123\!@${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git" "HEAD:${GIT_BRANCH}"
 ```
 
 Demo credentials for Gitea:
@@ -77,10 +78,10 @@ Demo API tokens for the platform services:
 oc apply -k deploy/argocd
 ```
 
-6. Render the demo overlay:
+6. Render the split GitOps application set:
 
 ```sh
-make kustomize-demo
+make kustomize-gitops
 ```
 
 7. Follow the lab sequence in `docs/labs`.
@@ -95,7 +96,7 @@ This repo uses upstream projects as implementation inputs, but keeps the deploym
 
 ## Current implementation boundary
 
-The repository now contains a deployable scaffold for the full demo stack. Operators are intended to be installed through Argo CD from `deploy/gitops/operators`, while the application stack remains under `k8s/overlays/demo`.
+The repository now contains a deployable scaffold for the full demo stack. Operators are installed through Argo CD from `deploy/gitops/operators`, the root app-of-apps lives in `deploy/gitops/apps`, and the workload slices are rendered from `k8s/overlays/gitops`.
 
 Cluster-specific values still need to be supplied before a live deployment:
 

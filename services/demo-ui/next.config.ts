@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const imsNamespace = process.env.IMS_NAMESPACE ?? "ims-demo-lab";
+const imsNamespace = process.env.IMS_NAMESPACE ?? "ims-runtime";
 const controlPlaneProxyUrl =
   process.env.CONTROL_PLANE_PROXY_URL?.replace(/\/$/, "") ??
   `http://control-plane.${imsNamespace}.svc.cluster.local:8080`;

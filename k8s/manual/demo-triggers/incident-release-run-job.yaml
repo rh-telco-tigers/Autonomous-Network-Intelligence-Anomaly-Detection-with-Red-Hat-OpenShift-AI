@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   generateName: ims-incident-release-kfp-manual-
-  namespace: ims-demo-lab
+  namespace: ims-datascience
 spec:
   backoffLimit: 6
   ttlSecondsAfterFinished: 1800

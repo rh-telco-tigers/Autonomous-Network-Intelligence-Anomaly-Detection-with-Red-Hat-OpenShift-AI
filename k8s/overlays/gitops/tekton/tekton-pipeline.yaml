@@ -1,8 +1,7 @@
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
-  name: ims-demo-container-build
-  namespace: ims-demo-lab
+  name: ims-platform-container-build
 spec:
   params:
     - name: git-url
@@ -37,7 +36,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          value: image-registry.openshift-image-registry.svc:5000/ims-sipp/sipp-runner:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -54,7 +53,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/feature-gateway:latest
+          value: image-registry.openshift-image-registry.svc:5000/ims-runtime/feature-gateway:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -71,7 +70,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/anomaly-service:latest
+          value: image-registry.openshift-image-registry.svc:5000/ims-runtime/anomaly-service:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -88,7 +87,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/rca-service:latest
+          value: image-registry.openshift-image-registry.svc:5000/ims-runtime/rca-service:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -105,7 +104,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/demo-ui:latest
+          value: image-registry.openshift-image-registry.svc:5000/ims-runtime/demo-ui:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -122,7 +121,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/control-plane:latest
+          value: image-registry.openshift-image-registry.svc:5000/ims-runtime/control-plane:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -139,7 +138,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest
+          value: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-trainer:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -156,7 +155,7 @@ spec:
         name: buildah-heavy
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+          value: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -173,7 +172,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-incident-release:latest
+          value: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-incident-release:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE

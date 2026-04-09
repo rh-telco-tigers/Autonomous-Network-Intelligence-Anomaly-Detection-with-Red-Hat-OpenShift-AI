@@ -90,7 +90,7 @@ data:
     apiVersion: argoproj.io/v1alpha1
     kind: Application
     metadata:
-      name: ims-demo-operators
+      name: ims-operators
       namespace: openshift-gitops
     spec:
       destination:
@@ -100,7 +100,7 @@ data:
       source:
         path: deploy/gitops/operators
         repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-        targetRevision: main
+        targetRevision: refactor/namespace-argo-split
       syncPolicy:
         automated:
           prune: true

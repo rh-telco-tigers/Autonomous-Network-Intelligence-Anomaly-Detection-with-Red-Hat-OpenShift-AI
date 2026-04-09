@@ -3,7 +3,7 @@
 from kfp import dsl
 
 
-PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-incident-release:latest"
+PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-incident-release:latest"
 WORKSPACE_ROOT = "/tmp/ims-incident-release"
 CONTROL_PLANE_APPROVAL_LIMIT = "1000"
 CONTROL_PLANE_AUDIT_LIMIT = "1000"
@@ -184,10 +184,11 @@ def ims_incident_release_pipeline(
         previous_release_version=previous_release_version,
         source_snapshot_id=source_snapshot_id,
     )
+    run_task.set_env_variable("CONTROL_PLANE_URL", "http://control-plane.ims-runtime.svc.cluster.local:8080")
     run_task.set_env_variable("CONTROL_PLANE_API_KEY", "demo-token")
-    run_task.set_env_variable("DATASET_STORE_PREFIX", "pipelines/ims-demo-lab/datasets")
+    run_task.set_env_variable("DATASET_STORE_PREFIX", "pipelines/ims-datascience/datasets")
     run_task.set_env_variable("KAFKA_ENABLED", "true")
     run_task.set_env_variable(
         "KAFKA_BOOTSTRAP_SERVERS",
-        "ims-release-kafka-kafka-bootstrap.ims-demo-lab.svc.cluster.local:9092",
+        "ims-release-kafka-kafka-bootstrap.ims-data.svc.cluster.local:9092",
     )

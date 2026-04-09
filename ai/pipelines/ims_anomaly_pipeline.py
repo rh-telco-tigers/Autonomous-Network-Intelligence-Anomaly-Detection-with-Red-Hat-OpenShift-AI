@@ -3,7 +3,7 @@
 from kfp import dsl
 
 
-PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-trainer:latest"
+PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-trainer:latest"
 WORKSPACE_ROOT = "/tmp/ims-pipeline"
 ARTIFACT_DIR = "/tmp/ims-pipeline/models/artifacts"
 REGISTRY_PATH = "/tmp/ims-pipeline/registry/model_registry.json"

@@ -6,12 +6,12 @@
 #    bundle_version: str [Default: 'ims-feature-bundle-v1']
 #    candidate_version: str [Default: 'candidate-fs-v1']
 #    control_plane_api_key: str [Default: 'demo-token']
-#    control_plane_url: str [Default: 'http://control-plane.ims-demo-lab.svc.cluster.local:8080']
+#    control_plane_url: str [Default: 'http://control-plane.ims-runtime.svc.cluster.local:8080']
 #    dataset_store_access_key: str [Default: 'minioadmin']
 #    dataset_store_bucket: str [Default: 'ims-models']
-#    dataset_store_endpoint: str [Default: 'http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000']
+#    dataset_store_endpoint: str [Default: 'http://model-storage-minio.ims-data.svc.cluster.local:9000']
 #    dataset_store_mode: str [Default: 's3']
-#    dataset_store_prefix: str [Default: 'pipelines/ims-demo-lab/datasets']
+#    dataset_store_prefix: str [Default: 'pipelines/ims-datascience/datasets']
 #    dataset_store_secret_key: str [Default: 'minioadmin']
 #    feature_service_name: str [Default: 'ims_anomaly_scoring_v1']
 #    featurestore_auth_type: str [Default: 'no_auth']
@@ -20,10 +20,10 @@
 #    featurestore_aws_secret_access_key: str [Default: 'minioadmin']
 #    featurestore_ca_cert_path: str [Default: '/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt']
 #    featurestore_mode: str [Default: 'remote']
-#    featurestore_online_store_path: str [Default: 'https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443']
+#    featurestore_online_store_path: str [Default: 'https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443']
 #    featurestore_project: str [Default: 'ims_anomaly_featurestore']
-#    featurestore_registry_path: str [Default: 'feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443']
-#    featurestore_s3_endpoint_url: str [Default: 'http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000']
+#    featurestore_registry_path: str [Default: 'feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443']
+#    featurestore_s3_endpoint_url: str [Default: 'http://model-storage-minio.ims-data.svc.cluster.local:9000']
 #    mlserver_serving_alias: str [Default: 'current']
 #    mlserver_serving_model_format_name: str [Default: 'sklearn']
 #    mlserver_serving_model_format_version: str [Default: '1']
@@ -338,17 +338,17 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -368,18 +368,18 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_PROJECT
           value: ims_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
     exec-export-serving-artifact:
       container:
         args:
@@ -418,17 +418,17 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -448,18 +448,18 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_PROJECT
           value: ims_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
     exec-export-serving-artifact-2:
       container:
         args:
@@ -498,17 +498,17 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -528,18 +528,18 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_PROJECT
           value: ims_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
     exec-publish-deployment-manifest:
       container:
         args:
@@ -564,17 +564,17 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -594,18 +594,18 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_PROJECT
           value: ims_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
     exec-publish-deployment-manifest-2:
       container:
         args:
@@ -630,17 +630,17 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -660,18 +660,18 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_PROJECT
           value: ims_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
     exec-register-model-version:
       container:
         args:
@@ -700,17 +700,17 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -730,22 +730,22 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_PROJECT
           value: ims_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: RHOAI_MODEL_REGISTRY_ENDPOINT
           value: http://ims-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080
         - name: RHOAI_MODEL_REGISTRY_REQUIRED
           value: 'false'
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
     exec-resolve-bundle:
       container:
         args:
@@ -768,17 +768,17 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -798,18 +798,18 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_PROJECT
           value: ims_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
     exec-retrieve-training-dataset:
       container:
         args:
@@ -836,17 +836,17 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -866,18 +866,18 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_PROJECT
           value: ims_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
     exec-select-best:
       container:
         args:
@@ -898,17 +898,17 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -928,18 +928,18 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_PROJECT
           value: ims_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
     exec-sync-feature-store-definitions:
       container:
         args:
@@ -964,17 +964,17 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -994,18 +994,18 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_PROJECT
           value: ims_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
     exec-train-automl:
       container:
         args:
@@ -1034,17 +1034,17 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -1064,18 +1064,18 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_PROJECT
           value: ims_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
     exec-train-baseline:
       container:
         args:
@@ -1100,17 +1100,17 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -1130,18 +1130,18 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_PROJECT
           value: ims_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
     exec-validate-bundle:
       container:
         args:
@@ -1164,17 +1164,17 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -1194,18 +1194,18 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_PROJECT
           value: ims_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
 pipelineInfo:
   name: ims-featurestore-train-and-register
 root:
@@ -1499,7 +1499,7 @@ root:
         isOptional: true
         parameterType: STRING
       control_plane_url:
-        defaultValue: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+        defaultValue: http://control-plane.ims-runtime.svc.cluster.local:8080
         isOptional: true
         parameterType: STRING
       dataset_store_access_key:
@@ -1511,7 +1511,7 @@ root:
         isOptional: true
         parameterType: STRING
       dataset_store_endpoint:
-        defaultValue: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        defaultValue: http://model-storage-minio.ims-data.svc.cluster.local:9000
         isOptional: true
         parameterType: STRING
       dataset_store_mode:
@@ -1519,7 +1519,7 @@ root:
         isOptional: true
         parameterType: STRING
       dataset_store_prefix:
-        defaultValue: pipelines/ims-demo-lab/datasets
+        defaultValue: pipelines/ims-datascience/datasets
         isOptional: true
         parameterType: STRING
       dataset_store_secret_key:
@@ -1555,7 +1555,7 @@ root:
         isOptional: true
         parameterType: STRING
       featurestore_online_store_path:
-        defaultValue: https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443
+        defaultValue: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
         isOptional: true
         parameterType: STRING
       featurestore_project:
@@ -1563,11 +1563,11 @@ root:
         isOptional: true
         parameterType: STRING
       featurestore_registry_path:
-        defaultValue: feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443
+        defaultValue: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
         isOptional: true
         parameterType: STRING
       featurestore_s3_endpoint_url:
-        defaultValue: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        defaultValue: http://model-storage-minio.ims-data.svc.cluster.local:9000
         isOptional: true
         parameterType: STRING
       mlserver_serving_alias:

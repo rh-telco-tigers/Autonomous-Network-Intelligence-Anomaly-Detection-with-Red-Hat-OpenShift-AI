@@ -20,10 +20,12 @@ Recommended checks:
 
 ```sh
 make check-fresh-cluster
-oc get deploy -n ims-demo-lab
-oc get cronjob -n ims-demo-lab | rg 'demo-incident-pulse|sipp-'
-oc get workflow -n ims-demo-lab
-oc get inferenceservice -n ims-demo-lab | rg 'ims-predictive-fs|ims-predictive-fs-mlserver'
+oc get deploy -n ims-runtime
+oc get deploy -n ims-sipp
+oc get cronjob -n ims-runtime | rg 'demo-incident-pulse'
+oc get cronjob -n ims-sipp | rg 'sipp-'
+oc get workflow -n ims-datascience
+oc get inferenceservice -n ims-datascience | rg 'ims-predictive-fs|ims-predictive-fs-mlserver'
 ```
 
 ## Demo Sequence
@@ -35,7 +37,7 @@ oc get inferenceservice -n ims-demo-lab | rg 'ims-predictive-fs|ims-predictive-f
 5. Show the IMS workloads in OpenShift:
 
 ```sh
-oc get pods -n ims-demo-lab
+oc get pods -n ims-sipp
 ```
 
 6. Show that feature-window data already exists from previous SIPp runs.

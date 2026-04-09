@@ -70,15 +70,17 @@ deploymentSpec:
         - python
         - incident-release/python/release_cli.py
         env:
+        - name: CONTROL_PLANE_URL
+          value: http://control-plane.ims-runtime.svc.cluster.local:8080
         - name: CONTROL_PLANE_API_KEY
           value: demo-token
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: KAFKA_ENABLED
           value: 'true'
         - name: KAFKA_BOOTSTRAP_SERVERS
-          value: ims-release-kafka-kafka-bootstrap.ims-demo-lab.svc.cluster.local:9092
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-incident-release:latest
+          value: ims-release-kafka-kafka-bootstrap.ims-data.svc.cluster.local:9092
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-incident-release:latest
 pipelineInfo:
   name: ims-incident-release
 root:

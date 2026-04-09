@@ -3,10 +3,10 @@
   <send retrans="100">
     <![CDATA[
 
-      INVITE sip:timeout-user@ims-demo-lab.svc.cluster.local SIP/2.0
+      INVITE sip:timeout-user@ims-sipp.svc.cluster.local SIP/2.0
       Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
       From: <sip:timeout-caller-[call_number]@[local_ip]>;tag=[call_number]
-      To: <sip:timeout-user@ims-demo-lab.svc.cluster.local>
+      To: <sip:timeout-user@ims-sipp.svc.cluster.local>
       Call-ID: [call_id]
       CSeq: 1 INVITE
       Contact: <sip:timeout-caller-[call_number]@[local_ip]:[local_port]>

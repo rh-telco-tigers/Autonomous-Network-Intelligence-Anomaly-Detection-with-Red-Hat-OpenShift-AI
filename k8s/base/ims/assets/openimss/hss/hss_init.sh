@@ -31,7 +31,7 @@ export DB_URI="mongodb://${MONGO_IP}/open5gs"
 export IP_ADDR=$(awk 'END{print $1}' /etc/hosts)
 
 [ ${#MNC} == 3 ] && EPC_DOMAIN="epc.mnc${MNC}.mcc${MCC}.3gppnetwork.org" || EPC_DOMAIN="epc.mnc0${MNC}.mcc${MCC}.3gppnetwork.org"
-DIAMETER_REALM="${DIAMETER_REALM:-ims-demo-lab.svc.cluster.local}"
+DIAMETER_REALM="${DIAMETER_REALM:-ims-sipp.svc.cluster.local}"
 HSS_DIAMETER_IDENTITY="${HSS_DIAMETER_IDENTITY:-ims-hss.${DIAMETER_REALM}}"
 export HOME="$(pwd)/install/etc/freeDiameter"
 export RANDFILE="${HOME}/.rnd"

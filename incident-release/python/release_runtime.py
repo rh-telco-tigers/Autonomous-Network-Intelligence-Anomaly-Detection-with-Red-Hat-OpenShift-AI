@@ -31,12 +31,12 @@ from shared.incident_taxonomy import (
 )
 
 
-DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000"
+DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-data.svc.cluster.local:9000"
 DEFAULT_DATASET_STORE_BUCKET = "ims-models"
-DEFAULT_DATASET_STORE_PREFIX = "pipelines/ims-demo-lab/datasets"
+DEFAULT_DATASET_STORE_PREFIX = "pipelines/ims-datascience/datasets"
 DEFAULT_RELEASE_PREFIX = "incident-release/releases"
 DEFAULT_PUBLIC_RECORD_TARGET = 10_000
-DEFAULT_KAFKA_BOOTSTRAP_SERVERS = "ims-release-kafka-kafka-bootstrap.ims-demo-lab.svc.cluster.local:9092"
+DEFAULT_KAFKA_BOOTSTRAP_SERVERS = "ims-release-kafka-kafka-bootstrap.ims-data.svc.cluster.local:9092"
 DEFAULT_KAFKA_INCIDENTS_TOPIC = "ims-incidents-bronze"
 DEFAULT_KAFKA_FEATURE_WINDOWS_TOPIC = "ims-feature-windows-bronze"
 DEFAULT_KAFKA_RELEASE_ARTIFACTS_TOPIC = "ims-release-artifacts"

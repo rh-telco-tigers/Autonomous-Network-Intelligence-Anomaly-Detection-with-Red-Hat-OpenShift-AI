@@ -29,12 +29,13 @@ oc get route gitea -n gitea
 
 ```sh
 GITEA_HOST="$(oc get route gitea -n gitea -o jsonpath='{.spec.host}')"
+GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 if git remote get-url cluster-gitea >/dev/null 2>&1; then
   git remote set-url cluster-gitea "https://${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git"
 else
   git remote add cluster-gitea "https://${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git"
 fi
-GIT_SSL_NO_VERIFY=true git push "https://gitadmin:GiteaAdmin123!@${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git" main:main
+GIT_SSL_NO_VERIFY=true git push "https://gitadmin:GiteaAdmin123!@${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git" "HEAD:${GIT_BRANCH}"
 ```
 
 4. Bootstrap Argo CD:
@@ -47,7 +48,7 @@ oc apply -k deploy/argocd
 
 ```sh
 oc get appproject ims-demo -n openshift-gitops -o jsonpath='{.spec.sourceRepos[0]}{"\n"}'
-oc get application.argoproj.io ims-demo-operators -n openshift-gitops -o jsonpath='{.spec.source.repoURL}{"\n"}'
+oc get application.argoproj.io ims-operators -n openshift-gitops -o jsonpath='{.spec.source.repoURL}{"\n"}'
 ```
 
 Expected value:
@@ -58,11 +59,11 @@ http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-wi
 
 ## Important Trigger Behavior
 
-- `deploy/gitea` creates a Gitea webhook that targets the Tekton `EventListener` service at `el-ims-demo-gitea.ims-demo-lab.svc.cluster.local:8080`.
-- That webhook does not become active until the demo overlay applies the Tekton trigger resources from `k8s/base/pipelines`.
+- `deploy/gitea` creates a Gitea webhook that targets the Tekton `EventListener` service at `el-ims-platform-gitea.ims-tekton.svc.cluster.local:8080`.
+- That webhook does not become active until the `ims-tekton` child app applies the Tekton trigger resources from `k8s/overlays/gitops/tekton`.
 - The first push in this lab seeds the in-cluster GitOps source for Argo CD, but it does not build images yet.
-- After Argo CD has synced the `ims-demo-platform` application for `k8s/overlays/demo`, a later push to `main` triggers the Tekton build automatically.
-- If you need the first image build without adding another commit, run `make trigger-build-pipeline` to start a `PipelineRun` for `ims-demo-container-build`.
+- After Argo CD has synced the `ims-platform` root app and the `ims-tekton` child app, a later push to `main` triggers the Tekton build automatically.
+- If you need the first image build without adding another commit, run `make trigger-build-pipeline` to start a `PipelineRun` for `ims-platform-container-build`.
 - The same GitOps sync now includes the repo-managed AI extras in `k8s/base/feature-store`, `k8s/base/kafka`, and `k8s/base/kfp`, so the GitOps path is sufficient for the default fresh-cluster bring-up.
 - Do not create a separate Feature Store manually in the OpenShift AI console; the repo-managed `FeatureStore/ims-featurestore` comes from the overlay-managed manifests.
 

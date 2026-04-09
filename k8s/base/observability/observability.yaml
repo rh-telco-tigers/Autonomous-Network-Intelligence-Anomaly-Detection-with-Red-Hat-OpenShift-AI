@@ -6,7 +6,7 @@ metadata:
 spec:
   namespaceSelector:
     matchNames:
-      - ims-demo-lab
+      - ims-runtime
   selector:
     matchExpressions:
       - key: app

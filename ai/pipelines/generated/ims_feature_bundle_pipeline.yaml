@@ -3,12 +3,12 @@
 # Inputs:
 #    bundle_version: str [Default: 'ims-feature-bundle-v1']
 #    control_plane_api_key: str [Default: 'demo-token']
-#    control_plane_url: str [Default: 'http://control-plane.ims-demo-lab.svc.cluster.local:8080']
+#    control_plane_url: str [Default: 'http://control-plane.ims-runtime.svc.cluster.local:8080']
 #    dataset_store_access_key: str [Default: 'minioadmin']
 #    dataset_store_bucket: str [Default: 'ims-models']
-#    dataset_store_endpoint: str [Default: 'http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000']
+#    dataset_store_endpoint: str [Default: 'http://model-storage-minio.ims-data.svc.cluster.local:9000']
 #    dataset_store_mode: str [Default: 's3']
-#    dataset_store_prefix: str [Default: 'pipelines/ims-demo-lab/datasets']
+#    dataset_store_prefix: str [Default: 'pipelines/ims-datascience/datasets']
 #    dataset_store_secret_key: str [Default: 'minioadmin']
 #    project: str [Default: 'ims-demo']
 #    source_dataset_versions_json: str [Default: '["live-sipp-v1"]']
@@ -69,13 +69,13 @@ deploymentSpec:
         - name: HOME
           value: /tmp
         - name: CONTROL_PLANE_URL
-          value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+          value: http://control-plane.ims-runtime.svc.cluster.local:8080
         - name: CONTROL_PLANE_API_KEY
           value: demo-token
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_ACCESS_KEY
@@ -83,9 +83,9 @@ deploymentSpec:
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -94,7 +94,7 @@ deploymentSpec:
           value: minioadmin
         - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
           value: 'true'
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
     exec-validate-bundle:
       container:
         args:
@@ -113,13 +113,13 @@ deploymentSpec:
         - name: HOME
           value: /tmp
         - name: CONTROL_PLANE_URL
-          value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+          value: http://control-plane.ims-runtime.svc.cluster.local:8080
         - name: CONTROL_PLANE_API_KEY
           value: demo-token
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
           value: ims-models
         - name: DATASET_STORE_ACCESS_KEY
@@ -127,9 +127,9 @@ deploymentSpec:
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-demo-lab/datasets
+          value: pipelines/ims-datascience/datasets
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
           value: ims-models
         - name: MINIO_ACCESS_KEY
@@ -138,7 +138,7 @@ deploymentSpec:
           value: minioadmin
         - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
           value: 'true'
-        image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
 pipelineInfo:
   name: ims-feature-bundle-publish
 root:
@@ -185,7 +185,7 @@ root:
         isOptional: true
         parameterType: STRING
       control_plane_url:
-        defaultValue: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+        defaultValue: http://control-plane.ims-runtime.svc.cluster.local:8080
         isOptional: true
         parameterType: STRING
       dataset_store_access_key:
@@ -197,7 +197,7 @@ root:
         isOptional: true
         parameterType: STRING
       dataset_store_endpoint:
-        defaultValue: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+        defaultValue: http://model-storage-minio.ims-data.svc.cluster.local:9000
         isOptional: true
         parameterType: STRING
       dataset_store_mode:
@@ -205,7 +205,7 @@ root:
         isOptional: true
         parameterType: STRING
       dataset_store_prefix:
-        defaultValue: pipelines/ims-demo-lab/datasets
+        defaultValue: pipelines/ims-datascience/datasets
         isOptional: true
         parameterType: STRING
       dataset_store_secret_key:

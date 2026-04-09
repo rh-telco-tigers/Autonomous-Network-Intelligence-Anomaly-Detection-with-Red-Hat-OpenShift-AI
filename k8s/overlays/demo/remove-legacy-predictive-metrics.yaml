@@ -1,6 +1,0 @@
-$patch: delete
-apiVersion: monitoring.coreos.com/v1
-kind: PodMonitor
-metadata:
-  name: ims-predictive-metrics
-  namespace: ims-demo-lab

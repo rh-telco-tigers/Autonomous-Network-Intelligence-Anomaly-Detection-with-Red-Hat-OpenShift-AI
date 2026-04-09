@@ -71,8 +71,8 @@ DEFAULT_PROTOCOL_VERSION = "v2"
 DEFAULT_MLSERVER_IMPLEMENTATION = "mlserver_sklearn.SKLearnModel"
 DEFAULT_FEATURESTORE_MODE = "local"
 DEFAULT_MANAGED_FEATURESTORE_PROJECT = "ims_anomaly_featurestore"
-DEFAULT_MANAGED_FEATURESTORE_REGISTRY_PATH = "feast-ims-featurestore-registry.ims-demo-lab.svc.cluster.local:443"
-DEFAULT_MANAGED_FEATURESTORE_ONLINE_STORE_PATH = "https://feast-ims-featurestore-online.ims-demo-lab.svc.cluster.local:443"
+DEFAULT_MANAGED_FEATURESTORE_REGISTRY_PATH = "feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443"
+DEFAULT_MANAGED_FEATURESTORE_ONLINE_STORE_PATH = "https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443"
 DEFAULT_MANAGED_FEATURESTORE_CA_CERT_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
 DEFAULT_MANAGED_FEATURESTORE_AUTH_TYPE = "no_auth"
 DEFAULT_MANAGED_FEATURESTORE_ENTITY_KEY_SERIALIZATION_VERSION = "3"
@@ -577,7 +577,7 @@ def _upload_serving_bundle(
     selected_artifact_path: str | Path,
     metadata_path: Path,
 ) -> Dict[str, Any]:
-    endpoint = os.getenv("MINIO_ENDPOINT", "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000")
+    endpoint = os.getenv("MINIO_ENDPOINT", "http://model-storage-minio.ims-data.svc.cluster.local:9000")
     access_key = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
     secret_key = os.getenv("MINIO_SECRET_KEY", "minioadmin")
     bucket = os.getenv("MINIO_BUCKET", "ims-models")
@@ -798,7 +798,7 @@ def _deployment_yaml(
             "kind: InferenceService",
             "metadata:",
             f"  name: {serving_model_name}",
-            "  namespace: ims-demo-lab",
+            "  namespace: ims-datascience",
             "  labels:",
             '    opendatahub.io/dashboard: "true"',
             "  annotations:",

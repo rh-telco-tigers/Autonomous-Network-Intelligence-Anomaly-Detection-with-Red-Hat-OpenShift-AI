@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plane-web-url-bootstrap
+  annotations:
+    argocd.argoproj.io/sync-wave: "65"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: plane-web-url-bootstrap
+  annotations:
+    argocd.argoproj.io/sync-wave: "65"
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["plane-app-vars"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["plane-admin-wl", "plane-api-wl", "plane-live-wl", "plane-space-wl", "plane-web-wl"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["route.openshift.io"]
+    resources: ["routes"]
+    resourceNames: ["plane-web"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plane-web-url-bootstrap
+  annotations:
+    argocd.argoproj.io/sync-wave: "65"
+subjects:
+  - kind: ServiceAccount
+    name: plane-web-url-bootstrap
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: plane-web-url-bootstrap
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: plane-web-url-bootstrap
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "66"
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      serviceAccountName: plane-web-url-bootstrap
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: quay.io/openshift/origin-cli:4.21
+          command:
+            - /bin/bash
+            - -lc
+            - |
+              set -euo pipefail
+              for _ in $(seq 1 90); do
+                host="$(oc get route plane-web -n "${POD_NAMESPACE}" -o jsonpath='{.spec.host}' 2>/dev/null || true)"
+                if [ -n "${host}" ]; then
+                  break
+                fi
+                sleep 5
+              done
+              if [ -z "${host:-}" ]; then
+                echo "plane-web route host not available"
+                exit 1
+              fi
+              web_url="https://${host}"
+              oc patch configmap plane-app-vars -n "${POD_NAMESPACE}" --type merge -p "{\"data\":{\"WEB_URL\":\"${web_url}\",\"CORS_ALLOWED_ORIGINS\":\"${web_url}\"}}"
+              for deployment in plane-admin-wl plane-api-wl plane-live-wl plane-space-wl plane-web-wl; do
+                oc patch deployment "${deployment}" -n "${POD_NAMESPACE}" --type merge -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"ims.redhat.com/plane-web-url-ts\":\"$(date +%s)\"}}}}}"
+              done
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

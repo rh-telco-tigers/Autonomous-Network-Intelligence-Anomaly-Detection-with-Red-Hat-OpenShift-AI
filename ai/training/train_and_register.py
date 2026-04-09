@@ -61,9 +61,9 @@ PROMOTION_GATE = {
     "max_latency_p95_ms": 50,
     "min_stability_score": 0.85,
 }
-DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000"
+DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-data.svc.cluster.local:9000"
 DEFAULT_DATASET_STORE_BUCKET = "ims-models"
-DEFAULT_DATASET_STORE_PREFIX = "pipelines/ims-demo-lab/datasets"
+DEFAULT_DATASET_STORE_PREFIX = "pipelines/ims-datascience/datasets"
 _AUTOGLUON_PREDICTOR_CACHE: Dict[str, Any] = {}
 CANONICAL_LABELS = canonical_anomaly_types()
 
@@ -1255,7 +1255,7 @@ def upload_to_minio(
     candidate_artifact_path: str | Path,
     serving_repository_root: Path,
 ) -> Dict[str, Any]:
-    endpoint = os.getenv("MINIO_ENDPOINT", "http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000")
+    endpoint = os.getenv("MINIO_ENDPOINT", "http://model-storage-minio.ims-data.svc.cluster.local:9000")
     access_key = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
     secret_key = os.getenv("MINIO_SECRET_KEY", "minioadmin")
     bucket = os.getenv("MINIO_BUCKET", "ims-models")

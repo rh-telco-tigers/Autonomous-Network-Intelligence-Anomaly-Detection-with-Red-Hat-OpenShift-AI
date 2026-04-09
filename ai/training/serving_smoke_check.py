@@ -22,9 +22,9 @@ NUMERIC_FEATURES = [
     "inter_arrival_mean",
     "payload_variance",
 ]
-DEFAULT_CURRENT_ENDPOINT = "http://ims-predictive-predictor.ims-demo-lab.svc.cluster.local:8080"
+DEFAULT_CURRENT_ENDPOINT = "http://ims-predictive-predictor.ims-datascience.svc.cluster.local:8080"
 DEFAULT_CURRENT_MODEL_NAME = "ims-predictive"
-DEFAULT_FEATURESTORE_ENDPOINT = "http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080"
+DEFAULT_FEATURESTORE_ENDPOINT = "http://ims-predictive-fs-predictor.ims-datascience.svc.cluster.local:8080"
 DEFAULT_FEATURESTORE_MODEL_NAME = "ims-predictive-fs"
 SAMPLES = [
     {

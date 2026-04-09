@@ -19,6 +19,9 @@ spec:
       containers:
         - name: publish-pipeline
           image: registry.access.redhat.com/ubi9/python-311:latest
+          envFrom:
+            - configMapRef:
+                name: ims-platform-config
           env:
             - name: HOME
               value: /tmp
@@ -26,8 +29,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            - name: CONTROL_PLANE_URL
-              value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
             - name: CONTROL_PLANE_WAIT_TIMEOUT_SECONDS
               value: "900"
             - name: DSPA_NAME
@@ -42,14 +43,29 @@ spec:
               value: ims-incident-release-demo
             - name: PIPELINE_SKIP_DEMO_RUN
               value: "true"
-            - name: PIPELINE_PARAMETERS_JSON
-              value: |
-                {"release_version":"live-sipp-v1-draft","source_dataset_version":"live-sipp-v1","project":"ims-demo","public_record_target":10000,"release_mode":"draft-replacement","previous_release_version":""}
           command:
             - /bin/bash
             - -lc
           args:
             - |
+              export PIPELINE_PARAMETERS_JSON="$(python - <<'PY'
+              import json
+              import os
+
+              print(
+                  json.dumps(
+                      {
+                          "release_version": os.getenv("INCIDENT_RELEASE_VERSION", "live-sipp-v1-draft"),
+                          "source_dataset_version": os.getenv("INCIDENT_RELEASE_SOURCE_DATASET_VERSION", "live-sipp-v1"),
+                          "project": os.getenv("IMS_PROJECT", os.getenv("DEMO_PROJECT", "ims-demo")),
+                          "public_record_target": int(os.getenv("INCIDENT_RELEASE_PUBLIC_RECORD_TARGET", "10000")),
+                          "release_mode": os.getenv("INCIDENT_RELEASE_MODE", "draft-replacement"),
+                          "previous_release_version": os.getenv("INCIDENT_RELEASE_PREVIOUS_VERSION", ""),
+                      }
+                  )
+              )
+              PY
+              )"
               python - <<'PY'
               import os
               import sys
@@ -57,7 +73,7 @@ spec:
               from urllib.error import HTTPError, URLError
               from urllib.request import urlopen
 
-              base = os.getenv("CONTROL_PLANE_URL", "http://control-plane.ims-demo-lab.svc.cluster.local:8080").rstrip("/")
+              base = os.environ["CONTROL_PLANE_URL"].rstrip("/")
               url = f"{base}/healthz"
               deadline = time.time() + int(os.getenv("CONTROL_PLANE_WAIT_TIMEOUT_SECONDS", "900"))
               last_error = None

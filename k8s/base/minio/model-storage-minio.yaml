@@ -6,7 +6,7 @@ metadata:
   annotations:
     opendatahub.io/connection-type-protocol: s3
     openshift.io/display-name: model-storage-minio
-    serving.kserve.io/s3-endpoint: model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+    serving.kserve.io/s3-endpoint: model-storage-minio.ims-data.svc.cluster.local:9000
     serving.kserve.io/s3-region: us-east-1
     serving.kserve.io/s3-usehttps: "0"
     serving.kserve.io/s3-usevirtualbucket: "0"
@@ -19,7 +19,7 @@ stringData:
   AWS_ACCESS_KEY_ID: minioadmin
   AWS_DEFAULT_REGION: us-east-1
   AWS_S3_BUCKET: ims-models
-  AWS_S3_ENDPOINT: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+  AWS_S3_ENDPOINT: http://model-storage-minio.ims-data.svc.cluster.local:9000
   AWS_SECRET_ACCESS_KEY: minioadmin
   MINIO_ROOT_USER: minioadmin
   MINIO_ROOT_PASSWORD: minioadmin

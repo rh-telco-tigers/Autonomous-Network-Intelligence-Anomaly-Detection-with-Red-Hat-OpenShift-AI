@@ -22,7 +22,7 @@ spec:
               imagePullPolicy: Always
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ims-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -39,11 +39,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ims-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
                   value: ims-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ims-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -55,7 +55,7 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ims-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
@@ -107,7 +107,7 @@ spec:
               imagePullPolicy: Always
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ims-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -124,11 +124,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ims-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
                   value: ims-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ims-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -140,7 +140,7 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ims-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
@@ -192,7 +192,7 @@ spec:
               imagePullPolicy: Always
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ims-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -209,11 +209,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ims-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
                   value: ims-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ims-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -225,7 +225,7 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ims-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
@@ -277,7 +277,7 @@ spec:
               imagePullPolicy: Always
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ims-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -294,11 +294,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ims-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
                   value: ims-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ims-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -310,7 +310,7 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ims-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
@@ -362,7 +362,7 @@ spec:
               imagePullPolicy: Always
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ims-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -379,11 +379,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ims-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
                   value: ims-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ims-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -395,7 +395,7 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ims-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
@@ -447,7 +447,7 @@ spec:
               imagePullPolicy: Always
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ims-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -464,11 +464,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ims-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
                   value: ims-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ims-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -480,7 +480,7 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ims-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
@@ -532,7 +532,7 @@ spec:
               imagePullPolicy: Always
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ims-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -549,11 +549,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ims-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
                   value: ims-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ims-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -565,7 +565,7 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ims-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
@@ -617,7 +617,7 @@ spec:
               imagePullPolicy: Always
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ims-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -634,11 +634,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ims-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
                   value: ims-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ims-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -650,7 +650,7 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ims-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
@@ -702,7 +702,7 @@ spec:
               imagePullPolicy: Always
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ims-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -719,11 +719,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ims-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
                   value: ims-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ims-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -735,7 +735,7 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ims-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT

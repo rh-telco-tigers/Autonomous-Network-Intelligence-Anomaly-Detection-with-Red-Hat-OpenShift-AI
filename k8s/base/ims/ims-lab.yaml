@@ -131,7 +131,7 @@ spec:
             - name: COMPONENT_NAME
               value: webui
             - name: MONGO_IP
-              value: mongo.ims-demo-lab.svc.cluster.local
+              value: mongo.ims-sipp.svc.cluster.local
             - name: WEBUI_WORKDIR
               value: /tmp/openimss-webui
           ports:
@@ -217,9 +217,9 @@ spec:
             - name: COMPONENT_NAME
               value: hss-1
             - name: MONGO_IP
-              value: mongo.ims-demo-lab.svc.cluster.local
+              value: mongo.ims-sipp.svc.cluster.local
             - name: HSS_IP
-              value: ims-hss.ims-demo-lab.svc.cluster.local
+              value: ims-hss.ims-sipp.svc.cluster.local
             - name: MME_IP
               value: 127.0.0.1
             - name: MCC
@@ -227,9 +227,9 @@ spec:
             - name: MNC
               value: "01"
             - name: DIAMETER_REALM
-              value: ims-demo-lab.svc.cluster.local
+              value: ims-sipp.svc.cluster.local
             - name: HSS_DIAMETER_IDENTITY
-              value: ims-hss.ims-demo-lab.svc.cluster.local
+              value: ims-hss.ims-sipp.svc.cluster.local
           ports:
             - containerPort: 3868
               name: diameter

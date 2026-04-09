@@ -8,7 +8,7 @@ Run the training pipeline in OpenShift AI, verify that it uses the captured data
 
 - Complete Lab 03 and confirm that `live-sipp-v1` feature windows exist in MinIO.
 - Make sure the OpenShift AI operator is installed.
-- Make sure you can access the `ims-demo-lab` namespace with `oc`.
+- Make sure you can access the `ims-datascience`, `ims-data`, and `ims-runtime` namespaces with `oc`.
 - Make sure the Tekton image build from Lab 03 has already populated the internal registry tags used by the trainer and serving components.
 - Do not create a Feature Store manually in the OpenShift AI UI. This repo bootstraps `FeatureStore/ims-featurestore` from repo-managed manifests.
 - Verify that a model registry service is reachable as `ims-demo-modelregistry` in `rhoai-model-registries`, or be ready to patch the repo's model registry endpoint references for your cluster.
@@ -24,13 +24,13 @@ Run the training pipeline in OpenShift AI, verify that it uses the captured data
 
 ## Fresh-Cluster Note
 
-The GitOps demo overlay in `k8s/overlays/demo` now includes the AI extras needed for the full demo path:
+The split GitOps apps now include the AI extras needed for the full demo path:
 
 - `k8s/base/feature-store`
 - `k8s/base/kafka`
 - `k8s/base/kfp`
 
-If Argo CD is the source of truth, prefer waiting for `ims-demo-platform` to reconcile. Use `make apply-demo-ai-extras` only as an imperative recovery path.
+If Argo CD is the source of truth, prefer waiting for `ims-platform` and the `ims-datascience` child app to reconcile. Use `make apply-demo-ai-extras` only as an imperative recovery path.
 
 ## RCA LLM Provider Configuration
 
@@ -59,26 +59,26 @@ No code changes are required. Update the runtime config, restart `rca-service`, 
 1. Update the endpoint, model, and timeout:
 
 ```sh
-oc patch configmap llm-provider-config -n ims-demo-lab --type merge -p '{"data":{"LLM_ENDPOINT":"https://api.openai.com","LLM_MODEL":"gpt-4.1-mini","LLM_REQUEST_TIMEOUT_SECONDS":"20"}}'
+oc patch configmap llm-provider-config -n ims-runtime --type merge -p '{"data":{"LLM_ENDPOINT":"https://api.openai.com","LLM_MODEL":"gpt-4.1-mini","LLM_REQUEST_TIMEOUT_SECONDS":"20"}}'
 ```
 
 2. Set or rotate the API key if the provider requires one:
 
 ```sh
-oc patch secret llm-provider-auth -n ims-demo-lab --type merge -p '{"stringData":{"LLM_API_KEY":"<provider-api-key>"}}'
+oc patch secret llm-provider-auth -n ims-runtime --type merge -p '{"stringData":{"LLM_API_KEY":"<provider-api-key>"}}'
 ```
 
 3. Restart the RCA service and wait for rollout:
 
 ```sh
-oc rollout restart deploy/rca-service -n ims-demo-lab
-oc rollout status deploy/rca-service -n ims-demo-lab
+oc rollout restart deploy/rca-service -n ims-runtime
+oc rollout status deploy/rca-service -n ims-runtime
 ```
 
 4. Verify the live runtime config from inside the pod:
 
 ```sh
-oc exec deploy/rca-service -n ims-demo-lab -- python -c "import requests; print(requests.get('http://localhost:8080/healthz', timeout=5).json())"
+oc exec deploy/rca-service -n ims-runtime -- python -c "import requests; print(requests.get('http://localhost:8080/healthz', timeout=5).json())"
 ```
 
 Notes:
@@ -95,10 +95,11 @@ Notes:
 oc get csv -n redhat-ods-operator
 ```
 
-2. Verify that the AI extras are being reconciled by the demo overlay:
+2. Verify that the AI extras are being reconciled by the split GitOps apps:
 
 ```sh
-oc get application.argoproj.io ims-demo-platform -n openshift-gitops -o jsonpath='{.status.sync.status}{" / "}{.status.health.status}{"\n"}'
+oc get application.argoproj.io ims-platform -n openshift-gitops -o jsonpath='{.status.sync.status}{" / "}{.status.health.status}{"\n"}'
+oc get application.argoproj.io ims-datascience -n openshift-gitops -o jsonpath='{.status.sync.status}{" / "}{.status.health.status}{"\n"}'
 ```
 
 If you need an imperative recovery path outside GitOps, you can still run:
@@ -111,8 +112,8 @@ make apply-demo-ai-extras
 
 ```sh
 make check-fresh-cluster-ai
-oc get dspa,featurestore -n ims-demo-lab
-oc get kafka -n ims-demo-lab
+oc get dspa,featurestore -n ims-datascience
+oc get kafka -n ims-data
 oc get svc -n rhoai-model-registries | rg 'ims-demo-modelregistry'
 ```
 
@@ -127,7 +128,7 @@ make trigger-featurestore-pipeline
 6. Watch the workflow progress:
 
 ```sh
-oc get workflow -n ims-demo-lab
+oc get workflow -n ims-datascience
 ```
 
 7. When the workflow completes, inspect the `ingest-data` step logs. The expected source is `openims-sipp-lab`, and the expected dataset kind is `feature_windows`.
@@ -135,8 +136,8 @@ oc get workflow -n ims-demo-lab
 9. Verify that both feature-store model-serving resources are ready:
 
 ```sh
-oc get inferenceservice -n ims-demo-lab | rg 'ims-predictive-fs|ims-predictive-fs-mlserver'
-oc get servingruntime -n ims-demo-lab
+oc get inferenceservice -n ims-datascience | rg 'ims-predictive-fs|ims-predictive-fs-mlserver'
+oc get servingruntime -n ims-datascience
 ```
 
 10. Run the side-by-side serving smoke check:
@@ -148,7 +149,7 @@ make smoke-check-featurestore-serving
 11. Open the Attu route if you also want to confirm the retrieval data store is present:
 
 ```sh
-oc get route milvus-attu -n ims-demo-lab -o jsonpath='{.spec.host}{"\n"}'
+oc get route milvus-attu -n ims-data -o jsonpath='{.spec.host}{"\n"}'
 ```
 
 ## Expected Result
@@ -161,7 +162,7 @@ After this lab:
 - the feature-store training pipeline completes successfully
 - the pipeline reads `live-sipp-v1` feature windows when they are available
 - the selected model is written to the model registry
-- both `ims-predictive-fs` and `ims-predictive-fs-mlserver` are available in `ims-demo-lab`
+- both `ims-predictive-fs` and `ims-predictive-fs-mlserver` are available in `ims-datascience`
 - the legacy `ims-predictive` service is intentionally absent from the demo overlay
 
 ## Useful Checks
@@ -169,20 +170,20 @@ After this lab:
 Check recent workflows:
 
 ```sh
-oc get workflow -n ims-demo-lab --sort-by=.metadata.creationTimestamp
+oc get workflow -n ims-datascience --sort-by=.metadata.creationTimestamp
 ```
 
 Check the serving resources:
 
 ```sh
-oc get inferenceservice -n ims-demo-lab | rg 'ims-predictive-fs|ims-predictive-fs-mlserver'
-oc get servingruntime -n ims-demo-lab
+oc get inferenceservice -n ims-datascience | rg 'ims-predictive-fs|ims-predictive-fs-mlserver'
+oc get servingruntime -n ims-datascience
 ```
 
 Check the MinIO-backed registry output:
 
 ```sh
-oc logs job/ims-kfp-bootstrap -n ims-demo-lab
+oc logs job/ims-kfp-bootstrap -n ims-datascience
 ```
 
 Check the model registry service assumption:
@@ -198,9 +199,9 @@ The pipeline prefers the `live-sipp-v1` dataset, but it can fall back to bootstr
 ## Quick Troubleshooting
 
 - If the DSPA is not ready, check the OpenShift AI operator status first.
-- If the Feature Store overview still shows an empty state, hard refresh the browser and confirm `oc get featurestore -n ims-demo-lab` shows `ims-featurestore` in `Ready`.
+- If the Feature Store overview still shows an empty state, hard refresh the browser and confirm `oc get featurestore -n ims-datascience` shows `ims-featurestore` in `Ready`.
 - If the workflow fails, inspect the failed pod logs before rerunning.
-- If a training or serving pod is stuck in `ImagePullBackOff`, confirm that Lab 03 finished building the demo images into `image-registry.openshift-image-registry.svc:5000/ims-demo-lab`.
+- If a training or serving pod is stuck in `ImagePullBackOff`, confirm that Lab 03 finished building the demo images into `image-registry.openshift-image-registry.svc:5000/ims-datascience`.
 - If model registration fails early, confirm that `ims-demo-modelregistry` exists in `rhoai-model-registries` or patch the model registry endpoint config before rerunning.
-- If model serving is not ready, check `oc describe inferenceservice -n ims-demo-lab`.
+- If model serving is not ready, check `oc describe inferenceservice -n ims-datascience`.
 - If RCA stays on the local fallback path, that is expected until you configure `llm-provider-config`.
