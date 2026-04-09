@@ -35,7 +35,7 @@ if git remote get-url cluster-gitea >/dev/null 2>&1; then
 else
   git remote add cluster-gitea "https://${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git"
 fi
-GIT_SSL_NO_VERIFY=true git push "https://gitadmin:GiteaAdmin123!@${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git" "HEAD:${GIT_BRANCH}"
+GIT_SSL_NO_VERIFY=true git push "https://gitadmin:GiteaAdmin123%21@${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git" "HEAD:${GIT_BRANCH}"
 ```
 
 4. Bootstrap Argo CD:
@@ -44,11 +44,12 @@ GIT_SSL_NO_VERIFY=true git push "https://gitadmin:GiteaAdmin123!@${GITEA_HOST}/g
 oc apply -k deploy/argocd
 ```
 
-5. Verify the Argo CD project and application point to the in-cluster repo:
+5. Verify the Argo CD project and bootstrap applications point to the in-cluster repo:
 
 ```sh
 oc get appproject ims-demo -n openshift-gitops -o jsonpath='{.spec.sourceRepos[0]}{"\n"}'
 oc get application.argoproj.io ims-operators -n openshift-gitops -o jsonpath='{.spec.source.repoURL}{"\n"}'
+oc get application.argoproj.io ims-platform -n openshift-gitops -o jsonpath='{.spec.source.repoURL}{"\n"}'
 ```
 
 Expected value:

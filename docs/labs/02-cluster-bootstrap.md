@@ -18,7 +18,7 @@ oc apply -k deploy/gitea
 ```sh
 GITEA_HOST="$(oc get route gitea -n gitea -o jsonpath='{.spec.host}')"
 GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-GIT_SSL_NO_VERIFY=true git push "https://gitadmin:GiteaAdmin123!@${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git" "HEAD:${GIT_BRANCH}"
+GIT_SSL_NO_VERIFY=true git push "https://gitadmin:GiteaAdmin123%21@${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git" "HEAD:${GIT_BRANCH}"
 ```
 
 4. Bootstrap OpenShift GitOps and let Argo CD manage the operator subscriptions:
@@ -27,13 +27,8 @@ GIT_SSL_NO_VERIFY=true git push "https://gitadmin:GiteaAdmin123!@${GITEA_HOST}/g
 oc apply -k deploy/argocd
 ```
 
-5. Confirm the `ims-operators` Argo CD application has synced the operator subscriptions from `deploy/gitops/operators`.
-6. Once the operator installs are healthy and the operator CSVs you need are `Succeeded`, create the platform application explicitly:
-
-```sh
-oc apply -f deploy/argocd/platform-application.yaml
-```
-
+5. Confirm the `ims-operators` and `ims-platform` Argo CD applications have both been created by the bootstrap job.
+6. Once the operator installs are healthy and the operator CSVs you need are `Succeeded`, wait for the `ims-platform` root application to create and reconcile the split child apps.
 7. Do not expect the first repo push above to build images yet. The Tekton `EventListener` is created later by the split GitOps apps in Lab 03, so the first push only seeds the in-cluster GitOps source.
 8. In Lab 03, after Argo CD has synced the `ims-platform` root application and created the `ims-tekton` child app, trigger the first image population into the internal registry by either:
    - pushing a new commit to the same branch you pushed above into the in-cluster Gitea repository, which starts the Tekton pipeline automatically
@@ -42,15 +37,15 @@ oc apply -f deploy/argocd/platform-application.yaml
 10. Review the demo API token secret and service monitors created under `k8s/base/platform` and `k8s/base/observability`.
 11. The `ims-platform` application now fans out into child Argo CD apps for `ims-sipp`, `ims-runtime`, `ims-data`, `ims-datascience`, `ims-tekton`, `ims-observability`, `aap`, and `plane`.
 12. Do not create a separate Feature Store manually in the OpenShift AI UI. The repo-managed `FeatureStore/ims-featurestore` is part of the GitOps path.
-13. AAP/EDA and live LLM RCA are intentionally disabled by default for fresh clusters. When the in-cluster Plane base is enabled, the Plane bootstrap job seeds the demo Plane admin, workspace, and project, then populates `plane-integration-auth` automatically.
+13. AAP/EDA stay intentionally disabled by default for fresh clusters. When the in-cluster Plane base is enabled, the Plane bootstrap job seeds the demo Plane admin, workspace, and project, then populates `plane-integration-auth` automatically. The GitOps-managed LLM path now points at the in-cluster vLLM service when GPU capacity exists; otherwise the RCA service stays on the local fallback path.
 
 ## Notes
 
 - The GitOps layout is intentionally opinionated for a split namespace topology: `ims-sipp`, `ims-runtime`, `ims-data`, `ims-datascience`, `ims-tekton`, `ims-observability`, `aap`, and `plane`.
 - The GitOps source for this demo is the in-cluster Gitea repository, not an external Git provider.
 - Demo Gitea credentials are `gitadmin` / `GiteaAdmin123!`.
-- The GitOps bootstrap applies only standard Kubernetes and OLM resources; it intentionally stops after creating the `ims-demo` Argo project and `ims-operators` application.
-- After the operators are ready, create `ims-platform` with `oc apply -f deploy/argocd/platform-application.yaml`; after that, use Git pushes plus Argo reconciliation instead of imperative `oc apply` against the runtime manifests.
+- The GitOps bootstrap applies the `ims-demo` Argo project, `ims-operators`, and the `ims-platform` root application automatically.
+- After the bootstrap finishes, use Git pushes plus Argo reconciliation instead of imperative `oc apply` against the runtime manifests.
 - The initial `git push` seeds GitOps state only. Tekton image builds begin only after the `ims-tekton` child app has created the pipeline and trigger resources.
 - The Feature Store instance, Kafka resources, and KFP bootstrap jobs are now part of the split GitOps apps, so the GitOps path is the primary fresh-cluster bring-up path again.
 - Raw KServe deployment mode is used to keep the serving path simpler than a full serverless mesh install.

@@ -53,7 +53,7 @@ if git remote get-url cluster-gitea >/dev/null 2>&1; then
 else
   git remote add cluster-gitea "https://${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git"
 fi
-GIT_SSL_NO_VERIFY=true git push "https://gitadmin:GiteaAdmin123\!@${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git" "HEAD:${GIT_BRANCH}"
+GIT_SSL_NO_VERIFY=true git push "https://gitadmin:GiteaAdmin123%21@${GITEA_HOST}/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git" "HEAD:${GIT_BRANCH}"
 ```
 
 Demo credentials for Gitea:
