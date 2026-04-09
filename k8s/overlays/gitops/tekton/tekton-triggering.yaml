@@ -85,14 +85,14 @@ spec:
   namespaceSelector: {}
   resources: {}
   triggers:
-    - name: main-branch-commit
+    - name: repo-push
       interceptors:
         - ref:
             kind: ClusterInterceptor
             name: cel
           params:
             - name: filter
-              value: header.match('X-Gitea-Event', 'push') && body.ref == 'refs/heads/main'
+              value: header.match('X-Gitea-Event', 'push')
       bindings:
         - kind: TriggerBinding
           ref: ims-platform-gitea-binding

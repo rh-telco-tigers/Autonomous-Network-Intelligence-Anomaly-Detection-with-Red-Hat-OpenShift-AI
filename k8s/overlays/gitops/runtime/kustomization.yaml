@@ -96,6 +96,15 @@ patches:
       metadata:
         name: control-plane-read-aap-controller-password
 images:
+  - name: feature-gateway
+    newName: image-registry.openshift-image-registry.svc:5000/ims-runtime/feature-gateway
+    newTag: latest
+  - name: anomaly-service
+    newName: image-registry.openshift-image-registry.svc:5000/ims-runtime/anomaly-service
+    newTag: latest
+  - name: rca-service
+    newName: image-registry.openshift-image-registry.svc:5000/ims-runtime/rca-service
+    newTag: latest
   - name: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/control-plane
     newName: image-registry.openshift-image-registry.svc:5000/ims-runtime/control-plane
     newTag: latest

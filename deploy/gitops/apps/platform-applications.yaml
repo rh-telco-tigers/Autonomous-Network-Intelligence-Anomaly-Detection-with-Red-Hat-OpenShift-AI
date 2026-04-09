@@ -20,6 +20,7 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
       - SkipDryRunOnMissingResource=true
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -30,6 +31,13 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "5"
 spec:
+  ignoreDifferences:
+    - group: dscinitialization.opendatahub.io
+      kind: DSCInitialization
+      name: default-dsci
+      jsonPointers:
+        - /spec/monitoring/metrics
+        - /spec/serviceMesh
   destination:
     namespace: redhat-ods-operator
     server: https://kubernetes.default.svc

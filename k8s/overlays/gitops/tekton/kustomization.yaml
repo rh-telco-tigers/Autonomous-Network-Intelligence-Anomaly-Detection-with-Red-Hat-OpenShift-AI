@@ -5,3 +5,4 @@ resources:
   - tasks.yaml
   - tekton-triggering.yaml
   - tekton-pipeline.yaml
+  - bootstrap-build-job.yaml

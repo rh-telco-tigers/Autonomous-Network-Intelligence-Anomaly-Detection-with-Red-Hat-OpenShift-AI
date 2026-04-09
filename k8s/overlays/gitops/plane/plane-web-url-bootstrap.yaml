@@ -3,6 +3,8 @@ kind: ServiceAccount
 metadata:
   name: plane-web-url-bootstrap
   annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
     argocd.argoproj.io/sync-wave: "65"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -10,6 +12,8 @@ kind: Role
 metadata:
   name: plane-web-url-bootstrap
   annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
     argocd.argoproj.io/sync-wave: "65"
 rules:
   - apiGroups: [""]
@@ -30,6 +34,8 @@ kind: RoleBinding
 metadata:
   name: plane-web-url-bootstrap
   annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
     argocd.argoproj.io/sync-wave: "65"
 subjects:
   - kind: ServiceAccount

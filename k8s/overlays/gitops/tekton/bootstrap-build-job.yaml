@@ -1,0 +1,102 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ims-platform-bootstrap-build
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "50"
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      serviceAccountName: pipeline
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap-build
+          image: quay.io/openshift/origin-cli:4.21
+          command:
+            - /bin/bash
+            - -lc
+            - |
+              set -euo pipefail
+
+              namespace="${POD_NAMESPACE}"
+              run_name="ims-platform-bootstrap-build"
+
+              if oc get pipelinerun "${run_name}" -n "${namespace}" >/dev/null 2>&1; then
+                status="$(oc get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].status}')"
+                if [ "${status}" = "True" ]; then
+                  echo "bootstrap build already succeeded"
+                  exit 0
+                fi
+                oc delete pipelinerun "${run_name}" -n "${namespace}" --ignore-not-found
+                for _ in $(seq 1 30); do
+                  if ! oc get pipelinerun "${run_name}" -n "${namespace}" >/dev/null 2>&1; then
+                    break
+                  fi
+                  sleep 2
+                done
+              fi
+
+              cat <<EOF | oc apply -f -
+              apiVersion: tekton.dev/v1
+              kind: PipelineRun
+              metadata:
+                name: ${run_name}
+                namespace: ${namespace}
+                labels:
+                  ims.redhat.com/bootstrap-build: "true"
+              spec:
+                pipelineRef:
+                  name: ims-platform-container-build
+                params:
+                  - name: git-url
+                    value: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+                  - name: git-revision
+                    value: refactor/namespace-argo-split
+                taskRunTemplate:
+                  serviceAccountName: pipeline
+                timeouts:
+                  pipeline: 4h0m0s
+                workspaces:
+                  - name: source
+                    volumeClaimTemplate:
+                      spec:
+                        accessModes:
+                          - ReadWriteOnce
+                        resources:
+                          requests:
+                            storage: 5Gi
+              EOF
+
+              for _ in $(seq 1 480); do
+                status="$(oc get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].status}' 2>/dev/null || true)"
+                reason="$(oc get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].reason}' 2>/dev/null || true)"
+                if [ "${status}" = "True" ]; then
+                  echo "bootstrap build completed successfully"
+                  exit 0
+                fi
+                if [ "${status}" = "False" ]; then
+                  echo "bootstrap build failed with reason: ${reason}"
+                  oc get pipelinerun "${run_name}" -n "${namespace}" -o yaml
+                  exit 1
+                fi
+                sleep 15
+              done
+
+              echo "timed out waiting for bootstrap build to finish"
+              oc get pipelinerun "${run_name}" -n "${namespace}" -o yaml || true
+              exit 1
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

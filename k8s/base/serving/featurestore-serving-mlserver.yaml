@@ -8,6 +8,7 @@ metadata:
   labels:
     opendatahub.io/dashboard: "true"
   annotations:
+    argocd.argoproj.io/sync-wave: "60"
     opendatahub.io/model-type: predictive-featurestore-mlserver
     openshift.io/display-name: ims-predictive-fs-mlserver
     serving.kserve.io/deploymentMode: RawDeployment
@@ -38,6 +39,8 @@ kind: PodMonitor
 metadata:
   name: ims-predictive-fs-mlserver-metrics
   namespace: ims-demo-lab
+  annotations:
+    argocd.argoproj.io/sync-wave: "65"
   labels:
     monitoring.opendatahub.io/scrape: "true"
 spec:
