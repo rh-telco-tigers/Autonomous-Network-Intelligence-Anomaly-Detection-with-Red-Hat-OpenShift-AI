@@ -4,6 +4,7 @@ namespace: ims-sipp
 resources:
   - ims-platform-config.yaml
   - model-storage-credentials.yaml
+  - demo-api-auth.yaml
   - ../../../base/traffic
 images:
   - name: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner
