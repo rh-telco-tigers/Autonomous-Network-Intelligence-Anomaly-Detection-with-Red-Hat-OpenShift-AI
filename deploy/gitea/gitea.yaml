@@ -179,6 +179,13 @@ spec:
     spec:
       restartPolicy: OnFailure
       serviceAccountName: gitea
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: gitea
+              topologyKey: kubernetes.io/hostname
       initContainers:
         - name: prepare-storage
           image: docker.io/gitea/gitea:1.22.6-rootless
