@@ -4,7 +4,7 @@ metadata:
   name: ims-feature-bundle-kfp-bootstrap
   namespace: ims-demo-lab
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
     argocd.argoproj.io/sync-wave: "42"
 spec:
@@ -39,8 +39,6 @@ spec:
               value: ims-featurestore
             - name: RUN_NAME
               value: ims-feature-bundle-demo
-            - name: PIPELINE_SKIP_DEMO_RUN
-              value: "true"
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:

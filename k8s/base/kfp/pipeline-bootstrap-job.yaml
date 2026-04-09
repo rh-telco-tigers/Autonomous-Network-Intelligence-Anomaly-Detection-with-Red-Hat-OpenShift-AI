@@ -28,7 +28,7 @@ metadata:
   name: ims-kfp-bootstrap
   namespace: ims-demo-lab
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
     argocd.argoproj.io/sync-wave: "40"
 spec:

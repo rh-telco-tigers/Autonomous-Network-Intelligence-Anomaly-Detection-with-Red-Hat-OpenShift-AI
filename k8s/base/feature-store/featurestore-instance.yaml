@@ -24,6 +24,13 @@ spec:
       local:
         server:
           restAPI: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
           env:
             - name: IMS_FEATURESTORE_OFFLINE_SOURCE_PATH
               valueFrom:

@@ -69,29 +69,29 @@ deploymentSpec:
         - name: HOME
           value: /tmp
         - name: CONTROL_PLANE_URL
-          value: '{{channel:task=;name=control_plane_url;type=String;}}'
+          value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
         - name: CONTROL_PLANE_API_KEY
-          value: '{{channel:task=;name=control_plane_api_key;type=String;}}'
+          value: demo-token
         - name: DATASET_STORE_MODE
-          value: '{{channel:task=;name=dataset_store_mode;type=String;}}'
+          value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: '{{channel:task=;name=dataset_store_endpoint;type=String;}}'
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: '{{channel:task=;name=dataset_store_bucket;type=String;}}'
+          value: ims-models
         - name: DATASET_STORE_ACCESS_KEY
-          value: '{{channel:task=;name=dataset_store_access_key;type=String;}}'
+          value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
-          value: '{{channel:task=;name=dataset_store_secret_key;type=String;}}'
+          value: minioadmin
         - name: DATASET_STORE_PREFIX
-          value: '{{channel:task=;name=dataset_store_prefix;type=String;}}'
+          value: pipelines/ims-demo-lab/datasets
         - name: MINIO_ENDPOINT
-          value: '{{channel:task=;name=dataset_store_endpoint;type=String;}}'
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: '{{channel:task=;name=dataset_store_bucket;type=String;}}'
+          value: ims-models
         - name: MINIO_ACCESS_KEY
-          value: '{{channel:task=;name=dataset_store_access_key;type=String;}}'
+          value: minioadmin
         - name: MINIO_SECRET_KEY
-          value: '{{channel:task=;name=dataset_store_secret_key;type=String;}}'
+          value: minioadmin
         - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
           value: 'true'
         image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest
@@ -113,29 +113,29 @@ deploymentSpec:
         - name: HOME
           value: /tmp
         - name: CONTROL_PLANE_URL
-          value: '{{channel:task=;name=control_plane_url;type=String;}}'
+          value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
         - name: CONTROL_PLANE_API_KEY
-          value: '{{channel:task=;name=control_plane_api_key;type=String;}}'
+          value: demo-token
         - name: DATASET_STORE_MODE
-          value: '{{channel:task=;name=dataset_store_mode;type=String;}}'
+          value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: '{{channel:task=;name=dataset_store_endpoint;type=String;}}'
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: '{{channel:task=;name=dataset_store_bucket;type=String;}}'
+          value: ims-models
         - name: DATASET_STORE_ACCESS_KEY
-          value: '{{channel:task=;name=dataset_store_access_key;type=String;}}'
+          value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
-          value: '{{channel:task=;name=dataset_store_secret_key;type=String;}}'
+          value: minioadmin
         - name: DATASET_STORE_PREFIX
-          value: '{{channel:task=;name=dataset_store_prefix;type=String;}}'
+          value: pipelines/ims-demo-lab/datasets
         - name: MINIO_ENDPOINT
-          value: '{{channel:task=;name=dataset_store_endpoint;type=String;}}'
+          value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: '{{channel:task=;name=dataset_store_bucket;type=String;}}'
+          value: ims-models
         - name: MINIO_ACCESS_KEY
-          value: '{{channel:task=;name=dataset_store_access_key;type=String;}}'
+          value: minioadmin
         - name: MINIO_SECRET_KEY
-          value: '{{channel:task=;name=dataset_store_secret_key;type=String;}}'
+          value: minioadmin
         - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
           value: 'true'
         image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/ims-ai-featurestore-trainer:latest

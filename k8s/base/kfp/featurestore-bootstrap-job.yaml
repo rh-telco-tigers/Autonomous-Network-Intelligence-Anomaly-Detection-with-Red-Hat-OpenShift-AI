@@ -4,7 +4,7 @@ metadata:
   name: ims-featurestore-kfp-bootstrap
   namespace: ims-demo-lab
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
     argocd.argoproj.io/sync-wave: "43"
 spec:
@@ -41,8 +41,8 @@ spec:
               value: ims-featurestore
             - name: RUN_NAME
               value: ims-featurestore-demo
-            - name: PIPELINE_SKIP_DEMO_RUN
-              value: "true"
+            - name: FEATURESTORE_BUNDLE_WAIT_TIMEOUT_SECONDS
+              value: "900"
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -63,6 +63,52 @@ spec:
             - -lc
           args:
             - |
+              python -m pip install --no-cache-dir --target /tmp/kfp-site kfp==2.8.0 boto3
+              export PYTHONPATH="/tmp/kfp-site:${PYTHONPATH}"
+              python - <<'PY'
+              import os
+              import sys
+              import time
+
+              import boto3
+              from botocore.exceptions import BotoCoreError, ClientError
+
+              bucket = os.environ["DATASET_STORE_BUCKET"]
+              endpoint = os.environ["DATASET_STORE_ENDPOINT"]
+              prefix = os.getenv("DATASET_STORE_PREFIX", "").strip().strip("/")
+              bundle_version = os.getenv("FEATURESTORE_BUNDLE_VERSION", "ims-feature-bundle-v1").strip() or "ims-feature-bundle-v1"
+              timeout_seconds = int(os.getenv("FEATURESTORE_BUNDLE_WAIT_TIMEOUT_SECONDS", "900"))
+              key = "/".join(part for part in (prefix, "feature-bundles", bundle_version, "manifest.json") if part)
+              uri = f"s3://{bucket}/{key}"
+              client = boto3.client(
+                  "s3",
+                  endpoint_url=endpoint,
+                  aws_access_key_id=os.environ["DATASET_STORE_ACCESS_KEY"],
+                  aws_secret_access_key=os.environ["DATASET_STORE_SECRET_KEY"],
+                  region_name=os.getenv("AWS_REGION", "us-east-1"),
+              )
+              deadline = time.time() + timeout_seconds
+              last_error = None
+
+              while time.time() < deadline:
+                  try:
+                      client.head_object(Bucket=bucket, Key=key)
+                      print(f"feature bundle ready at {uri}", flush=True)
+                      sys.exit(0)
+                  except ClientError as exc:
+                      last_error = exc
+                      code = str(exc.response.get("Error", {}).get("Code", ""))
+                      if code not in {"404", "NoSuchKey", "NotFound"}:
+                          print(f"waiting for feature bundle at {uri}: {exc}", flush=True)
+                      else:
+                          print(f"waiting for feature bundle at {uri}: object not found", flush=True)
+                  except BotoCoreError as exc:
+                      last_error = exc
+                      print(f"waiting for feature bundle at {uri}: {exc}", flush=True)
+                  time.sleep(10)
+
+              raise SystemExit(f"feature bundle did not appear at {uri}: {last_error}")
+              PY
               export PIPELINE_PARAMETERS_JSON="$(python - <<'PY'
               import json
               import os
@@ -115,8 +161,6 @@ spec:
               )
               PY
               )"
-              python -m pip install --no-cache-dir --target /tmp/kfp-site kfp==2.8.0
-              export PYTHONPATH="/tmp/kfp-site:${PYTHONPATH}"
               python /opt/kfp/publish_featurestore_pipeline.py
           volumeMounts:
             - name: kfp-assets

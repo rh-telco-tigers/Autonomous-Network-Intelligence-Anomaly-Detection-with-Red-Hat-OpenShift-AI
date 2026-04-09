@@ -4,7 +4,7 @@ metadata:
   name: ims-featurestore-bootstrap
   namespace: ims-demo-lab
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
     argocd.argoproj.io/sync-wave: "41"
 spec:
@@ -35,8 +35,8 @@ spec:
                   fieldPath: metadata.namespace
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 500m
+              cpu: 250m
               memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
