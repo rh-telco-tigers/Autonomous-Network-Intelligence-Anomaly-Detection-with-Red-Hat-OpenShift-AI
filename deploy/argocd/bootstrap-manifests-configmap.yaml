@@ -64,11 +64,11 @@ data:
       repo:
         resources:
           limits:
-            cpu: 100m
-            memory: 128Mi
+            cpu: 250m
+            memory: 512Mi
           requests:
-            cpu: 5m
-            memory: 32Mi
+            cpu: 50m
+            memory: 128Mi
       server:
         resources:
           limits:
