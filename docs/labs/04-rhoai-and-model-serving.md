@@ -34,7 +34,7 @@ If Argo CD is the source of truth, prefer waiting for `ims-platform` and the `im
 
 ## RCA LLM Provider Configuration
 
-The RCA service can call an OpenAI-compatible chat completions endpoint, but the fresh-cluster default is local RAG fallback until you configure a provider.
+The RCA service can call an OpenAI-compatible chat completions endpoint. The fresh-cluster default now points at the in-cluster vLLM `InferenceService` in `ims-datascience`, so live LLM-backed RCA is available automatically when the GPU-backed serving workload becomes ready.
 
 Runtime settings now live in:
 
@@ -43,32 +43,25 @@ Runtime settings now live in:
 
 Fresh-cluster default values:
 
-- `LLM_ENDPOINT=` (blank, which keeps RCA on the local fallback path)
-- `LLM_MODEL=` (blank)
+- `LLM_ENDPOINT=http://ims-generative-proxy.ims-datascience.svc.cluster.local`
+- `LLM_MODEL=llama-32-3b-instruct`
 - `LLM_REQUEST_TIMEOUT_SECONDS=20`
 - `LLM_API_KEY` is blank
 
 Fresh-cluster note:
 
-- if you want live LLM-backed RCA, patch `llm-provider-config` and `llm-provider-auth` after the rest of the platform is healthy
+- the default path uses the GitOps-managed in-cluster vLLM deployment and does not require a post-bootstrap patch
+- if the cluster has no schedulable GPU capacity, RCA will stay on the local fallback path until you add the required accelerator capacity
 
 ## Swap To Another OpenAI-Compatible Endpoint Later
 
-No code changes are required. Update the runtime config, restart `rca-service`, and verify the new settings.
+No application code changes are required. Update the GitOps-managed runtime config, sync the app, and verify the new settings.
 
-1. Update the endpoint, model, and timeout:
+1. Update `k8s/overlays/gitops/runtime/llm-provider-config.yaml` with the new endpoint, model, and timeout, then commit and push.
 
-```sh
-oc patch configmap llm-provider-config -n ims-runtime --type merge -p '{"data":{"LLM_ENDPOINT":"https://api.openai.com","LLM_MODEL":"gpt-4.1-mini","LLM_REQUEST_TIMEOUT_SECONDS":"20"}}'
-```
+2. Set or rotate the API key in `Secret/llm-provider-auth` if the provider requires one.
 
-2. Set or rotate the API key if the provider requires one:
-
-```sh
-oc patch secret llm-provider-auth -n ims-runtime --type merge -p '{"stringData":{"LLM_API_KEY":"<provider-api-key>"}}'
-```
-
-3. Restart the RCA service and wait for rollout:
+3. Wait for Argo CD to sync `ims-runtime`, then confirm the RCA service rollout:
 
 ```sh
 oc rollout restart deploy/rca-service -n ims-runtime

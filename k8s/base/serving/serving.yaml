@@ -98,11 +98,11 @@ metadata:
   namespace: ims-demo-lab
 spec:
   type: ExternalName
-  externalName: llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local
+  externalName: llama-32-3b-instruct-predictor.ims-datascience.svc.cluster.local
   ports:
     - name: http
-      port: 8080
-      targetPort: 8080
+      port: 80
+      targetPort: 80
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor

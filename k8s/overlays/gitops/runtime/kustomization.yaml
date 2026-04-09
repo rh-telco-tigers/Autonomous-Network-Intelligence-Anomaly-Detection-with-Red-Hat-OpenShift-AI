@@ -13,6 +13,11 @@ patches:
       version: v1
       kind: ConfigMap
       name: ims-platform-config
+  - path: llm-provider-config.yaml
+    target:
+      version: v1
+      kind: ConfigMap
+      name: llm-provider-config
   - path: aap-automation-config.yaml
     target:
       version: v1

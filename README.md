@@ -101,7 +101,7 @@ The repository now contains a deployable scaffold for the full demo stack. Opera
 Cluster-specific values still need to be supplied before a live deployment:
 
 - image registry destinations for locally built services
-- if you do not have a shared vLLM endpoint already available, the generative RCA endpoint must be updated from the demo default
+- if you want to override the default in-cluster vLLM endpoint, update the GitOps-managed `llm-provider-config` values for your target provider
 - route hostnames and TLS policy for the target cluster
 - the repository must be pushed into the in-cluster Gitea instance before Argo CD bootstrap
 

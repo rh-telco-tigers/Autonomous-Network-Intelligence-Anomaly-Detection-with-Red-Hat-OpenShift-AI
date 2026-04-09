@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - aws-connection-minio.yaml
   - serving.yaml
+  - llm-serving.yaml
   - featurestore-serving.yaml
   - triton-template-rbac.yaml
   - triton-runtime-template.yaml
