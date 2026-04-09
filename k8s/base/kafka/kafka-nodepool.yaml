@@ -11,6 +11,16 @@ spec:
   roles:
     - broker
     - controller
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  jvmOptions:
+    "-Xms": 512m
+    "-Xmx": 1G
   storage:
     type: jbod
     volumes:
