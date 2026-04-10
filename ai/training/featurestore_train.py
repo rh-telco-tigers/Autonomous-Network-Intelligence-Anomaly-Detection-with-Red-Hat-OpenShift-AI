@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Feature-store-backed training and publishing path for the IMS anomaly platform."""
+"""Feature-store-backed training and publishing path for the ANI anomaly platform."""
 
 from __future__ import annotations
 
@@ -795,7 +795,7 @@ def _register_model_version_step(
             "normal_class_label": export_manifest.get("normal_class_label", "normal_operation"),
             "selected_model_version": export_manifest["selected_model_version"],
             "serving_alias_storage_uri": export_manifest.get("serving_alias_storage_uri", ""),
-            "description": f"Feature-store-trained IMS anomaly model for bundle {export_manifest['bundle_version']}",
+            "description": f"Feature-store-trained ANI anomaly model for bundle {export_manifest['bundle_version']}",
         },
     )
     temp_output = Path(DEFAULT_WORKSPACE_ROOT) / "model-registry" / f"{resolved_version}.json"

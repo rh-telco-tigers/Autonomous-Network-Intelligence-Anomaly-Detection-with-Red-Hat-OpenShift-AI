@@ -32,9 +32,9 @@ data:
   FEAST_S3_ENDPOINT_URL: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
   FEATURESTORE_REGISTRY_PATH: feast-ani-featurestore-registry.ani-demo-lab.svc.cluster.local:443
   FEATURESTORE_ONLINE_STORE_PATH: https://feast-ani-featurestore-online.ani-demo-lab.svc.cluster.local:443
-  MODEL_REGISTRY_ENDPOINT: http://ani-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080
+  MODEL_REGISTRY_ENDPOINT: https://model-catalog.rhoai-model-registries.svc.cluster.local:8443
   MODEL_REGISTRY_NAMESPACE: rhoai-model-registries
-  MODEL_REGISTRY_SERVICE: ani-demo-modelregistry
+  MODEL_REGISTRY_SERVICE: model-catalog
   MILVUS_URI: http://milvus.ani-demo-lab.svc.cluster.local:19530
   MILVUS_COLLECTIONS: ani_runbooks,incident_evidence,incident_reasoning,incident_resolution,ani_topology,ani_signal_patterns
   DEMO_SCENARIOS: registration_storm,registration_failure,authentication_failure,malformed_invite,routing_error,busy_destination,call_setup_timeout,call_drop_mid_session,server_internal_error,network_degradation,retransmission_spike

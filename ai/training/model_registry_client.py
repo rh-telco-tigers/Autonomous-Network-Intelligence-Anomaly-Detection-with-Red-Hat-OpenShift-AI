@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any, Dict
 
 
-DEFAULT_MODEL_REGISTRY_ENDPOINT = "http://model-registry-service.rhoai-model-registries.svc.cluster.local:8080"
+DEFAULT_MODEL_REGISTRY_ENDPOINT = "https://model-catalog.rhoai-model-registries.svc.cluster.local:8443"
+DEFAULT_MODEL_REGISTRY_CUSTOM_CA = "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
 
 
 def _now() -> str:
@@ -84,6 +85,16 @@ def _read_default_token() -> str | None:
     return None
 
 
+def _read_default_custom_ca() -> str | None:
+    explicit = os.getenv("RHOAI_MODEL_REGISTRY_CUSTOM_CA", "").strip()
+    if explicit:
+        return explicit
+    default_ca = Path(DEFAULT_MODEL_REGISTRY_CUSTOM_CA)
+    if default_ca.exists():
+        return str(default_ca)
+    return None
+
+
 def _coerce_result(value: Any) -> Dict[str, Any]:
     if value is None:
         return {}
@@ -124,7 +135,7 @@ def _try_register_with_kubeflow_hub(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     token = _read_default_token()
     author = os.getenv("RHOAI_MODEL_REGISTRY_AUTHOR", "featurestore-pipeline").strip() or "featurestore-pipeline"
-    custom_ca = os.getenv("RHOAI_MODEL_REGISTRY_CUSTOM_CA", "").strip() or None
+    custom_ca = _read_default_custom_ca()
     try:
         registry_metadata = {
             key: _metadata_value(value)

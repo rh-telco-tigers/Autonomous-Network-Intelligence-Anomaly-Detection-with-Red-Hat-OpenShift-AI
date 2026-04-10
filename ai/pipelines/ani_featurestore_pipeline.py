@@ -1,4 +1,4 @@
-"""Kubeflow pipeline source for the feature-store-backed IMS anomaly workflow."""
+"""Kubeflow pipeline source for the feature-store-backed ANI anomaly workflow."""
 
 from kfp import dsl
 
@@ -15,7 +15,7 @@ DATASET_STORE_BUCKET = "ani-models"
 DATASET_STORE_PREFIX = "pipelines/ani-datascience/datasets"
 DATASET_STORE_ACCESS_KEY = "minioadmin"
 DATASET_STORE_SECRET_KEY = "minioadmin"
-MODEL_REGISTRY_ENDPOINT = "http://ani-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080"
+MODEL_REGISTRY_ENDPOINT = "https://model-catalog.rhoai-model-registries.svc.cluster.local:8443"
 FEATURESTORE_MODE = "remote"
 FEATURESTORE_PROJECT = "ani_anomaly_featurestore"
 FEATURESTORE_REGISTRY_PATH = "feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443"
@@ -531,5 +531,6 @@ def ani_featurestore_pipeline(
 
     for task in (baseline, automl, evaluated, selected, exported, mlserver_exported, registered, published, published_mlserver):
         _configure_featurestore_task(task, **featurestore_config)
-    registered.set_env_variable("RHOAI_MODEL_REGISTRY_ENDPOINT", MODEL_REGISTRY_ENDPOINT)
+    registered.set_env_variable("RHOAI_MODEL_REGISTRY_ENDPOINT", model_registry_endpoint)
+    registered.set_env_variable("RHOAI_MODEL_REGISTRY_CUSTOM_CA", featurestore_ca_cert_path)
     registered.set_env_variable("RHOAI_MODEL_REGISTRY_REQUIRED", "false")

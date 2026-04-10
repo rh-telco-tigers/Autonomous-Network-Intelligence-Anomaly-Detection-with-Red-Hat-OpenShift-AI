@@ -6,7 +6,7 @@ DATA_NAMESPACE ?= ani-data
 DATASCIENCE_NAMESPACE ?= ani-datascience
 TEKTON_NAMESPACE ?= ani-tekton
 MODEL_REGISTRY_NAMESPACE ?= rhoai-model-registries
-MODEL_REGISTRY_SERVICE ?= ani-demo-modelregistry
+MODEL_REGISTRY_SERVICE ?= model-catalog
 INCIDENT_RELEASE_DATASET_VERSION ?=
 DEMO_TRIGGER_DIR := k8s/manual/demo-triggers
 MACHINE_API_MANUAL_DIR := k8s/manual/machine-api
@@ -43,7 +43,8 @@ check-fresh-cluster-ai: ## Check AI, serving, and model registry readiness
 	oc get kafka -n "$(DATA_NAMESPACE)"
 	oc get workflow -n "$(DATASCIENCE_NAMESPACE)"
 	oc get inferenceservice -n "$(DATASCIENCE_NAMESPACE)" | rg 'ani-predictive-fs|ani-predictive-fs-mlserver'
-	oc get svc -n "$(MODEL_REGISTRY_NAMESPACE)" | rg "$(MODEL_REGISTRY_SERVICE)"
+	oc get modelregistry -n "$(MODEL_REGISTRY_NAMESPACE)"
+	oc get svc -n "$(MODEL_REGISTRY_NAMESPACE)" "$(MODEL_REGISTRY_SERVICE)"
 
 check-fresh-cluster-runtime: ## Check runtime services and incident generators
 	oc get deploy -n "$(RUNTIME_NAMESPACE)"

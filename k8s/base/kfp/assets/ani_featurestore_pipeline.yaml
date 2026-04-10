@@ -32,7 +32,7 @@
 #    mlserver_serving_protocol_version: str [Default: 'v2']
 #    mlserver_serving_runtime_name: str [Default: 'mlserver-sklearn-runtime']
 #    model_name: str [Default: 'ani-anomaly-featurestore']
-#    model_registry_endpoint: str [Default: 'http://ani-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080']
+#    model_registry_endpoint: str [Default: 'https://model-catalog.rhoai-model-registries.svc.cluster.local:8443']
 #    model_version_name: str [Default: 'ani-anomaly-featurestore-v1']
 #    serving_alias: str [Default: 'current']
 #    serving_model_format_name: str [Default: 'triton']
@@ -742,7 +742,9 @@ deploymentSpec:
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: RHOAI_MODEL_REGISTRY_ENDPOINT
-          value: http://ani-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080
+          value: https://model-catalog.rhoai-model-registries.svc.cluster.local:8443
+        - name: RHOAI_MODEL_REGISTRY_CUSTOM_CA
+          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: RHOAI_MODEL_REGISTRY_REQUIRED
           value: 'false'
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
@@ -1603,7 +1605,7 @@ root:
         isOptional: true
         parameterType: STRING
       model_registry_endpoint:
-        defaultValue: http://ani-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080
+        defaultValue: https://model-catalog.rhoai-model-registries.svc.cluster.local:8443
         isOptional: true
         parameterType: STRING
       model_version_name:
