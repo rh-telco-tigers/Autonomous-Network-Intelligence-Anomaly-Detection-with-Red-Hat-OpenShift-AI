@@ -13,7 +13,7 @@ spec:
   source:
     path: k8s/overlays/gitops/namespaces
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: refactor/namespace-argo-split
+    targetRevision: release/namespace-argo-split
   syncPolicy:
     automated:
       prune: true
@@ -38,7 +38,7 @@ spec:
   source:
     path: k8s/overlays/gitops/rhoai
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: refactor/namespace-argo-split
+    targetRevision: release/namespace-argo-split
   syncPolicy:
     automated:
       prune: true
@@ -68,7 +68,7 @@ spec:
   source:
     path: k8s/overlays/gitops/data
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: refactor/namespace-argo-split
+    targetRevision: release/namespace-argo-split
   syncPolicy:
     automated:
       prune: true
@@ -99,7 +99,7 @@ spec:
   source:
     path: k8s/overlays/gitops/sipp-core
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: refactor/namespace-argo-split
+    targetRevision: release/namespace-argo-split
   syncPolicy:
     automated:
       prune: true
@@ -130,7 +130,7 @@ spec:
   source:
     path: k8s/overlays/gitops/runtime
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: refactor/namespace-argo-split
+    targetRevision: release/namespace-argo-split
   syncPolicy:
     automated:
       prune: true
@@ -155,7 +155,7 @@ spec:
   source:
     path: k8s/overlays/gitops/tekton
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: refactor/namespace-argo-split
+    targetRevision: release/namespace-argo-split
   syncPolicy:
     automated:
       prune: true
@@ -195,7 +195,7 @@ spec:
   source:
     path: k8s/overlays/gitops/datascience
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: refactor/namespace-argo-split
+    targetRevision: release/namespace-argo-split
   syncPolicy:
     automated:
       prune: true
@@ -226,7 +226,7 @@ spec:
   source:
     path: k8s/overlays/gitops/observability
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: refactor/namespace-argo-split
+    targetRevision: release/namespace-argo-split
   syncPolicy:
     automated:
       prune: true
@@ -251,7 +251,7 @@ spec:
   source:
     path: k8s/overlays/gitops/sipp-traffic
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: refactor/namespace-argo-split
+    targetRevision: release/namespace-argo-split
   syncPolicy:
     automated:
       prune: true
@@ -275,7 +275,7 @@ spec:
   source:
     path: k8s/overlays/gitops/aap
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: refactor/namespace-argo-split
+    targetRevision: release/namespace-argo-split
   syncPolicy:
     automated:
       prune: true
@@ -313,7 +313,7 @@ spec:
   source:
     path: k8s/overlays/gitops/plane
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: refactor/namespace-argo-split
+    targetRevision: release/namespace-argo-split
   syncPolicy:
     automated:
       prune: true

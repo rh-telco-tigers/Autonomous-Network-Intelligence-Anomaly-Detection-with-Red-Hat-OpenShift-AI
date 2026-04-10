@@ -11,7 +11,7 @@ spec:
   source:
     path: deploy/gitops/apps
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: refactor/namespace-argo-split
+    targetRevision: release/namespace-argo-split
   syncPolicy:
     automated:
       prune: true

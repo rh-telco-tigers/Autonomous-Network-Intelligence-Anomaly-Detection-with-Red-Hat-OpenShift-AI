@@ -62,7 +62,7 @@ spec:
                   - name: git-url
                     value: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
                   - name: git-revision
-                    value: refactor/namespace-argo-split
+                    value: release/namespace-argo-split
                 taskRunTemplate:
                   serviceAccountName: pipeline
                 timeouts:
