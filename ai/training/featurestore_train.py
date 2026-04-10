@@ -768,6 +768,7 @@ def _register_model_version_step(
     model_version_name: str | None,
     feature_service_name: str,
     pipeline_name: str,
+    model_registry_endpoint: str | None,
 ) -> Dict[str, Any]:
     export_manifest = _json_load(export_manifest_path)
     resolved_version = model_version_name or f"{export_manifest['bundle_version']}-{export_manifest['selected_model_version']}"
@@ -783,6 +784,7 @@ def _register_model_version_step(
         pipeline_name=pipeline_name,
         metrics=export_manifest["serving_metrics"],
         deployment_readiness_status=export_manifest.get("deployment_readiness_status", "needs-review"),
+        registry_endpoint=model_registry_endpoint,
         metadata={
             "serving_model_name": export_manifest["serving_model_name"],
             "serving_runtime_name": export_manifest["serving_runtime_name"],
@@ -938,6 +940,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--automl-engine", default="autogluon")
     parser.add_argument("--model-name", default=DEFAULT_MODEL_NAME)
     parser.add_argument("--model-version-name")
+    parser.add_argument("--model-registry-endpoint", default=DEFAULT_MODEL_REGISTRY_ENDPOINT)
     parser.add_argument("--serving-model-name", default=DEFAULT_SERVING_MODEL_NAME)
     parser.add_argument("--serving-runtime-name", default=DEFAULT_SERVING_RUNTIME_NAME)
     parser.add_argument("--serving-model-format-name", default=DEFAULT_MODEL_FORMAT_NAME)
@@ -1035,6 +1038,7 @@ def main() -> None:
             args.model_version_name,
             args.feature_service_name,
             args.pipeline_name,
+            args.model_registry_endpoint,
         )
     elif args.step == "publish-deployment-manifest":
         if not all([args.export_manifest, args.model_registry_manifest]):
