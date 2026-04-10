@@ -36,7 +36,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: plane-web-url-config-bootstrap
+  name: plane-web-url-config-bootstrap-v2
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:

@@ -53,7 +53,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: plane-integration-secret-bootstrap
+  name: plane-integration-secret-bootstrap-v2
   namespace: ims-demo-lab
   annotations:
     argocd.argoproj.io/sync-wave: "0"
@@ -150,12 +150,12 @@ spec:
                   os.getenv("CONTROL_PLANE_STATUS_URL")
                   or f"http://control-plane.{control_plane_namespace}.svc.cluster.local:8080/integrations/status"
               ).rstrip("/")
-              token_label = os.getenv("PLANE_CONTROL_PLANE_TOKEN_LABEL", "ims-platform-control-plane").strip() or "ims-platform-control-plane"
+              token_label = os.getenv("PLANE_CONTROL_PLANE_TOKEN_LABEL", "ims-demo-control-plane").strip() or "ims-demo-control-plane"
               token_description = (
                   os.getenv("PLANE_CONTROL_PLANE_TOKEN_DESCRIPTION", "PAT for IMS control-plane ticket sync").strip()
                   or "PAT for IMS control-plane ticket sync"
               )
-              preferred_admin_email = os.getenv("PLANE_ADMIN_EMAIL", "plane-admin@ims-platform.local").strip()
+              preferred_admin_email = os.getenv("PLANE_ADMIN_EMAIL", "plane-admin@ims-demo.local").strip()
               preferred_admin_username = os.getenv("PLANE_ADMIN_USERNAME", "plane-admin").strip() or "plane-admin"
               preferred_admin_password = os.getenv("PLANE_ADMIN_PASSWORD", "plane").strip() or "plane"
               preferred_admin_first_name = os.getenv("PLANE_ADMIN_FIRST_NAME", "Plane").strip() or "Plane"
@@ -163,9 +163,9 @@ spec:
               preferred_admin_display_name = (
                   os.getenv("PLANE_ADMIN_DISPLAY_NAME", "Plane Admin").strip() or "Plane Admin"
               )
-              preferred_workspace_slug = os.getenv("PLANE_WORKSPACE_SLUG", "ims-platform").strip() or "ims-platform"
-              preferred_workspace_name = os.getenv("PLANE_WORKSPACE_NAME", "IMS Platform").strip() or "IMS Platform"
-              preferred_project_name = os.getenv("PLANE_PROJECT_NAME", "IMS Platform").strip() or "IMS Platform"
+              preferred_workspace_slug = os.getenv("PLANE_WORKSPACE_SLUG", "ims-demo").strip() or "ims-demo"
+              preferred_workspace_name = os.getenv("PLANE_WORKSPACE_NAME", "IMS Demo").strip() or "IMS Demo"
+              preferred_project_name = os.getenv("PLANE_PROJECT_NAME", "IMS Demo").strip() or "IMS Demo"
               preferred_project_identifier = (
                   os.getenv("PLANE_PROJECT_IDENTIFIER", "IMS").strip().upper() or "IMS"
               )
