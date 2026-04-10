@@ -82,6 +82,8 @@ metadata:
   namespace: ims-demo-lab
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: control-plane
