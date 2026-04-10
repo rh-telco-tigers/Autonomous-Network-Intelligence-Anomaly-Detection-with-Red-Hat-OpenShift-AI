@@ -49,10 +49,13 @@ data:
         defaultPolicy: role:readonly
         policy: |
           g, admin, role:admin
+          g, kubeadmin, role:admin
+          g, kube:admin, role:admin
+          g, system:admin, role:admin
           g, system:cluster-admins, role:admin
           g, cluster-admins, role:admin
           g, system:authenticated, role:readonly
-        scopes: '[groups]'
+        scopes: '[groups, preferred_username]'
       redis:
         resources:
           limits:
