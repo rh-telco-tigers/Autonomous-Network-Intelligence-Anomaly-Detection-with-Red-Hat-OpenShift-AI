@@ -3,12 +3,20 @@ kind: ServiceAccount
 metadata:
   name: plane-integration-bootstrap
   namespace: ims-demo-lab
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "0"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: plane-integration-bootstrap
   namespace: ims-demo-lab
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "0"
 rules:
   - apiGroups:
       - ""
@@ -41,6 +49,10 @@ kind: RoleBinding
 metadata:
   name: plane-integration-bootstrap
   namespace: ims-demo-lab
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "0"
 subjects:
   - kind: ServiceAccount
     name: plane-integration-bootstrap
@@ -58,7 +70,7 @@ metadata:
   annotations:
     argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "70"
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   backoffLimit: 3
   ttlSecondsAfterFinished: 300
@@ -584,17 +596,29 @@ spec:
               else:
                   print("plane-integration-auth already matches desired Plane settings", flush=True)
 
-              status_deadline = time.time() + status_wait_seconds
-              rolled_out = False
-              while time.time() < status_deadline:
-                  if plane_live_configured():
-                      print("control-plane reports Plane integration live", flush=True)
-                      break
-                  if not rolled_out:
-                      rolled_out = rollout_control_plane()
-                  time.sleep(10)
+              rolled_out = rollout_control_plane()
+              if plane_live_configured():
+                  print("control-plane reports Plane integration live", flush=True)
               else:
-                  raise SystemExit("control-plane never reported Plane integration as live")
+                  status_deadline = time.time() + status_wait_seconds
+                  while time.time() < status_deadline:
+                      if plane_live_configured():
+                          print("control-plane reports Plane integration live", flush=True)
+                          break
+                      time.sleep(10)
+                  else:
+                      if rolled_out:
+                          print(
+                              "Plane credentials were seeded and control-plane rollout was requested; "
+                              "skipping failure while control-plane catches up",
+                              flush=True,
+                          )
+                      else:
+                          print(
+                              "Plane credentials were seeded before control-plane became available; "
+                              "the next control-plane start will pick them up automatically",
+                              flush=True,
+                          )
               PY
           resources:
             requests:

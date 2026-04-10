@@ -9,8 +9,14 @@ MODEL_REGISTRY_NAMESPACE ?= rhoai-model-registries
 MODEL_REGISTRY_SERVICE ?= ims-demo-modelregistry
 INCIDENT_RELEASE_DATASET_VERSION ?=
 DEMO_TRIGGER_DIR := k8s/manual/demo-triggers
+MACHINE_API_MANUAL_DIR := k8s/manual/machine-api
+GPU_MACHINESET_RENDERER := $(MACHINE_API_MANUAL_DIR)/render_gpu_machineset.py
+GPU_INSTANCE_TYPE ?= g6.8xlarge
+GPU_REPLICAS ?= 1
+GPU_SOURCE_MACHINESET ?=
+GPU_OUTPUT ?=
 
-.PHONY: help kustomize-gitops apply-demo-ai-extras check-demo-incident-generators check-fresh-cluster-gitops check-fresh-cluster-ai check-fresh-cluster-runtime check-fresh-cluster validate-python repo-tree trigger-build-pipeline trigger-anomaly-platform-pipeline trigger-feature-bundle-pipeline trigger-featurestore-pipeline trigger-incident-release-pipeline smoke-check-featurestore-serving trigger-incident-release stop-incident-release
+.PHONY: help kustomize-gitops apply-demo-ai-extras check-demo-incident-generators check-fresh-cluster-gitops check-fresh-cluster-ai check-fresh-cluster-runtime check-fresh-cluster validate-python repo-tree render-gpu-node-pool add-gpu-node-pool trigger-build-pipeline trigger-anomaly-platform-pipeline trigger-feature-bundle-pipeline trigger-featurestore-pipeline trigger-incident-release-pipeline smoke-check-featurestore-serving trigger-incident-release stop-incident-release
 
 help: ## Print available make targets
 	@printf "Available commands:\n"
@@ -55,6 +61,21 @@ validate-python: ## Compile Python sources for a quick syntax check
 
 repo-tree: ## List repository files
 	rg --files .
+
+render-gpu-node-pool: ## Render a manual AWS GPU MachineSet from the current cluster
+	@python3 "$(GPU_MACHINESET_RENDERER)" \
+	  --instance-type="$(GPU_INSTANCE_TYPE)" \
+	  --replicas="$(GPU_REPLICAS)" \
+	  $(if $(GPU_SOURCE_MACHINESET),--source-machineset="$(GPU_SOURCE_MACHINESET)") \
+	  $(if $(GPU_OUTPUT),--output="$(GPU_OUTPUT)")
+
+add-gpu-node-pool: ## Render and manually apply a GPU MachineSet to the current cluster
+	@python3 "$(GPU_MACHINESET_RENDERER)" \
+	  --instance-type="$(GPU_INSTANCE_TYPE)" \
+	  --replicas="$(GPU_REPLICAS)" \
+	  $(if $(GPU_SOURCE_MACHINESET),--source-machineset="$(GPU_SOURCE_MACHINESET)") \
+	  $(if $(GPU_OUTPUT),--output="$(GPU_OUTPUT)") \
+	  --apply
 
 trigger-build-pipeline: ## Start the demo Tekton image build
 	@printf "Creating demo build PipelineRun in %s\n" "$(TEKTON_NAMESPACE)"
