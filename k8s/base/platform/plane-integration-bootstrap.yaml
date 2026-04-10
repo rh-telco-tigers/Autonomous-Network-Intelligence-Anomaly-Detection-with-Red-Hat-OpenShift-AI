@@ -53,7 +53,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: plane-integration-secret-bootstrap-v3
+  name: plane-integration-secret-bootstrap-v4
   namespace: ims-demo-lab
   annotations:
     argocd.argoproj.io/sync-wave: "0"
@@ -129,6 +129,7 @@ spec:
               import urllib.error
               import urllib.request
               import uuid
+              from urllib.parse import urlparse
 
               os.environ.setdefault("DJANGO_SETTINGS_MODULE", "plane.settings.production")
 
@@ -353,6 +354,26 @@ spec:
 
                   instance = Instance.objects.order_by("-created_at").first()
                   if instance is not None:
+                      instance_updates = []
+                      desired_domain = ""
+                      if plane_app_url:
+                          try:
+                              desired_domain = str(urlparse(plane_app_url).hostname or "").strip()
+                          except Exception:
+                              desired_domain = ""
+                      desired_instance_fields = {
+                          "instance_name": preferred_workspace_name,
+                          "is_setup_done": True,
+                      }
+                      if desired_domain:
+                          desired_instance_fields["domain"] = desired_domain
+                      for field_name, value in desired_instance_fields.items():
+                          if getattr(instance, field_name) != value:
+                              setattr(instance, field_name, value)
+                              instance_updates.append(field_name)
+                      if instance_updates:
+                          instance.save(update_fields=instance_updates)
+                          print(f"updated Plane instance fields: {', '.join(instance_updates)}", flush=True)
                       instance_admin, created = InstanceAdmin.objects.get_or_create(
                           user=user,
                           instance=instance,
