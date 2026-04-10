@@ -2,19 +2,11 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: plane-web-url-bootstrap
-  annotations:
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "10"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: plane-web-url-bootstrap
-  annotations:
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "10"
 rules:
   - apiGroups: [""]
     resources: ["configmaps"]
@@ -33,10 +25,6 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: plane-web-url-bootstrap
-  annotations:
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "10"
 subjects:
   - kind: ServiceAccount
     name: plane-web-url-bootstrap
@@ -67,6 +55,11 @@ spec:
             - -lc
             - |
               set -euo pipefail
+              # Authenticate oc with the hook service account before patching cluster resources.
+              oc login --token="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+                --server="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}" \
+                --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
+                >/dev/null
               for _ in $(seq 1 90); do
                 host="$(oc get route plane-web -n "${POD_NAMESPACE}" -o jsonpath='{.spec.host}' 2>/dev/null || true)"
                 if [ -n "${host}" ]; then

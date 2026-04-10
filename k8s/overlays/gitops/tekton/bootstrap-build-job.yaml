@@ -20,6 +20,10 @@ spec:
             - -lc
             - |
               set -euo pipefail
+              oc login --token="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+                --server="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}" \
+                --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
+                >/dev/null
 
               namespace="${POD_NAMESPACE}"
               run_name="ims-platform-bootstrap-build"
