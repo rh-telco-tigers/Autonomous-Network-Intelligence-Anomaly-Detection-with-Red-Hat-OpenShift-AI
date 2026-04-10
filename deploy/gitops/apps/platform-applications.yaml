@@ -92,6 +92,11 @@ spec:
       jsonPointers:
         - /metadata/annotations/openshift.io~1host.generated
         - /spec/host
+    - group: apps
+      kind: Deployment
+      jqPathExpressions:
+        - .spec.template.spec.containers[].image
+        - .spec.template.spec.initContainers[]?.image
   destination:
     namespace: ims-sipp
     server: https://kubernetes.default.svc

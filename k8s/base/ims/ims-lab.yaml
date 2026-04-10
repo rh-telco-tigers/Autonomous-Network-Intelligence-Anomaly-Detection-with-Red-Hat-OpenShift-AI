@@ -119,6 +119,17 @@ kind: Deployment
 metadata:
   name: openimss-webui
   namespace: ims-demo-lab
+  annotations:
+    image.openshift.io/triggers: |-
+      [
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-open5gs:latest"
+          },
+          "fieldPath": "spec.template.spec.containers[?(@.name==\"open5gs\")].image"
+        }
+      ]
 spec:
   replicas: 1
   selector:
@@ -205,6 +216,17 @@ kind: Deployment
 metadata:
   name: ims-hss
   namespace: ims-demo-lab
+  annotations:
+    image.openshift.io/triggers: |-
+      [
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-open5gs:latest"
+          },
+          "fieldPath": "spec.template.spec.containers[?(@.name==\"open5gs\")].image"
+        }
+      ]
 spec:
   replicas: 1
   selector:
@@ -309,6 +331,24 @@ kind: Deployment
 metadata:
   name: ims-icscf
   namespace: ims-demo-lab
+  annotations:
+    image.openshift.io/triggers: |-
+      [
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-opensips:latest"
+          },
+          "fieldPath": "spec.template.spec.initContainers[?(@.name==\"init-opensips-config\")].image"
+        },
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-opensips:latest"
+          },
+          "fieldPath": "spec.template.spec.containers[?(@.name==\"opensips\")].image"
+        }
+      ]
 spec:
   replicas: 1
   selector:
@@ -411,6 +451,24 @@ kind: Deployment
 metadata:
   name: ims-scscf
   namespace: ims-demo-lab
+  annotations:
+    image.openshift.io/triggers: |-
+      [
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-opensips:latest"
+          },
+          "fieldPath": "spec.template.spec.initContainers[?(@.name==\"init-opensips-config\")].image"
+        },
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-opensips:latest"
+          },
+          "fieldPath": "spec.template.spec.containers[?(@.name==\"opensips\")].image"
+        }
+      ]
 spec:
   replicas: 1
   selector:
@@ -513,6 +571,24 @@ kind: Deployment
 metadata:
   name: ims-pcscf
   namespace: ims-demo-lab
+  annotations:
+    image.openshift.io/triggers: |-
+      [
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-opensips:latest"
+          },
+          "fieldPath": "spec.template.spec.initContainers[?(@.name==\"init-opensips-config\")].image"
+        },
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-opensips:latest"
+          },
+          "fieldPath": "spec.template.spec.containers[?(@.name==\"opensips\")].image"
+        }
+      ]
 spec:
   replicas: 1
   selector:
