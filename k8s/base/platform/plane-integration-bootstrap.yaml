@@ -317,6 +317,10 @@ spec:
               def ensure_admin_user():
                   user = User.objects.filter(email=preferred_admin_email).first()
                   if user is None:
+                      user = User.objects.filter(username=preferred_admin_username).first()
+                      if user is not None:
+                          print(f"reusing Plane admin user {preferred_admin_username}", flush=True)
+                  if user is None:
                       user = User.objects.create_superuser(
                           preferred_admin_username,
                           preferred_admin_email,
@@ -326,6 +330,8 @@ spec:
 
                   updates = []
                   desired_user_fields = {
+                      "email": preferred_admin_email,
+                      "username": preferred_admin_username,
                       "display_name": preferred_admin_display_name,
                       "first_name": preferred_admin_first_name,
                       "last_name": preferred_admin_last_name,
@@ -338,6 +344,9 @@ spec:
                       if getattr(user, field_name) != value:
                           setattr(user, field_name, value)
                           updates.append(field_name)
+                  if not user.check_password(preferred_admin_password):
+                      user.set_password(preferred_admin_password)
+                      updates.append("password")
                   if updates:
                       user.save(update_fields=updates)
                       print(f"updated Plane admin user fields: {', '.join(updates)}", flush=True)
