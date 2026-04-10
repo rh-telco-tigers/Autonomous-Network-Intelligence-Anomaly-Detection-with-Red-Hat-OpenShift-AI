@@ -279,6 +279,7 @@ def register_model_version(
     model_version_name: str,
     output_manifest: dsl.OutputPath(str),
     pipeline_name: str = "ani-featurestore-train-and-register",
+    model_registry_endpoint: str = MODEL_REGISTRY_ENDPOINT,
 ):
     return dsl.ContainerSpec(
         image=PIPELINE_IMAGE,
@@ -296,6 +297,8 @@ def register_model_version(
             model_version_name,
             "--pipeline-name",
             pipeline_name,
+            "--model-registry-endpoint",
+            model_registry_endpoint,
             "--output",
             output_manifest,
         ],
@@ -519,6 +522,7 @@ def ani_featurestore_pipeline(
         feature_service_name=feature_service_name,
         model_name=model_name,
         model_version_name=model_version_name,
+        model_registry_endpoint=model_registry_endpoint,
     )
     published = publish_deployment_manifest(
         export_manifest=exported.outputs["output_manifest"],
@@ -531,6 +535,4 @@ def ani_featurestore_pipeline(
 
     for task in (baseline, automl, evaluated, selected, exported, mlserver_exported, registered, published, published_mlserver):
         _configure_featurestore_task(task, **featurestore_config)
-    registered.set_env_variable("RHOAI_MODEL_REGISTRY_ENDPOINT", model_registry_endpoint)
-    registered.set_env_variable("RHOAI_MODEL_REGISTRY_CUSTOM_CA", featurestore_ca_cert_path)
     registered.set_env_variable("RHOAI_MODEL_REGISTRY_REQUIRED", "false")
