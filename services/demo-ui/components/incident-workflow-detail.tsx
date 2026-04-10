@@ -10,6 +10,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { KnowledgeArticleView } from "@/components/knowledge-article-view";
+import { LogoMark } from "@/components/logo-mark";
 import { useApiToken } from "@/components/providers/app-providers";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -902,9 +903,7 @@ export function IncidentWorkflowDetail() {
               <Link href="/incidents">Back to incidents</Link>
             </Button>
             <div className="flex items-start gap-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent)] text-sm font-bold text-slate-950 shadow-sm">
-                IMS
-              </div>
+              <LogoMark className="h-11 w-11 shrink-0" />
               <div className="min-w-0">
                 <div className="text-[11px] uppercase tracking-[0.32em] text-[var(--text-muted)]">Incident workflow</div>
                 <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[var(--text-strong)] sm:text-3xl">

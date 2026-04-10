@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { RefreshCcw } from "lucide-react";
 
+import { LogoMark } from "@/components/logo-mark";
 import { useApiToken } from "@/components/providers/app-providers";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -27,9 +28,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <aside className="app-shell-sidebar lg:sticky lg:top-0 lg:h-screen">
           <div className="border-b border-[var(--border-subtle)] p-6">
             <div className="flex items-center gap-3">
-              <div className="app-shell-brand flex h-11 w-11 items-center justify-center rounded-2xl text-sm font-semibold">
-                IMS
-              </div>
+              <LogoMark className="h-11 w-11" />
               <div>
                 <p className="text-xs uppercase tracking-[0.25em] text-[var(--text-subtle)]">Operations Console</p>
                 <h2 className="text-xl font-semibold text-[var(--text-strong)]">Incident Workflow</h2>
