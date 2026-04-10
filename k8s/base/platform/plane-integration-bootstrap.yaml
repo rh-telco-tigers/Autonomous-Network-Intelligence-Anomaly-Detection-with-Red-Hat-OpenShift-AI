@@ -53,7 +53,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: plane-integration-config-bootstrap
+  name: plane-integration-secret-bootstrap
   namespace: ims-demo-lab
   annotations:
     argocd.argoproj.io/sync-wave: "0"
@@ -572,14 +572,31 @@ spec:
                   )
                   print("created plane-integration-auth", flush=True)
               elif any(current_values.get(key, "") != value for key, value in desired_secret_data.items()):
-                  k8s_request(
-                      secret_path,
-                      method="PATCH",
-                      payload={"stringData": desired_secret_data},
-                      expected_statuses=(200,),
-                      content_type="application/merge-patch+json",
-                  )
-                  print("patched plane-integration-auth", flush=True)
+                  try:
+                      k8s_request(
+                          secret_path,
+                          method="PATCH",
+                          payload={"stringData": desired_secret_data},
+                          expected_statuses=(200,),
+                          content_type="application/merge-patch+json",
+                      )
+                      print("patched plane-integration-auth", flush=True)
+                  except urllib.error.HTTPError as exc:
+                      if exc.code != 404:
+                          raise
+                      k8s_request(
+                          f"/api/v1/namespaces/{control_plane_namespace}/secrets",
+                          method="POST",
+                          payload={
+                              "apiVersion": "v1",
+                              "kind": "Secret",
+                              "metadata": {"name": "plane-integration-auth", "namespace": control_plane_namespace},
+                              "type": "Opaque",
+                              "stringData": desired_secret_data,
+                          },
+                          expected_statuses=(201,),
+                      )
+                      print("recreated plane-integration-auth after concurrent prune", flush=True)
               else:
                   print("plane-integration-auth already matches desired Plane settings", flush=True)
 
