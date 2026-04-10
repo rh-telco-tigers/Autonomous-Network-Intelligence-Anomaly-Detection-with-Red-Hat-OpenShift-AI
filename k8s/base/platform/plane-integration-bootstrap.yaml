@@ -53,7 +53,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: plane-integration-secret-bootstrap-v7
+  name: plane-integration-secret-bootstrap-v8
   namespace: ani-demo-lab
   annotations:
     argocd.argoproj.io/sync-wave: "0"
@@ -354,18 +354,26 @@ spec:
                       user.save(update_fields=updates)
                       print(f"updated Plane admin user fields: {', '.join(updates)}", flush=True)
 
-                  instance = Instance.objects.order_by("-created_at").first()
-                  if instance is not None:
+                  return user
+
+              def ensure_instance_setup(user):
+                  instances = list(Instance.objects.filter(deleted_at__isnull=True).order_by("-created_at"))
+                  if not instances:
+                      raise RuntimeError("Plane instance record not ready")
+
+                  desired_domain = ""
+                  if plane_app_url:
+                      try:
+                          desired_domain = str(urlparse(plane_app_url).hostname or "").strip()
+                      except Exception:
+                          desired_domain = ""
+
+                  for instance in instances:
                       instance_updates = []
-                      desired_domain = ""
-                      if plane_app_url:
-                          try:
-                              desired_domain = str(urlparse(plane_app_url).hostname or "").strip()
-                          except Exception:
-                              desired_domain = ""
                       desired_instance_fields = {
                           "instance_name": preferred_workspace_name,
                           "is_setup_done": True,
+                          "is_signup_screen_visited": True,
                       }
                       if desired_domain:
                           desired_instance_fields["domain"] = desired_domain
@@ -375,24 +383,36 @@ spec:
                               instance_updates.append(field_name)
                       if instance_updates:
                           instance.save(update_fields=instance_updates)
-                          print(f"updated Plane instance fields: {', '.join(instance_updates)}", flush=True)
-                      cache.clear()
-                      print("cleared Plane cache after instance reconciliation", flush=True)
+                          print(
+                              f"updated Plane instance {instance.id} fields: {', '.join(instance_updates)}",
+                              flush=True,
+                          )
+
                       instance_admin, created = InstanceAdmin.objects.get_or_create(
                           user=user,
                           instance=instance,
-                          defaults={"role": 20},
+                          defaults={"role": 20, "is_verified": True},
                       )
                       if created:
-                          print(f"created Plane instance admin for {preferred_admin_email}", flush=True)
-                      elif instance_admin.role != 20:
-                          instance_admin.role = 20
-                          instance_admin.save(update_fields=["role"])
-                          print(f"updated Plane instance admin role for {preferred_admin_email}", flush=True)
-                  else:
-                      print("waiting for Plane instance record", flush=True)
+                          print(f"created Plane instance admin for {preferred_admin_email} on {instance.id}", flush=True)
+                      else:
+                          admin_updates = []
+                          if instance_admin.role != 20:
+                              instance_admin.role = 20
+                              admin_updates.append("role")
+                          if not instance_admin.is_verified:
+                              instance_admin.is_verified = True
+                              admin_updates.append("is_verified")
+                          if admin_updates:
+                              instance_admin.save(update_fields=admin_updates)
+                              print(
+                                  f"updated Plane instance admin for {preferred_admin_email}: {', '.join(admin_updates)}",
+                                  flush=True,
+                              )
 
-                  return user
+                  cache.clear()
+                  print("cleared Plane cache after instance reconciliation", flush=True)
+                  return instances[0]
 
               def ensure_workspace(user):
                   workspace = Workspace.objects.filter(slug=preferred_workspace_slug).first()
@@ -427,6 +447,21 @@ spec:
                   if workspace is not None and profile.last_workspace_id != workspace.id:
                       profile.last_workspace_id = workspace.id
                       profile_updates.append("last_workspace_id")
+                  if not profile.is_onboarded:
+                      profile.is_onboarded = True
+                      profile_updates.append("is_onboarded")
+
+                  desired_onboarding_step = {
+                      "workspace_join": True,
+                      "profile_complete": True,
+                      "workspace_create": True,
+                      "workspace_invite": True,
+                  }
+                  current_onboarding_step = dict(profile.onboarding_step or {})
+                  if any(current_onboarding_step.get(key) != value for key, value in desired_onboarding_step.items()):
+                      current_onboarding_step.update(desired_onboarding_step)
+                      profile.onboarding_step = current_onboarding_step
+                      profile_updates.append("onboarding_step")
 
                   if profile_updates:
                       profile.save(update_fields=profile_updates)
@@ -551,6 +586,7 @@ spec:
 
               deadline = time.time() + wait_seconds
               user = None
+              instance = None
               profile = None
               workspace = None
               project = None
@@ -561,6 +597,7 @@ spec:
                       workspace = ensure_workspace(user)
                       profile = ensure_profile(user, workspace)
                       project = ensure_project(user, workspace)
+                      instance = ensure_instance_setup(user)
                   except OperationalError as exc:
                       last_error = exc
                       print(f"waiting for Plane database: {exc}", flush=True)
@@ -572,13 +609,13 @@ spec:
                       time.sleep(10)
                       continue
 
-                  if user and profile and workspace and project:
+                  if user and instance and profile and workspace and project:
                       break
 
-                  print("waiting for Plane user/profile/workspace/project seed objects", flush=True)
+                  print("waiting for Plane instance/user/profile/workspace/project seed objects", flush=True)
                   time.sleep(10)
 
-              if not user or not profile or not workspace or not project:
+              if not user or not instance or not profile or not workspace or not project:
                   raise SystemExit(f"Plane seed data was not ready before bootstrap timeout: {last_error}")
 
               token = APIToken.objects.filter(label=token_label, user=user, is_active=True).order_by("-updated_at").first()
