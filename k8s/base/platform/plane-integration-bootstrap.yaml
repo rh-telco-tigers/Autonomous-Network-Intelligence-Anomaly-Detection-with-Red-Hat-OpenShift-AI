@@ -85,7 +85,7 @@ spec:
             - name: PLANE_BOOTSTRAP_STATUS_WAIT_SECONDS
               value: "300"
             - name: PLANE_ADMIN_EMAIL
-              value: plane-admin@ims-platform.local
+              value: plane-admin@ims-demo.local
             - name: PLANE_ADMIN_USERNAME
               value: plane-admin
             - name: PLANE_ADMIN_PASSWORD
@@ -97,15 +97,15 @@ spec:
             - name: PLANE_ADMIN_DISPLAY_NAME
               value: Plane Admin
             - name: PLANE_WORKSPACE_SLUG
-              value: ims-platform
+              value: ims-demo
             - name: PLANE_WORKSPACE_NAME
-              value: IMS Platform
+              value: IMS Demo
             - name: PLANE_PROJECT_NAME
-              value: IMS Platform
+              value: IMS Demo
             - name: PLANE_PROJECT_IDENTIFIER
               value: IMS
             - name: PLANE_CONTROL_PLANE_TOKEN_LABEL
-              value: ims-platform-control-plane
+              value: ims-demo-control-plane
             - name: PLANE_CONTROL_PLANE_TOKEN_DESCRIPTION
               value: PAT for IMS control-plane ticket sync
           envFrom:
