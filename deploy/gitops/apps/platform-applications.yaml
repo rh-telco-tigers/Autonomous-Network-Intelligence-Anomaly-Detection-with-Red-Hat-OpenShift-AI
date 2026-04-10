@@ -130,6 +130,17 @@ spec:
       jsonPointers:
         - /metadata/annotations/openshift.io~1host.generated
         - /spec/host
+    - group: ""
+      kind: Secret
+      name: plane-integration-auth
+      namespace: ims-runtime
+      jsonPointers:
+        - /data/PLANE_BASE_URL
+        - /data/PLANE_APP_URL
+        - /data/PLANE_WORKSPACE_SLUG
+        - /data/PLANE_PROJECT_ID
+        - /data/PLANE_API_KEY
+        - /data/PLANE_WEBHOOK_SECRET
   destination:
     namespace: ims-runtime
     server: https://kubernetes.default.svc

@@ -3,20 +3,12 @@ kind: ServiceAccount
 metadata:
   name: plane-integration-bootstrap
   namespace: ims-demo-lab
-  annotations:
-    argocd.argoproj.io/hook: Sync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "0"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: plane-integration-bootstrap
   namespace: ims-demo-lab
-  annotations:
-    argocd.argoproj.io/hook: Sync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "0"
 rules:
   - apiGroups:
       - ""
@@ -49,10 +41,6 @@ kind: RoleBinding
 metadata:
   name: plane-integration-bootstrap
   namespace: ims-demo-lab
-  annotations:
-    argocd.argoproj.io/hook: Sync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "0"
 subjects:
   - kind: ServiceAccount
     name: plane-integration-bootstrap
@@ -68,12 +56,9 @@ metadata:
   name: plane-integration-bootstrap
   namespace: ims-demo-lab
   annotations:
-    argocd.argoproj.io/hook: Sync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "20"
 spec:
   backoffLimit: 3
-  ttlSecondsAfterFinished: 300
   template:
     metadata:
       labels:
