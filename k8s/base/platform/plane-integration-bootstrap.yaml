@@ -53,7 +53,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: plane-integration-bootstrap
+  name: plane-integration-config-bootstrap
   namespace: ims-demo-lab
   annotations:
     argocd.argoproj.io/sync-wave: "0"

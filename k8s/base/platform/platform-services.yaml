@@ -31,20 +31,6 @@ stringData:
     }
 ---
 apiVersion: v1
-kind: Secret
-metadata:
-  name: plane-integration-auth
-  namespace: ims-demo-lab
-type: Opaque
-stringData:
-  PLANE_BASE_URL: ""
-  PLANE_APP_URL: ""
-  PLANE_WORKSPACE_SLUG: ""
-  PLANE_PROJECT_ID: ""
-  PLANE_API_KEY: ""
-  PLANE_WEBHOOK_SECRET: ""
----
-apiVersion: v1
 kind: ConfigMap
 metadata:
   name: llm-provider-config
@@ -386,31 +372,37 @@ spec:
                 secretKeyRef:
                   name: plane-integration-auth
                   key: PLANE_BASE_URL
+                  optional: true
             - name: PLANE_APP_URL
               valueFrom:
                 secretKeyRef:
                   name: plane-integration-auth
                   key: PLANE_APP_URL
+                  optional: true
             - name: PLANE_WORKSPACE_SLUG
               valueFrom:
                 secretKeyRef:
                   name: plane-integration-auth
                   key: PLANE_WORKSPACE_SLUG
+                  optional: true
             - name: PLANE_PROJECT_ID
               valueFrom:
                 secretKeyRef:
                   name: plane-integration-auth
                   key: PLANE_PROJECT_ID
+                  optional: true
             - name: PLANE_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: plane-integration-auth
                   key: PLANE_API_KEY
+                  optional: true
             - name: PLANE_WEBHOOK_SECRET
               valueFrom:
                 secretKeyRef:
                   name: plane-integration-auth
                   key: PLANE_WEBHOOK_SECRET
+                  optional: true
           volumeMounts:
             - name: data
               mountPath: /data
