@@ -88,6 +88,20 @@ oc rollout restart deployment/control-plane -n ims-runtime
 oc rollout status deployment/control-plane -n ims-runtime
 ```
 
+## AAP Job Succeeds But Argo CD Reverts The Change
+
+The current branch allows the approved AAP-managed drift for:
+
+- `ims-scscf` replica changes from `Scale the S-CSCF path`
+- `ims-pcscf` annotation changes from the ingress guardrail action
+
+If an AAP remediation completes but the workload snaps back to the Git value immediately, confirm `ims-sipp-core` is synced to the latest branch revision:
+
+```sh
+oc get application.argoproj.io ims-sipp-core -n openshift-gitops
+oc get application.argoproj.io ims-sipp-core -n openshift-gitops -o jsonpath='{.status.sync.revision}{"\n"}'
+```
+
 ## The Demo UI Opens But No New Incidents Appear
 
 Check the generators first:

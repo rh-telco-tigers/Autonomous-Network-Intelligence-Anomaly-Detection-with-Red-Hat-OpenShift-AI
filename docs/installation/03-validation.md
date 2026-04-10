@@ -103,6 +103,18 @@ Expect:
 - `eda.live_configured=true`
 - `eda.bootstrapped=true`
 
+## 8. Validate The Existing AAP Playbook From The Incident Flow
+
+1. Open the demo UI and run the `call_setup_timeout` scenario.
+2. Open the incident, review the generated remediations, and execute `Scale the S-CSCF path`.
+3. Confirm the execution completed and the scale change remained applied:
+
+```sh
+oc get deploy ims-scscf -n ims-sipp -o jsonpath='{.spec.replicas}{"\t"}{.status.readyReplicas}{"\t"}{.status.availableReplicas}{"\n"}'
+```
+
+Expected result after the approved action runs: the deployment reports `2` desired replicas and stays there until an operator intentionally changes it again.
+
 ## What Good Looks Like
 
 - Argo applications are present and mostly `Synced` / `Healthy`
@@ -116,3 +128,4 @@ Expect:
 - the manual SIPp jobs finish and print `window_uri`
 - the control-plane status endpoint returns JSON without errors
 - after AAP license import, `aap` and `eda` report `live_configured=true`
+- the `Scale the S-CSCF path` incident action finishes through AAP and `ims-scscf` stays at `2` replicas

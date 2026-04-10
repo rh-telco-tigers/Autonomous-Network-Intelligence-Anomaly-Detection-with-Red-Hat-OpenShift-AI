@@ -97,6 +97,18 @@ spec:
       jqPathExpressions:
         - .spec.template.spec.containers[].image
         - .spec.template.spec.initContainers[]?.image
+    - group: apps
+      kind: Deployment
+      name: ims-scscf
+      namespace: ims-sipp
+      jsonPointers:
+        - /spec/replicas
+    - group: apps
+      kind: Deployment
+      name: ims-pcscf
+      namespace: ims-sipp
+      jsonPointers:
+        - /metadata/annotations/ims.demo~1rate-limit-review
   destination:
     namespace: ims-sipp
     server: https://kubernetes.default.svc
