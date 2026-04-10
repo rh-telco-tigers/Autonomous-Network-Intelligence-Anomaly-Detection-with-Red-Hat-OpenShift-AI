@@ -54,9 +54,9 @@ function buildRouteLinks(origin: string, integrations: Record<string, Integratio
     { label: "Grafana", url: pickPreferredUrl(process.env.NEXT_PUBLIC_GRAFANA_URL, clusterRouteUrl(origin, "grafana", "ani-observability")) },
     {
       label: "Control Plane",
-      url: pickPreferredUrl(process.env.NEXT_PUBLIC_CONTROL_PLANE_URL, clusterRouteUrl(origin, "control-plane", "ani-runtime")),
+      url: pickPreferredUrl(process.env.NEXT_PUBLIC_CONTROL_PLANE_URL, clusterRouteUrl(origin, "control-plane", "ani-runtime", "/docs")),
     },
-    { label: "Feature Gateway", url: clusterRouteUrl(origin, "feature-gateway", "ani-runtime") },
+    { label: "Feature Gateway", url: clusterRouteUrl(origin, "feature-gateway", "ani-runtime", "/docs") },
     { label: "Milvus Attu", url: pickPreferredUrl(process.env.NEXT_PUBLIC_ATTU_URL, clusterRouteUrl(origin, "milvus-attu", "ani-data")) },
     { label: "OpenIMS WebUI", url: clusterRouteUrl(origin, "openimss-webui", "ani-sipp") },
     { label: "Feature Store UI", url: clusterRouteUrl(origin, "feast-ani-featurestore-ui", "ani-datascience") },
