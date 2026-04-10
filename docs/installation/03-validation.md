@@ -85,16 +85,23 @@ curl -k "https://${CONTROL_PLANE_HOST}/platform/status" \
   -H "x-api-key: demo-operator-token" | python3 -m json.tool
 ```
 
-## 7. Validate Optional AAP And EDA If Enabled
+## 7. Validate AAP And EDA After License Import
 
-If you completed the AAP onboarding in Installation 02:
+After the AAP license is imported:
 
 ```sh
 curl -k "https://${CONTROL_PLANE_HOST}/integrations/status" \
   -H "x-api-key: demo-token" | python3 -m json.tool
 ```
 
-Expect `aap` and `eda` to report `live_configured: true`.
+Expect:
+
+- `aap.configured=true`
+- `aap.live_configured=true`
+- `aap.bootstrapped=true`
+- `eda.configured=true`
+- `eda.live_configured=true`
+- `eda.bootstrapped=true`
 
 ## What Good Looks Like
 
@@ -108,3 +115,4 @@ Expect `aap` and `eda` to report `live_configured: true`.
 - the predictive `InferenceService` resources are `READY=True`
 - the manual SIPp jobs finish and print `window_uri`
 - the control-plane status endpoint returns JSON without errors
+- after AAP license import, `aap` and `eda` report `live_configured=true`

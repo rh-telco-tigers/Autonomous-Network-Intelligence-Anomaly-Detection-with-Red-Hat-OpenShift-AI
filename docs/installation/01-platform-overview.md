@@ -56,4 +56,4 @@ The main applications you will see after bootstrap are:
 3. Bootstrap Argo CD.
 4. Wait for the child applications to appear.
 5. Trigger the first image build so the runtime namespaces get their `:latest` images.
-6. Validate the routes, workloads, and optional integrations.
+6. Validate the routes, workloads, and AAP/EDA integration after AAP license import.

@@ -75,6 +75,8 @@ spec:
       app: control-plane
   template:
     metadata:
+      annotations:
+        ims.redhat.com/automation-bootstrap-defaults-revision: "1"
       labels:
         app: control-plane
     spec:

@@ -10,7 +10,7 @@ metadata:
   name: aap-automation-config
   namespace: ims-demo-lab
 data:
-  AAP_AUTOMATION_ENABLED: "false"
+  AAP_AUTOMATION_ENABLED: "true"
   AAP_CONTROLLER_URL: ""
   AAP_CONTROLLER_APP_URL: ""
   AAP_CONTROLLER_USERNAME: admin
@@ -19,7 +19,7 @@ data:
   AAP_INVENTORY_HOST: localhost
   AAP_PROJECT_NAME: IMS Incident Automation
   AAP_PROJECT_SCM_URL: ""
-  AAP_PROJECT_BRANCH: main
+  AAP_PROJECT_BRANCH: release/namespace-argo-split
   AAP_JOB_TEMPLATE_SCALE_SCSCF: IMS Scale S-CSCF Path
   AAP_JOB_TEMPLATE_RATE_LIMIT_PCSCF: IMS Rate Limit P-CSCF Ingress
   AAP_JOB_TEMPLATE_QUARANTINE_IMSI: IMS Quarantine Subscriber or Source
@@ -43,20 +43,20 @@ data:
   AAP_QUARANTINE_CONFIGMAP: ims-remediation-state
   AAP_QUARANTINE_KEY: quarantined_imsi
   AAP_QUARANTINE_DEFAULT_IMSI: "001010000000001"
-  EDA_AUTOMATION_ENABLED: "false"
+  EDA_AUTOMATION_ENABLED: "true"
   EDA_API_URL: ""
   EDA_APP_URL: ""
   EDA_ORGANIZATION: Default
   EDA_PROJECT_NAME: IMS Incident Event Policies
   EDA_PROJECT_URL: ""
-  EDA_PROJECT_BRANCH: main
+  EDA_PROJECT_BRANCH: release/namespace-argo-split
   EDA_DECISION_ENVIRONMENT_NAME: IMS Incident Decisions
   EDA_DECISION_ENVIRONMENT_IMAGE: registry.redhat.io/ansible-automation-platform-26/de-minimal-rhel9:latest
   EDA_CONTROL_PLANE_URL: ""
-  EDA_CONTROL_PLANE_API_KEY: ""
+  EDA_CONTROL_PLANE_API_KEY: "demo-token"
   EDA_AUTOMATION_ACTOR: eda-automation
   EDA_EVENT_VERIFY_SSL: "false"
-  AUTOMATION_BOOTSTRAP_ON_STARTUP: "false"
+  AUTOMATION_BOOTSTRAP_ON_STARTUP: "true"
   AUTOMATION_BOOTSTRAP_RETRY_SECONDS: "15"
   AUTOMATION_BOOTSTRAP_MAX_ATTEMPTS: "0"
 ---

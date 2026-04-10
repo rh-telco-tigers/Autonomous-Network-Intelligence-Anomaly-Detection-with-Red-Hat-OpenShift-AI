@@ -348,10 +348,7 @@ def _controller_url() -> str:
 
 
 def _controller_app_url() -> str:
-    return (
-        os.getenv("AAP_CONTROLLER_APP_URL", "").strip()
-        or "https://aap-controller-aap.apps.ocp.4h2g6.sandbox195.opentlc.com"
-    ).rstrip("/")
+    return os.getenv("AAP_CONTROLLER_APP_URL", "").strip().rstrip("/")
 
 
 def _controller_username() -> str:
@@ -459,7 +456,7 @@ def _job_template_name(action: str) -> str:
 
 
 def _absolute_url(path: str) -> str:
-    return f"{_controller_app_url()}{path}"
+    return f"{(_controller_app_url() or _controller_url())}{path}"
 
 
 def _request(

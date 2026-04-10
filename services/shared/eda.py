@@ -224,10 +224,7 @@ def _api_url() -> str:
 
 
 def _app_url() -> str:
-    return (
-        os.getenv("EDA_APP_URL", "").strip()
-        or "https://aap-eda-aap.apps.ocp.4h2g6.sandbox195.opentlc.com"
-    ).rstrip("/")
+    return os.getenv("EDA_APP_URL", "").strip().rstrip("/")
 
 
 def _username() -> str:

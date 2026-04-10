@@ -84,9 +84,7 @@ oc get route -n plane
 
 At this point you should have enough to open the demo UI, OpenIMS WebUI, Attu, MinIO, and Plane.
 
-## Optional: Onboard AAP And EDA After Licensing
-
-Skip this section if you do not need live AAP-backed remediation on day one.
+## 8. Finish AAP And EDA After AAP License Import
 
 1. Get the AAP routes and admin passwords:
 
@@ -97,33 +95,23 @@ oc extract -n aap secret/aap-controller-admin-password --to=- --keys=password
 oc extract -n aap secret/aap-eda-admin-password --to=- --keys=password
 ```
 
-2. Open the AAP UI and finish the manual license or first-login prompts.
+2. Import the AAP license in the AAP UI and complete any first-login prompts.
 
-3. Update `k8s/overlays/gitops/runtime/aap-automation-config.yaml`:
+3. Wait for the control-plane bootstrap worker to finish creating the controller-side inventory, project, Kubernetes credential, job templates, callback templates, EDA project, decision environment, and activations. The GitOps runtime config now enables AAP and EDA by default and the control-plane retries bootstrap automatically until the AAP APIs accept writes.
 
-- set `AAP_AUTOMATION_ENABLED` to `"true"`
-- set `EDA_AUTOMATION_ENABLED` to `"true"`
-- set `EDA_CONTROL_PLANE_API_KEY` to `demo-token`
-- optionally set `AAP_CONTROLLER_APP_URL` and `EDA_APP_URL` to the current cluster routes
-
-4. Commit and push that config change, wait for `ims-runtime` to sync, then restart the control-plane:
-
-```sh
-oc rollout restart deployment/control-plane -n ims-runtime
-oc rollout status deployment/control-plane -n ims-runtime
-```
-
-5. Trigger the control-plane bootstrap that creates the job templates, callback templates, EDA project, decision environment, and activations:
+4. Verify the integration state:
 
 ```sh
 CONTROL_PLANE_HOST="$(oc get route control-plane -n ims-runtime -o jsonpath='{.spec.host}')"
-curl -k -X POST "https://${CONTROL_PLANE_HOST}/automation/bootstrap" \
-  -H "x-api-key: demo-token"
-```
-
-6. Verify the integration state:
-
-```sh
 curl -k "https://${CONTROL_PLANE_HOST}/integrations/status" \
   -H "x-api-key: demo-token" | python3 -m json.tool
 ```
+
+Expected result after the AAP license is imported:
+
+- `aap.configured=true`
+- `aap.live_configured=true`
+- `aap.bootstrapped=true`
+- `eda.configured=true`
+- `eda.live_configured=true`
+- `eda.bootstrapped=true`

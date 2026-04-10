@@ -66,27 +66,26 @@ If the cluster is on an older revision, sync to the latest branch state and let 
 
 ## AAP Or EDA Is Installed But No Job Templates Exist
 
-This usually means the first-login or license step was not finished, or automation is still disabled in `aap-automation-config`.
+This usually means the AAP license import was not finished yet, or the cluster is still running an older control-plane pod that started before the enabled-by-default automation config was applied.
 
 Check:
 
 ```sh
 oc get route -n aap
 oc get configmap aap-automation-config -n ims-runtime -o yaml
+oc get deploy control-plane -n ims-runtime
 ```
 
 Then:
 
-1. Finish the AAP license or subscription prompts in the UI.
-2. Set `AAP_AUTOMATION_ENABLED` and `EDA_AUTOMATION_ENABLED` to `"true"`.
-3. Set `EDA_CONTROL_PLANE_API_KEY` to `demo-token`.
-4. Restart `deployment/control-plane` in `ims-runtime`.
-5. Call `POST /automation/bootstrap`.
+1. Import the AAP license and finish any first-login prompts in the AAP UI.
+2. Confirm `AAP_AUTOMATION_ENABLED`, `EDA_AUTOMATION_ENABLED`, and `AUTOMATION_BOOTSTRAP_ON_STARTUP` are all `"true"` in `aap-automation-config`.
+3. Wait for the control-plane bootstrap retries to reconcile the templates and activations.
+4. If this cluster was already running before the enabled-by-default config landed, restart `deployment/control-plane` in `ims-runtime` once so it picks up the new config values.
 
 ```sh
-CONTROL_PLANE_HOST="$(oc get route control-plane -n ims-runtime -o jsonpath='{.spec.host}')"
-curl -k -X POST "https://${CONTROL_PLANE_HOST}/automation/bootstrap" \
-  -H "x-api-key: demo-token"
+oc rollout restart deployment/control-plane -n ims-runtime
+oc rollout status deployment/control-plane -n ims-runtime
 ```
 
 ## The Demo UI Opens But No New Incidents Appear

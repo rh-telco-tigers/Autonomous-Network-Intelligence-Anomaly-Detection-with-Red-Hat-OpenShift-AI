@@ -33,5 +33,5 @@ This repo now separates operator-facing installation docs from the deeper archit
 ## Notes
 
 - The platform is installed through GitOps from the in-cluster Gitea repository.
-- AAP and EDA are optional on first install and require manual license acceptance plus post-bootstrap onboarding before live automation resources appear.
+- AAP and EDA are enabled by default in the GitOps runtime config; they become live after the AAP license is imported and the controller bootstrap completes.
 - Plane is optional, but when enabled the bootstrap job creates the demo admin user, workspace, project, and integration secret automatically.

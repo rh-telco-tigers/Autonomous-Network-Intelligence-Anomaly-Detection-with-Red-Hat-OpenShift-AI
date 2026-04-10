@@ -75,7 +75,8 @@ Demo API tokens for the platform services:
 - MinIO console: `minioadmin` / `minioadmin`
 - Slack and Jira actions default to an in-platform demo relay if live credentials are not supplied
 - the current `scale_scscf` remediation path is wired to live AAP-backed execution in the demo deployment
-- if AAP controller API writes are license-blocked, the platform falls back to an AAP runner job and still updates the incident execution state
+- after the AAP license is imported, the platform bootstraps the controller templates and EDA activations automatically
+- if AAP controller API writes are still license-blocked, the platform falls back to an AAP runner job and still updates the incident execution state
 - local or non-AAP playbook actions still default to simulated execution unless `AUTOMATION_MODE=execute`
 - OpenIMSs WebUI uses the upstream demo credentials `admin` / `1423`
 
@@ -117,7 +118,7 @@ Cluster-specific values still need to be supplied before a live deployment:
 - if you want to override the default in-cluster vLLM endpoint, update the GitOps-managed `llm-provider-config` values for your target provider
 - route hostnames and TLS policy for the target cluster
 - the repository must be pushed into the in-cluster Gitea instance before Argo CD bootstrap
-- AAP and EDA stay disabled until you complete the post-license onboarding steps in `docs/installation/02-installation.md`
+- AAP and EDA are enabled by default in GitOps and become live after the AAP license is imported; see `docs/installation/02-installation.md`
 
 Current live remediation notes:
 
