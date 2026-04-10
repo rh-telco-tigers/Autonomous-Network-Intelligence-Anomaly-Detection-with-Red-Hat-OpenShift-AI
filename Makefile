@@ -78,8 +78,9 @@ add-gpu-node-pool: ## Render and manually apply a GPU MachineSet to the current 
 	  --apply
 
 trigger-build-pipeline: ## Start the demo Tekton image build
-	@printf "Creating demo build PipelineRun in %s\n" "$(TEKTON_NAMESPACE)"
-	oc create -f "$(DEMO_TRIGGER_DIR)/tekton-build-pipelinerun.yaml"
+	@branch="$$(git rev-parse --abbrev-ref HEAD)"; \
+	printf "Creating demo build PipelineRun for branch %s in %s\n" "$$branch" "$(TEKTON_NAMESPACE)"; \
+	GIT_BRANCH="$$branch" python3 -c 'from pathlib import Path; import os; manifest = Path("$(DEMO_TRIGGER_DIR)/tekton-build-pipelinerun.yaml").read_text(); print(manifest.replace("__GIT_REVISION__", os.environ["GIT_BRANCH"]), end="")' | oc create -f -
 
 trigger-anomaly-platform-pipeline: ## Start a fresh demo anomaly training run
 	@printf "Creating demo KFP trigger job for ims-anomaly-platform-train-and-register in %s\n" "$(DATASCIENCE_NAMESPACE)"

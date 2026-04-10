@@ -185,7 +185,9 @@ spec:
                   os.getenv("PLANE_PROJECT_IDENTIFIER", "IMS").strip().upper() or "IMS"
               )
               plane_base_url = f"http://plane-api.{plane_namespace}.svc.cluster.local:8000"
-              plane_app_url = (os.getenv("PLANE_APP_URL") or os.getenv("WEB_URL") or "").strip().rstrip("/")
+              plane_app_url = (
+                  os.getenv("PLANE_APP_URL") or os.getenv("APP_BASE_URL") or os.getenv("WEB_URL") or ""
+              ).strip().rstrip("/")
 
               service_account_token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
               service_account_ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"

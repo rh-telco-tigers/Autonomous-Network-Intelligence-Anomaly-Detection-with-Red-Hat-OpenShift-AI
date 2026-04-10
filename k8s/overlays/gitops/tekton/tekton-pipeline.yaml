@@ -8,7 +8,6 @@ spec:
       type: string
     - name: git-revision
       type: string
-      default: main
   workspaces:
     - name: source
   tasks:

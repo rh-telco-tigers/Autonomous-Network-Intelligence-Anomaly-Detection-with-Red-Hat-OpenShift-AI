@@ -9,7 +9,6 @@ spec:
       type: string
     - name: REVISION
       type: string
-      default: main
     - name: DELETE_EXISTING
       type: string
       default: "true"

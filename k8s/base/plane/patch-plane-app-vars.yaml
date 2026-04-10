@@ -4,4 +4,5 @@ metadata:
   name: plane-app-vars
   namespace: ims-demo-lab
 data:
+  APP_BASE_URL: ""
   WEB_URL: ""

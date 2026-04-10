@@ -3,6 +3,7 @@ kind: ConfigMap
 metadata:
   name: plane-app-vars
 data:
+  APP_BASE_URL: ""
   SENTRY_DSN: ""
   SENTRY_ENVIRONMENT: ""
   DEBUG: "0"

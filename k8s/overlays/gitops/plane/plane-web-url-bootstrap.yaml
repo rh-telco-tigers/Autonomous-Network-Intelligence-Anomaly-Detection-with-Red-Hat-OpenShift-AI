@@ -3,18 +3,18 @@ kind: ServiceAccount
 metadata:
   name: plane-web-url-bootstrap
   annotations:
-    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "10"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: plane-web-url-bootstrap
   annotations:
-    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "10"
 rules:
   - apiGroups: [""]
     resources: ["configmaps"]
@@ -34,9 +34,9 @@ kind: RoleBinding
 metadata:
   name: plane-web-url-bootstrap
   annotations:
-    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "10"
 subjects:
   - kind: ServiceAccount
     name: plane-web-url-bootstrap
@@ -50,9 +50,9 @@ kind: Job
 metadata:
   name: plane-web-url-bootstrap
   annotations:
-    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "10"
 spec:
   backoffLimit: 3
   template:
@@ -79,7 +79,7 @@ spec:
                 exit 1
               fi
               web_url="https://${host}"
-              oc patch configmap plane-app-vars -n "${POD_NAMESPACE}" --type merge -p "{\"data\":{\"WEB_URL\":\"${web_url}\",\"CORS_ALLOWED_ORIGINS\":\"${web_url}\"}}"
+              oc patch configmap plane-app-vars -n "${POD_NAMESPACE}" --type merge -p "{\"data\":{\"APP_BASE_URL\":\"${web_url}\",\"WEB_URL\":\"${web_url}\",\"CORS_ALLOWED_ORIGINS\":\"${web_url}\"}}"
               for deployment in plane-admin-wl plane-api-wl plane-live-wl plane-space-wl plane-web-wl; do
                 oc patch deployment "${deployment}" -n "${POD_NAMESPACE}" --type merge -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"ims.redhat.com/plane-web-url-ts\":\"$(date +%s)\"}}}}}"
               done

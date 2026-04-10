@@ -20,6 +20,9 @@ spec:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ims-platform-config
               args:
                 - --target-host
                 - ims-pcscf.ims-sipp.svc.cluster.local
@@ -105,6 +108,9 @@ spec:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ims-platform-config
               args:
                 - --target-host
                 - ims-pcscf.ims-sipp.svc.cluster.local
@@ -190,6 +196,9 @@ spec:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ims-platform-config
               args:
                 - --target-host
                 - ims-pcscf.ims-sipp.svc.cluster.local
@@ -275,6 +284,9 @@ spec:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ims-platform-config
               args:
                 - --target-host
                 - ims-pcscf.ims-sipp.svc.cluster.local
@@ -360,6 +372,9 @@ spec:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ims-platform-config
               args:
                 - --target-host
                 - ims-pcscf.ims-sipp.svc.cluster.local
@@ -445,6 +460,9 @@ spec:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ims-platform-config
               args:
                 - --target-host
                 - ims-pcscf.ims-sipp.svc.cluster.local
@@ -530,6 +548,9 @@ spec:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ims-platform-config
               args:
                 - --target-host
                 - ims-pcscf.ims-sipp.svc.cluster.local
@@ -615,6 +636,9 @@ spec:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ims-platform-config
               args:
                 - --target-host
                 - ims-pcscf.ims-sipp.svc.cluster.local
@@ -700,6 +724,9 @@ spec:
             - name: sipp
               image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ims-platform-config
               args:
                 - --target-host
                 - ims-pcscf.ims-sipp.svc.cluster.local
