@@ -114,7 +114,7 @@ Every persisted window written by `services/sipp-runner/run_scenario.py` follows
 - `k8s/base/traffic/sipp.yaml`
 - `k8s/base/traffic/sipp-categories.yaml`
 - `lab-assets/sipp/` for the smaller starter subset
-- `docs/labs/03-ims-and-sipp-lab.md`
+- `docs/installation/03-validation.md`
 
 ## Why It Matters
 

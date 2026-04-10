@@ -53,7 +53,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: plane-integration-secret-bootstrap-v6
+  name: plane-integration-secret-bootstrap-v7
   namespace: ims-demo-lab
   annotations:
     argocd.argoproj.io/sync-wave: "0"
@@ -309,6 +309,7 @@ spec:
                   return True
 
               User = get_user_model()
+              Profile = apps.get_model("db", "Profile")
               Workspace = apps.get_model("db", "Workspace")
               WorkspaceMember = apps.get_model("db", "WorkspaceMember")
               Project = apps.get_model("db", "Project")
@@ -416,6 +417,22 @@ spec:
                       print(f"updated Plane workspace membership for {preferred_admin_email}", flush=True)
 
                   return workspace
+
+              def ensure_profile(user, workspace):
+                  profile, created = Profile.objects.get_or_create(user=user)
+                  if created:
+                      print(f"created Plane profile for {preferred_admin_email}", flush=True)
+
+                  profile_updates = []
+                  if workspace is not None and profile.last_workspace_id != workspace.id:
+                      profile.last_workspace_id = workspace.id
+                      profile_updates.append("last_workspace_id")
+
+                  if profile_updates:
+                      profile.save(update_fields=profile_updates)
+                      print(f"updated Plane profile fields: {', '.join(profile_updates)}", flush=True)
+
+                  return profile
 
               def ensure_project(user, workspace):
                   project = (
@@ -534,6 +551,7 @@ spec:
 
               deadline = time.time() + wait_seconds
               user = None
+              profile = None
               workspace = None
               project = None
               last_error = None
@@ -541,6 +559,7 @@ spec:
                   try:
                       user = ensure_admin_user()
                       workspace = ensure_workspace(user)
+                      profile = ensure_profile(user, workspace)
                       project = ensure_project(user, workspace)
                   except OperationalError as exc:
                       last_error = exc
@@ -553,13 +572,13 @@ spec:
                       time.sleep(10)
                       continue
 
-                  if user and workspace and project:
+                  if user and profile and workspace and project:
                       break
 
-                  print("waiting for Plane user/workspace/project seed objects", flush=True)
+                  print("waiting for Plane user/profile/workspace/project seed objects", flush=True)
                   time.sleep(10)
 
-              if not user or not workspace or not project:
+              if not user or not profile or not workspace or not project:
                   raise SystemExit(f"Plane seed data was not ready before bootstrap timeout: {last_error}")
 
               token = APIToken.objects.filter(label=token_label, user=user, is_active=True).order_by("-updated_at").first()

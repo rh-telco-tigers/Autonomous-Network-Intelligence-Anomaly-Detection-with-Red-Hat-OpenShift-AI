@@ -9,7 +9,7 @@ This repository packages an OpenShift-native demo stack for IMS anomaly detectio
 - predictive and generative model serving on KServe
 - Milvus-backed RCA context retrieval
 - Attu UI for Milvus inspection through an OpenShift route
-- customer-demo documentation and lab guides
+- installation, validation, and troubleshooting guides
 
 ## What is in scope
 
@@ -19,7 +19,7 @@ This repository packages an OpenShift-native demo stack for IMS anomaly detectio
 - Tekton image-build assets adapted from the NetSentinel reference repository
 - Kubeflow pipeline source for the predictive training workflow
 - automatic predictive artifact upload into the in-cluster MinIO model-storage bucket
-- customer-facing demo documentation under `docs/labs`
+- operator-facing install docs under `docs/installation`
 
 ## Repository layout
 
@@ -27,7 +27,7 @@ This repository packages an OpenShift-native demo stack for IMS anomaly detectio
 ai/                 Kubeflow pipeline source and AI workflow stubs
 automation/         Ansible playbooks for operator-approved actions
 deploy/             Argo CD bootstrap and GitOps-managed operator manifests
-docs/               customer-demo docs, labs, and architecture references
+docs/               installation guides and architecture references
 k8s/                OpenShift manifests and Kustomize overlays
 lab-assets/         SIPp scenarios and reusable demo data
 services/           demo services and UI source images
@@ -35,8 +35,13 @@ services/           demo services and UI source images
 
 ## Quick start
 
-1. Review [docs/README.md](./docs/README.md).
-2. Inspect the end-to-end architecture in [docs/architecture/engineering-spec.md](./docs/architecture/engineering-spec.md).
+1. Review [docs/installation/README.md](./docs/installation/README.md).
+2. Check out the branch you want Argo CD to track:
+
+```sh
+git branch --show-current
+```
+
 3. Deploy the in-cluster Gitea instance:
 
 ```sh
@@ -66,6 +71,8 @@ Demo API tokens for the platform services:
 - `demo-token` for admin, operator, and automation flows
 - `demo-operator-token` for operator-only access
 - `demo-viewer-token` for read-limited browser testing
+- Plane login: `plane-admin@ims-demo.local` / `plane`
+- MinIO console: `minioadmin` / `minioadmin`
 - Slack and Jira actions default to an in-platform demo relay if live credentials are not supplied
 - the current `scale_scscf` remediation path is wired to live AAP-backed execution in the demo deployment
 - if AAP controller API writes are license-blocked, the platform falls back to an AAP runner job and still updates the incident execution state
@@ -78,13 +85,19 @@ Demo API tokens for the platform services:
 oc apply -k deploy/argocd
 ```
 
-6. Render the split GitOps application set:
+6. Confirm the Argo CD applications are tracking the branch you pushed:
 
 ```sh
-make kustomize-gitops
+oc get applications.argoproj.io -n openshift-gitops -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.source.targetRevision}{"\n"}{end}'
 ```
 
-7. Follow the lab sequence in `docs/labs`.
+7. Trigger the first image build:
+
+```sh
+make trigger-build-pipeline
+```
+
+8. Follow the install flow in `docs/installation`.
 
 ## Upstream reference inputs
 
@@ -104,6 +117,7 @@ Cluster-specific values still need to be supplied before a live deployment:
 - if you want to override the default in-cluster vLLM endpoint, update the GitOps-managed `llm-provider-config` values for your target provider
 - route hostnames and TLS policy for the target cluster
 - the repository must be pushed into the in-cluster Gitea instance before Argo CD bootstrap
+- AAP and EDA stay disabled until you complete the post-license onboarding steps in `docs/installation/02-installation.md`
 
 Current live remediation notes:
 
