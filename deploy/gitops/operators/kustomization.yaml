@@ -4,6 +4,8 @@ resources:
   - namespaces/namespaces.yaml
   - rbac/argocd-image-registry.yaml
   - configs/image-registry.yaml
+  - configs/node-feature-discovery.yaml
+  - configs/gpu-cluster-policy.yaml
   - operatorgroups/grafana-operator.yaml
   - operatorgroups/redhat-ods-operator.yaml
   - operatorgroups/openshift-nfd.yaml
