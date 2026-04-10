@@ -110,7 +110,7 @@ metadata:
   name: ims-predictive-metrics
   namespace: ims-demo-lab
   annotations:
-    argocd.argoproj.io/sync-wave: "65"
+    argocd.argoproj.io/sync-wave: "60"
   labels:
     monitoring.opendatahub.io/scrape: "true"
 spec:
