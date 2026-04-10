@@ -6,6 +6,28 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: redhat-ods-applications
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    openshift.io/cluster-monitoring: "true"
+  name: redhat-ods-monitoring
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rhods-notebooks
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rhoai-model-registries
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: openshift-nfd
 ---
 apiVersion: v1
