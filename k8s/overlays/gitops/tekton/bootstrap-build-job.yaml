@@ -20,30 +20,34 @@ spec:
             - -lc
             - |
               set -euo pipefail
-              oc login --token="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
-                --server="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}" \
-                --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
-                >/dev/null
+              OC_TOKEN="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
+              oc_cmd() {
+                oc \
+                  --token="${OC_TOKEN}" \
+                  --server="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}" \
+                  --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
+                  "$@"
+              }
 
               namespace="${POD_NAMESPACE}"
               run_name="ims-platform-bootstrap-build"
 
-              if oc get pipelinerun "${run_name}" -n "${namespace}" >/dev/null 2>&1; then
-                status="$(oc get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].status}')"
+              if oc_cmd get pipelinerun "${run_name}" -n "${namespace}" >/dev/null 2>&1; then
+                status="$(oc_cmd get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].status}')"
                 if [ "${status}" = "True" ]; then
                   echo "bootstrap build already succeeded"
                   exit 0
                 fi
-                oc delete pipelinerun "${run_name}" -n "${namespace}" --ignore-not-found
+                oc_cmd delete pipelinerun "${run_name}" -n "${namespace}" --ignore-not-found
                 for _ in $(seq 1 30); do
-                  if ! oc get pipelinerun "${run_name}" -n "${namespace}" >/dev/null 2>&1; then
+                  if ! oc_cmd get pipelinerun "${run_name}" -n "${namespace}" >/dev/null 2>&1; then
                     break
                   fi
                   sleep 2
                 done
               fi
 
-              cat <<EOF | oc apply -f -
+              cat <<EOF | oc_cmd apply -f -
               apiVersion: tekton.dev/v1
               kind: PipelineRun
               metadata:
@@ -75,22 +79,22 @@ spec:
               EOF
 
               for _ in $(seq 1 480); do
-                status="$(oc get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].status}' 2>/dev/null || true)"
-                reason="$(oc get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].reason}' 2>/dev/null || true)"
+                status="$(oc_cmd get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].status}' 2>/dev/null || true)"
+                reason="$(oc_cmd get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].reason}' 2>/dev/null || true)"
                 if [ "${status}" = "True" ]; then
                   echo "bootstrap build completed successfully"
                   exit 0
                 fi
                 if [ "${status}" = "False" ]; then
                   echo "bootstrap build failed with reason: ${reason}"
-                  oc get pipelinerun "${run_name}" -n "${namespace}" -o yaml
+                  oc_cmd get pipelinerun "${run_name}" -n "${namespace}" -o yaml
                   exit 1
                 fi
                 sleep 15
               done
 
               echo "timed out waiting for bootstrap build to finish"
-              oc get pipelinerun "${run_name}" -n "${namespace}" -o yaml || true
+              oc_cmd get pipelinerun "${run_name}" -n "${namespace}" -o yaml || true
               exit 1
           env:
             - name: POD_NAMESPACE
