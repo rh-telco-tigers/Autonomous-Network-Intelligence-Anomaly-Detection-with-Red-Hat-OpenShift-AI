@@ -53,7 +53,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: plane-integration-secret-bootstrap-v4
+  name: plane-integration-secret-bootstrap-v5
   namespace: ims-demo-lab
   annotations:
     argocd.argoproj.io/sync-wave: "0"
@@ -136,6 +136,7 @@ spec:
               import django
               from django.apps import apps
               from django.contrib.auth import get_user_model
+              from django.core.cache import cache
               from django.db.utils import OperationalError
 
               django.setup()
@@ -374,6 +375,8 @@ spec:
                       if instance_updates:
                           instance.save(update_fields=instance_updates)
                           print(f"updated Plane instance fields: {', '.join(instance_updates)}", flush=True)
+                          cache.clear()
+                          print("cleared Plane cache after instance update", flush=True)
                       instance_admin, created = InstanceAdmin.objects.get_or_create(
                           user=user,
                           instance=instance,
