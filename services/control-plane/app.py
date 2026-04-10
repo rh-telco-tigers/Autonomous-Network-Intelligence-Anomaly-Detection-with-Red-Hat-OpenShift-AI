@@ -116,7 +116,7 @@ from shared.rag import (
     retrieve_knowledge_articles,
 )
 from shared.security import AuthContext, ensure_project_access, ensure_role, outbound_headers, require_api_key
-from shared.tickets import TicketProviderError, get_ticket_provider
+from shared.tickets import TicketProviderError, get_ticket_provider, normalize_ticket_record
 from shared.workflow import (
     APPROVED,
     AWAITING_APPROVAL,
@@ -588,7 +588,7 @@ def _workflow_payload(incident: Dict[str, object]) -> Dict[str, object]:
     remediations = list_incident_remediations(incident_id)
     actions = list_incident_actions(incident_id)
     verifications = list_incident_verifications(incident_id)
-    tickets = list_incident_tickets(incident_id)
+    tickets = [normalize_ticket_record(ticket) for ticket in list_incident_tickets(incident_id)]
     resolution_extracts = list_ticket_resolution_extracts(incident_id)
     detailed_tickets = []
     for ticket in tickets:
@@ -1533,6 +1533,8 @@ def _sync_ticket_provider(
                 "mode": result.get("mode"),
                 "raw": result.get("raw", {}),
                 "source_url": reference_url,
+                "project_identifier": result.get("project_identifier"),
+                "sequence_id": result.get("sequence_id"),
             },
         )
         payload_hash = hashlib.sha256(json.dumps(result, sort_keys=True).encode("utf-8")).hexdigest()
@@ -2637,7 +2639,7 @@ def _ticket_context(
     if not incident_id:
         return None, "", 0
 
-    tickets = list_incident_tickets(incident_id)
+    tickets = [normalize_ticket_record(ticket) for ticket in list_incident_tickets(incident_id)]
     if not tickets:
         return None, "", 0
 
@@ -3872,7 +3874,7 @@ def verify_incident(
         )
 
     current_ticket = None
-    tickets = list_incident_tickets(incident_id)
+    tickets = [normalize_ticket_record(ticket) for ticket in list_incident_tickets(incident_id)]
     if tickets:
         current_ticket = next((ticket for ticket in tickets if ticket.get("id") == updated.get("current_ticket_id")), tickets[0])
     extract = _maybe_create_resolution_extract(updated, verification, action=action, ticket=current_ticket)
@@ -4054,6 +4056,7 @@ def get_ticket_reference(
     ticket = get_ticket_by_provider_external_id(provider, external_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    ticket = normalize_ticket_record(ticket)
 
     incident_id = str(ticket.get("incident_id") or "")
     incident = get_incident(incident_id)
@@ -4157,7 +4160,7 @@ async def plane_webhook(request: Request):
             or ""
         )
 
-    ticket = get_ticket_by_provider_external_id("plane", external_id) if external_id else None
+    ticket = normalize_ticket_record(get_ticket_by_provider_external_id("plane", external_id)) if external_id else None
     payload_hash = hashlib.sha256(raw_body).hexdigest()
     if not ticket:
         record_ticket_sync("plane", "inbound", "unmapped")
