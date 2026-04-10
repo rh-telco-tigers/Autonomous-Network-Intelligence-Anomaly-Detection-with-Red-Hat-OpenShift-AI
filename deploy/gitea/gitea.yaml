@@ -124,9 +124,9 @@ spec:
             - name: GITEA__security__INSTALL_LOCK
               value: "true"
             - name: GITEA__security__SECRET_KEY
-              value: ims-demo-gitea-secret-key
+              value: ani-demo-gitea-secret-key
             - name: GITEA__security__INTERNAL_TOKEN
-              value: ims-demo-gitea-internal-token
+              value: ani-demo-gitea-internal-token
             - name: GITEA__service__DISABLE_REGISTRATION
               value: "true"
             - name: GITEA__server__DOMAIN
@@ -266,11 +266,11 @@ spec:
             - name: GITEA_REPO_NAME
               value: IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI
             - name: GITEA_WEBHOOK_URL
-              value: http://el-ims-platform-gitea.ims-tekton.svc.cluster.local:8080
+              value: http://el-ani-platform-gitea.ani-tekton.svc.cluster.local:8080
             - name: GITEA_WEBHOOK_SECRET
-              value: ims-demo-webhook-token
+              value: ani-demo-webhook-token
             - name: GITEA_LEGACY_WEBHOOK_URL
-              value: http://el-ims-demo-gitea.ims-demo-lab.svc.cluster.local:8080
+              value: http://el-ani-demo-gitea.ani-demo-lab.svc.cluster.local:8080
           command:
             - /bin/sh
             - -c

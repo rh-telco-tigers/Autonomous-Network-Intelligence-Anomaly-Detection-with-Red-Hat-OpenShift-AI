@@ -2,7 +2,7 @@
 
 This folder isolates the new release-corpus implementation from the existing live demo training flow.
 
-It is the starting point for the `ims-incident-release` workflow described in `docs/architecture/incident-release-corpus-and-offline-training.md`.
+It is the starting point for the `ani-incident-release` workflow described in `docs/architecture/incident-release-corpus-and-offline-training.md`.
 
 ## Layout
 
@@ -30,12 +30,12 @@ If control-plane incidents contain only reconstructed `feature_snapshot` data, t
 
 Current public outputs include:
 
-- `ims_incident_history.parquet`
-- `ims_incident_history.csv`
-- `ims_training_examples.parquet`
-- `ims_training_examples.csv`
-- `ims_training_examples_balanced.parquet`
-- `ims_training_examples_balanced.csv`
+- `ani_incident_history.parquet`
+- `ani_incident_history.csv`
+- `ani_training_examples.parquet`
+- `ani_training_examples.csv`
+- `ani_training_examples_balanced.parquet`
+- `ani_training_examples_balanced.csv`
 - `training_split_manifest.json`
 - `training_split_manifest.csv`
 - `schema.json`
@@ -44,7 +44,7 @@ Current public outputs include:
 - `dataset_card.md`
 - `quality_report.json`
 - `release_manifest.json`
-- `ims_incident_release_bundle.zip`
+- `ani_incident_release_bundle.zip`
 
 The follow-on slices can extend this folder with:
 
@@ -73,9 +73,9 @@ The current node-pool profile is intentionally lightweight so it comes up quickl
 
 When `KAFKA_ENABLED=true`, the runtime mirrors snapshot and publish events to Kafka without changing the source-of-truth model:
 
-- incidents exported from the control-plane snapshot -> `ims-incidents-bronze`
-- feature windows exported from MinIO -> `ims-feature-windows-bronze`
-- published release artifact notifications -> `ims-release-artifacts`
+- incidents exported from the control-plane snapshot -> `ani-incidents-bronze`
+- feature windows exported from MinIO -> `ani-feature-windows-bronze`
+- published release artifact notifications -> `ani-release-artifacts`
 
 Object storage and `release_manifest.json` remain authoritative. Kafka is only an integration and notification surface for downstream consumers.
 

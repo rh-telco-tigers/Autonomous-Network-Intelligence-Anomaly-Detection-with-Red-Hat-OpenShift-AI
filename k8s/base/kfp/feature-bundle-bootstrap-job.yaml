@@ -1,8 +1,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ims-feature-bundle-kfp-bootstrap
-  namespace: ims-demo-lab
+  name: ani-feature-bundle-kfp-bootstrap
+  namespace: ani-demo-lab
   annotations:
     argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
@@ -12,16 +12,16 @@ spec:
   template:
     metadata:
       labels:
-        app: ims-feature-bundle-kfp-bootstrap
+        app: ani-feature-bundle-kfp-bootstrap
     spec:
-      serviceAccountName: ims-kfp-bootstrap
+      serviceAccountName: ani-kfp-bootstrap
       restartPolicy: OnFailure
       containers:
         - name: publish-pipeline
           image: registry.access.redhat.com/ubi9/python-311:latest
           envFrom:
             - configMapRef:
-                name: ims-platform-config
+                name: ani-platform-config
           env:
             - name: HOME
               value: /tmp
@@ -30,19 +30,19 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: REQUIRED_IMAGESTREAM_TAGS
-              value: ims-ai-featurestore-trainer:latest
+              value: ani-ai-featurestore-trainer:latest
             - name: IMAGESTREAM_WAIT_TIMEOUT_SECONDS
               value: "3600"
             - name: DSPA_NAME
               value: dspa
             - name: PIPELINE_PACKAGE_PATH
-              value: /opt/kfp/ims_feature_bundle_pipeline.yaml
+              value: /opt/kfp/ani_feature_bundle_pipeline.yaml
             - name: PIPELINE_NAME
-              value: ims-feature-bundle-publish
+              value: ani-feature-bundle-publish
             - name: EXPERIMENT_NAME
-              value: ims-featurestore
+              value: ani-featurestore
             - name: RUN_NAME
-              value: ims-feature-bundle-demo
+              value: ani-feature-bundle-demo
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -111,9 +111,9 @@ spec:
               print(
                   json.dumps(
                       {
-                          "bundle_version": os.getenv("FEATURESTORE_BUNDLE_VERSION", "ims-feature-bundle-v1"),
+                          "bundle_version": os.getenv("FEATURESTORE_BUNDLE_VERSION", "ani-feature-bundle-v1"),
                           "source_dataset_versions_json": os.getenv("FEATURESTORE_SOURCE_DATASET_VERSIONS_JSON", "[\"live-sipp-v1\"]"),
-                          "project": os.getenv("IMS_PROJECT", os.getenv("DEMO_PROJECT", "ims-demo")),
+                          "project": os.getenv("IMS_PROJECT", os.getenv("DEMO_PROJECT", "ani-demo")),
                           "control_plane_url": os.environ["CONTROL_PLANE_URL"],
                           "control_plane_api_key": os.environ["CONTROL_PLANE_API_KEY"],
                           "dataset_store_mode": os.getenv("DATASET_STORE_MODE", "s3"),
@@ -143,4 +143,4 @@ spec:
       volumes:
         - name: kfp-assets
           configMap:
-            name: ims-feature-bundle-kfp-assets
+            name: ani-feature-bundle-kfp-assets

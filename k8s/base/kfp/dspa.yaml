@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: dspa-object-storage
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
   annotations:
     argocd.argoproj.io/sync-wave: "20"
 type: Opaque
@@ -14,7 +14,7 @@ apiVersion: datasciencepipelinesapplications.opendatahub.io/v1
 kind: DataSciencePipelinesApplication
 metadata:
   name: dspa
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
   annotations:
     argocd.argoproj.io/sync-wave: "20"
 spec:
@@ -25,10 +25,10 @@ spec:
   objectStorage:
     externalStorage:
       scheme: http
-      host: model-storage-minio.ims-data.svc.cluster.local
+      host: model-storage-minio.ani-data.svc.cluster.local
       port: "9000"
-      bucket: ims-models
-      basePath: pipelines/ims-datascience
+      bucket: ani-models
+      basePath: pipelines/ani-datascience
       secure: false
       s3CredentialsSecret:
         secretName: dspa-object-storage

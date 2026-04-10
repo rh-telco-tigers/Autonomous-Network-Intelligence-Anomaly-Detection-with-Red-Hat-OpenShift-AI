@@ -42,11 +42,11 @@ from ai.training.train_and_register import (
 )
 from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type
 
-BUNDLE_CONTRACT_VERSION = "ims_feature_bundle_v1"
-LABEL_TAXONOMY_VERSION = "ims_incident_taxonomy_v2"
-DEFAULT_BUNDLE_WORKSPACE = "/tmp/ims-feature-bundle"
-DEFAULT_CONTROL_PLANE_URL = "http://control-plane.ims-runtime.svc.cluster.local:8080"
-DEFAULT_PROJECT = "ims-demo"
+BUNDLE_CONTRACT_VERSION = "ani_feature_bundle_v1"
+LABEL_TAXONOMY_VERSION = "ani_incident_taxonomy_v2"
+DEFAULT_BUNDLE_WORKSPACE = "/tmp/ani-feature-bundle"
+DEFAULT_CONTROL_PLANE_URL = "http://control-plane.ani-runtime.svc.cluster.local:8080"
+DEFAULT_PROJECT = "ani-demo"
 DEFAULT_APPROVAL_LIMIT = 1000
 DEFAULT_AUDIT_LIMIT = 1000
 FEATURE_ROW_COLUMNS = [
@@ -523,7 +523,7 @@ def _window_feature_row(
         "created_timestamp": created_timestamp,
         "dataset_version": dataset_version,
         "source_snapshot_id": snapshot_id,
-        "source": str(window.get("source") or "openims-sipp-lab"),
+        "source": str(window.get("source") or "openani-sipp-lab"),
         "feature_source": str(window.get("feature_source") or "sipp-shortmessages"),
         "scenario_name": str(window.get("scenario_name") or "unknown"),
         "schema_version": str(window.get("schema_version") or FEATURE_SCHEMA_VERSION),
@@ -555,7 +555,7 @@ def _window_context_row(
         "dataset_version": dataset_version,
         "source_snapshot_id": snapshot_id,
         "scenario_name": str(window.get("scenario_name") or "unknown"),
-        "source": str(window.get("source") or "openims-sipp-lab"),
+        "source": str(window.get("source") or "openani-sipp-lab"),
         "feature_source": str(window.get("feature_source") or "sipp-shortmessages"),
         "transport": str(summary.get("transport") or ""),
         "call_limit": _safe_int(summary.get("call_limit")),
@@ -681,7 +681,7 @@ def _dataset_card(
             "",
             "## Notes",
             "- this bundle snapshots feature windows, incidents, and RCA summaries for reproducible offline training",
-            "- the serving contract remains numeric-first through `ims_anomaly_scoring_v1` while labels and RCA remain offline-only",
+            "- the serving contract remains numeric-first through `ani_anomaly_scoring_v1` while labels and RCA remain offline-only",
         ]
     )
 

@@ -6,4 +6,4 @@ metadata:
 spec:
   targetNamespaces:
     - grafana-operator
-    - ims-observability
+    - ani-observability

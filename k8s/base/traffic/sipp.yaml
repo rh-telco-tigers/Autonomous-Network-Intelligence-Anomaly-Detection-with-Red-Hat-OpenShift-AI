@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sipp-normal-traffic
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   schedule: "*/10 * * * *"
   suspend: false
@@ -18,11 +18,11 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
               envFrom:
                 - configMapRef:
-                    name: ims-platform-config
+                    name: ani-platform-config
               args:
                 - --target-host
                 - $(IMS_PCSCF_HOST)
@@ -83,7 +83,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sipp-registration-storm
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   schedule: "5,35 * * * *"
   suspend: false
@@ -99,11 +99,11 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
               envFrom:
                 - configMapRef:
-                    name: ims-platform-config
+                    name: ani-platform-config
               args:
                 - --target-host
                 - $(IMS_PCSCF_HOST)
@@ -164,7 +164,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sipp-malformed-invite
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   schedule: "15,45 * * * *"
   suspend: false
@@ -180,11 +180,11 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
               envFrom:
                 - configMapRef:
-                    name: ims-platform-config
+                    name: ani-platform-config
               args:
                 - --target-host
                 - $(IMS_PCSCF_HOST)

@@ -15,7 +15,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: plane-integration-bootstrap
-    namespace: ims-runtime
+    namespace: ani-runtime
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

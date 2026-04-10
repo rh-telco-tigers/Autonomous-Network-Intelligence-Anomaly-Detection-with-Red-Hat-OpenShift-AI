@@ -143,7 +143,7 @@ spec:
                       "template": {
                           "metadata": {
                               "annotations": {
-                                  "ims.redhat.com/plane-web-url-ts": str(int(time.time()))
+                                  "ani.redhat.com/plane-web-url-ts": str(int(time.time()))
                               }
                           }
                       }

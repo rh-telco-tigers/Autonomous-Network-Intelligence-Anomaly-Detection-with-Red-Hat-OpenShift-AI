@@ -1,17 +1,17 @@
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
-  name: ims-predictive-fs
-  namespace: ims-demo-lab
+  name: ani-predictive-fs
+  namespace: ani-demo-lab
   labels:
     opendatahub.io/dashboard: "true"
   annotations:
     argocd.argoproj.io/sync-wave: "60"
     opendatahub.io/model-type: predictive-featurestore
-    openshift.io/display-name: ims-predictive-fs
+    openshift.io/display-name: ani-predictive-fs
     serving.kserve.io/deploymentMode: RawDeployment
     serving.kserve.io/enable-prometheus-scraping: "true"
-    ims.redhat.com/serving-alias: current
+    ani.redhat.com/serving-alias: current
 spec:
   predictor:
     serviceAccountName: model-storage-sa
@@ -22,7 +22,7 @@ spec:
       modelFormat:
         name: triton
       protocolVersion: v2
-      storageUri: s3://ims-models/predictive-featurestore/ims-predictive-fs/current/
+      storageUri: s3://ani-models/predictive-featurestore/ani-predictive-fs/current/
       resources:
         requests:
           cpu: 100m
@@ -34,8 +34,8 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: ims-predictive-fs-metrics
-  namespace: ims-demo-lab
+  name: ani-predictive-fs-metrics
+  namespace: ani-demo-lab
   annotations:
     argocd.argoproj.io/sync-wave: "60"
   labels:
@@ -43,10 +43,10 @@ metadata:
 spec:
   namespaceSelector:
     matchNames:
-      - ims-datascience
+      - ani-datascience
   selector:
     matchLabels:
-      serving.kserve.io/inferenceservice: ims-predictive-fs
+      serving.kserve.io/inferenceservice: ani-predictive-fs
   podMetricsEndpoints:
     - path: /metrics
       targetPort: 8002

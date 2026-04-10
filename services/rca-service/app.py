@@ -389,7 +389,7 @@ def _llm_runtime_name() -> str | None:
         return None
     if "openai.com" in endpoint:
         return "OpenAI"
-    if "ims-generative-proxy" in endpoint or ".svc.cluster.local" in endpoint or "predictor" in endpoint:
+    if "ani-generative-proxy" in endpoint or ".svc.cluster.local" in endpoint or "predictor" in endpoint:
         return "vLLM"
     return "OpenAI-compatible"
 
@@ -474,7 +474,7 @@ def rca(request: RCARequest):
         raise ValueError("RCA output must include at least two evidence sources")
 
     record_rca(
-        str(request.context.get("project", "ims-demo")),
+        str(request.context.get("project", "ani-demo")),
         str(response.get("generation_mode", "unknown")),
         float(response["confidence"]),
     )

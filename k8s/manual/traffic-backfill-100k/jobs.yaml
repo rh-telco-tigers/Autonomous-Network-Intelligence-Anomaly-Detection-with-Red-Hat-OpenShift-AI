@@ -3,8 +3,8 @@ kind: Job
 metadata:
   name: sipp-backfill-normal-operation
   annotations:
-    ims.redhat.com/target-windows: "45000"
-    ims.redhat.com/windows-per-completion: "100"
+    ani.redhat.com/target-windows: "45000"
+    ani.redhat.com/windows-per-completion: "100"
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 1800
@@ -19,11 +19,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-demo-lab.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -46,11 +46,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
-              value: ims-models
+              value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ims-demo-lab/datasets
+              value: pipelines/ani-demo-lab/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -83,8 +83,8 @@ kind: Job
 metadata:
   name: sipp-backfill-registration-storm
   annotations:
-    ims.redhat.com/target-windows: "10000"
-    ims.redhat.com/windows-per-completion: "100"
+    ani.redhat.com/target-windows: "10000"
+    ani.redhat.com/windows-per-completion: "100"
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 1800
@@ -99,11 +99,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-demo-lab.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -126,11 +126,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
-              value: ims-models
+              value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ims-demo-lab/datasets
+              value: pipelines/ani-demo-lab/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -163,8 +163,8 @@ kind: Job
 metadata:
   name: sipp-backfill-malformed-invite
   annotations:
-    ims.redhat.com/target-windows: "7000"
-    ims.redhat.com/windows-per-completion: "100"
+    ani.redhat.com/target-windows: "7000"
+    ani.redhat.com/windows-per-completion: "100"
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 1800
@@ -179,11 +179,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-demo-lab.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -206,11 +206,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
-              value: ims-models
+              value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ims-demo-lab/datasets
+              value: pipelines/ani-demo-lab/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -243,8 +243,8 @@ kind: Job
 metadata:
   name: sipp-backfill-authentication-failure
   annotations:
-    ims.redhat.com/target-windows: "7000"
-    ims.redhat.com/windows-per-completion: "100"
+    ani.redhat.com/target-windows: "7000"
+    ani.redhat.com/windows-per-completion: "100"
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 1800
@@ -259,11 +259,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-demo-lab.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -286,11 +286,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
-              value: ims-models
+              value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ims-demo-lab/datasets
+              value: pipelines/ani-demo-lab/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -323,8 +323,8 @@ kind: Job
 metadata:
   name: sipp-backfill-registration-failure
   annotations:
-    ims.redhat.com/target-windows: "7000"
-    ims.redhat.com/windows-per-completion: "100"
+    ani.redhat.com/target-windows: "7000"
+    ani.redhat.com/windows-per-completion: "100"
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 1800
@@ -339,11 +339,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-demo-lab.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -366,11 +366,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
-              value: ims-models
+              value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ims-demo-lab/datasets
+              value: pipelines/ani-demo-lab/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -403,8 +403,8 @@ kind: Job
 metadata:
   name: sipp-backfill-routing-error
   annotations:
-    ims.redhat.com/target-windows: "5000"
-    ims.redhat.com/windows-per-completion: "100"
+    ani.redhat.com/target-windows: "5000"
+    ani.redhat.com/windows-per-completion: "100"
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 1800
@@ -419,11 +419,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-demo-lab.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -446,11 +446,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
-              value: ims-models
+              value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ims-demo-lab/datasets
+              value: pipelines/ani-demo-lab/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -483,8 +483,8 @@ kind: Job
 metadata:
   name: sipp-backfill-busy-destination
   annotations:
-    ims.redhat.com/target-windows: "4000"
-    ims.redhat.com/windows-per-completion: "100"
+    ani.redhat.com/target-windows: "4000"
+    ani.redhat.com/windows-per-completion: "100"
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 1800
@@ -499,11 +499,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-demo-lab.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -526,11 +526,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
-              value: ims-models
+              value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ims-demo-lab/datasets
+              value: pipelines/ani-demo-lab/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -563,8 +563,8 @@ kind: Job
 metadata:
   name: sipp-backfill-call-setup-timeout
   annotations:
-    ims.redhat.com/target-windows: "4000"
-    ims.redhat.com/windows-per-completion: "100"
+    ani.redhat.com/target-windows: "4000"
+    ani.redhat.com/windows-per-completion: "100"
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 1800
@@ -579,11 +579,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-demo-lab.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -606,11 +606,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
-              value: ims-models
+              value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ims-demo-lab/datasets
+              value: pipelines/ani-demo-lab/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -643,8 +643,8 @@ kind: Job
 metadata:
   name: sipp-backfill-call-drop-mid-session
   annotations:
-    ims.redhat.com/target-windows: "4000"
-    ims.redhat.com/windows-per-completion: "100"
+    ani.redhat.com/target-windows: "4000"
+    ani.redhat.com/windows-per-completion: "100"
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 1800
@@ -659,11 +659,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-demo-lab.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -686,11 +686,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
-              value: ims-models
+              value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ims-demo-lab/datasets
+              value: pipelines/ani-demo-lab/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -723,8 +723,8 @@ kind: Job
 metadata:
   name: sipp-backfill-server-internal-error
   annotations:
-    ims.redhat.com/target-windows: "3000"
-    ims.redhat.com/windows-per-completion: "100"
+    ani.redhat.com/target-windows: "3000"
+    ani.redhat.com/windows-per-completion: "100"
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 1800
@@ -739,11 +739,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-demo-lab.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -766,11 +766,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
-              value: ims-models
+              value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ims-demo-lab/datasets
+              value: pipelines/ani-demo-lab/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -803,8 +803,8 @@ kind: Job
 metadata:
   name: sipp-backfill-network-degradation
   annotations:
-    ims.redhat.com/target-windows: "2000"
-    ims.redhat.com/windows-per-completion: "100"
+    ani.redhat.com/target-windows: "2000"
+    ani.redhat.com/windows-per-completion: "100"
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 1800
@@ -819,11 +819,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-demo-lab.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -846,11 +846,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
-              value: ims-models
+              value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ims-demo-lab/datasets
+              value: pipelines/ani-demo-lab/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -883,8 +883,8 @@ kind: Job
 metadata:
   name: sipp-backfill-retransmission-spike
   annotations:
-    ims.redhat.com/target-windows: "2000"
-    ims.redhat.com/windows-per-completion: "100"
+    ani.redhat.com/target-windows: "2000"
+    ani.redhat.com/windows-per-completion: "100"
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 1800
@@ -899,11 +899,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ims-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-demo-lab.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -926,11 +926,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
-              value: ims-models
+              value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ims-demo-lab/datasets
+              value: pipelines/ani-demo-lab/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:

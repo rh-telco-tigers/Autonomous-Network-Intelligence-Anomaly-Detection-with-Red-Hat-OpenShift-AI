@@ -23,7 +23,7 @@ This repo now separates operator-facing installation docs from the deeper archit
 - API admin token: `demo-token`
 - API operator token: `demo-operator-token`
 - API viewer token: `demo-viewer-token`
-- Plane user: `plane-admin@ims-demo.local`
+- Plane user: `plane-admin@ani-demo.local`
 - Plane password: `plane`
 - OpenIMSs WebUI user: `admin`
 - OpenIMSs WebUI password: `1423`

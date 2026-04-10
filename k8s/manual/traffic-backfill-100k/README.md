@@ -5,7 +5,7 @@ This kustomization is intentionally manual-only. It is not referenced by the dem
 ## What it does
 
 - writes feature windows into a caller-selected dataset version
-- reuses the existing IMS target path `ims-pcscf.ims-demo-lab.svc.cluster.local:5060`
+- reuses the existing IMS target path `ims-pcscf.ani-demo-lab.svc.cluster.local:5060`
 - disables control-plane incident emission so the demo UI and incident history are not flooded
 - distributes the 100k target across the current scenario taxonomy using one-shot `Job` resources
 
@@ -26,13 +26,13 @@ make trigger-incident-release INCIDENT_RELEASE_DATASET_VERSION=backfill-sipp-100
 ## Watch
 
 ```sh
-oc get jobs -n ims-demo-lab -l app.kubernetes.io/part-of=sipp-backfill-100k,ims.redhat.com/backfill-dataset-version=<dataset-version>
-oc get pods -n ims-demo-lab -l app.kubernetes.io/part-of=sipp-backfill-100k,ims.redhat.com/backfill-dataset-version=<dataset-version>
+oc get jobs -n ani-demo-lab -l app.kubernetes.io/part-of=sipp-backfill-100k,ani.redhat.com/backfill-dataset-version=<dataset-version>
+oc get pods -n ani-demo-lab -l app.kubernetes.io/part-of=sipp-backfill-100k,ani.redhat.com/backfill-dataset-version=<dataset-version>
 ```
 
 To estimate progress in object storage:
 
-- count objects under `pipelines/ims-demo-lab/datasets/datasets/<dataset-version>/feature-windows/` with your preferred S3 or MinIO client
+- count objects under `pipelines/ani-demo-lab/datasets/datasets/<dataset-version>/feature-windows/` with your preferred S3 or MinIO client
 
 ## Stop Early
 

@@ -34,8 +34,8 @@ def _predictive_endpoint() -> str:
 
 
 def _predictive_model_name() -> str:
-    explicit = os.getenv("PREDICTIVE_MODEL_NAME", "ims-predictive-fs").strip()
-    return explicit or "ims-predictive-fs"
+    explicit = os.getenv("PREDICTIVE_MODEL_NAME", "ani-predictive-fs").strip()
+    return explicit or "ani-predictive-fs"
 
 
 def _reported_remote_model_version(default: str | None = None) -> str | None:

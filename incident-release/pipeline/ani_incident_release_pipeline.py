@@ -3,8 +3,8 @@
 from kfp import dsl
 
 
-PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-incident-release:latest"
-WORKSPACE_ROOT = "/tmp/ims-incident-release"
+PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-incident-release:latest"
+WORKSPACE_ROOT = "/tmp/ani-incident-release"
 CONTROL_PLANE_APPROVAL_LIMIT = "1000"
 CONTROL_PLANE_AUDIT_LIMIT = "1000"
 
@@ -165,11 +165,11 @@ def run_release(
     )
 
 
-@dsl.pipeline(name="ims-incident-release")
-def ims_incident_release_pipeline(
+@dsl.pipeline(name="ani-incident-release")
+def ani_incident_release_pipeline(
     release_version: str = "live-sipp-v1-draft",
     source_dataset_version: str = "live-sipp-v1",
-    project: str = "ims-demo",
+    project: str = "ani-demo",
     public_record_target: int = 10000,
     release_mode: str = "draft-replacement",
     previous_release_version: str = "",
@@ -184,11 +184,11 @@ def ims_incident_release_pipeline(
         previous_release_version=previous_release_version,
         source_snapshot_id=source_snapshot_id,
     )
-    run_task.set_env_variable("CONTROL_PLANE_URL", "http://control-plane.ims-runtime.svc.cluster.local:8080")
+    run_task.set_env_variable("CONTROL_PLANE_URL", "http://control-plane.ani-runtime.svc.cluster.local:8080")
     run_task.set_env_variable("CONTROL_PLANE_API_KEY", "demo-token")
-    run_task.set_env_variable("DATASET_STORE_PREFIX", "pipelines/ims-datascience/datasets")
+    run_task.set_env_variable("DATASET_STORE_PREFIX", "pipelines/ani-datascience/datasets")
     run_task.set_env_variable("KAFKA_ENABLED", "true")
     run_task.set_env_variable(
         "KAFKA_BOOTSTRAP_SERVERS",
-        "ims-release-kafka-kafka-bootstrap.ims-data.svc.cluster.local:9092",
+        "ani-release-kafka-kafka-bootstrap.ani-data.svc.cluster.local:9092",
     )

@@ -1,8 +1,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ims-featurestore-kfp-bootstrap
-  namespace: ims-demo-lab
+  name: ani-featurestore-kfp-bootstrap
+  namespace: ani-demo-lab
   annotations:
     argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
@@ -12,18 +12,18 @@ spec:
   template:
     metadata:
       labels:
-        app: ims-featurestore-kfp-bootstrap
+        app: ani-featurestore-kfp-bootstrap
     spec:
-      serviceAccountName: ims-kfp-bootstrap
+      serviceAccountName: ani-kfp-bootstrap
       restartPolicy: OnFailure
       containers:
         - name: publish-pipeline
           image: registry.access.redhat.com/ubi9/python-311:latest
           envFrom:
             - configMapRef:
-                name: ims-platform-config
+                name: ani-platform-config
             - configMapRef:
-                name: ims-featurestore-config
+                name: ani-featurestore-config
           env:
             - name: HOME
               value: /tmp
@@ -32,19 +32,19 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: REQUIRED_IMAGESTREAM_TAGS
-              value: ims-ai-featurestore-trainer:latest
+              value: ani-ai-featurestore-trainer:latest
             - name: IMAGESTREAM_WAIT_TIMEOUT_SECONDS
               value: "3600"
             - name: DSPA_NAME
               value: dspa
             - name: PIPELINE_PACKAGE_PATH
-              value: /opt/kfp/ims_featurestore_pipeline.yaml
+              value: /opt/kfp/ani_featurestore_pipeline.yaml
             - name: PIPELINE_NAME
-              value: ims-featurestore-train-and-register
+              value: ani-featurestore-train-and-register
             - name: EXPERIMENT_NAME
-              value: ims-featurestore
+              value: ani-featurestore
             - name: RUN_NAME
-              value: ims-featurestore-demo
+              value: ani-featurestore-demo
             - name: FEATURESTORE_BUNDLE_WAIT_TIMEOUT_SECONDS
               value: "900"
             - name: DATASET_STORE_ACCESS_KEY
@@ -121,7 +121,7 @@ spec:
               bucket = os.environ["DATASET_STORE_BUCKET"]
               endpoint = os.environ["DATASET_STORE_ENDPOINT"]
               prefix = os.getenv("DATASET_STORE_PREFIX", "").strip().strip("/")
-              bundle_version = os.getenv("FEATURESTORE_BUNDLE_VERSION", "ims-feature-bundle-v1").strip() or "ims-feature-bundle-v1"
+              bundle_version = os.getenv("FEATURESTORE_BUNDLE_VERSION", "ani-feature-bundle-v1").strip() or "ani-feature-bundle-v1"
               timeout_seconds = int(os.getenv("FEATURESTORE_BUNDLE_WAIT_TIMEOUT_SECONDS", "900"))
               key = "/".join(part for part in (prefix, "feature-bundles", bundle_version, "manifest.json") if part)
               uri = f"s3://{bucket}/{key}"
@@ -161,21 +161,21 @@ spec:
               print(
                   json.dumps(
                       {
-                          "bundle_version": os.getenv("FEATURESTORE_BUNDLE_VERSION", "ims-feature-bundle-v1"),
-                          "feature_service_name": os.getenv("FEATURE_SERVICE_NAME", "ims_anomaly_scoring_v1"),
+                          "bundle_version": os.getenv("FEATURESTORE_BUNDLE_VERSION", "ani-feature-bundle-v1"),
+                          "feature_service_name": os.getenv("FEATURE_SERVICE_NAME", "ani_anomaly_scoring_v1"),
                           "baseline_version": os.getenv("FEATURESTORE_BASELINE_VERSION", "baseline-fs-v1"),
                           "candidate_version": os.getenv("FEATURESTORE_CANDIDATE_VERSION", "candidate-fs-v1"),
                           "automl_engine": os.getenv("FEATURESTORE_AUTOML_ENGINE", "autogluon"),
-                          "model_name": os.getenv("FEATURESTORE_MODEL_NAME", "ims-anomaly-featurestore"),
-                          "model_version_name": os.getenv("FEATURESTORE_MODEL_VERSION_NAME", "ims-anomaly-featurestore-v1"),
-                          "serving_model_name": os.getenv("PREDICTIVE_MODEL_NAME", "ims-predictive-fs"),
+                          "model_name": os.getenv("FEATURESTORE_MODEL_NAME", "ani-anomaly-featurestore"),
+                          "model_version_name": os.getenv("FEATURESTORE_MODEL_VERSION_NAME", "ani-anomaly-featurestore-v1"),
+                          "serving_model_name": os.getenv("PREDICTIVE_MODEL_NAME", "ani-predictive-fs"),
                           "serving_runtime_name": os.getenv("FEATURESTORE_SERVING_RUNTIME_NAME", "nvidia-triton-runtime"),
                           "serving_model_format_name": os.getenv("FEATURESTORE_SERVING_MODEL_FORMAT_NAME", "triton"),
                           "serving_model_format_version": os.getenv("FEATURESTORE_SERVING_MODEL_FORMAT_VERSION", "2"),
                           "serving_protocol_version": os.getenv("FEATURESTORE_SERVING_PROTOCOL_VERSION", "v2"),
                           "serving_prefix": os.getenv("FEATURESTORE_SERVING_PREFIX", "predictive-featurestore"),
                           "serving_alias": os.getenv("FEATURESTORE_SERVING_ALIAS", "current"),
-                          "mlserver_serving_model_name": os.getenv("MLSERVER_SERVING_MODEL_NAME", "ims-predictive-fs-mlserver"),
+                          "mlserver_serving_model_name": os.getenv("MLSERVER_SERVING_MODEL_NAME", "ani-predictive-fs-mlserver"),
                           "mlserver_serving_runtime_name": os.getenv("MLSERVER_SERVING_RUNTIME_NAME", "mlserver-sklearn-runtime"),
                           "mlserver_serving_model_format_name": os.getenv("MLSERVER_SERVING_MODEL_FORMAT_NAME", "sklearn"),
                           "mlserver_serving_model_format_version": os.getenv("MLSERVER_SERVING_MODEL_FORMAT_VERSION", "1"),
@@ -191,7 +191,7 @@ spec:
                           "dataset_store_access_key": os.environ["DATASET_STORE_ACCESS_KEY"],
                           "dataset_store_secret_key": os.environ["DATASET_STORE_SECRET_KEY"],
                           "featurestore_mode": os.getenv("FEATURESTORE_MODE", "remote"),
-                          "featurestore_project": os.getenv("FEATURE_STORE_PROJECT", "ims_anomaly_featurestore"),
+                          "featurestore_project": os.getenv("FEATURE_STORE_PROJECT", "ani_anomaly_featurestore"),
                           "featurestore_registry_path": os.environ["FEATURESTORE_REGISTRY_PATH"],
                           "featurestore_online_store_path": os.environ["FEATURESTORE_ONLINE_STORE_PATH"],
                           "featurestore_ca_cert_path": os.getenv("FEATURESTORE_CA_CERT_PATH", "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"),
@@ -220,4 +220,4 @@ spec:
       volumes:
         - name: kfp-assets
           configMap:
-            name: ims-featurestore-kfp-assets
+            name: ani-featurestore-kfp-assets

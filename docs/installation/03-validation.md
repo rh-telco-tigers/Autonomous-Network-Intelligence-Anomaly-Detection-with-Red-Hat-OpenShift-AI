@@ -8,21 +8,21 @@ Confirm that the platform deployed successfully and that you can navigate the ma
 
 ```sh
 oc get applications.argoproj.io -n openshift-gitops
-oc get deploy -n ims-runtime
-oc get deploy -n ims-sipp
+oc get deploy -n ani-runtime
+oc get deploy -n ani-sipp
 oc get dsc -n redhat-ods-operator
-oc get dspa,featurestore,inferenceservice -n ims-datascience
+oc get dspa,featurestore,inferenceservice -n ani-datascience
 ```
 
 ## 2. Collect The Main Routes
 
 ```sh
-DEMO_UI_HOST="$(oc get route demo-ui -n ims-runtime -o jsonpath='{.spec.host}')"
-CONTROL_PLANE_HOST="$(oc get route control-plane -n ims-runtime -o jsonpath='{.spec.host}')"
-OPENIMSS_HOST="$(oc get route openimss-webui -n ims-sipp -o jsonpath='{.spec.host}')"
+DEMO_UI_HOST="$(oc get route demo-ui -n ani-runtime -o jsonpath='{.spec.host}')"
+CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.spec.host}')"
+OPENIMSS_HOST="$(oc get route openimss-webui -n ani-sipp -o jsonpath='{.spec.host}')"
 PLANE_HOST="$(oc get route plane-web -n plane -o jsonpath='{.spec.host}')"
-ATTU_HOST="$(oc get route milvus-attu -n ims-data -o jsonpath='{.spec.host}')"
-MINIO_HOST="$(oc get route model-storage-minio-console -n ims-data -o jsonpath='{.spec.host}')"
+ATTU_HOST="$(oc get route milvus-attu -n ani-data -o jsonpath='{.spec.host}')"
+MINIO_HOST="$(oc get route model-storage-minio-console -n ani-data -o jsonpath='{.spec.host}')"
 
 echo "Demo UI:        https://${DEMO_UI_HOST}"
 echo "Control plane:  https://${CONTROL_PLANE_HOST}"
@@ -45,15 +45,15 @@ Open these routes in a browser:
 Use these credentials:
 
 - Gitea: `gitadmin` / `GiteaAdmin123!`
-- Plane: `plane-admin@ims-demo.local` / `plane`
+- Plane: `plane-admin@ani-demo.local` / `plane`
 - OpenIMS WebUI: `admin` / `1423`
 - MinIO console: `minioadmin` / `minioadmin`
 
 ## 4. Validate Background Generators
 
 ```sh
-oc get cronjob -n ims-runtime | rg 'demo-incident-pulse'
-oc get cronjob -n ims-sipp | rg 'sipp-'
+oc get cronjob -n ani-runtime | rg 'demo-incident-pulse'
+oc get cronjob -n ani-sipp | rg 'sipp-'
 ```
 
 ## 5. Run One Manual Traffic Check
@@ -62,18 +62,18 @@ Create one normal run:
 
 ```sh
 NORMAL_JOB="sipp-normal-check-$(date +%s)"
-oc create job --from=cronjob/sipp-normal-traffic "${NORMAL_JOB}" -n ims-sipp
-oc wait --for=condition=complete "job/${NORMAL_JOB}" -n ims-sipp --timeout=5m
-oc logs "job/${NORMAL_JOB}" -n ims-sipp
+oc create job --from=cronjob/sipp-normal-traffic "${NORMAL_JOB}" -n ani-sipp
+oc wait --for=condition=complete "job/${NORMAL_JOB}" -n ani-sipp --timeout=5m
+oc logs "job/${NORMAL_JOB}" -n ani-sipp
 ```
 
 Create one anomaly run:
 
 ```sh
 STORM_JOB="sipp-storm-check-$(date +%s)"
-oc create job --from=cronjob/sipp-registration-storm "${STORM_JOB}" -n ims-sipp
-oc wait --for=condition=complete "job/${STORM_JOB}" -n ims-sipp --timeout=5m
-oc logs "job/${STORM_JOB}" -n ims-sipp
+oc create job --from=cronjob/sipp-registration-storm "${STORM_JOB}" -n ani-sipp
+oc wait --for=condition=complete "job/${STORM_JOB}" -n ani-sipp --timeout=5m
+oc logs "job/${STORM_JOB}" -n ani-sipp
 ```
 
 The logs should print a `window_uri`. After the anomaly run, the demo UI should show a new incident.
@@ -110,7 +110,7 @@ Expect:
 3. Confirm the execution completed and the scale change remained applied:
 
 ```sh
-oc get deploy ims-scscf -n ims-sipp -o jsonpath='{.spec.replicas}{"\t"}{.status.readyReplicas}{"\t"}{.status.availableReplicas}{"\n"}'
+oc get deploy ims-scscf -n ani-sipp -o jsonpath='{.spec.replicas}{"\t"}{.status.readyReplicas}{"\t"}{.status.availableReplicas}{"\n"}'
 ```
 
 Expected result after the approved action runs: the deployment reports `2` desired replicas and stays there until an operator intentionally changes it again.
@@ -123,7 +123,7 @@ Expected result after the approved action runs: the deployment reports `2` desir
 - Plane login works
 - `default-dsc` is `Ready=True`
 - `dspa` exists
-- `ims-featurestore` is `Ready`
+- `ani-featurestore` is `Ready`
 - the predictive `InferenceService` resources are `READY=True`
 - the manual SIPp jobs finish and print `window_uri`
 - the control-plane status endpoint returns JSON without errors

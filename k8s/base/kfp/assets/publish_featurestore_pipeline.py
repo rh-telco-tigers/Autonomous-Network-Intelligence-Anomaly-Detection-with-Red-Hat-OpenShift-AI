@@ -11,29 +11,29 @@ from kfp import Client
 
 
 DEFAULT_DSPA_NAME = "dspa"
-DEFAULT_PIPELINE_NAME = "ims-featurestore-train-and-register"
-DEFAULT_EXPERIMENT_NAME = "ims-featurestore"
-DEFAULT_RUN_NAME_PREFIX = "ims-featurestore-manual"
-DEFAULT_PACKAGE_PATH = "/opt/kfp/ims_featurestore_pipeline.yaml"
+DEFAULT_PIPELINE_NAME = "ani-featurestore-train-and-register"
+DEFAULT_EXPERIMENT_NAME = "ani-featurestore"
+DEFAULT_RUN_NAME_PREFIX = "ani-featurestore-manual"
+DEFAULT_PACKAGE_PATH = "/opt/kfp/ani_featurestore_pipeline.yaml"
 DEFAULT_KFP_HOST_TEMPLATE = "https://ds-pipeline-{dspa}.{namespace}.svc.cluster.local:8443"
 DEFAULT_SERVICE_CA_CERT = "/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
 DEFAULT_SA_TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 DEFAULT_PIPELINE_PARAMETERS = {
-    "bundle_version": "ims-feature-bundle-v1",
-    "feature_service_name": "ims_anomaly_scoring_v1",
+    "bundle_version": "ani-feature-bundle-v1",
+    "feature_service_name": "ani_anomaly_scoring_v1",
     "baseline_version": "baseline-fs-v1",
     "candidate_version": "candidate-fs-v1",
     "automl_engine": "autogluon",
-    "model_name": "ims-anomaly-featurestore",
-    "model_version_name": "ims-anomaly-featurestore-v1",
-    "serving_model_name": "ims-predictive-fs",
+    "model_name": "ani-anomaly-featurestore",
+    "model_version_name": "ani-anomaly-featurestore-v1",
+    "serving_model_name": "ani-predictive-fs",
     "serving_runtime_name": "nvidia-triton-runtime",
     "serving_model_format_name": "triton",
     "serving_model_format_version": "2",
     "serving_protocol_version": "v2",
     "serving_prefix": "predictive-featurestore",
     "serving_alias": "current",
-    "mlserver_serving_model_name": "ims-predictive-fs-mlserver",
+    "mlserver_serving_model_name": "ani-predictive-fs-mlserver",
     "mlserver_serving_runtime_name": "mlserver-sklearn-runtime",
     "mlserver_serving_model_format_name": "sklearn",
     "mlserver_serving_model_format_version": "1",

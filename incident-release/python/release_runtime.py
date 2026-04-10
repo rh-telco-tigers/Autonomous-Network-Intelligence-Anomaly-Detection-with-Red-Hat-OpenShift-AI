@@ -31,15 +31,15 @@ from shared.incident_taxonomy import (
 )
 
 
-DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-data.svc.cluster.local:9000"
-DEFAULT_DATASET_STORE_BUCKET = "ims-models"
-DEFAULT_DATASET_STORE_PREFIX = "pipelines/ims-datascience/datasets"
+DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ani-data.svc.cluster.local:9000"
+DEFAULT_DATASET_STORE_BUCKET = "ani-models"
+DEFAULT_DATASET_STORE_PREFIX = "pipelines/ani-datascience/datasets"
 DEFAULT_RELEASE_PREFIX = "incident-release/releases"
 DEFAULT_PUBLIC_RECORD_TARGET = 10_000
-DEFAULT_KAFKA_BOOTSTRAP_SERVERS = "ims-release-kafka-kafka-bootstrap.ims-data.svc.cluster.local:9092"
-DEFAULT_KAFKA_INCIDENTS_TOPIC = "ims-incidents-bronze"
-DEFAULT_KAFKA_FEATURE_WINDOWS_TOPIC = "ims-feature-windows-bronze"
-DEFAULT_KAFKA_RELEASE_ARTIFACTS_TOPIC = "ims-release-artifacts"
+DEFAULT_KAFKA_BOOTSTRAP_SERVERS = "ani-release-kafka-kafka-bootstrap.ani-data.svc.cluster.local:9092"
+DEFAULT_KAFKA_INCIDENTS_TOPIC = "ani-incidents-bronze"
+DEFAULT_KAFKA_FEATURE_WINDOWS_TOPIC = "ani-feature-windows-bronze"
+DEFAULT_KAFKA_RELEASE_ARTIFACTS_TOPIC = "ani-release-artifacts"
 DEFAULT_KAFKA_MAX_EVENT_BYTES = 900_000
 DEFAULT_WARNING_MIN_UNIQUE_FEATURE_WINDOWS = 100_000
 DEFAULT_WARNING_MIN_ANOMALY_TYPES = 10
@@ -55,7 +55,7 @@ DEFAULT_BLOCKING_MAX_NON_AUTHORITATIVE_TRAINING_RATIO = 0.50
 DEFAULT_BLOCKING_MIN_NONZERO_VARIANCE_FEATURES = 3
 
 FEATURE_SCHEMA_VERSION = "feature_schema_v1"
-LABEL_TAXONOMY_VERSION = "ims_incident_taxonomy_v2"
+LABEL_TAXONOMY_VERSION = "ani_incident_taxonomy_v2"
 SPLIT_POLICY_VERSION = "split_policy_v1"
 PRIVACY_POLICY_VERSION = "privacy_policy_v1"
 MODEL_CONTRACT_VERSION = "model_contract_v1"
@@ -452,7 +452,7 @@ def _new_kafka_producer():
 
     return KafkaProducer(
         bootstrap_servers=_kafka_bootstrap_servers(),
-        client_id=os.getenv("KAFKA_CLIENT_ID", "ims-incident-release"),
+        client_id=os.getenv("KAFKA_CLIENT_ID", "ani-incident-release"),
         security_protocol=os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"),
         acks=os.getenv("KAFKA_ACKS", "all"),
         retries=max(int(os.getenv("KAFKA_RETRIES", "3")), 0),
@@ -945,7 +945,7 @@ def _redact_text(value: object) -> str | None:
     redacted = re.sub(r"https?://\S+", "[redacted-url]", text)
     redacted = re.sub(r"\b[a-z0-9-]+(?:\.[a-z0-9-]+){2,}\b", "[redacted-host]", redacted, flags=re.I)
     redacted = re.sub(r"\b[0-9a-f]{8}-[0-9a-f-]{27}\b", "[redacted-id]", redacted, flags=re.I)
-    redacted = redacted.replace("ims-demo-lab", "[redacted-namespace]")
+    redacted = redacted.replace("ani-demo-lab", "[redacted-namespace]")
     return redacted
 
 
@@ -1368,15 +1368,15 @@ def _schema_payload(
         "label_taxonomy_version": LABEL_TAXONOMY_VERSION,
         "privacy_policy_version": PRIVACY_POLICY_VERSION,
         "artifacts": {
-            "ims_incident_history": {
+            "ani_incident_history": {
                 "formats": ["parquet", "csv"],
                 "columns": incident_columns,
             },
-            "ims_training_examples": {
+            "ani_training_examples": {
                 "formats": ["parquet", "csv"],
                 "columns": training_columns,
             },
-            "ims_training_examples_balanced": {
+            "ani_training_examples_balanced": {
                 "formats": ["parquet", "csv"],
                 "columns": balanced_columns,
             },
@@ -1822,7 +1822,7 @@ def normalize_release(
                 "incident_public_id": incident_public_id,
                 "source_snapshot_id": snapshot_id,
                 "release_version": release_version,
-                "project": str(incident.get("project") or snapshot.get("project") or "ims-demo"),
+                "project": str(incident.get("project") or snapshot.get("project") or "ani-demo"),
                 "status": str(incident.get("status") or "open"),
                 "anomaly_type": anomaly_type,
                 "source_anomaly_type": str(incident.get("anomaly_type") or source_anomaly_type),
@@ -2027,7 +2027,7 @@ def normalize_release(
     dataset_card_text = _dataset_card(
         release_version=release_version,
         source_snapshot_id=snapshot_id,
-        project=str(snapshot.get("project") or "ims-demo"),
+        project=str(snapshot.get("project") or "ani-demo"),
         source_dataset_version=source_dataset_version,
         public_record_target=record_target,
         counts=counts,
@@ -2063,12 +2063,12 @@ def normalize_release(
         "validation_results": {},
     }
 
-    incident_history_parquet = gold_root / "ims_incident_history.parquet"
-    incident_history_csv = gold_root / "ims_incident_history.csv"
-    training_examples_parquet = gold_root / "ims_training_examples.parquet"
-    training_examples_csv = gold_root / "ims_training_examples.csv"
-    balanced_training_parquet = gold_root / "ims_training_examples_balanced.parquet"
-    balanced_training_csv = gold_root / "ims_training_examples_balanced.csv"
+    incident_history_parquet = gold_root / "ani_incident_history.parquet"
+    incident_history_csv = gold_root / "ani_incident_history.csv"
+    training_examples_parquet = gold_root / "ani_training_examples.parquet"
+    training_examples_csv = gold_root / "ani_training_examples.csv"
+    balanced_training_parquet = gold_root / "ani_training_examples_balanced.parquet"
+    balanced_training_csv = gold_root / "ani_training_examples_balanced.csv"
     split_manifest_json = gold_root / "training_split_manifest.json"
     split_manifest_csv = gold_root / "training_split_manifest.csv"
     quality_report_path = gold_root / "quality_report.json"
@@ -2285,7 +2285,7 @@ def publish_release(
     quality_report["distribution_drift"] = drift
     Path(manifest["artifacts"]["quality_report"]).write_text(json.dumps(quality_report, indent=2))
 
-    bundle_path = publish_root / "ims_incident_release_bundle.zip"
+    bundle_path = publish_root / "ani_incident_release_bundle.zip"
     release_manifest_path = publish_root / "release_manifest.json"
 
     release_manifest = {

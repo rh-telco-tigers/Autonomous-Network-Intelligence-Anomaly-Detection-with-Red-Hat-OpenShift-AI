@@ -19,7 +19,7 @@ LABEL_SOURCE_PATH = os.getenv(
 S3_ENDPOINT_OVERRIDE = os.getenv("FEAST_S3_ENDPOINT_URL", "").strip() or None
 
 offline_source = FileSource(
-    name="ims_feature_bundle_offline_source",
+    name="ani_feature_bundle_offline_source",
     path=OFFLINE_SOURCE_PATH,
     s3_endpoint_override=S3_ENDPOINT_OVERRIDE,
     file_format=ParquetFormat(),
@@ -28,7 +28,7 @@ offline_source = FileSource(
 )
 
 label_source = FileSource(
-    name="ims_feature_bundle_label_source",
+    name="ani_feature_bundle_label_source",
     path=LABEL_SOURCE_PATH,
     s3_endpoint_override=S3_ENDPOINT_OVERRIDE,
     file_format=ParquetFormat(),
@@ -36,8 +36,8 @@ label_source = FileSource(
     created_timestamp_column="created_timestamp",
 )
 
-ims_window_numeric_v1 = FeatureView(
-    name="ims_window_numeric_v1",
+ani_window_numeric_v1 = FeatureView(
+    name="ani_window_numeric_v1",
     entities=[feature_window],
     ttl=timedelta(days=3650),
     schema=[
@@ -55,8 +55,8 @@ ims_window_numeric_v1 = FeatureView(
     tags={"domain": "ims", "contract": "scoring", "version": "v1"},
 )
 
-ims_window_context_v1 = FeatureView(
-    name="ims_window_context_v1",
+ani_window_context_v1 = FeatureView(
+    name="ani_window_context_v1",
     entities=[feature_window],
     ttl=timedelta(days=3650),
     schema=[
@@ -75,8 +75,8 @@ ims_window_context_v1 = FeatureView(
     tags={"domain": "ims", "contract": "context", "version": "v1"},
 )
 
-ims_training_label_v1 = FeatureView(
-    name="ims_training_label_v1",
+ani_training_label_v1 = FeatureView(
+    name="ani_training_label_v1",
     entities=[feature_window],
     ttl=timedelta(days=3650),
     schema=[

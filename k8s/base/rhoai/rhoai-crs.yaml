@@ -20,7 +20,7 @@ metadata:
   namespace: redhat-ods-operator
   annotations:
     argocd.argoproj.io/sync-wave: "11"
-    ims.redhat.com/rhoai-bootstrap-revision: "1"
+    ani.redhat.com/rhoai-bootstrap-revision: "1"
 spec:
   components:
     kserve:

@@ -1,11 +1,11 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  generateName: ims-platform-build-
-  namespace: ims-tekton
+  generateName: ani-platform-build-
+  namespace: ani-tekton
 spec:
   pipelineRef:
-    name: ims-platform-container-build
+    name: ani-platform-container-build
   params:
     - name: git-url
       value: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git

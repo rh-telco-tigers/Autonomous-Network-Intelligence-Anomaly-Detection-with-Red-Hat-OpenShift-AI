@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
-  name: ims-platform-container-build
+  name: ani-platform-container-build
 spec:
   params:
     - name: git-url
@@ -35,7 +35,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-sipp/sipp-runner:latest
+          value: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -52,7 +52,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-runtime/feature-gateway:latest
+          value: image-registry.openshift-image-registry.svc:5000/ani-runtime/feature-gateway:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -69,7 +69,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-runtime/anomaly-service:latest
+          value: image-registry.openshift-image-registry.svc:5000/ani-runtime/anomaly-service:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -86,7 +86,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-runtime/rca-service:latest
+          value: image-registry.openshift-image-registry.svc:5000/ani-runtime/rca-service:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -103,7 +103,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-runtime/demo-ui:latest
+          value: image-registry.openshift-image-registry.svc:5000/ani-runtime/demo-ui:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -120,7 +120,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-runtime/control-plane:latest
+          value: image-registry.openshift-image-registry.svc:5000/ani-runtime/control-plane:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -128,7 +128,7 @@ spec:
       workspaces:
         - name: source
           workspace: source
-    - name: build-ims-ai-trainer
+    - name: build-ani-ai-trainer
       retries: 1
       timeout: 45m0s
       runAfter:
@@ -137,7 +137,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-trainer:latest
+          value: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -145,16 +145,16 @@ spec:
       workspaces:
         - name: source
           workspace: source
-    - name: build-ims-ai-featurestore-trainer
+    - name: build-ani-ai-featurestore-trainer
       retries: 1
       timeout: 45m0s
       runAfter:
-        - build-ims-ai-trainer
+        - build-ani-ai-trainer
       taskRef:
         name: buildah-heavy
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+          value: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -162,16 +162,16 @@ spec:
       workspaces:
         - name: source
           workspace: source
-    - name: build-ims-incident-release
+    - name: build-ani-incident-release
       retries: 1
       timeout: 45m0s
       runAfter:
-        - build-ims-ai-featurestore-trainer
+        - build-ani-ai-featurestore-trainer
       taskRef:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-incident-release:latest
+          value: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-incident-release:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE

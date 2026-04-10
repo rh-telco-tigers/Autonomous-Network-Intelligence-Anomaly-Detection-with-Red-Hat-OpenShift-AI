@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: model-storage-sa
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 secrets:
   - name: aws-connection-minio
 ---
@@ -10,7 +10,7 @@ apiVersion: serving.kserve.io/v1alpha1
 kind: ServingRuntime
 metadata:
   name: nvidia-triton-runtime
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
   annotations:
     opendatahub.io/apiProtocol: REST
     opendatahub.io/recommended-accelerators: '[]'
@@ -62,14 +62,14 @@ spec:
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
-  name: ims-predictive
-  namespace: ims-demo-lab
+  name: ani-predictive
+  namespace: ani-demo-lab
   labels:
     opendatahub.io/dashboard: "true"
   annotations:
     argocd.argoproj.io/sync-wave: "60"
     opendatahub.io/model-type: predictive
-    openshift.io/display-name: ims-predictive
+    openshift.io/display-name: ani-predictive
     serving.kserve.io/deploymentMode: RawDeployment
     serving.kserve.io/enable-prometheus-scraping: "true"
 spec:
@@ -82,7 +82,7 @@ spec:
       modelFormat:
         name: triton
       protocolVersion: v2
-      storageUri: s3://ims-models/predictive/
+      storageUri: s3://ani-models/predictive/
       resources:
         requests:
           cpu: 100m
@@ -94,8 +94,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: ims-generative-proxy
-  namespace: ims-demo-lab
+  name: ani-generative-proxy
+  namespace: ani-demo-lab
   annotations:
     argocd.argoproj.io/sync-options: Force=true,Replace=true
 spec:
@@ -110,8 +110,8 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: ims-predictive-metrics
-  namespace: ims-demo-lab
+  name: ani-predictive-metrics
+  namespace: ani-demo-lab
   annotations:
     argocd.argoproj.io/sync-wave: "60"
   labels:
@@ -119,10 +119,10 @@ metadata:
 spec:
   namespaceSelector:
     matchNames:
-      - ims-datascience
+      - ani-datascience
   selector:
     matchLabels:
-      serving.kserve.io/inferenceservice: ims-predictive
+      serving.kserve.io/inferenceservice: ani-predictive
   podMetricsEndpoints:
     - path: /metrics
       targetPort: 8002

@@ -8,6 +8,16 @@ Deploy the platform on a fresh cluster through the GitOps path and bring it to a
 
 - Log in to the target cluster with cluster-admin access.
 - Check out the git branch you want Argo CD to follow.
+- **GPU workers:** GitOps installs the NVIDIA GPU Operator, Node Feature Discovery, and OpenShift AI model serving that targets GPU runtimes (including vLLM). Use a cluster or machine pool with **GPU-capable worker nodes** and enough capacity for the operator DaemonSets; without that, the `ani-datascience` slice and inference validation in this guide typically will not converge.
+
+If the cluster does not already expose a GPU worker, add one before continuing:
+
+```sh
+oc get nodes -l node-role.kubernetes.io/gpu
+make add-gpu-node-pool
+oc get machineset -n openshift-machine-api | rg 'gpu'
+oc get nodes -l node-role.kubernetes.io/gpu
+```
 
 ```sh
 git branch --show-current
@@ -49,36 +59,36 @@ The first Git push seeds GitOps state, but it does not populate all runtime imag
 
 ```sh
 make trigger-build-pipeline
-oc get pipelinerun -n ims-tekton
-oc get is -n ims-runtime
-oc get is -n ims-sipp
-oc get is -n ims-datascience
+oc get pipelinerun -n ani-tekton
+oc get is -n ani-runtime
+oc get is -n ani-sipp
+oc get is -n ani-datascience
 ```
 
 ## 6. Wait For Core Workloads
 
 ```sh
-oc get deploy -n ims-runtime
-oc get deploy -n ims-sipp
+oc get deploy -n ani-runtime
+oc get deploy -n ani-sipp
 oc get dsc -n redhat-ods-operator
-oc get dspa,featurestore,inferenceservice -n ims-datascience
+oc get dspa,featurestore,inferenceservice -n ani-datascience
 ```
 
 Continue when:
 
-- `ims-runtime` deployments are available
-- `ims-sipp` deployments are no longer waiting on missing images
+- `ani-runtime` deployments are available
+- `ani-sipp` deployments are no longer waiting on missing images
 - `default-dsc` is `Ready=True`
 - `dspa` exists
-- `ims-featurestore` is `Ready`
+- `ani-featurestore` is `Ready`
 - the predictive `InferenceService` resources are `READY=True`
 
 ## 7. List The Main Routes
 
 ```sh
-oc get route -n ims-runtime
-oc get route -n ims-sipp
-oc get route -n ims-data
+oc get route -n ani-runtime
+oc get route -n ani-sipp
+oc get route -n ani-data
 oc get route -n plane
 ```
 
@@ -102,7 +112,7 @@ oc extract -n aap secret/aap-eda-admin-password --to=- --keys=password
 4. Verify the integration state:
 
 ```sh
-CONTROL_PLANE_HOST="$(oc get route control-plane -n ims-runtime -o jsonpath='{.spec.host}')"
+CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.spec.host}')"
 curl -k "https://${CONTROL_PLANE_HOST}/integrations/status" \
   -H "x-api-key: demo-token" | python3 -m json.tool
 ```

@@ -16,19 +16,19 @@ class AAPAutomationError(RuntimeError):
 
 ACTION_DEFINITIONS: Dict[str, Dict[str, str]] = {
     "scale_scscf": {
-        "job_template_name": "IMS Scale S-CSCF Path",
+        "job_template_name": "ANI Scale S-CSCF Path",
         "playbook": "automation/ansible/playbooks/scale-scscf.yaml",
         "description": "Scale the S-CSCF deployment after operator approval.",
         "cases": "registration_storm,call_setup_timeout,server_internal_error",
     },
     "rate_limit_pcscf": {
-        "job_template_name": "IMS Rate Limit P-CSCF Ingress",
+        "job_template_name": "ANI Rate Limit P-CSCF Ingress",
         "playbook": "automation/ansible/playbooks/rate-limit-pcscf.yaml",
         "description": "Apply the low-risk P-CSCF ingress guardrail through AAP after approval.",
         "cases": "registration_storm,retransmission_spike,network_degradation",
     },
     "quarantine_imsi": {
-        "job_template_name": "IMS Quarantine Subscriber or Source",
+        "job_template_name": "ANI Quarantine Subscriber or Source",
         "playbook": "automation/ansible/playbooks/quarantine-imsi.yaml",
         "description": "Record a quarantine request for the offending subscriber or traffic source.",
         "cases": "authentication_failure,registration_failure,malformed_sip",
@@ -37,12 +37,12 @@ ACTION_DEFINITIONS: Dict[str, Dict[str, str]] = {
 
 CALLBACK_TEMPLATE_DEFINITIONS: Dict[str, Dict[str, str]] = {
     "eda_transition_incident_state": {
-        "job_template_name": "IMS EDA Transition Incident State",
+        "job_template_name": "ANI EDA Transition Incident State",
         "playbook": "automation/eda/playbooks/transition-incident-state.yml",
         "description": "Call the control-plane transition endpoint from Event-Driven Ansible.",
     },
     "eda_execute_incident_action": {
-        "job_template_name": "IMS EDA Execute Incident Action",
+        "job_template_name": "ANI EDA Execute Incident Action",
         "playbook": "automation/eda/playbooks/execute-incident-action.yml",
         "description": "Call the control-plane automation execution endpoint from Event-Driven Ansible.",
     },
@@ -187,7 +187,7 @@ def launch_runner_job(action: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]
     incident_id = str(extra_vars.get("incident_id") or "incident")
     suffix = incident_id.replace("-", "")[:8] or "demo"
     timestamp = str(int(time.time()))[-8:]
-    job_name = f"ims-{action.replace('_', '-')[:20]}-{suffix}-{timestamp}"[:63].rstrip("-")
+    job_name = f"ani-{action.replace('_', '-')[:20]}-{suffix}-{timestamp}"[:63].rstrip("-")
     namespace = _runner_namespace()
     payload = {
         "apiVersion": "batch/v1",
@@ -196,9 +196,9 @@ def launch_runner_job(action: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]
             "name": job_name,
             "namespace": namespace,
             "labels": {
-                "app.kubernetes.io/name": "ims-remediation-runner",
-                "ims.demo/action": action,
-                "ims.demo/incident-id": incident_id,
+                "app.kubernetes.io/name": "ani-remediation-runner",
+                "ani.demo/action": action,
+                "ani.demo/incident-id": incident_id,
             },
         },
         "spec": {
@@ -208,7 +208,7 @@ def launch_runner_job(action: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]
                 "metadata": {
                     "labels": {
                         "job-name": job_name,
-                        "ims.demo/action": action,
+                        "ani.demo/action": action,
                     }
                 },
                 "spec": {
@@ -228,7 +228,7 @@ def launch_runner_job(action: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]
                             "command": ["/bin/bash", "-lc"],
                             "args": [
                                 "set -euo pipefail\n"
-                                "workdir=/tmp/ims-remediation\n"
+                                "workdir=/tmp/ani-remediation\n"
                                 "rm -rf \"$workdir\"\n"
                                 "git clone --depth 1 --branch \"$AAP_GIT_BRANCH\" \"$AAP_GIT_URL\" \"$workdir\"\n"
                                 "cd \"$workdir\"\n"
@@ -380,7 +380,7 @@ def _organization_name() -> str:
 
 
 def _inventory_name() -> str:
-    return os.getenv("AAP_INVENTORY_NAME", "IMS Incident Local Inventory").strip() or "IMS Incident Local Inventory"
+    return os.getenv("AAP_INVENTORY_NAME", "ANI Incident Local Inventory").strip() or "ANI Incident Local Inventory"
 
 
 def _inventory_host_name() -> str:
@@ -388,7 +388,7 @@ def _inventory_host_name() -> str:
 
 
 def _project_name() -> str:
-    return os.getenv("AAP_PROJECT_NAME", "IMS Incident Automation").strip() or "IMS Incident Automation"
+    return os.getenv("AAP_PROJECT_NAME", "ANI Incident Automation").strip() or "ANI Incident Automation"
 
 
 def _project_scm_url() -> str:
@@ -405,7 +405,7 @@ def _project_branch() -> str:
 def _kubernetes_credential_name() -> str:
     return (
         os.getenv("AAP_KUBERNETES_CREDENTIAL_NAME", "").strip()
-        or "IMS OpenShift API Credential"
+        or "ANI OpenShift API Credential"
     )
 
 
@@ -512,7 +512,7 @@ def _ensure_inventory(organization_id: int) -> int:
     desired = {
         "name": name,
         "organization": organization_id,
-        "description": "Local execution inventory for operator-approved IMS remediation playbooks.",
+        "description": "Local execution inventory for operator-approved ANI remediation playbooks.",
     }
     if inventory is None:
         inventory = _request("POST", "/api/v2/inventories/", expected_status=(200, 201), json=desired)
@@ -545,7 +545,7 @@ def _ensure_project(organization_id: int) -> int:
     desired = {
         "name": name,
         "organization": organization_id,
-        "description": "IMS incident remediation automation sourced from the cluster Git repository.",
+        "description": "ANI incident remediation automation sourced from the cluster Git repository.",
         "scm_type": "git",
         "scm_url": _project_scm_url(),
         "scm_branch": _project_branch(),

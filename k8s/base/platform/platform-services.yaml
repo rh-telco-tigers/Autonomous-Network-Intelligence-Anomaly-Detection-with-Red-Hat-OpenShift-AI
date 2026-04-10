@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: demo-api-auth
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 type: Opaque
 stringData:
   API_KEY: demo-token
@@ -10,22 +10,22 @@ stringData:
     {
       "demo-token": {
         "subject": "demo-admin",
-        "projects": ["ims-demo"],
+        "projects": ["ani-demo"],
         "roles": ["admin", "operator", "automation"]
       },
       "demo-operator-token": {
         "subject": "demo-operator",
-        "projects": ["ims-demo"],
+        "projects": ["ani-demo"],
         "roles": ["operator"]
       },
       "demo-viewer-token": {
         "subject": "demo-viewer",
-        "projects": ["ims-demo"],
+        "projects": ["ani-demo"],
         "roles": ["viewer"]
       },
       "eda-token": {
         "subject": "eda-automation",
-        "projects": ["ims-demo"],
+        "projects": ["ani-demo"],
         "roles": ["operator", "automation"]
       }
     }
@@ -34,7 +34,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: llm-provider-config
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 data:
   LLM_ENDPOINT: ""
   LLM_MODEL: ""
@@ -44,7 +44,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: llm-provider-auth
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 type: Opaque
 stringData:
   LLM_API_KEY: ""
@@ -53,7 +53,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: control-plane-data
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   accessModes:
     - ReadWriteOnce
@@ -65,7 +65,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: control-plane
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   replicas: 1
   strategy:
@@ -76,7 +76,7 @@ spec:
   template:
     metadata:
       annotations:
-        ims.redhat.com/automation-bootstrap-defaults-revision: "1"
+        ani.redhat.com/automation-bootstrap-defaults-revision: "1"
       labels:
         app: control-plane
     spec:
@@ -87,10 +87,10 @@ spec:
             claimName: control-plane-data
       containers:
         - name: control-plane
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/control-plane:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/control-plane:latest
           envFrom:
             - configMapRef:
-                name: ims-platform-config
+                name: ani-platform-config
           ports:
             - containerPort: 8080
           env:
@@ -432,7 +432,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: control-plane
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
   labels:
     app: control-plane
 spec:
@@ -447,7 +447,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: control-plane
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   to:
     kind: Service
@@ -464,7 +464,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: feature-gateway
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   replicas: 1
   selector:
@@ -480,7 +480,7 @@ spec:
           image: feature-gateway:latest
           envFrom:
             - configMapRef:
-                name: ims-platform-config
+                name: ani-platform-config
           ports:
             - containerPort: 8080
           env:
@@ -520,7 +520,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: feature-gateway
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
   labels:
     app: feature-gateway
 spec:
@@ -535,7 +535,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: feature-gateway
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   to:
     kind: Service
@@ -552,7 +552,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: anomaly-service
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   replicas: 1
   selector:
@@ -568,7 +568,7 @@ spec:
           image: anomaly-service:latest
           envFrom:
             - configMapRef:
-                name: ims-platform-config
+                name: ani-platform-config
           ports:
             - containerPort: 8080
           env:
@@ -604,7 +604,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: anomaly-service
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
   labels:
     app: anomaly-service
 spec:
@@ -619,7 +619,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: anomaly-service
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   to:
     kind: Service
@@ -636,7 +636,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: rca-service
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   replicas: 1
   selector:
@@ -652,7 +652,7 @@ spec:
           image: rca-service:latest
           envFrom:
             - configMapRef:
-                name: ims-platform-config
+                name: ani-platform-config
           ports:
             - containerPort: 8080
           env:
@@ -708,7 +708,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: rca-service
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
   labels:
     app: rca-service
 spec:
@@ -723,7 +723,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: rca-service
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   to:
     kind: Service
@@ -740,7 +740,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: demo-ui-oauth-config
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 type: Opaque
 stringData:
   session_secret: m9cjPX3sJ4DDwB6tekhBmQ1fPd9X2hV582uIu5jEwdb
@@ -749,7 +749,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: demo-ui
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
   annotations:
     serviceaccounts.openshift.io/oauth-redirectreference.primary: >-
       {"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"demo-ui"}}
@@ -758,7 +758,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: demo-ui
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   replicas: 1
   selector:
@@ -779,10 +779,10 @@ spec:
             secretName: demo-ui-oauth-config
       containers:
         - name: demo-ui
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/demo-ui:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/demo-ui:latest
           envFrom:
             - configMapRef:
-                name: ims-platform-config
+                name: ani-platform-config
           ports:
             - name: http
               containerPort: 8080
@@ -792,7 +792,7 @@ spec:
             - name: NEXT_PUBLIC_IMS_PROJECT
               valueFrom:
                 configMapKeyRef:
-                  name: ims-platform-config
+                  name: ani-platform-config
                   key: IMS_PROJECT
           readinessProbe:
             httpGet:
@@ -842,7 +842,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: demo-ui
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
   labels:
     app: demo-ui
   annotations:
@@ -862,7 +862,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: demo-ui
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   to:
     kind: Service

@@ -1,17 +1,17 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  generateName: ims-kfp-manual-
-  namespace: ims-datascience
+  generateName: ani-kfp-manual-
+  namespace: ani-datascience
 spec:
   backoffLimit: 6
   ttlSecondsAfterFinished: 1800
   template:
     metadata:
       labels:
-        app: ims-kfp-manual
+        app: ani-kfp-manual
     spec:
-      serviceAccountName: ims-kfp-bootstrap
+      serviceAccountName: ani-kfp-bootstrap
       restartPolicy: OnFailure
       containers:
         - name: publish-pipeline
@@ -44,4 +44,4 @@ spec:
       volumes:
         - name: kfp-assets
           configMap:
-            name: ims-kfp-assets
+            name: ani-kfp-assets

@@ -3,10 +3,10 @@
 from kfp import dsl
 
 
-PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-trainer:latest"
-WORKSPACE_ROOT = "/tmp/ims-pipeline"
-ARTIFACT_DIR = "/tmp/ims-pipeline/models/artifacts"
-REGISTRY_PATH = "/tmp/ims-pipeline/registry/model_registry.json"
+PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest"
+WORKSPACE_ROOT = "/tmp/ani-pipeline"
+ARTIFACT_DIR = "/tmp/ani-pipeline/models/artifacts"
+REGISTRY_PATH = "/tmp/ani-pipeline/registry/model_registry.json"
 
 
 @dsl.container_component
@@ -237,8 +237,8 @@ def deploy_model(
     )
 
 
-@dsl.pipeline(name="ims-anomaly-platform-train-and-register")
-def ims_anomaly_pipeline(
+@dsl.pipeline(name="ani-anomaly-platform-train-and-register")
+def ani_anomaly_pipeline(
     dataset_version: str = "live-sipp-v1",
     baseline_version: str = "baseline-v1",
     automl_version: str = "candidate-v1",

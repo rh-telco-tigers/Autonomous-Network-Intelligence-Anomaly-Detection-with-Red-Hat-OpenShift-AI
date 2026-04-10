@@ -2,13 +2,13 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: plane-integration-bootstrap
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: plane-integration-bootstrap
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 rules:
   - apiGroups:
       - ""
@@ -40,11 +40,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: plane-integration-bootstrap
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 subjects:
   - kind: ServiceAccount
     name: plane-integration-bootstrap
-    namespace: ims-demo-lab
+    namespace: ani-demo-lab
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -54,7 +54,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: plane-integration-secret-bootstrap-v7
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
@@ -85,7 +85,7 @@ spec:
             - name: PLANE_BOOTSTRAP_STATUS_WAIT_SECONDS
               value: "300"
             - name: PLANE_ADMIN_EMAIL
-              value: plane-admin@ims-demo.local
+              value: plane-admin@ani-demo.local
             - name: PLANE_ADMIN_USERNAME
               value: plane-admin
             - name: PLANE_ADMIN_PASSWORD
@@ -97,7 +97,7 @@ spec:
             - name: PLANE_ADMIN_DISPLAY_NAME
               value: Plane Admin
             - name: PLANE_WORKSPACE_SLUG
-              value: ims-demo
+              value: ani-demo
             - name: PLANE_WORKSPACE_NAME
               value: IMS Demo
             - name: PLANE_PROJECT_NAME
@@ -105,7 +105,7 @@ spec:
             - name: PLANE_PROJECT_IDENTIFIER
               value: IMS
             - name: PLANE_CONTROL_PLANE_TOKEN_LABEL
-              value: ims-demo-control-plane
+              value: ani-demo-control-plane
             - name: PLANE_CONTROL_PLANE_TOKEN_DESCRIPTION
               value: PAT for IMS control-plane ticket sync
           envFrom:
@@ -143,7 +143,7 @@ spec:
 
               from plane.license.models import Instance, InstanceAdmin
 
-              control_plane_namespace = (os.getenv("POD_NAMESPACE") or "ims-runtime").strip() or "ims-runtime"
+              control_plane_namespace = (os.getenv("POD_NAMESPACE") or "ani-runtime").strip() or "ani-runtime"
               plane_namespace = (os.getenv("PLANE_NAMESPACE") or "plane").strip() or "plane"
               wait_seconds = int(os.getenv("PLANE_BOOTSTRAP_WAIT_SECONDS", "900"))
               status_wait_seconds = int(os.getenv("PLANE_BOOTSTRAP_STATUS_WAIT_SECONDS", "300"))
@@ -152,12 +152,12 @@ spec:
                   os.getenv("CONTROL_PLANE_STATUS_URL")
                   or f"http://control-plane.{control_plane_namespace}.svc.cluster.local:8080/integrations/status"
               ).rstrip("/")
-              token_label = os.getenv("PLANE_CONTROL_PLANE_TOKEN_LABEL", "ims-demo-control-plane").strip() or "ims-demo-control-plane"
+              token_label = os.getenv("PLANE_CONTROL_PLANE_TOKEN_LABEL", "ani-demo-control-plane").strip() or "ani-demo-control-plane"
               token_description = (
                   os.getenv("PLANE_CONTROL_PLANE_TOKEN_DESCRIPTION", "PAT for IMS control-plane ticket sync").strip()
                   or "PAT for IMS control-plane ticket sync"
               )
-              preferred_admin_email = os.getenv("PLANE_ADMIN_EMAIL", "plane-admin@ims-demo.local").strip()
+              preferred_admin_email = os.getenv("PLANE_ADMIN_EMAIL", "plane-admin@ani-demo.local").strip()
               preferred_admin_username = os.getenv("PLANE_ADMIN_USERNAME", "plane-admin").strip() or "plane-admin"
               preferred_admin_password = os.getenv("PLANE_ADMIN_PASSWORD", "plane").strip() or "plane"
               preferred_admin_first_name = os.getenv("PLANE_ADMIN_FIRST_NAME", "Plane").strip() or "Plane"
@@ -165,7 +165,7 @@ spec:
               preferred_admin_display_name = (
                   os.getenv("PLANE_ADMIN_DISPLAY_NAME", "Plane Admin").strip() or "Plane Admin"
               )
-              preferred_workspace_slug = os.getenv("PLANE_WORKSPACE_SLUG", "ims-demo").strip() or "ims-demo"
+              preferred_workspace_slug = os.getenv("PLANE_WORKSPACE_SLUG", "ani-demo").strip() or "ani-demo"
               preferred_workspace_name = os.getenv("PLANE_WORKSPACE_NAME", "IMS Demo").strip() or "IMS Demo"
               preferred_project_name = os.getenv("PLANE_PROJECT_NAME", "IMS Demo").strip() or "IMS Demo"
               preferred_project_identifier = (
@@ -296,7 +296,7 @@ spec:
                               "template": {
                                   "metadata": {
                                       "annotations": {
-                                          "ims.redhat.com/plane-bootstrap-ts": str(int(time.time()))
+                                          "ani.redhat.com/plane-bootstrap-ts": str(int(time.time()))
                                       }
                                   }
                               }

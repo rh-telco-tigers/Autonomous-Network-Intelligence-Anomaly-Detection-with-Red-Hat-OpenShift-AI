@@ -369,7 +369,7 @@ def _sip_payload(method: str, malformed: bool = False, retransmission: bool = Fa
     body = "MALFORMED SIP PAYLOAD" if malformed else "v=0"
     extras = "X-Retrans: true\r\n" if retransmission else ""
     return (
-        f"{method} sip:ims-demo@example.com SIP/2.0\r\n"
+        f"{method} sip:ani-demo@example.com SIP/2.0\r\n"
         f"Via: SIP/2.0/UDP feature-gateway\r\n"
         f"{extras}"
         f"Content-Length: {len(body)}\r\n\r\n{body}"
@@ -452,7 +452,7 @@ def _telemetry_to_window(scenario: str, telemetry: Dict[str, object]) -> Dict[st
         "node_id": features["node_id"],
         "node_role": features["node_role"],
         "source": "feature-gateway-console",
-        "feature_source": "ims-telemetry",
+        "feature_source": "ani-telemetry",
         "schema_version": "feature_schema_v1",
         "dataset_version": FEATURE_WINDOW_DATASET_VERSION,
         "scenario_name": scenario_key,

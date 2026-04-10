@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: plane-web-wl
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   template:
     spec:

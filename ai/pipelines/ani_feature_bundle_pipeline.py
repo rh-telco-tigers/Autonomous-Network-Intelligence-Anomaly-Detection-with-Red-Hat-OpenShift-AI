@@ -3,14 +3,14 @@
 from kfp import dsl
 
 
-PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest"
-WORKSPACE_ROOT = "/tmp/ims-featurestore"
-CONTROL_PLANE_URL = "http://control-plane.ims-runtime.svc.cluster.local:8080"
+PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest"
+WORKSPACE_ROOT = "/tmp/ani-featurestore"
+CONTROL_PLANE_URL = "http://control-plane.ani-runtime.svc.cluster.local:8080"
 CONTROL_PLANE_API_KEY = "demo-token"
 DATASET_STORE_MODE = "s3"
-DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-data.svc.cluster.local:9000"
-DATASET_STORE_BUCKET = "ims-models"
-DATASET_STORE_PREFIX = "pipelines/ims-datascience/datasets"
+DATASET_STORE_ENDPOINT = "http://model-storage-minio.ani-data.svc.cluster.local:9000"
+DATASET_STORE_BUCKET = "ani-models"
+DATASET_STORE_PREFIX = "pipelines/ani-datascience/datasets"
 DATASET_STORE_ACCESS_KEY = "minioadmin"
 DATASET_STORE_SECRET_KEY = "minioadmin"
 
@@ -93,11 +93,11 @@ def _configure_bundle_task(
     task.set_env_variable("BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY", "true")
 
 
-@dsl.pipeline(name="ims-feature-bundle-publish")
-def ims_feature_bundle_pipeline(
-    bundle_version: str = "ims-feature-bundle-v1",
+@dsl.pipeline(name="ani-feature-bundle-publish")
+def ani_feature_bundle_pipeline(
+    bundle_version: str = "ani-feature-bundle-v1",
     source_dataset_versions_json: str = "[\"live-sipp-v1\"]",
-    project: str = "ims-demo",
+    project: str = "ani-demo",
     control_plane_url: str = CONTROL_PLANE_URL,
     control_plane_api_key: str = CONTROL_PLANE_API_KEY,
     dataset_store_mode: str = DATASET_STORE_MODE,

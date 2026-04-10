@@ -11,7 +11,7 @@ from shared.workflow import NEW, RCA_GENERATED, REMEDIATION_SUGGESTED, normalize
 
 
 def _db_path() -> Path:
-    return Path(os.getenv("CONTROL_PLANE_DB_PATH", "/tmp/ims-demo-control-plane.db"))
+    return Path(os.getenv("CONTROL_PLANE_DB_PATH", "/tmp/ani-demo-control-plane.db"))
 
 
 def _connect() -> sqlite3.Connection:
@@ -276,7 +276,7 @@ def create_incident(payload: Dict[str, Any]) -> Dict[str, Any]:
     anomaly_type = str(payload.get("anomaly_type") or NORMAL_ANOMALY_TYPE)
     record = {
         "id": payload["incident_id"],
-        "project": payload.get("project", "ims-demo"),
+        "project": payload.get("project", "ani-demo"),
         "status": workflow_state,
         "severity": payload.get("severity") or severity_from_prediction(anomaly_type, predicted_confidence)
         or severity_from_score(float(payload["anomaly_score"])),

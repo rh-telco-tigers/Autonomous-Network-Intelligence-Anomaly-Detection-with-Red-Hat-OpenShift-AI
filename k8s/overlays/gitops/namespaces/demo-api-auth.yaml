@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: demo-api-auth
-  namespace: ims-datascience
+  namespace: ani-datascience
 type: Opaque
 stringData:
   API_KEY: demo-token
@@ -10,22 +10,22 @@ stringData:
     {
       "demo-token": {
         "subject": "demo-admin",
-        "projects": ["ims-demo"],
+        "projects": ["ani-demo"],
         "roles": ["admin", "operator", "automation"]
       },
       "demo-operator-token": {
         "subject": "demo-operator",
-        "projects": ["ims-demo"],
+        "projects": ["ani-demo"],
         "roles": ["operator"]
       },
       "demo-viewer-token": {
         "subject": "demo-viewer",
-        "projects": ["ims-demo"],
+        "projects": ["ani-demo"],
         "roles": ["viewer"]
       },
       "eda-token": {
         "subject": "eda-automation",
-        "projects": ["ims-demo"],
+        "projects": ["ani-demo"],
         "roles": ["operator", "automation"]
       }
     }
@@ -34,7 +34,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: demo-api-auth
-  namespace: ims-sipp
+  namespace: ani-sipp
 type: Opaque
 stringData:
   API_KEY: demo-token
@@ -42,22 +42,22 @@ stringData:
     {
       "demo-token": {
         "subject": "demo-admin",
-        "projects": ["ims-demo"],
+        "projects": ["ani-demo"],
         "roles": ["admin", "operator", "automation"]
       },
       "demo-operator-token": {
         "subject": "demo-operator",
-        "projects": ["ims-demo"],
+        "projects": ["ani-demo"],
         "roles": ["operator"]
       },
       "demo-viewer-token": {
         "subject": "demo-viewer",
-        "projects": ["ims-demo"],
+        "projects": ["ani-demo"],
         "roles": ["viewer"]
       },
       "eda-token": {
         "subject": "eda-automation",
-        "projects": ["ims-demo"],
+        "projects": ["ani-demo"],
         "roles": ["operator", "automation"]
       }
     }

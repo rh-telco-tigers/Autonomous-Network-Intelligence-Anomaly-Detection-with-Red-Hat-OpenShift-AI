@@ -49,7 +49,7 @@ DEFAULT_DATASET_VERSION = "live-sipp-v1"
 DEFAULT_MIN_REAL_WINDOWS = 9
 DEFAULT_MAX_REAL_WINDOWS = 200
 DEFAULT_MIN_WINDOWS_PER_CLASS = 3
-TRITON_MODEL_NAME = "ims-predictive"
+TRITON_MODEL_NAME = "ani-predictive"
 TRITON_MODEL_VERSION = "1"
 PROMOTION_GATE = {
     "min_macro_f1": 0.65,
@@ -61,9 +61,9 @@ PROMOTION_GATE = {
     "max_latency_p95_ms": 50,
     "min_stability_score": 0.85,
 }
-DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-data.svc.cluster.local:9000"
-DEFAULT_DATASET_STORE_BUCKET = "ims-models"
-DEFAULT_DATASET_STORE_PREFIX = "pipelines/ims-datascience/datasets"
+DEFAULT_DATASET_STORE_ENDPOINT = "http://model-storage-minio.ani-data.svc.cluster.local:9000"
+DEFAULT_DATASET_STORE_BUCKET = "ani-models"
+DEFAULT_DATASET_STORE_PREFIX = "pipelines/ani-datascience/datasets"
 _AUTOGLUON_PREDICTOR_CACHE: Dict[str, Any] = {}
 CANONICAL_LABELS = canonical_anomaly_types()
 
@@ -648,10 +648,10 @@ def ingest_dataset(dataset_version: str, workspace_root: str, size_per_class: in
             "record_count": len(live_windows),
             "feature_schema_version": FEATURE_SCHEMA_VERSION,
             "created_at": _now(),
-            "source": "openims-sipp-lab",
+            "source": "openani-sipp-lab",
             "labels": sorted({canonical_anomaly_type(record["anomaly_type"]) for record in live_windows}),
             "class_counts": live_guard["class_counts"],
-            "label_taxonomy_version": "ims_incident_taxonomy_v2",
+            "label_taxonomy_version": "ani_incident_taxonomy_v2",
         }
 
     if not allow_bootstrap:
@@ -674,7 +674,7 @@ def ingest_dataset(dataset_version: str, workspace_root: str, size_per_class: in
         "labels": sorted({record["anomaly_type"] for record in records}),
         "live_record_count": len(live_windows),
         "live_class_counts": live_guard["class_counts"],
-        "label_taxonomy_version": "ims_incident_taxonomy_v2",
+        "label_taxonomy_version": "ani_incident_taxonomy_v2",
     }
     return manifest
 
@@ -740,7 +740,7 @@ def generate_labels(feature_manifest_path: str, workspace_root: str) -> Dict[str
     return {
         "dataset_version": feature_manifest["dataset_version"],
         "feature_schema_version": feature_manifest["feature_schema_version"],
-        "label_taxonomy_version": "ims_incident_taxonomy_v2",
+        "label_taxonomy_version": "ani_incident_taxonomy_v2",
         "train_path": train_path,
         "eval_path": eval_path,
         "train_count": len(train_records),
@@ -1132,7 +1132,7 @@ def select_best_model(evaluation: Dict[str, Any]) -> Dict[str, Any]:
         "dataset_version": evaluation["dataset_version"],
         "feature_schema_version": evaluation["feature_schema_version"],
         "label_manifest": evaluation["label_manifest"],
-        "label_taxonomy_version": "ims_incident_taxonomy_v2",
+        "label_taxonomy_version": "ani_incident_taxonomy_v2",
         "promotion_gate": evaluation["promotion_gate"],
         "candidate_gate_result": candidate_gate,
         "baseline": baseline,
@@ -1161,7 +1161,7 @@ def build_registry(
     deployed_runtime_version = "predictive-serving-v1"
     return {
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
-        "label_taxonomy_version": "ims_incident_taxonomy_v2",
+        "label_taxonomy_version": "ani_incident_taxonomy_v2",
         "class_labels": CANONICAL_LABELS,
         "normal_class_label": NORMAL_ANOMALY_TYPE,
         "feature_schemas": [
@@ -1208,7 +1208,7 @@ def build_registry(
                 "artifact": f"models/artifacts/{baseline_version}.json",
                 "dataset_version": dataset_version,
                 "feature_schema_version": FEATURE_SCHEMA_VERSION,
-                "label_taxonomy_version": "ims_incident_taxonomy_v2",
+                "label_taxonomy_version": "ani_incident_taxonomy_v2",
                 "training_mode": "multiclass_supervised",
                 "class_labels": baseline_artifact.get("class_labels", CANONICAL_LABELS),
                 "normal_class_label": baseline_artifact.get("normal_class_label", NORMAL_ANOMALY_TYPE),
@@ -1220,7 +1220,7 @@ def build_registry(
                 "artifact": f"models/artifacts/{candidate_version}.json",
                 "dataset_version": dataset_version,
                 "feature_schema_version": FEATURE_SCHEMA_VERSION,
-                "label_taxonomy_version": "ims_incident_taxonomy_v2",
+                "label_taxonomy_version": "ani_incident_taxonomy_v2",
                 "training_mode": "multiclass_supervised",
                 "class_labels": candidate_artifact.get("class_labels", CANONICAL_LABELS),
                 "normal_class_label": candidate_artifact.get("normal_class_label", NORMAL_ANOMALY_TYPE),
@@ -1236,7 +1236,7 @@ def build_registry(
                 "triton_model_name": TRITON_MODEL_NAME,
                 "dataset_version": dataset_version,
                 "feature_schema_version": FEATURE_SCHEMA_VERSION,
-                "label_taxonomy_version": "ims_incident_taxonomy_v2",
+                "label_taxonomy_version": "ani_incident_taxonomy_v2",
                 "training_mode": "multiclass_supervised",
                 "class_labels": CANONICAL_LABELS,
                 "normal_class_label": NORMAL_ANOMALY_TYPE,
@@ -1255,10 +1255,10 @@ def upload_to_minio(
     candidate_artifact_path: str | Path,
     serving_repository_root: Path,
 ) -> Dict[str, Any]:
-    endpoint = os.getenv("MINIO_ENDPOINT", "http://model-storage-minio.ims-data.svc.cluster.local:9000")
+    endpoint = os.getenv("MINIO_ENDPOINT", "http://model-storage-minio.ani-data.svc.cluster.local:9000")
     access_key = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
     secret_key = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-    bucket = os.getenv("MINIO_BUCKET", "ims-models")
+    bucket = os.getenv("MINIO_BUCKET", "ani-models")
     predictive_prefix = os.getenv("MINIO_PREDICTIVE_PREFIX", "predictive")
     registry_key = f"{predictive_prefix}/model_registry.json"
 
@@ -1414,11 +1414,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--step", default="full-run")
     parser.add_argument("--dataset-version", default=DEFAULT_DATASET_VERSION)
-    # Must match ims_anomaly_pipeline.WORKSPACE_ROOT. Default "ai" breaks KFP: that path is
+    # Must match ani_anomaly_pipeline.WORKSPACE_ROOT. Default "ai" breaks KFP: that path is
     # root-owned image content; OpenShift runs as random UID and cannot mkdir under ai/.
-    parser.add_argument("--workspace-root", default="/tmp/ims-pipeline")
-    parser.add_argument("--artifact-dir", default="/tmp/ims-pipeline/models/artifacts")
-    parser.add_argument("--registry-path", default="/tmp/ims-pipeline/registry/model_registry.json")
+    parser.add_argument("--workspace-root", default="/tmp/ani-pipeline")
+    parser.add_argument("--artifact-dir", default="/tmp/ani-pipeline/models/artifacts")
+    parser.add_argument("--registry-path", default="/tmp/ani-pipeline/registry/model_registry.json")
     parser.add_argument("--baseline-version", default="baseline-v1")
     parser.add_argument("--candidate-version", default="candidate-v1")
     parser.add_argument("--automl-engine", default="autogluon")

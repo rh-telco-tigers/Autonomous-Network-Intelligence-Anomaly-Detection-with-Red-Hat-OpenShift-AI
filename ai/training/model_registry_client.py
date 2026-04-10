@@ -151,7 +151,7 @@ def _try_register_with_kubeflow_hub(payload: Dict[str, Any]) -> Dict[str, Any]:
             version=payload["model_version_name"],
             model_format_name=payload["model_format_name"],
             model_format_version=payload["model_format_version"],
-            owner=os.getenv("RHOAI_MODEL_REGISTRY_OWNER", "ims-demo"),
+            owner=os.getenv("RHOAI_MODEL_REGISTRY_OWNER", "ani-demo"),
             version_description=payload["metadata"].get("description", ""),
             metadata=registry_metadata,
         )

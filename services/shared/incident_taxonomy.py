@@ -32,10 +32,10 @@ SCENARIO_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "default_rate": 2,
         "transport": "udp",
         "packet_sample": (
-            "REGISTER sip:ims.demo.lab SIP/2.0\n"
+            "REGISTER sip:ani.demo.lab SIP/2.0\n"
             "Via: SIP/2.0/UDP 10.0.8.10:5060\n"
-            "From: <sip:user@ims.demo.lab>\n"
-            "To: <sip:user@ims.demo.lab>\n"
+            "From: <sip:user@ani.demo.lab>\n"
+            "To: <sip:user@ani.demo.lab>\n"
             "Call-ID: nominal-register\n"
             "CSeq: 1 REGISTER"
         ),
@@ -90,10 +90,10 @@ SCENARIO_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "default_rate": 6,
         "transport": "udp",
         "packet_sample": (
-            "REGISTER sip:ims.demo.lab SIP/2.0\n"
+            "REGISTER sip:ani.demo.lab SIP/2.0\n"
             "Via: SIP/2.0/UDP 10.0.8.12:5060\n"
-            "From: <sip:user@ims.demo.lab>\n"
-            "To: <sip:user@ims.demo.lab>\n"
+            "From: <sip:user@ani.demo.lab>\n"
+            "To: <sip:user@ani.demo.lab>\n"
             "Call-ID: registration-surge\n"
             "CSeq: 314159 REGISTER"
         ),
@@ -153,10 +153,10 @@ SCENARIO_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "default_rate": 4,
         "transport": "udp",
         "packet_sample": (
-            "REGISTER sip:ims.demo.lab SIP/2.0\n"
+            "REGISTER sip:ani.demo.lab SIP/2.0\n"
             "Via: SIP/2.0/UDP 10.0.8.18:5060\n"
-            "From: <sip:user@ims.demo.lab>\n"
-            "To: <sip:user@ims.demo.lab>\n"
+            "From: <sip:user@ani.demo.lab>\n"
+            "To: <sip:user@ani.demo.lab>\n"
             "Call-ID: registration-failure\n"
             "CSeq: 45 REGISTER"
         ),
@@ -205,7 +205,7 @@ SCENARIO_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "default_rate": 4,
         "transport": "udp",
         "packet_sample": (
-            "REGISTER sip:ims.demo.lab SIP/2.0\n"
+            "REGISTER sip:ani.demo.lab SIP/2.0\n"
             "Via: SIP/2.0/UDP 10.0.8.22:5060\n"
             "Proxy-Authorization: missing\n"
             "Call-ID: auth-loop\n"
@@ -256,10 +256,10 @@ SCENARIO_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "default_rate": 3,
         "transport": "udp",
         "packet_sample": (
-            "INVITE sip:user@ims.demo.lab SIP/2.0\n"
+            "INVITE sip:user@ani.demo.lab SIP/2.0\n"
             "Via: SIP/2.0/UDP 10.0.8.44:5060\n"
             "From malformed header\n"
-            "To: <sip:user@ims.demo.lab>\n"
+            "To: <sip:user@ani.demo.lab>\n"
             "Call-ID: malformed-invite\n"
             "CSeq: 11 INVITE"
         ),
@@ -310,9 +310,9 @@ SCENARIO_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "default_rate": 3,
         "transport": "udp",
         "packet_sample": (
-            "INVITE sip:missing-route@ims.demo.lab SIP/2.0\n"
+            "INVITE sip:missing-route@ani.demo.lab SIP/2.0\n"
             "Via: SIP/2.0/UDP 10.0.8.54:5060\n"
-            "Route: <sip:unknown@ims.demo.lab>\n"
+            "Route: <sip:unknown@ani.demo.lab>\n"
             "Call-ID: routing-error\n"
             "CSeq: 22 INVITE"
         ),
@@ -361,9 +361,9 @@ SCENARIO_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "default_rate": 3,
         "transport": "udp",
         "packet_sample": (
-            "INVITE sip:busy@ims.demo.lab SIP/2.0\n"
+            "INVITE sip:busy@ani.demo.lab SIP/2.0\n"
             "Via: SIP/2.0/UDP 10.0.8.61:5060\n"
-            "To: <sip:busy@ims.demo.lab>\n"
+            "To: <sip:busy@ani.demo.lab>\n"
             "Call-ID: busy-destination\n"
             "CSeq: 36 INVITE"
         ),
@@ -411,7 +411,7 @@ SCENARIO_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "default_rate": 2,
         "transport": "udp",
         "packet_sample": (
-            "INVITE sip:timeout@ims.demo.lab SIP/2.0\n"
+            "INVITE sip:timeout@ani.demo.lab SIP/2.0\n"
             "Via: SIP/2.0/UDP 10.0.8.66:5060\n"
             "Expires: 30\n"
             "Call-ID: call-setup-timeout\n"
@@ -464,7 +464,7 @@ SCENARIO_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "default_rate": 2,
         "transport": "udp",
         "packet_sample": (
-            "BYE sip:user@ims.demo.lab SIP/2.0\n"
+            "BYE sip:user@ani.demo.lab SIP/2.0\n"
             "Via: SIP/2.0/UDP 10.0.8.72:5060\n"
             "Reason: unexpected-session-drop\n"
             "Call-ID: call-drop-mid-session\n"
@@ -514,7 +514,7 @@ SCENARIO_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "default_rate": 3,
         "transport": "udp",
         "packet_sample": (
-            "OPTIONS sip:core@ims.demo.lab SIP/2.0\n"
+            "OPTIONS sip:core@ani.demo.lab SIP/2.0\n"
             "Via: SIP/2.0/UDP 10.0.8.84:5060\n"
             "Call-ID: server-internal-error\n"
             "CSeq: 8 OPTIONS"
@@ -572,7 +572,7 @@ SCENARIO_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "default_rate": 3,
         "transport": "udp",
         "packet_sample": (
-            "REGISTER sip:ims.demo.lab SIP/2.0\n"
+            "REGISTER sip:ani.demo.lab SIP/2.0\n"
             "Via: SIP/2.0/UDP 10.0.8.91:5060\n"
             "X-Network-Drift: high\n"
             "Call-ID: network-degradation\n"
@@ -634,7 +634,7 @@ SCENARIO_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "default_rate": 3,
         "transport": "udp",
         "packet_sample": (
-            "INVITE sip:user@ims.demo.lab SIP/2.0\n"
+            "INVITE sip:user@ani.demo.lab SIP/2.0\n"
             "Via: SIP/2.0/UDP 10.0.8.97:5060\n"
             "X-Retrans: true\n"
             "Call-ID: retransmission-spike\n"

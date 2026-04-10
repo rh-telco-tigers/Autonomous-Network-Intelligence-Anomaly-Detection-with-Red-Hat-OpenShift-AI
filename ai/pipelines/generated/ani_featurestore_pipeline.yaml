@@ -1,43 +1,43 @@
 # PIPELINE DEFINITION
-# Name: ims-featurestore-train-and-register
+# Name: ani-featurestore-train-and-register
 # Inputs:
 #    automl_engine: str [Default: 'autogluon']
 #    baseline_version: str [Default: 'baseline-fs-v1']
-#    bundle_version: str [Default: 'ims-feature-bundle-v1']
+#    bundle_version: str [Default: 'ani-feature-bundle-v1']
 #    candidate_version: str [Default: 'candidate-fs-v1']
 #    control_plane_api_key: str [Default: 'demo-token']
-#    control_plane_url: str [Default: 'http://control-plane.ims-runtime.svc.cluster.local:8080']
+#    control_plane_url: str [Default: 'http://control-plane.ani-runtime.svc.cluster.local:8080']
 #    dataset_store_access_key: str [Default: 'minioadmin']
-#    dataset_store_bucket: str [Default: 'ims-models']
-#    dataset_store_endpoint: str [Default: 'http://model-storage-minio.ims-data.svc.cluster.local:9000']
+#    dataset_store_bucket: str [Default: 'ani-models']
+#    dataset_store_endpoint: str [Default: 'http://model-storage-minio.ani-data.svc.cluster.local:9000']
 #    dataset_store_mode: str [Default: 's3']
-#    dataset_store_prefix: str [Default: 'pipelines/ims-datascience/datasets']
+#    dataset_store_prefix: str [Default: 'pipelines/ani-datascience/datasets']
 #    dataset_store_secret_key: str [Default: 'minioadmin']
-#    feature_service_name: str [Default: 'ims_anomaly_scoring_v1']
+#    feature_service_name: str [Default: 'ani_anomaly_scoring_v1']
 #    featurestore_auth_type: str [Default: 'no_auth']
 #    featurestore_aws_access_key_id: str [Default: 'minioadmin']
 #    featurestore_aws_region: str [Default: 'us-east-1']
 #    featurestore_aws_secret_access_key: str [Default: 'minioadmin']
 #    featurestore_ca_cert_path: str [Default: '/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt']
 #    featurestore_mode: str [Default: 'remote']
-#    featurestore_online_store_path: str [Default: 'https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443']
-#    featurestore_project: str [Default: 'ims_anomaly_featurestore']
-#    featurestore_registry_path: str [Default: 'feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443']
-#    featurestore_s3_endpoint_url: str [Default: 'http://model-storage-minio.ims-data.svc.cluster.local:9000']
+#    featurestore_online_store_path: str [Default: 'https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443']
+#    featurestore_project: str [Default: 'ani_anomaly_featurestore']
+#    featurestore_registry_path: str [Default: 'feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443']
+#    featurestore_s3_endpoint_url: str [Default: 'http://model-storage-minio.ani-data.svc.cluster.local:9000']
 #    mlserver_serving_alias: str [Default: 'current']
 #    mlserver_serving_model_format_name: str [Default: 'sklearn']
 #    mlserver_serving_model_format_version: str [Default: '1']
-#    mlserver_serving_model_name: str [Default: 'ims-predictive-fs-mlserver']
+#    mlserver_serving_model_name: str [Default: 'ani-predictive-fs-mlserver']
 #    mlserver_serving_prefix: str [Default: 'predictive-featurestore-mlserver']
 #    mlserver_serving_protocol_version: str [Default: 'v2']
 #    mlserver_serving_runtime_name: str [Default: 'mlserver-sklearn-runtime']
-#    model_name: str [Default: 'ims-anomaly-featurestore']
-#    model_registry_endpoint: str [Default: 'http://ims-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080']
-#    model_version_name: str [Default: 'ims-anomaly-featurestore-v1']
+#    model_name: str [Default: 'ani-anomaly-featurestore']
+#    model_registry_endpoint: str [Default: 'http://ani-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080']
+#    model_version_name: str [Default: 'ani-anomaly-featurestore-v1']
 #    serving_alias: str [Default: 'current']
 #    serving_model_format_name: str [Default: 'triton']
 #    serving_model_format_version: str [Default: '2']
-#    serving_model_name: str [Default: 'ims-predictive-fs']
+#    serving_model_name: str [Default: 'ani-predictive-fs']
 #    serving_prefix: str [Default: 'predictive-featurestore']
 #    serving_protocol_version: str [Default: 'v2']
 #    serving_runtime_name: str [Default: 'nvidia-triton-runtime']
@@ -61,7 +61,7 @@ components:
     inputDefinitions:
       parameters:
         artifact_dir:
-          defaultValue: /tmp/ims-featurestore/models/artifacts
+          defaultValue: /tmp/ani-featurestore/models/artifacts
           isOptional: true
           parameterType: STRING
         selection_manifest:
@@ -79,7 +79,7 @@ components:
           isOptional: true
           parameterType: STRING
         serving_model_name:
-          defaultValue: ims-predictive-fs
+          defaultValue: ani-predictive-fs
           isOptional: true
           parameterType: STRING
         serving_prefix:
@@ -105,7 +105,7 @@ components:
     inputDefinitions:
       parameters:
         artifact_dir:
-          defaultValue: /tmp/ims-featurestore/models/artifacts
+          defaultValue: /tmp/ani-featurestore/models/artifacts
           isOptional: true
           parameterType: STRING
         selection_manifest:
@@ -123,7 +123,7 @@ components:
           isOptional: true
           parameterType: STRING
         serving_model_name:
-          defaultValue: ims-predictive-fs
+          defaultValue: ani-predictive-fs
           isOptional: true
           parameterType: STRING
         serving_prefix:
@@ -189,7 +189,7 @@ components:
         model_version_name:
           parameterType: STRING
         pipeline_name:
-          defaultValue: ims-featurestore-train-and-register
+          defaultValue: ani-featurestore-train-and-register
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -203,7 +203,7 @@ components:
         bundle_version:
           parameterType: STRING
         workspace_root:
-          defaultValue: /tmp/ims-featurestore
+          defaultValue: /tmp/ani-featurestore
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -223,7 +223,7 @@ components:
         feature_service_name:
           parameterType: STRING
         workspace_root:
-          defaultValue: /tmp/ims-featurestore
+          defaultValue: /tmp/ani-featurestore
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -251,7 +251,7 @@ components:
           isOptional: true
           parameterType: STRING
         workspace_root:
-          defaultValue: /tmp/ims-featurestore
+          defaultValue: /tmp/ani-featurestore
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -263,7 +263,7 @@ components:
     inputDefinitions:
       parameters:
         artifact_dir:
-          defaultValue: /tmp/ims-featurestore/models/artifacts
+          defaultValue: /tmp/ani-featurestore/models/artifacts
           isOptional: true
           parameterType: STRING
         automl_engine:
@@ -275,7 +275,7 @@ components:
         training_manifest:
           parameterType: STRING
         workspace_root:
-          defaultValue: /tmp/ims-featurestore
+          defaultValue: /tmp/ani-featurestore
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -287,7 +287,7 @@ components:
     inputDefinitions:
       parameters:
         artifact_dir:
-          defaultValue: /tmp/ims-featurestore/models/artifacts
+          defaultValue: /tmp/ani-featurestore/models/artifacts
           isOptional: true
           parameterType: STRING
         baseline_version:
@@ -305,7 +305,7 @@ components:
         bundle_manifest_path:
           parameterType: STRING
         workspace_root:
-          defaultValue: /tmp/ims-featurestore
+          defaultValue: /tmp/ani-featurestore
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -338,19 +338,19 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
@@ -366,20 +366,20 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_MODE
           value: remote
         - name: IMS_FEATURESTORE_PROJECT
-          value: ims_anomaly_featurestore
+          value: ani_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
+          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
+          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-export-serving-artifact:
       container:
         args:
@@ -418,19 +418,19 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
@@ -446,20 +446,20 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_MODE
           value: remote
         - name: IMS_FEATURESTORE_PROJECT
-          value: ims_anomaly_featurestore
+          value: ani_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
+          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
+          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-export-serving-artifact-2:
       container:
         args:
@@ -498,19 +498,19 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
@@ -526,20 +526,20 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_MODE
           value: remote
         - name: IMS_FEATURESTORE_PROJECT
-          value: ims_anomaly_featurestore
+          value: ani_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
+          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
+          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-publish-deployment-manifest:
       container:
         args:
@@ -564,19 +564,19 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
@@ -592,20 +592,20 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_MODE
           value: remote
         - name: IMS_FEATURESTORE_PROJECT
-          value: ims_anomaly_featurestore
+          value: ani_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
+          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
+          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-publish-deployment-manifest-2:
       container:
         args:
@@ -630,19 +630,19 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
@@ -658,20 +658,20 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_MODE
           value: remote
         - name: IMS_FEATURESTORE_PROJECT
-          value: ims_anomaly_featurestore
+          value: ani_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
+          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
+          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-register-model-version:
       container:
         args:
@@ -700,19 +700,19 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
@@ -728,24 +728,24 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_MODE
           value: remote
         - name: IMS_FEATURESTORE_PROJECT
-          value: ims_anomaly_featurestore
+          value: ani_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
+          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
+          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: RHOAI_MODEL_REGISTRY_ENDPOINT
-          value: http://ims-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080
+          value: http://ani-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080
         - name: RHOAI_MODEL_REGISTRY_REQUIRED
           value: 'false'
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-resolve-bundle:
       container:
         args:
@@ -768,19 +768,19 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
@@ -796,20 +796,20 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_MODE
           value: remote
         - name: IMS_FEATURESTORE_PROJECT
-          value: ims_anomaly_featurestore
+          value: ani_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
+          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
+          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-retrieve-training-dataset:
       container:
         args:
@@ -836,19 +836,19 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
@@ -864,20 +864,20 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_MODE
           value: remote
         - name: IMS_FEATURESTORE_PROJECT
-          value: ims_anomaly_featurestore
+          value: ani_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
+          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
+          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-select-best:
       container:
         args:
@@ -898,19 +898,19 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
@@ -926,20 +926,20 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_MODE
           value: remote
         - name: IMS_FEATURESTORE_PROJECT
-          value: ims_anomaly_featurestore
+          value: ani_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
+          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
+          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-sync-feature-store-definitions:
       container:
         args:
@@ -964,19 +964,19 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
@@ -992,20 +992,20 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_MODE
           value: remote
         - name: IMS_FEATURESTORE_PROJECT
-          value: ims_anomaly_featurestore
+          value: ani_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
+          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
+          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-train-automl:
       container:
         args:
@@ -1034,19 +1034,19 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
@@ -1062,20 +1062,20 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_MODE
           value: remote
         - name: IMS_FEATURESTORE_PROJECT
-          value: ims_anomaly_featurestore
+          value: ani_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
+          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
+          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-train-baseline:
       container:
         args:
@@ -1100,19 +1100,19 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
@@ -1128,20 +1128,20 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_MODE
           value: remote
         - name: IMS_FEATURESTORE_PROJECT
-          value: ims_anomaly_featurestore
+          value: ani_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
+          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
+          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-validate-bundle:
       container:
         args:
@@ -1164,19 +1164,19 @@ deploymentSpec:
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
@@ -1192,22 +1192,22 @@ deploymentSpec:
         - name: IMS_FEATURESTORE_MODE
           value: remote
         - name: IMS_FEATURESTORE_PROJECT
-          value: ims_anomaly_featurestore
+          value: ani_anomaly_featurestore
         - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
+          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
+          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
         - name: IMS_FEATURESTORE_CA_CERT_PATH
           value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
         - name: IMS_FEATURESTORE_AUTH_TYPE
           value: no_auth
         - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
 pipelineInfo:
-  name: ims-featurestore-train-and-register
+  name: ani-featurestore-train-and-register
 root:
   dag:
     tasks:
@@ -1487,7 +1487,7 @@ root:
         isOptional: true
         parameterType: STRING
       bundle_version:
-        defaultValue: ims-feature-bundle-v1
+        defaultValue: ani-feature-bundle-v1
         isOptional: true
         parameterType: STRING
       candidate_version:
@@ -1499,7 +1499,7 @@ root:
         isOptional: true
         parameterType: STRING
       control_plane_url:
-        defaultValue: http://control-plane.ims-runtime.svc.cluster.local:8080
+        defaultValue: http://control-plane.ani-runtime.svc.cluster.local:8080
         isOptional: true
         parameterType: STRING
       dataset_store_access_key:
@@ -1507,11 +1507,11 @@ root:
         isOptional: true
         parameterType: STRING
       dataset_store_bucket:
-        defaultValue: ims-models
+        defaultValue: ani-models
         isOptional: true
         parameterType: STRING
       dataset_store_endpoint:
-        defaultValue: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        defaultValue: http://model-storage-minio.ani-data.svc.cluster.local:9000
         isOptional: true
         parameterType: STRING
       dataset_store_mode:
@@ -1519,7 +1519,7 @@ root:
         isOptional: true
         parameterType: STRING
       dataset_store_prefix:
-        defaultValue: pipelines/ims-datascience/datasets
+        defaultValue: pipelines/ani-datascience/datasets
         isOptional: true
         parameterType: STRING
       dataset_store_secret_key:
@@ -1527,7 +1527,7 @@ root:
         isOptional: true
         parameterType: STRING
       feature_service_name:
-        defaultValue: ims_anomaly_scoring_v1
+        defaultValue: ani_anomaly_scoring_v1
         isOptional: true
         parameterType: STRING
       featurestore_auth_type:
@@ -1555,19 +1555,19 @@ root:
         isOptional: true
         parameterType: STRING
       featurestore_online_store_path:
-        defaultValue: https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443
+        defaultValue: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
         isOptional: true
         parameterType: STRING
       featurestore_project:
-        defaultValue: ims_anomaly_featurestore
+        defaultValue: ani_anomaly_featurestore
         isOptional: true
         parameterType: STRING
       featurestore_registry_path:
-        defaultValue: feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443
+        defaultValue: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
         isOptional: true
         parameterType: STRING
       featurestore_s3_endpoint_url:
-        defaultValue: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        defaultValue: http://model-storage-minio.ani-data.svc.cluster.local:9000
         isOptional: true
         parameterType: STRING
       mlserver_serving_alias:
@@ -1583,7 +1583,7 @@ root:
         isOptional: true
         parameterType: STRING
       mlserver_serving_model_name:
-        defaultValue: ims-predictive-fs-mlserver
+        defaultValue: ani-predictive-fs-mlserver
         isOptional: true
         parameterType: STRING
       mlserver_serving_prefix:
@@ -1599,15 +1599,15 @@ root:
         isOptional: true
         parameterType: STRING
       model_name:
-        defaultValue: ims-anomaly-featurestore
+        defaultValue: ani-anomaly-featurestore
         isOptional: true
         parameterType: STRING
       model_registry_endpoint:
-        defaultValue: http://ims-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080
+        defaultValue: http://ani-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080
         isOptional: true
         parameterType: STRING
       model_version_name:
-        defaultValue: ims-anomaly-featurestore-v1
+        defaultValue: ani-anomaly-featurestore-v1
         isOptional: true
         parameterType: STRING
       serving_alias:
@@ -1623,7 +1623,7 @@ root:
         isOptional: true
         parameterType: STRING
       serving_model_name:
-        defaultValue: ims-predictive-fs
+        defaultValue: ani-predictive-fs
         isOptional: true
         parameterType: STRING
       serving_prefix:

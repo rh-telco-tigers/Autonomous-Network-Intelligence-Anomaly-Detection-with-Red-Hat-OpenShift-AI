@@ -14,7 +14,7 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: pipeline
-    namespace: ims-tekton
+    namespace: ani-tekton
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -27,12 +27,12 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: pipeline
-    namespace: ims-tekton
+    namespace: ani-tekton
 ---
 apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerBinding
 metadata:
-  name: ims-platform-gitea-binding
+  name: ani-platform-gitea-binding
 spec:
   params:
     - name: git-url
@@ -43,7 +43,7 @@ spec:
 apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerTemplate
 metadata:
-  name: ims-platform-gitea-template
+  name: ani-platform-gitea-template
 spec:
   params:
     - name: git-url
@@ -52,11 +52,11 @@ spec:
     - apiVersion: tekton.dev/v1
       kind: PipelineRun
       metadata:
-        generateName: ims-platform-build-
-        namespace: ims-tekton
+        generateName: ani-platform-build-
+        namespace: ani-tekton
       spec:
         pipelineRef:
-          name: ims-platform-container-build
+          name: ani-platform-container-build
         params:
           - name: git-url
             value: $(tt.params.git-url)
@@ -79,7 +79,7 @@ spec:
 apiVersion: triggers.tekton.dev/v1beta1
 kind: EventListener
 metadata:
-  name: ims-platform-gitea
+  name: ani-platform-gitea
 spec:
   serviceAccountName: pipeline
   namespaceSelector: {}
@@ -95,6 +95,6 @@ spec:
               value: header.match('X-Gitea-Event', 'push')
       bindings:
         - kind: TriggerBinding
-          ref: ims-platform-gitea-binding
+          ref: ani-platform-gitea-binding
       template:
-        ref: ims-platform-gitea-template
+        ref: ani-platform-gitea-template

@@ -1,5 +1,5 @@
 # PIPELINE DEFINITION
-# Name: ims-anomaly-platform-train-and-register
+# Name: ani-anomaly-platform-train-and-register
 # Inputs:
 #    automl_engine: str [Default: 'autogluon']
 #    automl_version: str [Default: 'candidate-v1']
@@ -41,7 +41,7 @@ components:
         dataset_version:
           parameterType: STRING
         workspace_root:
-          defaultValue: /tmp/ims-pipeline
+          defaultValue: /tmp/ani-pipeline
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -59,7 +59,7 @@ components:
           isOptional: true
           parameterType: NUMBER_INTEGER
         workspace_root:
-          defaultValue: /tmp/ims-pipeline
+          defaultValue: /tmp/ani-pipeline
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -75,7 +75,7 @@ components:
         feature_manifest:
           parameterType: STRING
         workspace_root:
-          defaultValue: /tmp/ims-pipeline
+          defaultValue: /tmp/ani-pipeline
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -87,13 +87,13 @@ components:
     inputDefinitions:
       parameters:
         artifact_dir:
-          defaultValue: /tmp/ims-pipeline/models/artifacts
+          defaultValue: /tmp/ani-pipeline/models/artifacts
           isOptional: true
           parameterType: STRING
         label_manifest:
           parameterType: STRING
         registry_path:
-          defaultValue: /tmp/ims-pipeline/registry/model_registry.json
+          defaultValue: /tmp/ani-pipeline/registry/model_registry.json
           isOptional: true
           parameterType: STRING
         selection_manifest:
@@ -119,7 +119,7 @@ components:
     inputDefinitions:
       parameters:
         artifact_dir:
-          defaultValue: /tmp/ims-pipeline/models/artifacts
+          defaultValue: /tmp/ani-pipeline/models/artifacts
           isOptional: true
           parameterType: STRING
         automl_engine:
@@ -131,7 +131,7 @@ components:
         label_manifest:
           parameterType: STRING
         workspace_root:
-          defaultValue: /tmp/ims-pipeline
+          defaultValue: /tmp/ani-pipeline
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -143,7 +143,7 @@ components:
     inputDefinitions:
       parameters:
         artifact_dir:
-          defaultValue: /tmp/ims-pipeline/models/artifacts
+          defaultValue: /tmp/ani-pipeline/models/artifacts
           isOptional: true
           parameterType: STRING
         baseline_version:
@@ -168,7 +168,7 @@ deploymentSpec:
         command:
         - python
         - ai/training/train_and_register.py
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
     exec-evaluate-models:
       container:
         args:
@@ -187,7 +187,7 @@ deploymentSpec:
         command:
         - python
         - ai/training/train_and_register.py
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
     exec-feature-engineering:
       container:
         args:
@@ -204,7 +204,7 @@ deploymentSpec:
         command:
         - python
         - ai/training/train_and_register.py
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
     exec-ingest-data:
       container:
         args:
@@ -221,7 +221,7 @@ deploymentSpec:
         command:
         - python
         - ai/training/train_and_register.py
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
     exec-label-generation:
       container:
         args:
@@ -238,7 +238,7 @@ deploymentSpec:
         command:
         - python
         - ai/training/train_and_register.py
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
     exec-register-model:
       container:
         args:
@@ -257,7 +257,7 @@ deploymentSpec:
         command:
         - python
         - ai/training/train_and_register.py
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
     exec-select-best:
       container:
         args:
@@ -272,7 +272,7 @@ deploymentSpec:
         command:
         - python
         - ai/training/train_and_register.py
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
     exec-train-autogluon:
       container:
         args:
@@ -293,7 +293,7 @@ deploymentSpec:
         command:
         - python
         - ai/training/train_and_register.py
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
     exec-train-baseline:
       container:
         args:
@@ -310,9 +310,9 @@ deploymentSpec:
         command:
         - python
         - ai/training/train_and_register.py
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
 pipelineInfo:
-  name: ims-anomaly-platform-train-and-register
+  name: ani-anomaly-platform-train-and-register
 root:
   dag:
     tasks:

@@ -1,6 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: ims-runtime
+namespace: ani-runtime
 resources:
   - image-streams.yaml
   - model-storage-credentials.yaml
@@ -8,11 +8,11 @@ resources:
   - tekton-image-access.yaml
   - ../../../base/platform
 patches:
-  - path: ims-platform-config.yaml
+  - path: ani-platform-config.yaml
     target:
       version: v1
       kind: ConfigMap
-      name: ims-platform-config
+      name: ani-platform-config
   - path: llm-provider-config.yaml
     target:
       version: v1
@@ -91,26 +91,26 @@ patches:
         name: control-plane-read-aap-controller-password
 images:
   - name: feature-gateway
-    newName: image-registry.openshift-image-registry.svc:5000/ims-runtime/feature-gateway
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/feature-gateway
     newTag: latest
   - name: anomaly-service
-    newName: image-registry.openshift-image-registry.svc:5000/ims-runtime/anomaly-service
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/anomaly-service
     newTag: latest
   - name: rca-service
-    newName: image-registry.openshift-image-registry.svc:5000/ims-runtime/rca-service
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/rca-service
     newTag: latest
-  - name: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/control-plane
-    newName: image-registry.openshift-image-registry.svc:5000/ims-runtime/control-plane
+  - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/control-plane
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/control-plane
     newTag: latest
-  - name: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/feature-gateway
-    newName: image-registry.openshift-image-registry.svc:5000/ims-runtime/feature-gateway
+  - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/feature-gateway
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/feature-gateway
     newTag: latest
-  - name: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/anomaly-service
-    newName: image-registry.openshift-image-registry.svc:5000/ims-runtime/anomaly-service
+  - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/anomaly-service
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/anomaly-service
     newTag: latest
-  - name: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/rca-service
-    newName: image-registry.openshift-image-registry.svc:5000/ims-runtime/rca-service
+  - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/rca-service
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/rca-service
     newTag: latest
-  - name: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/demo-ui
-    newName: image-registry.openshift-image-registry.svc:5000/ims-runtime/demo-ui
+  - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/demo-ui
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/demo-ui
     newTag: latest

@@ -313,7 +313,7 @@ class PlaneTicketProvider(TicketProvider):
             "name": _ticket_title(incident),
             "description_html": build_ticket_description_html(incident, workflow, incident_url=source_url),
             "priority": plane_priority_for_severity(str(incident.get("severity") or "medium")),
-            "external_source": "ims-demo",
+            "external_source": "ani-demo",
             "external_id": str(incident.get("id") or ""),
         }
         plane_state_id = str(plane_state.get("id") or "")
@@ -351,7 +351,7 @@ class PlaneTicketProvider(TicketProvider):
                 headers=self._headers(),
                 json={
                     "comment_html": _comment_html(note.strip()),
-                    "external_source": "ims-demo",
+                    "external_source": "ani-demo",
                     "external_id": f"{incident.get('id')}-create-{uuid.uuid4().hex[:8]}",
                 },
                 timeout=15,
@@ -447,7 +447,7 @@ class PlaneTicketProvider(TicketProvider):
                 headers=self._headers(),
                 json={
                     "comment_html": _comment_html(note.strip()),
-                    "external_source": "ims-demo",
+                    "external_source": "ani-demo",
                     "external_id": f"{incident.get('id')}-sync-{uuid.uuid4().hex[:8]}",
                 },
                 timeout=15,

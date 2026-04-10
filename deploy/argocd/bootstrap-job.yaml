@@ -39,7 +39,7 @@ spec:
                 fi
                 sleep 5
               done
-              oc_cmd apply -f /manifests/ims-demo-project.yaml
+              oc_cmd apply -f /manifests/ani-demo-project.yaml
               oc_cmd apply -f /manifests/operators-application.yaml
               oc_cmd apply -f /manifests/platform-application.yaml
           resources:

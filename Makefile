@@ -1,12 +1,12 @@
 SHELL := /bin/sh
 
-SIPP_NAMESPACE ?= ims-sipp
-RUNTIME_NAMESPACE ?= ims-runtime
-DATA_NAMESPACE ?= ims-data
-DATASCIENCE_NAMESPACE ?= ims-datascience
-TEKTON_NAMESPACE ?= ims-tekton
+SIPP_NAMESPACE ?= ani-sipp
+RUNTIME_NAMESPACE ?= ani-runtime
+DATA_NAMESPACE ?= ani-data
+DATASCIENCE_NAMESPACE ?= ani-datascience
+TEKTON_NAMESPACE ?= ani-tekton
 MODEL_REGISTRY_NAMESPACE ?= rhoai-model-registries
-MODEL_REGISTRY_SERVICE ?= ims-demo-modelregistry
+MODEL_REGISTRY_SERVICE ?= ani-demo-modelregistry
 INCIDENT_RELEASE_DATASET_VERSION ?=
 DEMO_TRIGGER_DIR := k8s/manual/demo-triggers
 MACHINE_API_MANUAL_DIR := k8s/manual/machine-api
@@ -35,14 +35,14 @@ check-demo-incident-generators: ## List the demo pulse and SIPp cronjobs
 	oc get cronjob -n "$(RUNTIME_NAMESPACE)" | rg 'demo-incident-pulse'
 
 check-fresh-cluster-gitops: ## Check GitOps applications after bootstrap
-	oc get application.argoproj.io ims-operators -n openshift-gitops
-	oc get application.argoproj.io ims-platform -n openshift-gitops
+	oc get application.argoproj.io ani-operators -n openshift-gitops
+	oc get application.argoproj.io ani-platform -n openshift-gitops
 
 check-fresh-cluster-ai: ## Check AI, serving, and model registry readiness
 	oc get dspa,featurestore -n "$(DATASCIENCE_NAMESPACE)"
 	oc get kafka -n "$(DATA_NAMESPACE)"
 	oc get workflow -n "$(DATASCIENCE_NAMESPACE)"
-	oc get inferenceservice -n "$(DATASCIENCE_NAMESPACE)" | rg 'ims-predictive-fs|ims-predictive-fs-mlserver'
+	oc get inferenceservice -n "$(DATASCIENCE_NAMESPACE)" | rg 'ani-predictive-fs|ani-predictive-fs-mlserver'
 	oc get svc -n "$(MODEL_REGISTRY_NAMESPACE)" | rg "$(MODEL_REGISTRY_SERVICE)"
 
 check-fresh-cluster-runtime: ## Check runtime services and incident generators
@@ -83,19 +83,19 @@ trigger-build-pipeline: ## Start the demo Tekton image build
 	GIT_BRANCH="$$branch" python3 -c 'from pathlib import Path; import os; manifest = Path("$(DEMO_TRIGGER_DIR)/tekton-build-pipelinerun.yaml").read_text(); print(manifest.replace("__GIT_REVISION__", os.environ["GIT_BRANCH"]), end="")' | oc create -f -
 
 trigger-anomaly-platform-pipeline: ## Start a fresh demo anomaly training run
-	@printf "Creating demo KFP trigger job for ims-anomaly-platform-train-and-register in %s\n" "$(DATASCIENCE_NAMESPACE)"
+	@printf "Creating demo KFP trigger job for ani-anomaly-platform-train-and-register in %s\n" "$(DATASCIENCE_NAMESPACE)"
 	oc create -f "$(DEMO_TRIGGER_DIR)/anomaly-platform-run-job.yaml"
 
 trigger-feature-bundle-pipeline: ## Start a fresh demo feature bundle publish run
-	@printf "Creating demo KFP trigger job for ims-feature-bundle-publish in %s\n" "$(DATASCIENCE_NAMESPACE)"
+	@printf "Creating demo KFP trigger job for ani-feature-bundle-publish in %s\n" "$(DATASCIENCE_NAMESPACE)"
 	oc create -f "$(DEMO_TRIGGER_DIR)/feature-bundle-run-job.yaml"
 
 trigger-featurestore-pipeline: ## Start a fresh demo feature-store training run
-	@printf "Creating demo KFP trigger job for ims-featurestore-train-and-register in %s\n" "$(DATASCIENCE_NAMESPACE)"
+	@printf "Creating demo KFP trigger job for ani-featurestore-train-and-register in %s\n" "$(DATASCIENCE_NAMESPACE)"
 	oc create -f "$(DEMO_TRIGGER_DIR)/featurestore-run-job.yaml"
 
 trigger-incident-release-pipeline: ## Start a fresh manual incident-release KFP run
-	@printf "Creating demo KFP trigger job for ims-incident-release in %s\n" "$(DATASCIENCE_NAMESPACE)"
+	@printf "Creating demo KFP trigger job for ani-incident-release in %s\n" "$(DATASCIENCE_NAMESPACE)"
 	oc create -f "$(DEMO_TRIGGER_DIR)/incident-release-run-job.yaml"
 
 smoke-check-featurestore-serving: ## Run the demo feature-store serving smoke check
@@ -108,8 +108,8 @@ trigger-incident-release: ## Start a fresh manual 100k backfill dataset
 	kustomize build "k8s/manual/traffic-backfill-100k" \
 	  | python3 "k8s/manual/traffic-backfill-100k/render_jobs.py" --dataset-version "$$dataset_version" \
 	  | oc create -f -; \
-	printf "Watch jobs: oc get jobs -n %s -l app.kubernetes.io/part-of=sipp-backfill-100k,ims.redhat.com/backfill-dataset-version=%s\n" "$(SIPP_NAMESPACE)" "$$dataset_version"; \
-	printf "Watch pods: oc get pods -n %s -l app.kubernetes.io/part-of=sipp-backfill-100k,ims.redhat.com/backfill-dataset-version=%s\n" "$(SIPP_NAMESPACE)" "$$dataset_version"; \
+	printf "Watch jobs: oc get jobs -n %s -l app.kubernetes.io/part-of=sipp-backfill-100k,ani.redhat.com/backfill-dataset-version=%s\n" "$(SIPP_NAMESPACE)" "$$dataset_version"; \
+	printf "Watch pods: oc get pods -n %s -l app.kubernetes.io/part-of=sipp-backfill-100k,ani.redhat.com/backfill-dataset-version=%s\n" "$(SIPP_NAMESPACE)" "$$dataset_version"; \
 	printf "Stop run: make stop-incident-release INCIDENT_RELEASE_DATASET_VERSION=%s\n" "$$dataset_version"
 
 stop-incident-release: ## Stop and delete one backfill dataset version
@@ -118,5 +118,5 @@ stop-incident-release: ## Stop and delete one backfill dataset version
 	  exit 1; \
 	}
 	@printf "Deleting manual backfill jobs for dataset %s in %s\n" "$(INCIDENT_RELEASE_DATASET_VERSION)" "$(SIPP_NAMESPACE)"
-	oc delete jobs -n "$(SIPP_NAMESPACE)" -l "app.kubernetes.io/part-of=sipp-backfill-100k,ims.redhat.com/backfill-dataset-version=$(INCIDENT_RELEASE_DATASET_VERSION)" --ignore-not-found
+	oc delete jobs -n "$(SIPP_NAMESPACE)" -l "app.kubernetes.io/part-of=sipp-backfill-100k,ani.redhat.com/backfill-dataset-version=$(INCIDENT_RELEASE_DATASET_VERSION)" --ignore-not-found
 

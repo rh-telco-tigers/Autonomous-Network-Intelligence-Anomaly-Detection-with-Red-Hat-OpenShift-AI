@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: false
   vars:
-    control_plane_url: "{{ control_plane_url | default('http://control-plane.ims-demo-lab.svc.cluster.local:8080') }}"
+    control_plane_url: "{{ control_plane_url | default('http://control-plane.ani-demo-lab.svc.cluster.local:8080') }}"
     control_plane_api_key: "{{ control_plane_api_key | default('eda-token') }}"
     approved_by: "{{ approved_by | default('eda-automation') }}"
     target_state: "{{ target_state | default('ESCALATED') }}"

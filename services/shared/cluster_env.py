@@ -3,11 +3,11 @@ from __future__ import annotations
 import os
 
 
-DEFAULT_IMS_NAMESPACE = "ims-demo-lab"
-DEFAULT_IMS_PROJECT = "ims-demo"
+DEFAULT_IMS_NAMESPACE = "ani-demo-lab"
+DEFAULT_IMS_PROJECT = "ani-demo"
 DEFAULT_MODEL_REGISTRY_NAMESPACE = "rhoai-model-registries"
-DEFAULT_MODEL_REGISTRY_SERVICE = "ims-demo-modelregistry"
-DEFAULT_DATASET_STORE_BUCKET = "ims-models"
+DEFAULT_MODEL_REGISTRY_SERVICE = "ani-demo-modelregistry"
+DEFAULT_DATASET_STORE_BUCKET = "ani-models"
 DEFAULT_DATASET_STORE_PORT = 9000
 DEFAULT_SERVICE_PORT = 8080
 DEFAULT_IMS_PCSCF_PORT = 5060
@@ -69,7 +69,7 @@ def predictive_service_url() -> str:
     return (
         _clean(os.getenv("PREDICTIVE_SERVICE_URL"))
         or _clean(os.getenv("PREDICTIVE_ENDPOINT"))
-        or service_url("ims-predictive-fs-predictor")
+        or service_url("ani-predictive-fs-predictor")
     )
 
 

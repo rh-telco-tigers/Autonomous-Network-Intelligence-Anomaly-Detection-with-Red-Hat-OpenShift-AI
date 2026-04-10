@@ -1,11 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: ims-data
+namespace: ani-data
 resources:
   - ../../../base/kafka
   - ../../../base/minio
   - ../../../base/milvus
 images:
-  - name: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/rca-service
-    newName: image-registry.openshift-image-registry.svc:5000/ims-runtime/rca-service
+  - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/rca-service
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/rca-service
     newTag: latest

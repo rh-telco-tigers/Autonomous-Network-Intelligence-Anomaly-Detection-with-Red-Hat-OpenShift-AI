@@ -4,6 +4,8 @@
 
 Understand what gets deployed and which namespaces own each part of the platform before you start the install.
 
+Fresh clusters should be brought up by following [Installation](./02-installation.md) and the rest of this guide end to end. GitOps uses **ANI**-prefixed platform namespaces, Argo CD `Application` names, and the Argo CD project **`ani-demo`** (not legacy `ims-*` platform labels).
+
 ## What Gets Installed
 
 - in-cluster Gitea as the GitOps source of truth
@@ -23,12 +25,12 @@ Understand what gets deployed and which namespaces own each part of the platform
 | `redhat-ods-applications` | OpenShift AI shared controllers and supporting services |
 | `redhat-ods-monitoring` | OpenShift AI monitoring components |
 | `rhoai-model-registries` | Model registry service used by the training and serving flow |
-| `ims-runtime` | `demo-ui`, `control-plane`, `feature-gateway`, `anomaly-service`, and `rca-service` |
-| `ims-sipp` | OpenIMSs runtime, MySQL, MongoDB, OpenIMS WebUI, and SIPp workloads |
-| `ims-data` | Milvus, Attu, Kafka, and supporting data services |
-| `ims-datascience` | DSPA, Feature Store, KFP jobs, predictive serving, and vLLM |
-| `ims-tekton` | Image build pipeline and Git webhook trigger |
-| `ims-observability` | Service monitors, dashboards, and other observability assets |
+| `ani-runtime` | `demo-ui`, `control-plane`, `feature-gateway`, `anomaly-service`, and `rca-service` |
+| `ani-sipp` | OpenIMSs runtime, MySQL, MongoDB, OpenIMS WebUI, and SIPp workloads (IMS deployments such as `ims-scscf` / `ims-pcscf` run here) |
+| `ani-data` | Milvus, Attu, Kafka, and supporting data services |
+| `ani-datascience` | DSPA, Feature Store, KFP jobs, predictive serving, and vLLM |
+| `ani-tekton` | Image build pipeline and Git webhook trigger |
+| `ani-observability` | Service monitors, dashboards, and other observability assets |
 | `aap` | Optional AAP Controller, EDA, Hub, and MCP components |
 | `plane` | Optional Plane web, API, live, space, and storage services |
 
@@ -36,18 +38,19 @@ Understand what gets deployed and which namespaces own each part of the platform
 
 The main applications you will see after bootstrap are:
 
-- `ims-operators`
-- `ims-platform`
-- `ims-namespaces`
-- `ims-runtime`
-- `ims-sipp-core`
-- `ims-sipp-traffic`
-- `ims-data`
-- `ims-datascience`
-- `ims-tekton`
-- `ims-observability`
-- `ims-aap`
-- `ims-plane`
+- `ani-operators` (root operator subscriptions and supporting config)
+- `ani-platform` (app-of-apps for the child applications below)
+- `ani-namespaces`
+- `ani-rhoai-platform`
+- `ani-data`
+- `ani-sipp-core`
+- `ani-runtime`
+- `ani-plane`
+- `ani-datascience`
+- `ani-tekton`
+- `ani-observability`
+- `ani-sipp-traffic`
+- `ani-aap`
 
 ## Install Flow
 

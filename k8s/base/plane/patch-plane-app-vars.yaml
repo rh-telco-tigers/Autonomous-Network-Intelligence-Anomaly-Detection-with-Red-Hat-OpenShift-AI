@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: plane-app-vars
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 data:
   APP_BASE_URL: ""
   WEB_URL: ""

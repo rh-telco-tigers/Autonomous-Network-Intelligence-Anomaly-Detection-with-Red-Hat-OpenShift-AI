@@ -1,7 +1,7 @@
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
-  name: ims-ai-trainer
+  name: ani-ai-trainer
 spec:
   lookupPolicy:
     local: false
@@ -9,7 +9,7 @@ spec:
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
-  name: ims-ai-featurestore-trainer
+  name: ani-ai-featurestore-trainer
 spec:
   lookupPolicy:
     local: false
@@ -17,7 +17,7 @@ spec:
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
-  name: ims-incident-release
+  name: ani-incident-release
 spec:
   lookupPolicy:
     local: false

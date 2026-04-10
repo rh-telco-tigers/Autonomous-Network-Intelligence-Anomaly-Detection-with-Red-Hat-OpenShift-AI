@@ -1,8 +1,8 @@
 # PIPELINE DEFINITION
-# Name: ims-incident-release
+# Name: ani-incident-release
 # Inputs:
 #    previous_release_version: str [Default: '']
-#    project: str [Default: 'ims-demo']
+#    project: str [Default: 'ani-demo']
 #    public_record_target: int [Default: 10000.0]
 #    release_mode: str [Default: 'draft-replacement']
 #    release_version: str [Default: 'live-sipp-v1-draft']
@@ -30,7 +30,7 @@ components:
           isOptional: true
           parameterType: STRING
         workspace_root:
-          defaultValue: /tmp/ims-incident-release
+          defaultValue: /tmp/ani-incident-release
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -71,18 +71,18 @@ deploymentSpec:
         - incident-release/python/release_cli.py
         env:
         - name: CONTROL_PLANE_URL
-          value: http://control-plane.ims-runtime.svc.cluster.local:8080
+          value: http://control-plane.ani-runtime.svc.cluster.local:8080
         - name: CONTROL_PLANE_API_KEY
           value: demo-token
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: KAFKA_ENABLED
           value: 'true'
         - name: KAFKA_BOOTSTRAP_SERVERS
-          value: ims-release-kafka-kafka-bootstrap.ims-data.svc.cluster.local:9092
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-incident-release:latest
+          value: ani-release-kafka-kafka-bootstrap.ani-data.svc.cluster.local:9092
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-incident-release:latest
 pipelineInfo:
-  name: ims-incident-release
+  name: ani-incident-release
 root:
   dag:
     tasks:
@@ -116,7 +116,7 @@ root:
         isOptional: true
         parameterType: STRING
       project:
-        defaultValue: ims-demo
+        defaultValue: ani-demo
         isOptional: true
         parameterType: STRING
       public_record_target:

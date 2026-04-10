@@ -2,11 +2,11 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: model-storage-credentials
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
   annotations:
     opendatahub.io/connection-type-protocol: s3
     openshift.io/display-name: model-storage-minio
-    serving.kserve.io/s3-endpoint: model-storage-minio.ims-data.svc.cluster.local:9000
+    serving.kserve.io/s3-endpoint: model-storage-minio.ani-data.svc.cluster.local:9000
     serving.kserve.io/s3-region: us-east-1
     serving.kserve.io/s3-usehttps: "0"
     serving.kserve.io/s3-usevirtualbucket: "0"
@@ -18,8 +18,8 @@ stringData:
   type: s3
   AWS_ACCESS_KEY_ID: minioadmin
   AWS_DEFAULT_REGION: us-east-1
-  AWS_S3_BUCKET: ims-models
-  AWS_S3_ENDPOINT: http://model-storage-minio.ims-data.svc.cluster.local:9000
+  AWS_S3_BUCKET: ani-models
+  AWS_S3_ENDPOINT: http://model-storage-minio.ani-data.svc.cluster.local:9000
   AWS_SECRET_ACCESS_KEY: minioadmin
   MINIO_ROOT_USER: minioadmin
   MINIO_ROOT_PASSWORD: minioadmin
@@ -28,7 +28,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: model-storage-minio-data
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   accessModes:
     - ReadWriteOnce
@@ -40,7 +40,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: model-storage-minio
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   selector:
     app: model-storage-minio
@@ -56,7 +56,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: model-storage-minio-console
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   to:
     kind: Service
@@ -73,7 +73,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: model-storage-minio
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   replicas: 1
   strategy:
@@ -142,7 +142,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: model-storage-minio-bootstrap
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   template:
     spec:
@@ -162,7 +162,7 @@ spec:
               until /usr/bin/mc alias set demo http://model-storage-minio:9000 minioadmin minioadmin; do
                 sleep 5
               done
-              /usr/bin/mc mb --ignore-existing demo/ims-models
+              /usr/bin/mc mb --ignore-existing demo/ani-models
               /usr/bin/mc mb --ignore-existing demo/aap-hub
           resources:
             requests:

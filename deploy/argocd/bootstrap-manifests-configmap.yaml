@@ -4,11 +4,11 @@ metadata:
   name: argocd-bootstrap-manifests
   namespace: openshift-gitops
 data:
-  ims-demo-project.yaml: |
+  ani-demo-project.yaml: |
     apiVersion: argoproj.io/v1alpha1
     kind: AppProject
     metadata:
-      name: ims-demo
+      name: ani-demo
       namespace: openshift-gitops
     spec:
       clusterResourceWhitelist:
@@ -93,13 +93,13 @@ data:
     apiVersion: argoproj.io/v1alpha1
     kind: Application
     metadata:
-      name: ims-operators
+      name: ani-operators
       namespace: openshift-gitops
     spec:
       destination:
         namespace: openshift-gitops
         server: https://kubernetes.default.svc
-      project: ims-demo
+      project: ani-demo
       source:
         path: deploy/gitops/operators
         repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
@@ -121,13 +121,13 @@ data:
     apiVersion: argoproj.io/v1alpha1
     kind: Application
     metadata:
-      name: ims-platform
+      name: ani-platform
       namespace: openshift-gitops
     spec:
       destination:
         namespace: openshift-gitops
         server: https://kubernetes.default.svc
-      project: ims-demo
+      project: ani-demo
       source:
         path: deploy/gitops/apps
         repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git

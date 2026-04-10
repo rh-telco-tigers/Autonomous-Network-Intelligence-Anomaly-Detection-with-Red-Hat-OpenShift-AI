@@ -3,26 +3,26 @@
 from kfp import dsl
 
 
-PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest"
-WORKSPACE_ROOT = "/tmp/ims-featurestore"
-ARTIFACT_DIR = "/tmp/ims-featurestore/models/artifacts"
+PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest"
+WORKSPACE_ROOT = "/tmp/ani-featurestore"
+ARTIFACT_DIR = "/tmp/ani-featurestore/models/artifacts"
 FEATURE_REPO_PATH = "/workspace/ai/featurestore/feature_repo"
-CONTROL_PLANE_URL = "http://control-plane.ims-runtime.svc.cluster.local:8080"
+CONTROL_PLANE_URL = "http://control-plane.ani-runtime.svc.cluster.local:8080"
 CONTROL_PLANE_API_KEY = "demo-token"
 DATASET_STORE_MODE = "s3"
-DATASET_STORE_ENDPOINT = "http://model-storage-minio.ims-data.svc.cluster.local:9000"
-DATASET_STORE_BUCKET = "ims-models"
-DATASET_STORE_PREFIX = "pipelines/ims-datascience/datasets"
+DATASET_STORE_ENDPOINT = "http://model-storage-minio.ani-data.svc.cluster.local:9000"
+DATASET_STORE_BUCKET = "ani-models"
+DATASET_STORE_PREFIX = "pipelines/ani-datascience/datasets"
 DATASET_STORE_ACCESS_KEY = "minioadmin"
 DATASET_STORE_SECRET_KEY = "minioadmin"
-MODEL_REGISTRY_ENDPOINT = "http://ims-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080"
+MODEL_REGISTRY_ENDPOINT = "http://ani-demo-modelregistry.rhoai-model-registries.svc.cluster.local:8080"
 FEATURESTORE_MODE = "remote"
-FEATURESTORE_PROJECT = "ims_anomaly_featurestore"
-FEATURESTORE_REGISTRY_PATH = "feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443"
-FEATURESTORE_ONLINE_STORE_PATH = "https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443"
+FEATURESTORE_PROJECT = "ani_anomaly_featurestore"
+FEATURESTORE_REGISTRY_PATH = "feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443"
+FEATURESTORE_ONLINE_STORE_PATH = "https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443"
 FEATURESTORE_CA_CERT_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
 FEATURESTORE_AUTH_TYPE = "no_auth"
-FEATURESTORE_S3_ENDPOINT_URL = "http://model-storage-minio.ims-data.svc.cluster.local:9000"
+FEATURESTORE_S3_ENDPOINT_URL = "http://model-storage-minio.ani-data.svc.cluster.local:9000"
 FEATURESTORE_AWS_REGION = "us-east-1"
 FEATURESTORE_AWS_ACCESS_KEY_ID = "minioadmin"
 FEATURESTORE_AWS_SECRET_ACCESS_KEY = "minioadmin"
@@ -231,7 +231,7 @@ def export_serving_artifact(
     selection_manifest: str,
     output_manifest: dsl.OutputPath(str),
     artifact_dir: str = ARTIFACT_DIR,
-    serving_model_name: str = "ims-predictive-fs",
+    serving_model_name: str = "ani-predictive-fs",
     serving_runtime_name: str = "nvidia-triton-runtime",
     serving_model_format_name: str = "triton",
     serving_model_format_version: str = "2",
@@ -278,7 +278,7 @@ def register_model_version(
     model_name: str,
     model_version_name: str,
     output_manifest: dsl.OutputPath(str),
-    pipeline_name: str = "ims-featurestore-train-and-register",
+    pipeline_name: str = "ani-featurestore-train-and-register",
 ):
     return dsl.ContainerSpec(
         image=PIPELINE_IMAGE,
@@ -395,23 +395,23 @@ def _configure_featurestore_task(
     task.set_env_variable("AWS_SECRET_ACCESS_KEY", FEATURESTORE_AWS_SECRET_ACCESS_KEY)
 
 
-@dsl.pipeline(name="ims-featurestore-train-and-register")
-def ims_featurestore_pipeline(
-    bundle_version: str = "ims-feature-bundle-v1",
-    feature_service_name: str = "ims_anomaly_scoring_v1",
+@dsl.pipeline(name="ani-featurestore-train-and-register")
+def ani_featurestore_pipeline(
+    bundle_version: str = "ani-feature-bundle-v1",
+    feature_service_name: str = "ani_anomaly_scoring_v1",
     baseline_version: str = "baseline-fs-v1",
     candidate_version: str = "candidate-fs-v1",
     automl_engine: str = "autogluon",
-    model_name: str = "ims-anomaly-featurestore",
-    model_version_name: str = "ims-anomaly-featurestore-v1",
-    serving_model_name: str = "ims-predictive-fs",
+    model_name: str = "ani-anomaly-featurestore",
+    model_version_name: str = "ani-anomaly-featurestore-v1",
+    serving_model_name: str = "ani-predictive-fs",
     serving_runtime_name: str = "nvidia-triton-runtime",
     serving_model_format_name: str = "triton",
     serving_model_format_version: str = "2",
     serving_protocol_version: str = "v2",
     serving_prefix: str = "predictive-featurestore",
     serving_alias: str = "current",
-    mlserver_serving_model_name: str = "ims-predictive-fs-mlserver",
+    mlserver_serving_model_name: str = "ani-predictive-fs-mlserver",
     mlserver_serving_runtime_name: str = "mlserver-sklearn-runtime",
     mlserver_serving_model_format_name: str = "sklearn",
     mlserver_serving_model_format_version: str = "1",

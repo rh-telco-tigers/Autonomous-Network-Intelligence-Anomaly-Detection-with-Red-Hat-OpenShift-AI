@@ -154,7 +154,7 @@ DEFAULT_INCIDENT_AUTO_RCA_SAMPLE_RATE = 1.0
 
 class IncidentCreate(BaseModel):
     incident_id: str
-    project: str = "ims-demo"
+    project: str = "ani-demo"
     anomaly_score: float
     anomaly_type: str
     predicted_confidence: float = 0.0
@@ -251,7 +251,7 @@ class ModelPromotionRequest(BaseModel):
 
 class ConsoleScenarioRequest(BaseModel):
     scenario: str
-    project: str = "ims-demo"
+    project: str = "ani-demo"
 
 
 class IncidentTransitionRequest(BaseModel):
@@ -580,7 +580,7 @@ def _current_remediation_items(remediations: List[Dict[str, object]]) -> List[Di
 
 def _workflow_payload(incident: Dict[str, object]) -> Dict[str, object]:
     incident_id = str(incident.get("id") or "")
-    project = str(incident.get("project") or "ims-demo")
+    project = str(incident.get("project") or "ani-demo")
     all_incidents = list_incidents(project=project)
     audit_events = list_audit_events(limit=200, incident_id=incident_id)
     enriched_incident = _enrich_incident(incident, audit_events, all_incidents)
@@ -1004,13 +1004,13 @@ def _ai_playbook_generation_bootstrap_servers() -> List[str]:
     raw = (
         os.getenv("AI_PLAYBOOK_GENERATION_KAFKA_BOOTSTRAP_SERVERS", "").strip()
         or os.getenv("KAFKA_BOOTSTRAP_SERVERS", "").strip()
-        or "ims-release-kafka-kafka-bootstrap.ims-demo-lab.svc.cluster.local:9092"
+        or "ani-release-kafka-kafka-bootstrap.ani-demo-lab.svc.cluster.local:9092"
     )
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 def _ai_playbook_generation_client_id() -> str:
-    return _string_from_env("AI_PLAYBOOK_GENERATION_KAFKA_CLIENT_ID", "ims-control-plane-playbook-generator")
+    return _string_from_env("AI_PLAYBOOK_GENERATION_KAFKA_CLIENT_ID", "ani-control-plane-playbook-generator")
 
 
 def _ai_playbook_generation_security_protocol() -> str:
@@ -1097,7 +1097,7 @@ def _build_playbook_generation_instruction(
         f"Generate a reviewable Ansible playbook for IMS incident {incident_id}.",
         "",
         "Incident context:",
-        f"- project: {incident.get('project') or 'ims-demo'}",
+        f"- project: {incident.get('project') or 'ani-demo'}",
         f"- anomaly_type: {canonical_anomaly_type(str(incident.get('anomaly_type') or NORMAL_ANOMALY_TYPE))}",
         f"- severity: {incident.get('severity') or 'Unknown'}",
         f"- predicted_confidence: {_incident_confidence(incident):.2f}",
@@ -1237,7 +1237,7 @@ def _publish_incident_evidence_record(incident: Dict[str, object]) -> None:
     content = {
         "incident_id": incident_id,
         "stage": "evidence",
-        "project": str(incident.get("project") or "ims-demo"),
+        "project": str(incident.get("project") or "ani-demo"),
         "anomaly_type": anomaly_type,
         "severity": severity,
         "status": str(incident.get("status") or NEW),
@@ -1668,21 +1668,21 @@ def _aap_extra_vars_for_action(
     }
     if action_ref == "scale_scscf":
         return base | {
-            "target_namespace": os.getenv("AAP_SCALE_SCSCF_NAMESPACE", "ims-demo-lab"),
+            "target_namespace": os.getenv("AAP_SCALE_SCSCF_NAMESPACE", "ani-demo-lab"),
             "target_deployment": os.getenv("AAP_SCALE_SCSCF_DEPLOYMENT", "ims-scscf"),
             "target_replicas": _positive_int_from_env("AAP_SCALE_SCSCF_REPLICAS", 2),
         }
     if action_ref == "rate_limit_pcscf":
         return base | {
-            "target_namespace": _string_from_env("AAP_RATE_LIMIT_PCSCF_NAMESPACE", "ims-demo-lab"),
+            "target_namespace": _string_from_env("AAP_RATE_LIMIT_PCSCF_NAMESPACE", "ani-demo-lab"),
             "target_deployment": _string_from_env("AAP_RATE_LIMIT_PCSCF_DEPLOYMENT", "ims-pcscf"),
-            "annotation_key": _string_from_env("AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY", "ims.demo/rate-limit-review"),
+            "annotation_key": _string_from_env("AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY", "ani.demo/rate-limit-review"),
             "annotation_value": _string_from_env("AAP_RATE_LIMIT_PCSCF_ANNOTATION_VALUE", "approved"),
         }
     if action_ref == "quarantine_imsi":
         return base | {
-            "target_namespace": _string_from_env("AAP_QUARANTINE_NAMESPACE", "ims-demo-lab"),
-            "target_configmap": _string_from_env("AAP_QUARANTINE_CONFIGMAP", "ims-remediation-state"),
+            "target_namespace": _string_from_env("AAP_QUARANTINE_NAMESPACE", "ani-demo-lab"),
+            "target_configmap": _string_from_env("AAP_QUARANTINE_CONFIGMAP", "ani-remediation-state"),
             "quarantine_key": _string_from_env("AAP_QUARANTINE_KEY", "quarantined_imsi"),
             "quarantine_reason": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
             "imsi": _safe_imsi_for_automation(incident),
@@ -1764,7 +1764,7 @@ def _eda_event_payload(
         "event_type": event_type,
         "timestamp": _now_iso(),
         "incident_id": str(incident.get("id") or ""),
-        "project": str(incident.get("project") or "ims-demo"),
+        "project": str(incident.get("project") or "ani-demo"),
         "anomaly_type": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
         "severity": _incident_severity_label(incident),
         "status": normalize_workflow_state(str(incident.get("status") or NEW)),
@@ -1928,7 +1928,7 @@ def _finalize_aap_automation(
             approved_by,
             "incident_action",
         )
-        set_active_incidents(list_incidents(project=str(refreshed_incident.get("project") or "ims-demo")))
+        set_active_incidents(list_incidents(project=str(refreshed_incident.get("project") or "ani-demo")))
 
 
 def _request_json(method: str, url: str, payload: Dict[str, object] | None = None) -> Dict[str, object]:
@@ -2716,7 +2716,7 @@ def _incident_summary_view(
 
     return {
         "id": str(incident.get("id") or ""),
-        "project": str(incident.get("project") or "ims-demo"),
+        "project": str(incident.get("project") or "ani-demo"),
         "status": workflow_state,
         "workflow_state": workflow_state,
         "workflow_revision": int(incident.get("workflow_revision") or 1),
@@ -2919,7 +2919,7 @@ def _build_console_state(project: str) -> Dict[str, object]:
 def healthz():
     return {
         "status": "ok",
-        "db_path": os.getenv("CONTROL_PLANE_DB_PATH", "/tmp/ims-demo-control-plane.db"),
+        "db_path": os.getenv("CONTROL_PLANE_DB_PATH", "/tmp/ani-demo-control-plane.db"),
         "ansible_available": shutil.which("ansible-playbook") is not None,
         "automation_mode": _automation_mode(),
         "registry_loaded": bool(load_registry().get("models")),
@@ -3043,7 +3043,7 @@ def get_incident_debug_trace(incident_id: str, auth: AuthContext | None = Depend
         raise HTTPException(status_code=404, detail="Incident not found")
     ensure_project_access(auth, incident["project"])
     return {
-        "incident": _enrich_incident(incident, list_audit_events(limit=500, incident_id=incident_id), list_incidents(project=str(incident.get("project") or "ims-demo"))),
+        "incident": _enrich_incident(incident, list_audit_events(limit=500, incident_id=incident_id), list_incidents(project=str(incident.get("project") or "ani-demo"))),
         "trace_packets": _debug_trace_packets_for_incident(incident),
     }
 
@@ -4327,7 +4327,7 @@ def platform_status(auth: AuthContext | None = Depends(require_api_key)):
 
 
 @app.get("/console/state")
-def console_state(project: str = "ims-demo", auth: AuthContext | None = Depends(require_api_key)):
+def console_state(project: str = "ani-demo", auth: AuthContext | None = Depends(require_api_key)):
     ensure_project_access(auth, project)
     return _build_console_state(project)
 

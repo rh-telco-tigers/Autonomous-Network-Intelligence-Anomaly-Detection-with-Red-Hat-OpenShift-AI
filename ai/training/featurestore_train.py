@@ -58,25 +58,25 @@ from ai.training.train_and_register import (
     train_serving_model,
 )
 
-DEFAULT_WORKSPACE_ROOT = "/tmp/ims-featurestore"
+DEFAULT_WORKSPACE_ROOT = "/tmp/ani-featurestore"
 DEFAULT_FEATURE_REPO_PATH = "/workspace/ai/featurestore/feature_repo"
-DEFAULT_FEATURE_SERVICE_NAME = "ims_anomaly_scoring_v1"
-DEFAULT_MODEL_NAME = "ims-anomaly-featurestore"
-DEFAULT_SERVING_MODEL_NAME = "ims-predictive-fs"
+DEFAULT_FEATURE_SERVICE_NAME = "ani_anomaly_scoring_v1"
+DEFAULT_MODEL_NAME = "ani-anomaly-featurestore"
+DEFAULT_SERVING_MODEL_NAME = "ani-predictive-fs"
 DEFAULT_SERVING_RUNTIME_NAME = "nvidia-triton-runtime"
 DEFAULT_SERVING_SERVICE_ACCOUNT = "model-storage-sa"
 DEFAULT_SERVING_PREFIX = "predictive-featurestore"
 DEFAULT_SERVING_ALIAS = "current"
-DEFAULT_PIPELINE_NAME = "ims-featurestore-train-and-register"
+DEFAULT_PIPELINE_NAME = "ani-featurestore-train-and-register"
 DEFAULT_MODEL_FORMAT_NAME = "triton"
 DEFAULT_MODEL_FORMAT_VERSION = "2"
 DEFAULT_PROTOCOL_VERSION = "v2"
 DEFAULT_BOOTSTRAP_SIZE_PER_CLASS = 120
 DEFAULT_MLSERVER_IMPLEMENTATION = "mlserver_sklearn.SKLearnModel"
 DEFAULT_FEATURESTORE_MODE = "local"
-DEFAULT_MANAGED_FEATURESTORE_PROJECT = "ims_anomaly_featurestore"
-DEFAULT_MANAGED_FEATURESTORE_REGISTRY_PATH = "feast-ims-featurestore-registry.ims-datascience.svc.cluster.local:443"
-DEFAULT_MANAGED_FEATURESTORE_ONLINE_STORE_PATH = "https://feast-ims-featurestore-online.ims-datascience.svc.cluster.local:443"
+DEFAULT_MANAGED_FEATURESTORE_PROJECT = "ani_anomaly_featurestore"
+DEFAULT_MANAGED_FEATURESTORE_REGISTRY_PATH = "feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443"
+DEFAULT_MANAGED_FEATURESTORE_ONLINE_STORE_PATH = "https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443"
 DEFAULT_MANAGED_FEATURESTORE_CA_CERT_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
 DEFAULT_MANAGED_FEATURESTORE_AUTH_TYPE = "no_auth"
 DEFAULT_MANAGED_FEATURESTORE_ENTITY_KEY_SERIALIZATION_VERSION = "3"
@@ -610,10 +610,10 @@ def _upload_serving_bundle(
     selected_artifact_path: str | Path,
     metadata_path: Path,
 ) -> Dict[str, Any]:
-    endpoint = os.getenv("MINIO_ENDPOINT", "http://model-storage-minio.ims-data.svc.cluster.local:9000")
+    endpoint = os.getenv("MINIO_ENDPOINT", "http://model-storage-minio.ani-data.svc.cluster.local:9000")
     access_key = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
     secret_key = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-    bucket = os.getenv("MINIO_BUCKET", "ims-models")
+    bucket = os.getenv("MINIO_BUCKET", "ani-models")
     artifact_root = f"{serving_prefix.rstrip('/')}/{serving_model_name}/{model_version_name}".strip("/")
     alias_root = f"{serving_prefix.rstrip('/')}/{serving_model_name}/{serving_alias}".strip("/")
 
@@ -634,7 +634,7 @@ def _upload_serving_bundle(
     if str(selected_artifact_path).startswith("s3://"):
         selected_source = _download_file_reference(
             str(selected_artifact_path),
-            Path(tempfile.mkdtemp(prefix="ims-featurestore-selected-")) / Path(str(selected_artifact_path)).name,
+            Path(tempfile.mkdtemp(prefix="ani-featurestore-selected-")) / Path(str(selected_artifact_path)).name,
         )
 
     for root in (artifact_root, alias_root):
@@ -831,13 +831,13 @@ def _deployment_yaml(
             "kind: InferenceService",
             "metadata:",
             f"  name: {serving_model_name}",
-            "  namespace: ims-datascience",
+            "  namespace: ani-datascience",
             "  labels:",
             '    opendatahub.io/dashboard: "true"',
             "  annotations:",
-            f"    ims.redhat.com/source-bundle-version: {bundle_version}",
-            f"    ims.redhat.com/feature-service-name: {feature_service_name}",
-            f"    ims.redhat.com/source-model-version: {selected_model_version}",
+            f"    ani.redhat.com/source-bundle-version: {bundle_version}",
+            f"    ani.redhat.com/feature-service-name: {feature_service_name}",
+            f"    ani.redhat.com/source-model-version: {selected_model_version}",
             "    serving.kserve.io/deploymentMode: RawDeployment",
             "    serving.kserve.io/enable-prometheus-scraping: \"true\"",
             "spec:",
@@ -922,7 +922,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--bundle-version")
     parser.add_argument("--bundle-manifest")
     parser.add_argument("--source-dataset-versions-json")
-    parser.add_argument("--project", default="ims-demo")
+    parser.add_argument("--project", default="ani-demo")
     parser.add_argument("--training-manifest")
     parser.add_argument("--baseline-manifest")
     parser.add_argument("--candidate-manifest")

@@ -1,6 +1,6 @@
 {
   "feature_schema_version": "feature_schema_v1",
-  "label_taxonomy_version": "ims_incident_taxonomy_v2",
+  "label_taxonomy_version": "ani_incident_taxonomy_v2",
   "class_labels": [
     "normal_operation",
     "registration_storm",
@@ -56,10 +56,10 @@
       "promoted_at": "2026-04-06T18:00:53.343945+00:00"
     }
   ],
-  "serving_artifact": "models/serving/predictive/ims-predictive/1/weights.json",
+  "serving_artifact": "models/serving/predictive/ani-predictive/1/weights.json",
   "serving_repository": "models/serving/predictive",
   "serving_runtime": "nvidia-triton-runtime",
-  "serving_model_name": "ims-predictive",
+  "serving_model_name": "ani-predictive",
   "models": [
     {
       "version": "baseline-v1",
@@ -67,7 +67,7 @@
       "artifact": "models/artifacts/baseline-v1.json",
       "dataset_version": "synthetic-multiclass-v1",
       "feature_schema_version": "feature_schema_v1",
-      "label_taxonomy_version": "ims_incident_taxonomy_v2",
+      "label_taxonomy_version": "ani_incident_taxonomy_v2",
       "training_mode": "multiclass_supervised",
       "class_labels": [
         "authentication_failure",
@@ -330,12 +330,12 @@
     {
       "version": "predictive-serving-v1",
       "kind": "triton_python_multiclass_logistic_regression",
-      "artifact": "models/serving/predictive/ims-predictive/1/weights.json",
+      "artifact": "models/serving/predictive/ani-predictive/1/weights.json",
       "serving_repository": "models/serving/predictive",
-      "triton_model_name": "ims-predictive",
+      "triton_model_name": "ani-predictive",
       "dataset_version": "synthetic-multiclass-v1",
       "feature_schema_version": "feature_schema_v1",
-      "label_taxonomy_version": "ims_incident_taxonomy_v2",
+      "label_taxonomy_version": "ani_incident_taxonomy_v2",
       "training_mode": "multiclass_supervised",
       "class_labels": [
         "authentication_failure",

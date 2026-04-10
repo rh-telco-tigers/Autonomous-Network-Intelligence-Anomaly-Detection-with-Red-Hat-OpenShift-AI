@@ -1,8 +1,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ims-incident-release-kfp-bootstrap
-  namespace: ims-demo-lab
+  name: ani-incident-release-kfp-bootstrap
+  namespace: ani-demo-lab
   annotations:
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
@@ -12,16 +12,16 @@ spec:
   template:
     metadata:
       labels:
-        app: ims-incident-release-kfp-bootstrap
+        app: ani-incident-release-kfp-bootstrap
     spec:
-      serviceAccountName: ims-kfp-bootstrap
+      serviceAccountName: ani-kfp-bootstrap
       restartPolicy: OnFailure
       containers:
         - name: publish-pipeline
           image: registry.access.redhat.com/ubi9/python-311:latest
           envFrom:
             - configMapRef:
-                name: ims-platform-config
+                name: ani-platform-config
           env:
             - name: HOME
               value: /tmp
@@ -34,13 +34,13 @@ spec:
             - name: DSPA_NAME
               value: dspa
             - name: PIPELINE_PACKAGE_PATH
-              value: /opt/kfp/ims_incident_release_pipeline.yaml
+              value: /opt/kfp/ani_incident_release_pipeline.yaml
             - name: PIPELINE_NAME
-              value: ims-incident-release
+              value: ani-incident-release
             - name: EXPERIMENT_NAME
-              value: ims-release
+              value: ani-release
             - name: RUN_NAME
-              value: ims-incident-release-demo
+              value: ani-incident-release-demo
             - name: PIPELINE_SKIP_DEMO_RUN
               value: "true"
           command:
@@ -57,7 +57,7 @@ spec:
                       {
                           "release_version": os.getenv("INCIDENT_RELEASE_VERSION", "live-sipp-v1-draft"),
                           "source_dataset_version": os.getenv("INCIDENT_RELEASE_SOURCE_DATASET_VERSION", "live-sipp-v1"),
-                          "project": os.getenv("IMS_PROJECT", os.getenv("DEMO_PROJECT", "ims-demo")),
+                          "project": os.getenv("IMS_PROJECT", os.getenv("DEMO_PROJECT", "ani-demo")),
                           "public_record_target": int(os.getenv("INCIDENT_RELEASE_PUBLIC_RECORD_TARGET", "10000")),
                           "release_mode": os.getenv("INCIDENT_RELEASE_MODE", "draft-replacement"),
                           "previous_release_version": os.getenv("INCIDENT_RELEASE_PREVIOUS_VERSION", ""),
@@ -108,4 +108,4 @@ spec:
       volumes:
         - name: kfp-assets
           configMap:
-            name: ims-incident-release-kfp-assets
+            name: ani-incident-release-kfp-assets

@@ -3,10 +3,10 @@
   <send retrans="80">
     <![CDATA[
 
-      INVITE sip:retrans-user@ims-sipp.svc.cluster.local SIP/2.0
+      INVITE sip:retrans-user@ani-sipp.svc.cluster.local SIP/2.0
       Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
       From: <sip:retrans-caller-[call_number]@[local_ip]>;tag=[call_number]
-      To: <sip:retrans-user@ims-sipp.svc.cluster.local>
+      To: <sip:retrans-user@ani-sipp.svc.cluster.local>
       Call-ID: [call_id]
       CSeq: 1 INVITE
       Contact: <sip:retrans-caller-[call_number]@[local_ip]:[local_port]>

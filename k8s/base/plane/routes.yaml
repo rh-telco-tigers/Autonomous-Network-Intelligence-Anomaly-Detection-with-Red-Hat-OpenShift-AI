@@ -2,7 +2,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: plane-web
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   subdomain: plane
   path: /
@@ -21,7 +21,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: plane-api
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   subdomain: plane
   path: /api
@@ -40,7 +40,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: plane-auth
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   subdomain: plane
   path: /auth
@@ -59,7 +59,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: plane-live
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   subdomain: plane
   path: /live
@@ -78,7 +78,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: plane-space
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   subdomain: plane
   path: /spaces
@@ -97,7 +97,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: plane-admin
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   subdomain: plane
   path: /god-mode
@@ -116,7 +116,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: plane-uploads
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   subdomain: plane
   path: /uploads

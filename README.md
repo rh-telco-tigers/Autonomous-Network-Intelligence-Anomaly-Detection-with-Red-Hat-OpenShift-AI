@@ -71,7 +71,7 @@ Demo API tokens for the platform services:
 - `demo-token` for admin, operator, and automation flows
 - `demo-operator-token` for operator-only access
 - `demo-viewer-token` for read-limited browser testing
-- Plane login: `plane-admin@ims-demo.local` / `plane`
+- Plane login: `plane-admin@ani-demo.local` / `plane`
 - MinIO console: `minioadmin` / `minioadmin`
 - Slack and Jira actions default to an in-platform demo relay if live credentials are not supplied
 - the current `scale_scscf` remediation path is wired to live AAP-backed execution in the demo deployment

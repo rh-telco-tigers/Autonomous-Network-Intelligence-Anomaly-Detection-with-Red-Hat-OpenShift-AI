@@ -170,7 +170,7 @@ The system’s operational database remains the source of truth. Plane is the co
 - AAP Controller and AAP EDA are deployed in-cluster in the `aap` namespace.
 - The control-plane bootstraps controller job templates, callback templates, the EDA project, the decision environment, and activations on startup from repository content stored in Gitea.
 - OpenShift RBAC and token minting allow the control-plane to provision controller credentials and expose EDA webhook services without storing a static cluster kubeconfig in git.
-- Plane deployed in-cluster, ideally in `plane-system` or `ims-ticketing`.
+- Plane deployed in-cluster, ideally in `plane-system` or `ani-ticketing`.
 - All remediation playbooks and rulebooks remain versioned in the same repository as the application.
 
 ### 6.3 Current Runtime Control Flow
@@ -184,8 +184,8 @@ flowchart TD
   Rank --> Event["control-plane publishes EDA event"]
   UI -->|approve + execute| JT["AAP controller job template"]
   Event --> Policy{"EDA policy match?"}
-  Policy -->|rca_attached| Escalate["IMS Critical Incident Escalation"]
-  Policy -->|remediations_generated + low risk| Guardrail["IMS Critical Signal Guardrail"]
+  Policy -->|rca_attached| Escalate["ANI Critical Incident Escalation"]
+  Policy -->|remediations_generated + low risk| Guardrail["ANI Critical Signal Guardrail"]
   Escalate --> CallbackState["AAP callback template: transition incident state"]
   Guardrail --> CallbackAction["AAP callback template: execute incident action"]
   CallbackState --> CPAPI["control-plane transition / ticket APIs"]
@@ -382,7 +382,7 @@ State ownership rules:
 
 Use separate collections, not separate Milvus instances.
 
-### A. `ims_runbooks`
+### A. `ani_runbooks`
 
 Purpose: stable reusable operator knowledge and category-specific incident articles.
 
@@ -486,10 +486,10 @@ Notes:
 
 ### Collection Interaction Rules
 
-- `ims_runbooks` is the stable curated knowledge layer
+- `ani_runbooks` is the stable curated knowledge layer
 - `incident_evidence`, `incident_reasoning`, and `incident_resolution` are append-oriented semantic incident history
 - RCA generation may retrieve a small mixed set across collections
-- operator-facing incident detail may retrieve a larger category-scoped article set from `ims_runbooks`
+- operator-facing incident detail may retrieve a larger category-scoped article set from `ani_runbooks`
 - verified resolutions should outrank reasoning records for future remediation ranking, but they do not replace curated KB articles
 
 ---
@@ -908,20 +908,20 @@ The current event-driven path is:
 On startup, the control-plane reconciles the controller-side resources required for remediation:
 
 - organization: `Default`
-- inventory: `IMS Incident Local Inventory`
-- project: `IMS Incident Automation`
-- dynamic OpenShift credential: `IMS OpenShift API Credential`
+- inventory: `ANI Incident Local Inventory`
+- project: `ANI Incident Automation`
+- dynamic OpenShift credential: `ANI OpenShift API Credential`
 
 Current manual job templates:
 
-- `IMS Scale S-CSCF Path`
-- `IMS Rate Limit P-CSCF Ingress`
-- `IMS Quarantine Subscriber or Source`
+- `ANI Scale S-CSCF Path`
+- `ANI Rate Limit P-CSCF Ingress`
+- `ANI Quarantine Subscriber or Source`
 
 Current callback job templates used by EDA:
 
-- `IMS EDA Transition Incident State`
-- `IMS EDA Execute Incident Action`
+- `ANI EDA Transition Incident State`
+- `ANI EDA Execute Incident Action`
 
 The controller project syncs from the in-cluster Gitea URL so the same repository revision drives both the application and the automation content.
 
@@ -930,17 +930,17 @@ The controller project syncs from the in-cluster Gitea URL so the same repositor
 The current live manual automation catalog is:
 
 - `scale_scscf`
-  - template: `IMS Scale S-CSCF Path`
+  - template: `ANI Scale S-CSCF Path`
   - playbook: `automation/ansible/playbooks/scale-scscf.yaml`
   - target: `ims-scscf` deployment scale subresource
   - typical cases: `registration_storm`, `call_setup_timeout`, `server_internal_error`
 - `rate_limit_pcscf`
-  - template: `IMS Rate Limit P-CSCF Ingress`
+  - template: `ANI Rate Limit P-CSCF Ingress`
   - playbook: `automation/ansible/playbooks/rate-limit-pcscf.yaml`
-  - target: `ims-pcscf` deployment annotation `ims.demo/rate-limit-review`
+  - target: `ims-pcscf` deployment annotation `ani.demo/rate-limit-review`
   - typical cases: `registration_storm`, `retransmission_spike`, `network_degradation`
 - `quarantine_imsi`
-  - template: `IMS Quarantine Subscriber or Source`
+  - template: `ANI Quarantine Subscriber or Source`
   - playbook: `automation/ansible/playbooks/quarantine-imsi.yaml`
   - target: remediation state ConfigMap entry for the selected IMSI
   - typical cases: `authentication_failure`, `registration_failure`, `malformed_sip`
@@ -951,18 +951,18 @@ Each playbook consumes Kubernetes API details through `K8S_AUTH_*` environment v
 
 The current live EDA configuration is also bootstrapped from the repository:
 
-- project: `IMS Incident Event Policies`
-- decision environment: `IMS Incident Decisions`
+- project: `ANI Incident Event Policies`
+- decision environment: `ANI Incident Decisions`
 - webhook activations exposed through control-plane-managed Services in the `aap` namespace
 
 Current policy catalog:
 
-- `IMS Critical Incident Escalation`
+- `ANI Critical Incident Escalation`
   - rulebook: `rulebooks/critical-incident-escalation.yml`
   - event: `rca_attached`
   - cases: `authentication_failure`, `server_internal_error`, `network_degradation`
   - behavior: transitions the incident to `ESCALATED` and creates or syncs the Plane issue through the callback template
-- `IMS Critical Signal Guardrail`
+- `ANI Critical Signal Guardrail`
   - rulebook: `rulebooks/critical-signal-guardrail.yml`
   - event: `remediations_generated`
   - cases: `registration_storm`, `retransmission_spike`, `network_degradation`
@@ -1124,7 +1124,7 @@ Suggested labels or tags:
 
 Recommended namespace:
 
-- `plane-system` or `ims-ticketing`
+- `plane-system` or `ani-ticketing`
 
 Recommended route layout:
 
@@ -1338,8 +1338,8 @@ Supported human actions in the platform UI:
 Current automation split:
 
 - human-approved controller execution for `scale_scscf`, `rate_limit_pcscf`, and `quarantine_imsi`
-- event-driven escalation through `IMS Critical Incident Escalation`
-- event-driven low-risk guardrail through `IMS Critical Signal Guardrail`
+- event-driven escalation through `ANI Critical Incident Escalation`
+- event-driven low-risk guardrail through `ANI Critical Signal Guardrail`
 
 Plane should not directly execute remediations. Instead:
 

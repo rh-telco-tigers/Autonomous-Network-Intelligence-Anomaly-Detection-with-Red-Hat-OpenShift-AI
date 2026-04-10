@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: milvus-minio-credentials
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 type: Opaque
 stringData:
   accesskey: minioadmin
@@ -12,7 +12,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: milvus-etcd-data
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   accessModes:
     - ReadWriteOnce
@@ -24,7 +24,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: milvus-minio-data
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   accessModes:
     - ReadWriteOnce
@@ -36,7 +36,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: milvus-data
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   accessModes:
     - ReadWriteOnce
@@ -48,7 +48,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: milvus-etcd
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   selector:
     app: milvus-etcd
@@ -61,7 +61,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: milvus-etcd
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   replicas: 1
   selector:
@@ -102,7 +102,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: milvus-minio
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   selector:
     app: milvus-minio
@@ -118,7 +118,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: milvus-minio
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   replicas: 1
   selector:
@@ -169,7 +169,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: milvus
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   selector:
     app: milvus
@@ -185,7 +185,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: milvus
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   replicas: 1
   selector:
@@ -241,7 +241,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: milvus-attu
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   replicas: 1
   selector:
@@ -287,7 +287,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: milvus-attu
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   selector:
     app: milvus-attu
@@ -300,7 +300,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: milvus-attu
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   to:
     kind: Service
@@ -317,7 +317,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: milvus-bootstrap
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
   annotations:
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
@@ -328,7 +328,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: bootstrap
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/rca-service:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/rca-service:latest
           command:
             - /bin/sh
             - -c

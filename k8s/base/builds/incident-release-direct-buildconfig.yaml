@@ -2,12 +2,12 @@ apiVersion: build.openshift.io/v1
 kind: BuildConfig
 metadata:
   name: incident-release-direct
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   output:
     to:
       kind: ImageStreamTag
-      name: ims-incident-release:latest
+      name: ani-incident-release:latest
   resources:
     requests:
       cpu: 100m

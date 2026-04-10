@@ -3,9 +3,9 @@
   hosts: localhost
   gather_facts: false
   vars:
-    target_namespace: "{{ target_namespace | default('ims-demo-lab') }}"
+    target_namespace: "{{ target_namespace | default('ani-demo-lab') }}"
     target_deployment: "{{ target_deployment | default('ims-pcscf') }}"
-    annotation_key: "{{ annotation_key | default('ims.demo/rate-limit-review') }}"
+    annotation_key: "{{ annotation_key | default('ani.demo/rate-limit-review') }}"
     annotation_value: "{{ annotation_value | default('approved') }}"
     kubernetes_api_token: >-
       {{

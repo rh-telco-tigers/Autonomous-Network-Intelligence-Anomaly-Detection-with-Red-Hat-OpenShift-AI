@@ -57,7 +57,7 @@ class PlaneEscalationRemediationTests(unittest.TestCase):
         incident_state = {
             "incident": {
                 "id": "inc-123",
-                "project": "ims-demo",
+                "project": "ani-demo",
                 "status": control_plane_app.REMEDIATION_SUGGESTED,
                 "workflow_revision": 1,
             },
@@ -163,11 +163,11 @@ class IncidentAutoRcaPolicyTests(unittest.TestCase):
     def _incident_payload(self, **overrides: object) -> control_plane_app.IncidentCreate:
         values = {
             "incident_id": "inc-rca-1",
-            "project": "ims-demo",
+            "project": "ani-demo",
             "anomaly_score": 0.98,
             "anomaly_type": "registration_storm",
             "predicted_confidence": 0.94,
-            "model_version": "ims-predictive-fs",
+            "model_version": "ani-predictive-fs",
             "feature_snapshot": {"scenario_name": "registration_storm"},
         }
         values.update(overrides)
@@ -176,7 +176,7 @@ class IncidentAutoRcaPolicyTests(unittest.TestCase):
     def _stored_incident(self) -> dict[str, object]:
         return {
             "id": "inc-rca-1",
-            "project": "ims-demo",
+            "project": "ani-demo",
             "status": control_plane_app.NEW,
             "anomaly_type": "registration_storm",
             "source_system": "anomaly-service",
@@ -241,7 +241,7 @@ class IncidentEvidenceSourceTests(unittest.TestCase):
                     {
                         "title": "Server internal error RCA",
                         "reference": "runbooks/server-internal-error",
-                        "collection": "ims_runbooks",
+                        "collection": "ani_runbooks",
                         "doc_type": "runbook",
                         "score": None,
                         "excerpt": "One service cohort is returning 5xx.",
@@ -249,7 +249,7 @@ class IncidentEvidenceSourceTests(unittest.TestCase):
                     {
                         "title": "Worker saturation query",
                         "reference": "queries/worker-saturation",
-                        "collection": "ims_queries",
+                        "collection": "ani_queries",
                         "doc_type": "query",
                         "score": "not-a-number",
                         "excerpt": "Queue depth is rising.",
@@ -271,7 +271,7 @@ class AiPlaybookGenerationTests(unittest.TestCase):
     def test_preview_ai_playbook_generation_instruction_uses_draft_correlation(self) -> None:
         incident = {
             "id": "inc-ai-1",
-            "project": "ims-demo",
+            "project": "ani-demo",
             "rca_payload": {"root_cause": "S-CSCF overload"},
         }
         remediation = {
@@ -302,7 +302,7 @@ class AiPlaybookGenerationTests(unittest.TestCase):
     def test_request_ai_playbook_generation_uses_instruction_override_when_provided(self) -> None:
         incident = {
             "id": "inc-ai-1",
-            "project": "ims-demo",
+            "project": "ani-demo",
             "status": control_plane_app.REMEDIATION_SUGGESTED,
             "workflow_revision": 3,
             "anomaly_type": "registration_storm",
@@ -366,7 +366,7 @@ class AiPlaybookGenerationTests(unittest.TestCase):
     def test_request_ai_playbook_generation_publishes_instruction_and_persists_metadata(self) -> None:
         incident = {
             "id": "inc-ai-1",
-            "project": "ims-demo",
+            "project": "ani-demo",
             "status": control_plane_app.REMEDIATION_SUGGESTED,
             "workflow_revision": 3,
             "anomaly_type": "registration_storm",
@@ -434,7 +434,7 @@ class AiPlaybookGenerationTests(unittest.TestCase):
     def test_callback_promotes_request_into_ai_generated_playbook(self) -> None:
         incident = {
             "id": "inc-ai-1",
-            "project": "ims-demo",
+            "project": "ani-demo",
             "status": control_plane_app.REMEDIATION_SUGGESTED,
             "workflow_revision": 5,
         }
@@ -504,7 +504,7 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         incident_state = {
             "incident": {
                 "id": "inc-ai-2",
-                "project": "ims-demo",
+                "project": "ani-demo",
                 "status": control_plane_app.REMEDIATION_SUGGESTED,
                 "workflow_revision": 1,
             }

@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ims-platform-bootstrap-build
+  name: ani-platform-bootstrap-build
   annotations:
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
@@ -30,7 +30,7 @@ spec:
               }
 
               namespace="${POD_NAMESPACE}"
-              run_name="ims-platform-bootstrap-build"
+              run_name="ani-platform-bootstrap-build"
 
               if oc_cmd get pipelinerun "${run_name}" -n "${namespace}" >/dev/null 2>&1; then
                 status="$(oc_cmd get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].status}')"
@@ -54,10 +54,10 @@ spec:
                 name: ${run_name}
                 namespace: ${namespace}
                 labels:
-                  ims.redhat.com/bootstrap-build: "true"
+                  ani.redhat.com/bootstrap-build: "true"
               spec:
                 pipelineRef:
-                  name: ims-platform-container-build
+                  name: ani-platform-container-build
                 params:
                   - name: git-url
                     value: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git

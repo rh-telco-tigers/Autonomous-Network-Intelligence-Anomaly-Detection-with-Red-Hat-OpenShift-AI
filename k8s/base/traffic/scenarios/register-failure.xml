@@ -5,8 +5,8 @@
 
       REGISTER sip:[service] SIP/2.0
       Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
-      From: <sip:demo-user@ims-sipp.svc.cluster.local>;tag=[pid]-[call_number]
-      To: <sip:demo-user@ims-sipp.svc.cluster.local>
+      From: <sip:demo-user@ani-sipp.svc.cluster.local>;tag=[pid]-[call_number]
+      To: <sip:demo-user@ani-sipp.svc.cluster.local>
       Call-ID: [call_id]
       CSeq: 1 REGISTER
       Contact: <sip:demo-user@[local_ip]:[local_port]>
@@ -24,8 +24,8 @@
 
       REGISTER sip:[service] SIP/2.0
       Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
-      From: <sip:demo-user@ims-sipp.svc.cluster.local>;tag=[pid]-[call_number]
-      To: <sip:demo-user@ims-sipp.svc.cluster.local>
+      From: <sip:demo-user@ani-sipp.svc.cluster.local>;tag=[pid]-[call_number]
+      To: <sip:demo-user@ani-sipp.svc.cluster.local>
       Call-ID: [call_id]
       CSeq: 2 REGISTER
       Contact: <sip:demo-user>

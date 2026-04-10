@@ -8,10 +8,10 @@ import json
 
 from serving_smoke_check import SAMPLES, _health, _infer
 
-DEFAULT_TRITON_ENDPOINT = "http://ims-predictive-fs-predictor.ims-datascience.svc.cluster.local:8080"
-DEFAULT_TRITON_MODEL_NAME = "ims-predictive-fs"
-DEFAULT_MLSERVER_ENDPOINT = "http://ims-predictive-fs-mlserver-predictor.ims-datascience.svc.cluster.local:8080"
-DEFAULT_MLSERVER_MODEL_NAME = "ims-predictive-fs-mlserver"
+DEFAULT_TRITON_ENDPOINT = "http://ani-predictive-fs-predictor.ani-datascience.svc.cluster.local:8080"
+DEFAULT_TRITON_MODEL_NAME = "ani-predictive-fs"
+DEFAULT_MLSERVER_ENDPOINT = "http://ani-predictive-fs-mlserver-predictor.ani-datascience.svc.cluster.local:8080"
+DEFAULT_MLSERVER_MODEL_NAME = "ani-predictive-fs-mlserver"
 
 
 def _parse_args() -> argparse.Namespace:

@@ -6,7 +6,7 @@ This phase trains and evaluates anomaly models through reproducible Kubeflow Pip
 
 ## Status
 
-This phase is live through both `ims-feature-bundle-publish` and `ims-featurestore-train-and-register`. The feature-store-backed KFP workflow is now the preferred cluster training path, while the older MinIO-only trainer remains available as a compatibility and bootstrap path.
+This phase is live through both `ani-feature-bundle-publish` and `ani-featurestore-train-and-register`. The feature-store-backed KFP workflow is now the preferred cluster training path, while the older MinIO-only trainer remains available as a compatibility and bootstrap path.
 
 ## What This Phase Covers
 
@@ -49,8 +49,9 @@ flowchart TD
 
 ## Current Repo Touchpoints
 
-- `ai/pipelines/ims_feature_bundle_pipeline.py`
-- `ai/pipelines/ims_featurestore_pipeline.py`
+- `ai/pipelines/ani_feature_bundle_pipeline.py`
+- `ai/pipelines/ani_featurestore_pipeline.py`
+- `ai/pipelines/ani_anomaly_pipeline.py` (legacy MinIO bootstrap trainer)
 - `ai/training/featurestore_train.py`
 - `k8s/base/kfp/assets/`
 - `docs/architecture/feature-store-training-path.md`

@@ -7,8 +7,8 @@ import { AppProviders } from "@/components/providers/app-providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "IMS Incident Workflow",
-  description: "Console for reviewing and managing IMS anomaly incidents.",
+  title: "ANI Incident Workflow",
+  description: "Console for reviewing and managing anomaly incidents for the IMS core lab.",
 };
 
 export const viewport: Viewport = {

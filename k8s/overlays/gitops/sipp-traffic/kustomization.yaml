@@ -1,11 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: ims-sipp
+namespace: ani-sipp
 resources:
-  - ims-platform-config.yaml
+  - ani-platform-config.yaml
   - model-storage-credentials.yaml
   - ../../../base/traffic
 images:
-  - name: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner
-    newName: image-registry.openshift-image-registry.svc:5000/ims-sipp/sipp-runner
+  - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner
+    newName: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner
     newTag: latest

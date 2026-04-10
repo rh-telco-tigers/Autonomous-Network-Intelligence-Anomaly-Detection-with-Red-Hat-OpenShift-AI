@@ -15,7 +15,7 @@ import type {
   TicketLookupResponse,
 } from "@/lib/types";
 
-const defaultProject = process.env.NEXT_PUBLIC_IMS_PROJECT ?? "ims-demo";
+const defaultProject = process.env.NEXT_PUBLIC_IMS_PROJECT ?? "ani-demo";
 const REQUEST_TIMEOUT_MS = 12_000;
 const CONSOLE_STALE_TIME_MS = 30_000;
 const INCIDENT_LIST_STALE_TIME_MS = 20_000;

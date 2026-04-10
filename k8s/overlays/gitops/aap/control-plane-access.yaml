@@ -31,7 +31,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: control-plane
-    namespace: ims-runtime
+    namespace: ani-runtime
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

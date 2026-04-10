@@ -1,8 +1,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ims-kfp-bootstrap
-  namespace: ims-demo-lab
+  name: ani-kfp-bootstrap
+  namespace: ani-demo-lab
   annotations:
     argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
@@ -12,9 +12,9 @@ spec:
   template:
     metadata:
       labels:
-        app: ims-kfp-bootstrap
+        app: ani-kfp-bootstrap
     spec:
-      serviceAccountName: ims-kfp-bootstrap
+      serviceAccountName: ani-kfp-bootstrap
       restartPolicy: OnFailure
       containers:
         - name: publish-pipeline
@@ -27,19 +27,19 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: REQUIRED_IMAGESTREAM_TAGS
-              value: ims-ai-trainer:latest
+              value: ani-ai-trainer:latest
             - name: IMAGESTREAM_WAIT_TIMEOUT_SECONDS
               value: "3600"
             - name: DSPA_NAME
               value: dspa
             - name: PIPELINE_PACKAGE_PATH
-              value: /opt/kfp/ims_anomaly_pipeline.yaml
+              value: /opt/kfp/ani_anomaly_pipeline.yaml
             - name: PIPELINE_NAME
-              value: ims-anomaly-platform-train-and-register
+              value: ani-anomaly-platform-train-and-register
             - name: EXPERIMENT_NAME
-              value: ims-demo
+              value: ani-demo
             - name: RUN_NAME
-              value: ims-anomaly-platform-demo
+              value: ani-anomaly-platform-demo
             - name: PIPELINE_PARAMETERS_JSON
               value: |
                 {"dataset_version":"live-sipp-v1","baseline_version":"baseline-v1","automl_version":"candidate-v1","automl_engine":"autogluon"}
@@ -105,4 +105,4 @@ spec:
       volumes:
         - name: kfp-assets
           configMap:
-            name: ims-kfp-assets
+            name: ani-kfp-assets

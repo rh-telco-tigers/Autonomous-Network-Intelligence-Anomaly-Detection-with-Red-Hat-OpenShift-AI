@@ -1,16 +1,16 @@
 # PIPELINE DEFINITION
-# Name: ims-feature-bundle-publish
+# Name: ani-feature-bundle-publish
 # Inputs:
-#    bundle_version: str [Default: 'ims-feature-bundle-v1']
+#    bundle_version: str [Default: 'ani-feature-bundle-v1']
 #    control_plane_api_key: str [Default: 'demo-token']
-#    control_plane_url: str [Default: 'http://control-plane.ims-runtime.svc.cluster.local:8080']
+#    control_plane_url: str [Default: 'http://control-plane.ani-runtime.svc.cluster.local:8080']
 #    dataset_store_access_key: str [Default: 'minioadmin']
-#    dataset_store_bucket: str [Default: 'ims-models']
-#    dataset_store_endpoint: str [Default: 'http://model-storage-minio.ims-data.svc.cluster.local:9000']
+#    dataset_store_bucket: str [Default: 'ani-models']
+#    dataset_store_endpoint: str [Default: 'http://model-storage-minio.ani-data.svc.cluster.local:9000']
 #    dataset_store_mode: str [Default: 's3']
-#    dataset_store_prefix: str [Default: 'pipelines/ims-datascience/datasets']
+#    dataset_store_prefix: str [Default: 'pipelines/ani-datascience/datasets']
 #    dataset_store_secret_key: str [Default: 'minioadmin']
-#    project: str [Default: 'ims-demo']
+#    project: str [Default: 'ani-demo']
 #    source_dataset_versions_json: str [Default: '["live-sipp-v1"]']
 components:
   comp-build-bundle:
@@ -24,7 +24,7 @@ components:
         source_dataset_versions_json:
           parameterType: STRING
         workspace_root:
-          defaultValue: /tmp/ims-featurestore
+          defaultValue: /tmp/ani-featurestore
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -38,7 +38,7 @@ components:
         bundle_manifest_path:
           parameterType: STRING
         workspace_root:
-          defaultValue: /tmp/ims-featurestore
+          defaultValue: /tmp/ani-featurestore
           isOptional: true
           parameterType: STRING
     outputDefinitions:
@@ -69,32 +69,32 @@ deploymentSpec:
         - name: HOME
           value: /tmp
         - name: CONTROL_PLANE_URL
-          value: http://control-plane.ims-runtime.svc.cluster.local:8080
+          value: http://control-plane.ani-runtime.svc.cluster.local:8080
         - name: CONTROL_PLANE_API_KEY
           value: demo-token
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
           value: minioadmin
         - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
           value: 'true'
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-validate-bundle:
       container:
         args:
@@ -113,34 +113,34 @@ deploymentSpec:
         - name: HOME
           value: /tmp
         - name: CONTROL_PLANE_URL
-          value: http://control-plane.ims-runtime.svc.cluster.local:8080
+          value: http://control-plane.ani-runtime.svc.cluster.local:8080
         - name: CONTROL_PLANE_API_KEY
           value: demo-token
         - name: DATASET_STORE_MODE
           value: s3
         - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: DATASET_STORE_BUCKET
-          value: ims-models
+          value: ani-models
         - name: DATASET_STORE_ACCESS_KEY
           value: minioadmin
         - name: DATASET_STORE_SECRET_KEY
           value: minioadmin
         - name: DATASET_STORE_PREFIX
-          value: pipelines/ims-datascience/datasets
+          value: pipelines/ani-datascience/datasets
         - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ims-data.svc.cluster.local:9000
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: MINIO_BUCKET
-          value: ims-models
+          value: ani-models
         - name: MINIO_ACCESS_KEY
           value: minioadmin
         - name: MINIO_SECRET_KEY
           value: minioadmin
         - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
           value: 'true'
-        image: image-registry.openshift-image-registry.svc:5000/ims-datascience/ims-ai-featurestore-trainer:latest
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
 pipelineInfo:
-  name: ims-feature-bundle-publish
+  name: ani-feature-bundle-publish
 root:
   dag:
     tasks:
@@ -177,7 +177,7 @@ root:
   inputDefinitions:
     parameters:
       bundle_version:
-        defaultValue: ims-feature-bundle-v1
+        defaultValue: ani-feature-bundle-v1
         isOptional: true
         parameterType: STRING
       control_plane_api_key:
@@ -185,7 +185,7 @@ root:
         isOptional: true
         parameterType: STRING
       control_plane_url:
-        defaultValue: http://control-plane.ims-runtime.svc.cluster.local:8080
+        defaultValue: http://control-plane.ani-runtime.svc.cluster.local:8080
         isOptional: true
         parameterType: STRING
       dataset_store_access_key:
@@ -193,11 +193,11 @@ root:
         isOptional: true
         parameterType: STRING
       dataset_store_bucket:
-        defaultValue: ims-models
+        defaultValue: ani-models
         isOptional: true
         parameterType: STRING
       dataset_store_endpoint:
-        defaultValue: http://model-storage-minio.ims-data.svc.cluster.local:9000
+        defaultValue: http://model-storage-minio.ani-data.svc.cluster.local:9000
         isOptional: true
         parameterType: STRING
       dataset_store_mode:
@@ -205,7 +205,7 @@ root:
         isOptional: true
         parameterType: STRING
       dataset_store_prefix:
-        defaultValue: pipelines/ims-datascience/datasets
+        defaultValue: pipelines/ani-datascience/datasets
         isOptional: true
         parameterType: STRING
       dataset_store_secret_key:
@@ -213,7 +213,7 @@ root:
         isOptional: true
         parameterType: STRING
       project:
-        defaultValue: ims-demo
+        defaultValue: ani-demo
         isOptional: true
         parameterType: STRING
       source_dataset_versions_json:

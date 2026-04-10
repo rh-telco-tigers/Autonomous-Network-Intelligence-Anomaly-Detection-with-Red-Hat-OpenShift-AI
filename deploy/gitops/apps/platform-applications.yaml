@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ims-namespaces
+  name: ani-namespaces
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "0"
@@ -9,7 +9,7 @@ spec:
   destination:
     namespace: openshift-gitops
     server: https://kubernetes.default.svc
-  project: ims-demo
+  project: ani-demo
   source:
     path: k8s/overlays/gitops/namespaces
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
@@ -26,7 +26,7 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ims-rhoai-platform
+  name: ani-rhoai-platform
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "5"
@@ -34,7 +34,7 @@ spec:
   destination:
     namespace: redhat-ods-operator
     server: https://kubernetes.default.svc
-  project: ims-demo
+  project: ani-demo
   source:
     path: k8s/overlays/gitops/rhoai
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
@@ -50,7 +50,7 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ims-data
+  name: ani-data
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "10"
@@ -62,9 +62,9 @@ spec:
         - /metadata/annotations/openshift.io~1host.generated
         - /spec/host
   destination:
-    namespace: ims-data
+    namespace: ani-data
     server: https://kubernetes.default.svc
-  project: ims-demo
+  project: ani-demo
   source:
     path: k8s/overlays/gitops/data
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
@@ -81,7 +81,7 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ims-sipp-core
+  name: ani-sipp-core
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "15"
@@ -100,19 +100,19 @@ spec:
     - group: apps
       kind: Deployment
       name: ims-scscf
-      namespace: ims-sipp
+      namespace: ani-sipp
       jsonPointers:
         - /spec/replicas
     - group: apps
       kind: Deployment
       name: ims-pcscf
-      namespace: ims-sipp
+      namespace: ani-sipp
       jsonPointers:
-        - /metadata/annotations/ims.demo~1rate-limit-review
+        - /metadata/annotations/ani.demo~1rate-limit-review
   destination:
-    namespace: ims-sipp
+    namespace: ani-sipp
     server: https://kubernetes.default.svc
-  project: ims-demo
+  project: ani-demo
   source:
     path: k8s/overlays/gitops/sipp-core
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
@@ -129,7 +129,7 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ims-runtime
+  name: ani-runtime
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "20"
@@ -141,9 +141,9 @@ spec:
         - /metadata/annotations/openshift.io~1host.generated
         - /spec/host
   destination:
-    namespace: ims-runtime
+    namespace: ani-runtime
     server: https://kubernetes.default.svc
-  project: ims-demo
+  project: ani-demo
   source:
     path: k8s/overlays/gitops/runtime
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
@@ -160,15 +160,15 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ims-tekton
+  name: ani-tekton
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "35"
 spec:
   destination:
-    namespace: ims-tekton
+    namespace: ani-tekton
     server: https://kubernetes.default.svc
-  project: ims-demo
+  project: ani-demo
   source:
     path: k8s/overlays/gitops/tekton
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
@@ -184,7 +184,7 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ims-datascience
+  name: ani-datascience
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "30"
@@ -198,17 +198,17 @@ spec:
     - group: serving.kserve.io
       kind: InferenceService
       jsonPointers:
-        - /metadata/annotations/ims-demo~1refresh-ts
-        - /metadata/annotations/ims-demo~1runtime-fix-ts
-        - /metadata/annotations/ims-demo~1storage-fix-ts
-        - /metadata/annotations/ims-demo~1zero-cpu-ts
+        - /metadata/annotations/ani-demo~1refresh-ts
+        - /metadata/annotations/ani-demo~1runtime-fix-ts
+        - /metadata/annotations/ani-demo~1storage-fix-ts
+        - /metadata/annotations/ani-demo~1zero-cpu-ts
         - /metadata/finalizers
         - /spec/predictor/automountServiceAccountToken
         - /spec/predictor/model/name
   destination:
-    namespace: ims-datascience
+    namespace: ani-datascience
     server: https://kubernetes.default.svc
-  project: ims-demo
+  project: ani-demo
   source:
     path: k8s/overlays/gitops/datascience
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
@@ -225,7 +225,7 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ims-observability
+  name: ani-observability
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "40"
@@ -237,9 +237,9 @@ spec:
         - /metadata/annotations/openshift.io~1host.generated
         - /spec/host
   destination:
-    namespace: ims-observability
+    namespace: ani-observability
     server: https://kubernetes.default.svc
-  project: ims-demo
+  project: ani-demo
   source:
     path: k8s/overlays/gitops/observability
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
@@ -256,15 +256,15 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ims-sipp-traffic
+  name: ani-sipp-traffic
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "45"
 spec:
   destination:
-    namespace: ims-sipp
+    namespace: ani-sipp
     server: https://kubernetes.default.svc
-  project: ims-demo
+  project: ani-demo
   source:
     path: k8s/overlays/gitops/sipp-traffic
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
@@ -280,7 +280,7 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ims-aap
+  name: ani-aap
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "50"
@@ -288,7 +288,7 @@ spec:
   destination:
     namespace: aap
     server: https://kubernetes.default.svc
-  project: ims-demo
+  project: ani-demo
   source:
     path: k8s/overlays/gitops/aap
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
@@ -304,7 +304,7 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ims-plane
+  name: ani-plane
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "18"
@@ -326,7 +326,7 @@ spec:
   destination:
     namespace: plane
     server: https://kubernetes.default.svc
-  project: ims-demo
+  project: ani-demo
   source:
     path: k8s/overlays/gitops/plane
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git

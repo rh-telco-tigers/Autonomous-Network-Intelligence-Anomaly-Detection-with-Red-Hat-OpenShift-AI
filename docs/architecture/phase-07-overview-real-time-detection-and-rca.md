@@ -41,7 +41,7 @@ This phase uses multiple embedding layers rather than treating all text as one g
 
 | Collection | What gets embedded | Why it exists |
 | --- | --- | --- |
-| `ims_runbooks` | curated operational guidance, stable runbooks, and category-specific KB articles | gives the retrieval layer stable operator-authored background knowledge and ensures each incident category has reusable demo-ready guidance |
+| `ani_runbooks` | curated operational guidance, stable runbooks, and category-specific KB articles | gives the retrieval layer stable operator-authored background knowledge and ensures each incident category has reusable demo-ready guidance |
 | `incident_evidence` | incident facts, feature patterns, and evidence summaries | supports diagnosis from concrete observed signals |
 | `incident_reasoning` | normalized RCA reasoning and explanation text | supports similarity across RCA narratives |
 | `incident_resolution` | verified fixes, outcomes, and resolution summaries | supports remediation ranking and learning from successful outcomes |

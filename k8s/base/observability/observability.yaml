@@ -1,12 +1,12 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: ims-demo-services
-  namespace: ims-demo-lab
+  name: ani-demo-services
+  namespace: ani-demo-lab
 spec:
   namespaceSelector:
     matchNames:
-      - ims-runtime
+      - ani-runtime
   selector:
     matchExpressions:
       - key: app
@@ -24,56 +24,56 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: ims-demo-alerts
-  namespace: ims-demo-lab
+  name: ani-demo-alerts
+  namespace: ani-demo-lab
 spec:
   groups:
-    - name: ims-demo.rules
+    - name: ani-demo.rules
       rules:
         - alert: IMSDemoServiceHigh5xxRate
-          expr: sum(rate(ims_demo_http_requests_total{status=~"5.."}[5m])) by (service) > 0.1
+          expr: sum(rate(ani_demo_http_requests_total{status=~"5.."}[5m])) by (service) > 0.1
           for: 5m
           labels:
             severity: warning
           annotations:
             summary: IMS demo service returning sustained 5xx responses
         - alert: IMSDemoServiceLatencyHigh
-          expr: histogram_quantile(0.95, sum(rate(ims_demo_http_request_duration_seconds_bucket[5m])) by (le, service)) > 1
+          expr: histogram_quantile(0.95, sum(rate(ani_demo_http_request_duration_seconds_bucket[5m])) by (le, service)) > 1
           for: 10m
           labels:
             severity: warning
           annotations:
             summary: IMS demo service p95 latency above one second
         - alert: IMSDemoIncidentBurst
-          expr: sum(increase(ims_demo_incidents_total[15m])) by (project) > 3
+          expr: sum(increase(ani_demo_incidents_total[15m])) by (project) > 3
           for: 5m
           labels:
             severity: warning
           annotations:
             summary: IMS demo incident volume spiked in the last fifteen minutes
         - alert: IMSDemoLowRCAConfidence
-          expr: histogram_quantile(0.50, sum(rate(ims_demo_rca_confidence_bucket[15m])) by (le, project, generation_mode)) < 0.6
+          expr: histogram_quantile(0.50, sum(rate(ani_demo_rca_confidence_bucket[15m])) by (le, project, generation_mode)) < 0.6
           for: 10m
           labels:
             severity: warning
           annotations:
             summary: IMS demo RCA confidence is trending below the acceptable floor
         - alert: IMSDemoAutomationFailure
-          expr: sum(increase(ims_demo_automation_actions_total{status=~"failed|rejected"}[30m])) by (action) > 0
+          expr: sum(increase(ani_demo_automation_actions_total{status=~"failed|rejected"}[30m])) by (action) > 0
           for: 1m
           labels:
             severity: critical
           annotations:
             summary: IMS demo automation action failed or was rejected
         - alert: IMSDemoIntegrationIssue
-          expr: sum(increase(ims_demo_integration_events_total{status!~"sent|created|simulated"}[30m])) by (integration) > 0
+          expr: sum(increase(ani_demo_integration_events_total{status!~"sent|created|simulated"}[30m])) by (integration) > 0
           for: 5m
           labels:
             severity: warning
           annotations:
             summary: IMS demo collaboration integration emitted a skipped or failed event outside the demo relay path
         - alert: IMSDemoModelPromotionFailure
-          expr: sum(increase(ims_demo_model_promotions_total{status!="passed"}[1h])) by (stage) > 0
+          expr: sum(increase(ani_demo_model_promotions_total{status!="passed"}[1h])) by (stage) > 0
           for: 5m
           labels:
             severity: warning

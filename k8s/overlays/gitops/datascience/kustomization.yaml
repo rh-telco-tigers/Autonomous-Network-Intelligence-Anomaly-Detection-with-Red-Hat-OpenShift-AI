@@ -1,8 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: ims-datascience
+namespace: ani-datascience
 resources:
-  - ims-platform-config.yaml
+  - ani-platform-config.yaml
   - image-streams.yaml
   - model-storage-credentials.yaml
   - tekton-image-access.yaml

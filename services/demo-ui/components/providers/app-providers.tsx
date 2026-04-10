@@ -10,8 +10,8 @@ type ApiTokenContextValue = {
 };
 
 const ApiTokenContext = React.createContext<ApiTokenContextValue | null>(null);
-const apiTokenStorageKey = "ims-console-api-token";
-const themeStorageKey = "ims-console-theme";
+const apiTokenStorageKey = "ani-console-api-token";
+const themeStorageKey = "ani-console-theme";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [queryClient] = React.useState(

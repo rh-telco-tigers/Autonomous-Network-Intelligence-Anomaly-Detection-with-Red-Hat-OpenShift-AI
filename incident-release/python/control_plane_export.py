@@ -7,7 +7,7 @@ from typing import Any
 import requests
 
 
-DEFAULT_CONTROL_PLANE_URL = "http://control-plane.ims-runtime.svc.cluster.local:8080"
+DEFAULT_CONTROL_PLANE_URL = "http://control-plane.ani-runtime.svc.cluster.local:8080"
 
 
 def control_plane_url(path: str) -> str:

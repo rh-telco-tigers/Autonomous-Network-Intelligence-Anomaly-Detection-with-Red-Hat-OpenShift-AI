@@ -13,8 +13,8 @@ Current live coverage:
 - manual UI execution through AAP Controller for `scale_scscf`, `rate_limit_pcscf`, and `quarantine_imsi`
 - optional AI playbook generation after remediation suggestions, using Kafka request delivery and a control-plane callback
 - controller callback templates for event-driven incident transitions and event-driven action execution
-- EDA policy `IMS Critical Incident Escalation` for critical RCA-attached incidents that should move to `ESCALATED` and sync Plane
-- EDA policy `IMS Critical Signal Guardrail` for selected critical signaling incidents that can auto-apply `rate_limit_pcscf`
+- EDA policy `ANI Critical Incident Escalation` for critical RCA-attached incidents that should move to `ESCALATED` and sync Plane
+- EDA policy `ANI Critical Signal Guardrail` for selected critical signaling incidents that can auto-apply `rate_limit_pcscf`
 - runner-job fallback when controller write operations are blocked by the current AAP license
 
 ## What This Phase Covers

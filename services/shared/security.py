@@ -28,7 +28,7 @@ def _api_key_catalog() -> Dict[str, Dict[str, object]]:
     if not expected:
         return {}
 
-    default_project = os.getenv("DEFAULT_PROJECT", "ims-demo")
+    default_project = os.getenv("DEFAULT_PROJECT", "ani-demo")
     return {
         expected: {
             "subject": os.getenv("API_KEY_SUBJECT", "demo-operator"),
@@ -63,7 +63,7 @@ def require_api_key(
             return AuthContext(
                 token=token,
                 subject=str(metadata.get("subject", "unknown")),
-                projects=[str(project) for project in metadata.get("projects", ["ims-demo"])],
+                projects=[str(project) for project in metadata.get("projects", ["ani-demo"])],
                 roles=[str(role) for role in metadata.get("roles", ["operator"])],
             )
     raise HTTPException(status_code=401, detail="Invalid API key")
