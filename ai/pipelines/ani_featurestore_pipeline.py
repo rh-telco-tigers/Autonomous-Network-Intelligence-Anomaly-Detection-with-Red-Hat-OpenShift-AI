@@ -395,6 +395,14 @@ def _configure_featurestore_task(
     task.set_env_variable("AWS_SECRET_ACCESS_KEY", FEATURESTORE_AWS_SECRET_ACCESS_KEY)
 
 
+def _configure_automl_task_resources(task) -> None:
+    # AutoGluon training on the backfill bundle exceeds the namespace default 512Mi limit.
+    task.set_cpu_request("500m")
+    task.set_cpu_limit("4")
+    task.set_memory_request("2Gi")
+    task.set_memory_limit("8Gi")
+
+
 @dsl.pipeline(name="ani-featurestore-train-and-register")
 def ani_featurestore_pipeline(
     bundle_version: str = "ani-feature-bundle-v1",
@@ -503,4 +511,5 @@ def ani_featurestore_pipeline(
     )
     for task in (automl, evaluated, selected, exported, registered, published):
         _configure_featurestore_task(task, **featurestore_config)
+    _configure_automl_task_resources(automl)
     registered.set_env_variable("RHOAI_MODEL_REGISTRY_REQUIRED", "false")

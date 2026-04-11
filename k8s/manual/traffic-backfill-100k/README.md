@@ -13,7 +13,7 @@ Use these make targets when you want to generate live incidents, prepare separat
 1. Create one live incident in the app:
 
 ```sh
-make step-1-generate-demo-incident DEMO_INCIDENT_SCENARIO=busy_destination
+make live-step-1-generate-demo-incident DEMO_INCIDENT_SCENARIO=busy_destination
 ```
 
 2. Generate the shared training-only backfill dataset in MinIO:
@@ -55,19 +55,19 @@ make list-incident-release-datasets
 8. Compile the incident-release bundle from the incident-linked live dataset:
 
 ```sh
-make step-3-build-incident-release
+make live-step-2-build-incident-release
 ```
 
 9. Publish the feature-store-ready live bundle:
 
 ```sh
-make step-4-publish-feature-bundle
+make live-step-3-publish-feature-bundle
 ```
 
 10. Train, register, and deploy the classifier the app uses for live scoring:
 
 ```sh
-make step-5-train-and-deploy-classifier
+make live-step-4-train-and-deploy-classifier
 ```
 
 The preferred live serving path is `ani-predictive-fs`. The separate backfill serving path is `ani-predictive-backfill`. Both endpoints stay active, and the demo UI can switch classification between them. The older `legacy-train-and-deploy-classifier` target exists only as a compatibility path.
@@ -96,13 +96,13 @@ make list-incident-release-datasets
 For incident release, do not pass the backfill dataset version into Step 3. Incident release must use the dataset whose feature windows actually created the live incidents. By default that is `live-sipp-v1`:
 
 ```sh
-make step-3-build-incident-release
+make live-step-2-build-incident-release
 ```
 
 If you need to override it, only use another incident-linked dataset version:
 
 ```sh
-make step-3-build-incident-release INCIDENT_RELEASE_SOURCE_DATASET_VERSION=live-sipp-v1
+make live-step-2-build-incident-release INCIDENT_RELEASE_SOURCE_DATASET_VERSION=live-sipp-v1
 ```
 
 The backfill dataset `backfill-sipp-100k` is training-only and is rejected by Step 3.
@@ -132,10 +132,16 @@ make stop-incident-release
 
 Compatibility aliases still work:
 
-- `trigger-incident-release` -> `step-2-backfill-training-dataset`
-- `trigger-incident-release-pipeline` -> `step-3-build-incident-release`
-- `trigger-feature-bundle-pipeline` -> `step-4-publish-feature-bundle`
-- `trigger-featurestore-pipeline` -> `step-5-train-and-deploy-classifier`
+- `step-1-generate-demo-incident` -> `live-step-1-generate-demo-incident`
+- `step-2-backfill-training-dataset` -> `backfill-step-1-generate-training-dataset`
+- `step-3-build-incident-release` -> `live-step-2-build-incident-release`
+- `step-4-publish-feature-bundle` -> `live-step-3-publish-feature-bundle`
+- `step-5-train-and-deploy-classifier` -> `live-step-4-train-and-deploy-classifier`
+- `smoke-check-featurestore-serving` -> `live-step-5-smoke-check-serving`
+- `trigger-incident-release` -> `backfill-step-1-generate-training-dataset`
+- `trigger-incident-release-pipeline` -> `live-step-2-build-incident-release`
+- `trigger-feature-bundle-pipeline` -> `live-step-3-publish-feature-bundle`
+- `trigger-featurestore-pipeline` -> `live-step-4-train-and-deploy-classifier`
 
 Each trigger creates a fresh set of Jobs. If you reuse the same dataset version, the new run appends more feature-window objects under the same S3 prefix. Use a new dataset version when you want a separate dataset.
 

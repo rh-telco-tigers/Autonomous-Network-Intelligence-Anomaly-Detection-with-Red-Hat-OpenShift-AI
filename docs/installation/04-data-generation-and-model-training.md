@@ -19,7 +19,7 @@ If `ani-datascience` is degraded only because `llama-32-3b-instruct` is pending 
 Create one incident from the live dataset path:
 
 ```sh
-make step-1-generate-demo-incident DEMO_INCIDENT_SCENARIO=busy_destination
+make live-step-1-generate-demo-incident DEMO_INCIDENT_SCENARIO=busy_destination
 ```
 
 Expected result:
@@ -33,7 +33,7 @@ Expected result:
 Use this only when you want extra feature windows for offline analysis or model experiments:
 
 ```sh
-make step-2-backfill-training-dataset
+make backfill-step-1-generate-training-dataset
 ```
 
 Watch progress:
@@ -68,13 +68,13 @@ For incident release, always use the incident-linked live dataset unless you int
 Compile the incident-linked dataset into the incident release bundle:
 
 ```sh
-make step-3-build-incident-release
+make live-step-2-build-incident-release
 ```
 
 If you need to pin a linked dataset version explicitly:
 
 ```sh
-make step-3-build-incident-release INCIDENT_RELEASE_SOURCE_DATASET_VERSION=live-sipp-v1
+make live-step-2-build-incident-release INCIDENT_RELEASE_SOURCE_DATASET_VERSION=live-sipp-v1
 ```
 
 Watch the trigger job and workflow:
@@ -91,7 +91,7 @@ Continue when the workflow finishes with `Succeeded`.
 Publish the bundle that the feature-store training pipeline consumes:
 
 ```sh
-make step-4-publish-feature-bundle
+make live-step-3-publish-feature-bundle
 ```
 
 Watch:
@@ -107,7 +107,7 @@ Continue when the publish workflow finishes with `Succeeded`.
 Train and deploy the feature-store model:
 
 ```sh
-make step-5-train-and-deploy-classifier
+make live-step-4-train-and-deploy-classifier
 ```
 
 Watch:
@@ -122,7 +122,7 @@ This is the preferred training path. It deploys the model behind `ani-predictive
 ## 7. Run The Serving Smoke Check
 
 ```sh
-make smoke-check-featurestore-serving
+make live-step-5-smoke-check-serving
 ```
 
 Then inspect the latest smoke job:
@@ -158,7 +158,7 @@ Expected result:
 Then run one more incident through the control plane:
 
 ```sh
-make step-1-generate-demo-incident DEMO_INCIDENT_SCENARIO=busy_destination
+make live-step-1-generate-demo-incident DEMO_INCIDENT_SCENARIO=busy_destination
 ```
 
 If this succeeds and the incident shows up in the demo UI, the UI path is consuming the deployed predictive model through the live control-plane and anomaly-service flow.

@@ -34,7 +34,7 @@ GPU_REPLICAS ?= 1
 GPU_SOURCE_MACHINESET ?=
 GPU_OUTPUT ?=
 
-.PHONY: help kustomize-gitops apply-demo-ai-extras check-demo-incident-generators check-fresh-cluster-gitops check-fresh-cluster-ai check-fresh-cluster-runtime check-fresh-cluster validate-python repo-tree render-gpu-node-pool add-gpu-node-pool trigger-build-pipeline step-1-generate-demo-incident step-2-backfill-training-dataset step-3-build-incident-release step-4-publish-feature-bundle step-5-train-and-deploy-classifier legacy-train-and-deploy-classifier smoke-check-featurestore-serving stop-incident-release list-incident-release-datasets generate-demo-incident trigger-anomaly-platform-pipeline trigger-feature-bundle-pipeline trigger-featurestore-pipeline trigger-incident-release-pipeline trigger-incident-release backfill-step-1-generate-training-dataset backfill-step-2-build-feature-bundle backfill-step-3-train-and-register-classifier backfill-step-4-activate-serving-endpoint backfill-step-5-smoke-check-serving backfill-step-4-smoke-check-serving
+.PHONY: help kustomize-gitops apply-demo-ai-extras check-demo-incident-generators check-fresh-cluster-gitops check-fresh-cluster-ai check-fresh-cluster-runtime check-fresh-cluster validate-python repo-tree render-gpu-node-pool add-gpu-node-pool trigger-build-pipeline live-step-1-generate-demo-incident live-step-2-build-incident-release live-step-3-publish-feature-bundle live-step-4-train-and-deploy-classifier live-step-5-smoke-check-serving backfill-step-1-generate-training-dataset backfill-step-2-build-feature-bundle backfill-step-3-train-and-register-classifier backfill-step-4-activate-serving-endpoint backfill-step-5-smoke-check-serving step-1-generate-demo-incident step-2-backfill-training-dataset step-3-build-incident-release step-4-publish-feature-bundle step-5-train-and-deploy-classifier legacy-train-and-deploy-classifier smoke-check-featurestore-serving stop-incident-release list-incident-release-datasets generate-demo-incident trigger-anomaly-platform-pipeline trigger-feature-bundle-pipeline trigger-featurestore-pipeline trigger-incident-release-pipeline trigger-incident-release backfill-step-4-smoke-check-serving
 
 help: ## Print available make targets
 	@printf "Available commands:\n"
@@ -101,7 +101,7 @@ trigger-build-pipeline: ## Start the demo Tekton image build
 	printf "Creating demo build PipelineRun for branch %s in %s\n" "$$branch" "$(TEKTON_NAMESPACE)"; \
 	GIT_BRANCH="$$branch" python3 -c 'from pathlib import Path; import os; manifest = Path("$(DEMO_TRIGGER_DIR)/tekton-build-pipelinerun.yaml").read_text(); print(manifest.replace("__GIT_REVISION__", os.environ["GIT_BRANCH"]), end="")' | oc create -f -
 
-step-1-generate-demo-incident: ## Step 1: Create one live incident in the demo app by calling the control-plane scenario endpoint; set DEMO_INCIDENT_SCENARIO=<scenario> if needed
+live-step-1-generate-demo-incident: ## Live Step 1: Create one live incident in the demo app by calling the control-plane scenario endpoint; set DEMO_INCIDENT_SCENARIO=<scenario> if needed
 	@set -e; \
 	control_plane_host="$$(oc get route control-plane -n "$(RUNTIME_NAMESPACE)" -o jsonpath='{.spec.host}')"; \
 	printf "Creating one live incident for scenario %s through %s\n" "$(DEMO_INCIDENT_SCENARIO)" "$$control_plane_host"; \
@@ -110,9 +110,70 @@ step-1-generate-demo-incident: ## Step 1: Create one live incident in the demo a
 	  -H "Content-Type: application/json" \
 	  -d "{\"scenario\":\"$(DEMO_INCIDENT_SCENARIO)\",\"project\":\"$(DEMO_PROJECT)\"}" | python3 -m json.tool
 
-generate-demo-incident: step-1-generate-demo-incident
+step-1-generate-demo-incident: live-step-1-generate-demo-incident
 
-step-2-backfill-training-dataset: ## Step 2: Generate a large labeled feature-window dataset in MinIO for training workflows only; this does not create demo incidents
+generate-demo-incident: live-step-1-generate-demo-incident
+
+live-step-2-build-incident-release: ## Live Step 2: Compile one incident-release bundle from the incident-linked live dataset; backfill datasets are rejected
+	@source_dataset_version="$(INCIDENT_RELEASE_SOURCE_DATASET_VERSION)"; \
+	if [ -z "$$source_dataset_version" ]; then \
+	  source_dataset_version="$(INCIDENT_RELEASE_LINKED_DATASET_VERSION)"; \
+	fi; \
+	if [ -z "$$source_dataset_version" ]; then \
+	  printf "No source dataset version was selected.\n"; \
+	  printf "Set INCIDENT_RELEASE_LINKED_DATASET_VERSION or pass INCIDENT_RELEASE_SOURCE_DATASET_VERSION.\n"; \
+	  exit 1; \
+	fi; \
+	case "$$source_dataset_version" in \
+	  backfill-sipp-100k*) \
+	    printf "Dataset %s is a backfill-only dataset and cannot be used for incident release.\n" "$$source_dataset_version"; \
+	    printf "Use the incident-linked dataset instead: make live-step-2-build-incident-release INCIDENT_RELEASE_SOURCE_DATASET_VERSION=%s\n" "$(INCIDENT_RELEASE_LINKED_DATASET_VERSION)"; \
+	    exit 1; \
+	    ;; \
+	esac; \
+	release_version="$${INCIDENT_RELEASE_VERSION:-$${source_dataset_version}-draft}"; \
+	printf "Creating demo KFP trigger job for ani-incident-release in %s (source_dataset_version=%s, release_version=%s)\n" "$(DATASCIENCE_NAMESPACE)" "$$source_dataset_version" "$$release_version"; \
+	printf "Incident release always uses the incident-linked dataset unless you explicitly override it with another linked dataset.\n"; \
+	INCIDENT_RELEASE_SOURCE_DATASET_VERSION="$$source_dataset_version" \
+	INCIDENT_RELEASE_VERSION="$$release_version" \
+	INCIDENT_RELEASE_MODE="$(INCIDENT_RELEASE_MODE)" \
+	INCIDENT_RELEASE_PUBLIC_RECORD_TARGET="$(INCIDENT_RELEASE_PUBLIC_RECORD_TARGET)" \
+	INCIDENT_RELEASE_PREVIOUS_VERSION="$(INCIDENT_RELEASE_PREVIOUS_VERSION)" \
+	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/incident-release-run-job.yaml").read_text(); replacements = {"__INCIDENT_RELEASE_SOURCE_DATASET_VERSION__": os.environ["INCIDENT_RELEASE_SOURCE_DATASET_VERSION"], "__INCIDENT_RELEASE_VERSION__": os.environ["INCIDENT_RELEASE_VERSION"], "__INCIDENT_RELEASE_MODE__": os.environ["INCIDENT_RELEASE_MODE"], "__INCIDENT_RELEASE_PUBLIC_RECORD_TARGET__": os.environ["INCIDENT_RELEASE_PUBLIC_RECORD_TARGET"], "__INCIDENT_RELEASE_PREVIOUS_VERSION__": os.environ["INCIDENT_RELEASE_PREVIOUS_VERSION"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -
+
+step-3-build-incident-release: live-step-2-build-incident-release
+
+trigger-incident-release-pipeline: live-step-2-build-incident-release
+
+live-step-3-publish-feature-bundle: ## Live Step 3: Publish the feature-store-ready live bundle dataset that downstream training consumes
+	@printf "Creating demo KFP trigger job for ani-feature-bundle-publish in %s\n" "$(DATASCIENCE_NAMESPACE)"
+	oc create -f "$(DEMO_TRIGGER_DIR)/feature-bundle-run-job.yaml"
+
+step-4-publish-feature-bundle: live-step-3-publish-feature-bundle
+
+trigger-feature-bundle-pipeline: live-step-3-publish-feature-bundle
+
+live-step-4-train-and-deploy-classifier: ## Live Step 4: Train, register, and deploy the feature-store model to ani-predictive-fs, which the app uses for live classification
+	@printf "Creating demo KFP trigger job for ani-featurestore-train-and-register in %s\n" "$(DATASCIENCE_NAMESPACE)"
+	oc create -f "$(DEMO_TRIGGER_DIR)/featurestore-run-job.yaml"
+
+step-5-train-and-deploy-classifier: live-step-4-train-and-deploy-classifier
+
+trigger-featurestore-pipeline: live-step-4-train-and-deploy-classifier
+
+legacy-train-and-deploy-classifier: ## Legacy: Train and deploy the older MinIO-only classifier path; keep only for compatibility, not for the preferred app path
+	@printf "Creating demo KFP trigger job for ani-anomaly-platform-train-and-register in %s\n" "$(DATASCIENCE_NAMESPACE)"
+	oc create -f "$(DEMO_TRIGGER_DIR)/anomaly-platform-run-job.yaml"
+
+trigger-anomaly-platform-pipeline: legacy-train-and-deploy-classifier
+
+live-step-5-smoke-check-serving: ## Live Step 5: Run a serving smoke check against the live feature-store predictive endpoint
+	@printf "Creating feature-store serving smoke check job in %s\n" "$(DATASCIENCE_NAMESPACE)"
+	oc create -f "$(DEMO_TRIGGER_DIR)/featurestore-serving-smoke-job.yaml"
+
+smoke-check-featurestore-serving: live-step-5-smoke-check-serving
+
+backfill-step-1-generate-training-dataset: ## Backfill Step 1: Generate the large shared backfill dataset used only for offline training and bundle publishing
 	@dataset_version="$(BACKFILL_DATASET_VERSION)"; \
 	if [ -n "$(INCIDENT_RELEASE_DATASET_VERSION)" ] && [ "$(INCIDENT_RELEASE_DATASET_VERSION)" != "$(BACKFILL_DATASET_VERSION)" ]; then \
 	  printf "Backfill now uses a single shared dataset version: %s\n" "$(BACKFILL_DATASET_VERSION)"; \
@@ -127,15 +188,14 @@ step-2-backfill-training-dataset: ## Step 2: Generate a large labeled feature-wi
 	printf "Watch pods: oc get pods -n %s -l app.kubernetes.io/part-of=sipp-backfill-100k,ani.redhat.com/backfill-dataset-version=%s\n" "$(SIPP_NAMESPACE)" "$$dataset_version"; \
 	printf "Backfill datasets are training-only and are not valid incident-release sources.\n"; \
 	printf "Next backfill-model step: make backfill-step-2-build-feature-bundle\n"; \
-	printf "Next step for incident release: make step-3-build-incident-release\n"; \
+	printf "Next live-model step: make live-step-2-build-incident-release\n"; \
 	printf "Incident-linked dataset default: %s\n" "$(INCIDENT_RELEASE_LINKED_DATASET_VERSION)"; \
 	printf "List versions later: make list-incident-release-datasets\n"; \
 	printf "Stop run: make stop-incident-release INCIDENT_RELEASE_DATASET_VERSION=%s\n" "$$dataset_version"
 
-trigger-incident-release: step-2-backfill-training-dataset
+step-2-backfill-training-dataset: backfill-step-1-generate-training-dataset
 
-backfill-step-1-generate-training-dataset: ## Backfill Step 1: Generate the large shared backfill dataset used only for offline training and bundle publishing
-	@$(MAKE) step-2-backfill-training-dataset
+trigger-incident-release: backfill-step-1-generate-training-dataset
 
 backfill-step-2-build-feature-bundle: ## Backfill Step 2: Build a Kaggle-ready backfill bundle with parquet and CSV exports from the shared backfill dataset
 	@printf "Creating backfill feature bundle trigger job in %s (dataset=%s, bundle=%s)\n" "$(DATASCIENCE_NAMESPACE)" "$(BACKFILL_DATASET_VERSION)" "$(BACKFILL_BUNDLE_VERSION)"; \
@@ -166,57 +226,6 @@ backfill-step-5-smoke-check-serving: ## Backfill Step 5: Smoke-check the backfil
 	oc create -f "$(DEMO_TRIGGER_DIR)/backfill-serving-smoke-job.yaml"
 
 backfill-step-4-smoke-check-serving: backfill-step-5-smoke-check-serving
-
-step-3-build-incident-release: ## Step 3: Compile one incident-release bundle from the incident-linked live dataset; backfill datasets are rejected
-	@source_dataset_version="$(INCIDENT_RELEASE_SOURCE_DATASET_VERSION)"; \
-	if [ -z "$$source_dataset_version" ]; then \
-	  source_dataset_version="$(INCIDENT_RELEASE_LINKED_DATASET_VERSION)"; \
-	fi; \
-	if [ -z "$$source_dataset_version" ]; then \
-	  printf "No source dataset version was selected.\n"; \
-	  printf "Set INCIDENT_RELEASE_LINKED_DATASET_VERSION or pass INCIDENT_RELEASE_SOURCE_DATASET_VERSION.\n"; \
-	  exit 1; \
-	fi; \
-	case "$$source_dataset_version" in \
-	  backfill-sipp-100k*) \
-	    printf "Dataset %s is a backfill-only dataset and cannot be used for incident release.\n" "$$source_dataset_version"; \
-	    printf "Use the incident-linked dataset instead: make step-3-build-incident-release INCIDENT_RELEASE_SOURCE_DATASET_VERSION=%s\n" "$(INCIDENT_RELEASE_LINKED_DATASET_VERSION)"; \
-	    exit 1; \
-	    ;; \
-	esac; \
-	release_version="$${INCIDENT_RELEASE_VERSION:-$${source_dataset_version}-draft}"; \
-	printf "Creating demo KFP trigger job for ani-incident-release in %s (source_dataset_version=%s, release_version=%s)\n" "$(DATASCIENCE_NAMESPACE)" "$$source_dataset_version" "$$release_version"; \
-	printf "Incident release always uses the incident-linked dataset unless you explicitly override it with another linked dataset.\n"; \
-	INCIDENT_RELEASE_SOURCE_DATASET_VERSION="$$source_dataset_version" \
-	INCIDENT_RELEASE_VERSION="$$release_version" \
-	INCIDENT_RELEASE_MODE="$(INCIDENT_RELEASE_MODE)" \
-	INCIDENT_RELEASE_PUBLIC_RECORD_TARGET="$(INCIDENT_RELEASE_PUBLIC_RECORD_TARGET)" \
-	INCIDENT_RELEASE_PREVIOUS_VERSION="$(INCIDENT_RELEASE_PREVIOUS_VERSION)" \
-	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/incident-release-run-job.yaml").read_text(); replacements = {"__INCIDENT_RELEASE_SOURCE_DATASET_VERSION__": os.environ["INCIDENT_RELEASE_SOURCE_DATASET_VERSION"], "__INCIDENT_RELEASE_VERSION__": os.environ["INCIDENT_RELEASE_VERSION"], "__INCIDENT_RELEASE_MODE__": os.environ["INCIDENT_RELEASE_MODE"], "__INCIDENT_RELEASE_PUBLIC_RECORD_TARGET__": os.environ["INCIDENT_RELEASE_PUBLIC_RECORD_TARGET"], "__INCIDENT_RELEASE_PREVIOUS_VERSION__": os.environ["INCIDENT_RELEASE_PREVIOUS_VERSION"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -
-
-trigger-incident-release-pipeline: step-3-build-incident-release
-
-step-4-publish-feature-bundle: ## Step 4: Publish the feature-store-ready bundle dataset that training uses downstream
-	@printf "Creating demo KFP trigger job for ani-feature-bundle-publish in %s\n" "$(DATASCIENCE_NAMESPACE)"
-	oc create -f "$(DEMO_TRIGGER_DIR)/feature-bundle-run-job.yaml"
-
-trigger-feature-bundle-pipeline: step-4-publish-feature-bundle
-
-step-5-train-and-deploy-classifier: ## Step 5: Train, register, and deploy the feature-store model to ani-predictive-fs, which the app uses for live classification
-	@printf "Creating demo KFP trigger job for ani-featurestore-train-and-register in %s\n" "$(DATASCIENCE_NAMESPACE)"
-	oc create -f "$(DEMO_TRIGGER_DIR)/featurestore-run-job.yaml"
-
-trigger-featurestore-pipeline: step-5-train-and-deploy-classifier
-
-legacy-train-and-deploy-classifier: ## Legacy: Train and deploy the older MinIO-only classifier path; keep only for compatibility, not for the preferred app path
-	@printf "Creating demo KFP trigger job for ani-anomaly-platform-train-and-register in %s\n" "$(DATASCIENCE_NAMESPACE)"
-	oc create -f "$(DEMO_TRIGGER_DIR)/anomaly-platform-run-job.yaml"
-
-trigger-anomaly-platform-pipeline: legacy-train-and-deploy-classifier
-
-smoke-check-featurestore-serving: ## Utility: Run a serving smoke check against the feature-store-backed predictive endpoint
-	@printf "Creating feature-store serving smoke check job in %s\n" "$(DATASCIENCE_NAMESPACE)"
-	oc create -f "$(DEMO_TRIGGER_DIR)/featurestore-serving-smoke-job.yaml"
 
 list-incident-release-datasets: ## Utility: List active backfill runs and stored dataset versions so Step 3 can reuse the right source dataset version
 	python3 "k8s/manual/traffic-backfill-100k/list_dataset_versions.py" --sipp-namespace "$(SIPP_NAMESPACE)"
