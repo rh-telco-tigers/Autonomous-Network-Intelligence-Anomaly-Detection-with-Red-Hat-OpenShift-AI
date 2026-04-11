@@ -8,9 +8,10 @@ Deploy the platform on a fresh cluster through the GitOps path and bring it to a
 
 - Log in to the target cluster with cluster-admin access.
 - Check out the git branch you want Argo CD to follow.
-- **GPU workers:** GitOps installs the NVIDIA GPU Operator, Node Feature Discovery, and OpenShift AI model serving that targets GPU runtimes (including vLLM). Use a cluster or machine pool with **GPU-capable worker nodes** and enough capacity for the operator DaemonSets; without that, the `ani-datascience` slice and inference validation in this guide typically will not converge.
+- This installation flow is only tested on OpenShift on AWS.
+- **GPU workers:** GitOps installs the NVIDIA GPU Operator, Node Feature Discovery, and OpenShift AI model serving that targets GPU runtimes (including vLLM). Use a cluster or machine pool with **GPU-capable worker nodes** and enough capacity for the operator DaemonSets; without that, the `ani-datascience` slice will not fully converge and the LLM-backed RCA flow will not work.
 
-If the cluster does not already expose allocatable GPU capacity, add one before continuing:
+If the AWS cluster does not already expose allocatable GPU capacity, add a GPU worker before continuing:
 
 ```sh
 oc get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\\.com/gpu
@@ -19,7 +20,12 @@ oc get machineset -n openshift-machine-api | rg 'gpu'
 oc get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\\.com/gpu
 ```
 
-Continue only when at least one node reports a non-empty `GPU` value such as `1`. A GPU label by itself is not enough for the vLLM workload.
+Continue only when:
+
+- the GPU MachineSet exists
+- at least one node reports a non-empty `GPU` value such as `1`
+
+A GPU label by itself is not enough for the vLLM workload.
 
 ```sh
 git branch --show-current
@@ -88,8 +94,9 @@ Continue when:
 - `ani-featurestore` is `Ready`
 - the bootstrap workflows in `ani-datascience` have finished with `Succeeded`
 - the predictive `InferenceService` resources are `READY=True`
+- `llama-32-3b-instruct` is `READY=True` if you want the RCA generation path to work end to end
 
-If `ani-predictive` or `ani-predictive-fs` starts as `READY=False`, wait for the bootstrap workflows to publish the model artifacts and let KServe retry automatically. If `llama-32-3b-instruct` stays `Pending` with `Insufficient nvidia.com/gpu`, use [Troubleshooting](./troubleshooting.md).
+If `ani-predictive` or `ani-predictive-fs` starts as `READY=False`, wait for the bootstrap workflows to publish the model artifacts and let KServe retry automatically. If `llama-32-3b-instruct` stays `Pending` with `Insufficient nvidia.com/gpu`, the RCA generation flow will stay degraded until you add a GPU worker. Use [Troubleshooting](./troubleshooting.md).
 
 ## 7. List The Main Routes
 
