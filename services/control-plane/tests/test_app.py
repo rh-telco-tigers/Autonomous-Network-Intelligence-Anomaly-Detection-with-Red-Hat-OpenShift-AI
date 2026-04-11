@@ -595,7 +595,7 @@ class AiPlaybookGenerationTests(unittest.TestCase):
             mock.patch.object(control_plane_app, "record_approval", return_value={"id": 404}),
             mock.patch.object(control_plane_app, "record_incident_action", side_effect=record_incident_action),
             mock.patch.object(control_plane_app, "record_audit"),
-            mock.patch.object(control_plane_app, "_sync_current_ticket_best_effort"),
+            mock.patch.object(control_plane_app, "_sync_current_ticket_best_effort") as sync_current_ticket,
             mock.patch.object(control_plane_app, "list_incidents", return_value=[]),
             mock.patch.object(control_plane_app, "set_active_incidents"),
             mock.patch.object(control_plane_app, "_workflow_payload", return_value={"incident": incident_state["incident"]}),
@@ -645,8 +645,10 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         promote_playbook.assert_called_once()
         launch_dynamic_playbook.assert_called_once()
         self.assertEqual(launch_dynamic_playbook.call_args.args[1], payload.playbook_yaml.strip())
-        self.assertEqual(len(background_tasks.tasks), 1)
-        self.assertIs(background_tasks.tasks[0][0], control_plane_app._finalize_aap_automation)
+        sync_current_ticket.assert_not_called()
+        self.assertEqual(len(background_tasks.tasks), 2)
+        self.assertIs(background_tasks.tasks[0][0], control_plane_app._sync_current_ticket_best_effort_for_incident)
+        self.assertIs(background_tasks.tasks[1][0], control_plane_app._finalize_aap_automation)
 
     def test_execute_generated_playbook_rejects_yaml_changes_after_approval(self) -> None:
         incident = {

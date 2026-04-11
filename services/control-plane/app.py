@@ -1884,6 +1884,18 @@ def _sync_current_ticket_best_effort(
         return None
 
 
+def _sync_current_ticket_best_effort_for_incident(
+    incident_id: str,
+    note: str,
+    actor: str,
+    reason: str,
+) -> Dict[str, object] | None:
+    incident = get_incident(incident_id)
+    if not incident:
+        return None
+    return _sync_current_ticket_best_effort(incident, note, actor, reason)
+
+
 def _list_automation_actions() -> List[Dict[str, object]]:
     mode = _automation_mode()
     actions = []
@@ -3924,8 +3936,30 @@ def _execute_incident_action(
     )
     if (action_ref in PLAYBOOKS or dynamic_playbook_yaml) and execution_status in {"executed", "failed"}:
         record_automation(action_ref, execution_status)
+    refreshed_incident = get_incident(incident_id) or incident
+    ticket_update_note = _ticket_note(
+        "Incident action update",
+        [
+            ("Incident", incident_id),
+            ("Workflow state", refreshed_incident.get("status")),
+            ("Operator", payload.approved_by),
+            ("Action", action_ref),
+            ("Remediation", (remediation or {}).get("title")),
+            ("Execution status", execution_status),
+            ("Result", output),
+            ("Comment", payload.notes or "Action recorded from the incident workflow."),
+        ],
+    )
     if execution_status == "executing":
         if background_tasks is not None:
+            if not skip_ticket_update:
+                background_tasks.add_task(
+                    _sync_current_ticket_best_effort_for_incident,
+                    incident_id,
+                    ticket_update_note,
+                    payload.approved_by,
+                    "incident_action",
+                )
             background_tasks.add_task(
                 _finalize_aap_automation,
                 incident_id,
@@ -3944,26 +3978,14 @@ def _execute_incident_action(
                 payload.approved_by,
                 payload.notes,
             )
-    refreshed_incident = get_incident(incident_id) or incident
     if not skip_ticket_update:
-        _sync_current_ticket_best_effort(
-            refreshed_incident,
-            _ticket_note(
-                "Incident action update",
-                [
-                    ("Incident", incident_id),
-                    ("Workflow state", refreshed_incident.get("status")),
-                    ("Operator", payload.approved_by),
-                    ("Action", action_ref),
-                    ("Remediation", (remediation or {}).get("title")),
-                    ("Execution status", execution_status),
-                    ("Result", output),
-                    ("Comment", payload.notes or "Action recorded from the incident workflow."),
-                ],
-            ),
-            payload.approved_by,
-            "incident_action",
-        )
+        if background_tasks is None or execution_status != "executing":
+            _sync_current_ticket_best_effort(
+                refreshed_incident,
+                ticket_update_note,
+                payload.approved_by,
+                "incident_action",
+            )
     set_active_incidents(list_incidents(project=incident["project"]))
     return {
         "approval": approval,
@@ -3977,6 +3999,7 @@ def approve_remediation(
     incident_id: str,
     remediation_id: int,
     payload: RemediationDecisionRequest,
+    background_tasks: BackgroundTasks,
     auth: AuthContext | None = Depends(require_api_key),
 ):
     return _execute_incident_action(
@@ -3990,6 +4013,7 @@ def approve_remediation(
             playbook_yaml=payload.playbook_yaml,
         ),
         auth,
+        background_tasks,
     )
 
 
