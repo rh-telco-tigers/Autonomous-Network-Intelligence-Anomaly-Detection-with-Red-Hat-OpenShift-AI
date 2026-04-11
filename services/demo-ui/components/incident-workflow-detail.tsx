@@ -19,7 +19,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { request, useIncidentWorkflowQuery, usePlaybookInstructionPreviewQuery, useRelatedRecordsQuery } from "@/lib/api";
+import {
+  LONG_RUNNING_REQUEST_TIMEOUT_MS,
+  request,
+  useIncidentWorkflowQuery,
+  usePlaybookInstructionPreviewQuery,
+  useRelatedRecordsQuery,
+} from "@/lib/api";
 import { resolveTicketHref } from "@/lib/ticket-links";
 import type {
   IncidentActionRecord,
@@ -357,6 +363,7 @@ export function IncidentWorkflowDetail() {
             source_url: currentPageUrl,
             instruction_override: values.instructionOverride,
           }),
+          timeoutMs: LONG_RUNNING_REQUEST_TIMEOUT_MS,
         },
       );
     },
@@ -390,6 +397,7 @@ export function IncidentWorkflowDetail() {
       return request<RemediationActionResponse>(path, token, {
         method: "POST",
         body: JSON.stringify(body),
+        timeoutMs: LONG_RUNNING_REQUEST_TIMEOUT_MS,
       });
     },
     onSuccess: refreshWorkflow,
