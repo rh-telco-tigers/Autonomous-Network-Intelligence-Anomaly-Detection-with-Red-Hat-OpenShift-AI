@@ -219,6 +219,12 @@ def init_db() -> None:
               last_validated_at TEXT,
               created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+              key TEXT PRIMARY KEY,
+              value_json TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
             """
         )
         _ensure_columns(
@@ -257,6 +263,53 @@ def init_db() -> None:
             """
         )
         connection.commit()
+
+
+def get_app_setting_record(key: str) -> Dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        row = connection.execute(
+            "SELECT key, value_json, updated_at FROM app_settings WHERE key = ?",
+            (key,),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "key": str(row["key"]),
+        "value": _json_loads(row["value_json"], None),
+        "updated_at": str(row["updated_at"]),
+    }
+
+
+def get_app_setting(key: str, default: Any = None) -> Any:
+    record = get_app_setting_record(key)
+    if record is None:
+        return default
+    return record.get("value", default)
+
+
+def set_app_setting(key: str, value: Any) -> Dict[str, Any]:
+    record = {
+        "key": key,
+        "value": value,
+        "updated_at": _now(),
+    }
+    with closing(_connect()) as connection:
+        connection.execute(
+            """
+            INSERT INTO app_settings (key, value_json, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+              value_json = excluded.value_json,
+              updated_at = excluded.updated_at
+            """,
+            (
+                record["key"],
+                _json_dumps(record["value"]),
+                record["updated_at"],
+            ),
+        )
+        connection.commit()
+    return record
 
 
 def _incident_row(connection: sqlite3.Connection, incident_id: str) -> sqlite3.Row | None:

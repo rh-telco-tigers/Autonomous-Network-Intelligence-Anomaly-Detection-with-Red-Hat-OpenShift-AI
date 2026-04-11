@@ -8,7 +8,7 @@ Backfill now always writes into one shared dataset version: `backfill-sipp-100k`
 
 ## Recommended Workflow
 
-Use these make targets when you want to generate live incidents, prepare separate training-only backfill data, build an incident release from incident-linked windows, and deploy the model the app uses:
+Use these make targets when you want to generate live incidents, prepare separate training-only backfill data, build an incident release from incident-linked windows, or train a separate backfill model:
 
 1. Create one live incident in the app:
 
@@ -16,37 +16,61 @@ Use these make targets when you want to generate live incidents, prepare separat
 make step-1-generate-demo-incident DEMO_INCIDENT_SCENARIO=busy_destination
 ```
 
-2. Optionally generate a larger training-only dataset in MinIO:
+2. Generate the shared training-only backfill dataset in MinIO:
 
 ```sh
-make step-2-backfill-training-dataset
+make backfill-step-1-generate-training-dataset
 ```
 
-3. Discover active backfill dataset versions later if you need them for training analysis:
+3. Build the backfill feature bundle with Parquet and CSV exports:
+
+```sh
+make backfill-step-2-build-feature-bundle
+```
+
+4. Train and register the backfill AutoGluon model:
+
+```sh
+make backfill-step-3-train-and-register-classifier
+```
+
+5. Create or refresh the backfill serving endpoint:
+
+```sh
+make backfill-step-4-activate-serving-endpoint
+```
+
+6. Smoke-check the backfill serving endpoint:
+
+```sh
+make backfill-step-5-smoke-check-serving
+```
+
+7. Discover active backfill dataset versions later if you need them for training analysis:
 
 ```sh
 make list-incident-release-datasets
 ```
 
-4. Compile the incident-release bundle from the incident-linked live dataset:
+8. Compile the incident-release bundle from the incident-linked live dataset:
 
 ```sh
 make step-3-build-incident-release
 ```
 
-5. Publish the feature-store-ready bundle:
+9. Publish the feature-store-ready live bundle:
 
 ```sh
 make step-4-publish-feature-bundle
 ```
 
-6. Train, register, and deploy the classifier the app uses for live scoring:
+10. Train, register, and deploy the classifier the app uses for live scoring:
 
 ```sh
 make step-5-train-and-deploy-classifier
 ```
 
-The preferred serving path is `ani-predictive-fs`. The app uses that feature-store-backed endpoint for classification. The older `legacy-train-and-deploy-classifier` target exists only as a compatibility path.
+The preferred live serving path is `ani-predictive-fs`. The separate backfill serving path is `ani-predictive-backfill`. Both endpoints stay active, and the demo UI can switch classification between them. The older `legacy-train-and-deploy-classifier` target exists only as a compatibility path.
 
 ## What it does
 
@@ -58,10 +82,10 @@ The preferred serving path is `ani-predictive-fs`. The app uses that feature-sto
 ## Start
 
 ```sh
-make step-2-backfill-training-dataset
+make backfill-step-1-generate-training-dataset
 ```
 
-The target always writes into the shared dataset version `backfill-sipp-100k`. Custom backfill dataset versions are disabled.
+The target always writes into the shared dataset version `backfill-sipp-100k`. Custom backfill dataset versions are disabled. Continue with `make backfill-step-2-build-feature-bundle` when the Jobs complete.
 
 To discover dataset versions later, list both active backfill runs and stored MinIO datasets:
 

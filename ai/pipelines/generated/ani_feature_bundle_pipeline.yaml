@@ -11,6 +11,7 @@
 #    dataset_store_prefix: str [Default: 'pipelines/ani-datascience/datasets']
 #    dataset_store_secret_key: str [Default: 'minioadmin']
 #    project: str [Default: 'ani-demo']
+#    require_control_plane_history: str [Default: 'true']
 #    source_dataset_versions_json: str [Default: '["live-sipp-v1"]']
 components:
   comp-build-bundle:
@@ -20,6 +21,8 @@ components:
         bundle_version:
           parameterType: STRING
         project:
+          parameterType: STRING
+        require_control_plane_history:
           parameterType: STRING
         source_dataset_versions_json:
           parameterType: STRING
@@ -56,6 +59,8 @@ deploymentSpec:
         - '{{$.inputs.parameters[''bundle_version'']}}'
         - --source-dataset-versions-json
         - '{{$.inputs.parameters[''source_dataset_versions_json'']}}'
+        - --require-control-plane-history
+        - '{{$.inputs.parameters[''require_control_plane_history'']}}'
         - --project
         - '{{$.inputs.parameters[''project'']}}'
         - --workspace-root
@@ -92,8 +97,6 @@ deploymentSpec:
           value: minioadmin
         - name: MINIO_SECRET_KEY
           value: minioadmin
-        - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
-          value: 'true'
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-validate-bundle:
       container:
@@ -136,8 +139,6 @@ deploymentSpec:
           value: minioadmin
         - name: MINIO_SECRET_KEY
           value: minioadmin
-        - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
-          value: 'true'
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
 pipelineInfo:
   name: ani-feature-bundle-publish
@@ -155,6 +156,8 @@ root:
               componentInputParameter: bundle_version
             project:
               componentInputParameter: project
+            require_control_plane_history:
+              componentInputParameter: require_control_plane_history
             source_dataset_versions_json:
               componentInputParameter: source_dataset_versions_json
         taskInfo:
@@ -214,6 +217,10 @@ root:
         parameterType: STRING
       project:
         defaultValue: ani-demo
+        isOptional: true
+        parameterType: STRING
+      require_control_plane_history:
+        defaultValue: 'true'
         isOptional: true
         parameterType: STRING
       source_dataset_versions_json:

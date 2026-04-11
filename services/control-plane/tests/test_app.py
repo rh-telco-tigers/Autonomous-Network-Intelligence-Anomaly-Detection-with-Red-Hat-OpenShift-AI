@@ -685,5 +685,114 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 409)
 
 
+class ClassifierProfileSelectionTests(unittest.TestCase):
+    def test_classifier_profile_status_falls_back_to_live_when_backfill_unconfigured(self) -> None:
+        with (
+            mock.patch.object(
+                control_plane_app,
+                "classifier_profile_catalog",
+                return_value={
+                    "live": {
+                        "key": "live",
+                        "label": "Live model",
+                        "description": "Live path",
+                        "endpoint": "http://predictive-live.example.com",
+                        "model_name": "ani-predictive-fs",
+                        "model_version_label": "ani-predictive-fs",
+                        "configured": True,
+                    },
+                    "backfill": {
+                        "key": "backfill",
+                        "label": "Backfill model",
+                        "description": "Backfill path",
+                        "endpoint": "",
+                        "model_name": "ani-predictive-backfill",
+                        "model_version_label": "ani-predictive-backfill",
+                        "configured": False,
+                    },
+                },
+            ),
+            mock.patch.object(
+                control_plane_app,
+                "_probe_service",
+                side_effect=[
+                    {"ok": True, "status": "ready"},
+                    {"ok": False, "status": "error"},
+                ],
+            ),
+            mock.patch.object(
+                control_plane_app,
+                "get_app_setting_record",
+                return_value={
+                    "key": control_plane_app.CLASSIFIER_PROFILE_SETTING_KEY,
+                    "value": {"profile": "backfill"},
+                    "updated_at": "2026-04-11T00:00:00+00:00",
+                },
+            ),
+        ):
+            status = control_plane_app._classifier_profile_status()
+
+        self.assertEqual(status["requested_profile"], "backfill")
+        self.assertEqual(status["active_profile"], "live")
+        self.assertTrue(next(item for item in status["profiles"] if item["key"] == "live")["active"])
+
+    def test_set_classifier_profile_persists_requested_profile(self) -> None:
+        payload = control_plane_app.ClassifierProfileSelectionRequest(profile="backfill", updated_by="demo-ui")
+
+        with (
+            mock.patch.object(control_plane_app, "ensure_role"),
+            mock.patch.object(
+                control_plane_app,
+                "classifier_profile_catalog",
+                return_value={
+                    "live": {
+                        "key": "live",
+                        "label": "Live model",
+                        "description": "Live path",
+                        "endpoint": "http://predictive-live.example.com",
+                        "model_name": "ani-predictive-fs",
+                        "model_version_label": "ani-predictive-fs",
+                        "configured": True,
+                    },
+                    "backfill": {
+                        "key": "backfill",
+                        "label": "Backfill model",
+                        "description": "Backfill path",
+                        "endpoint": "http://predictive-backfill.example.com",
+                        "model_name": "ani-predictive-backfill",
+                        "model_version_label": "ani-predictive-backfill",
+                        "configured": True,
+                    },
+                },
+            ),
+            mock.patch.object(
+                control_plane_app,
+                "set_app_setting",
+                return_value={
+                    "key": control_plane_app.CLASSIFIER_PROFILE_SETTING_KEY,
+                    "value": {"profile": "backfill", "updated_by": "demo-ui"},
+                    "updated_at": "2026-04-11T01:00:00+00:00",
+                },
+            ) as set_app_setting,
+            mock.patch.object(
+                control_plane_app,
+                "_classifier_profile_status",
+                return_value={
+                    "requested_profile": "backfill",
+                    "active_profile": "backfill",
+                    "profiles": [],
+                    "updated_at": "2026-04-11T01:00:00+00:00",
+                },
+            ),
+            mock.patch.object(control_plane_app, "record_audit"),
+            mock.patch.object(control_plane_app, "_clear_service_snapshot_cache"),
+        ):
+            response = control_plane_app.set_classifier_profile(payload, auth=None)
+
+        self.assertEqual(response["active_profile"], "backfill")
+        self.assertEqual(set_app_setting.call_args.args[0], control_plane_app.CLASSIFIER_PROFILE_SETTING_KEY)
+        self.assertEqual(set_app_setting.call_args.args[1]["profile"], "backfill")
+
+
 if __name__ == "__main__":
     unittest.main()

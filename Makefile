@@ -11,6 +11,14 @@ INCIDENT_RELEASE_DATASET_VERSION ?=
 INCIDENT_RELEASE_SOURCE_DATASET_VERSION ?=
 INCIDENT_RELEASE_LINKED_DATASET_VERSION ?= live-sipp-v1
 BACKFILL_DATASET_VERSION ?= backfill-sipp-100k
+BACKFILL_BUNDLE_VERSION ?= ani-backfill-feature-bundle-v1
+BACKFILL_FEATURE_SERVICE_NAME ?= ani_anomaly_scoring_v1
+BACKFILL_CANDIDATE_VERSION ?= candidate-backfill-fs-v1
+BACKFILL_MODEL_NAME ?= ani-anomaly-featurestore-backfill
+BACKFILL_MODEL_VERSION_NAME ?= ani-anomaly-featurestore-backfill-v1
+BACKFILL_SERVING_MODEL_NAME ?= ani-predictive-backfill
+BACKFILL_SERVING_RUNTIME_NAME ?= ani-autogluon-mlserver-runtime
+BACKFILL_SERVING_PREFIX ?= predictive-featurestore
 INCIDENT_RELEASE_VERSION ?=
 INCIDENT_RELEASE_MODE ?= draft-replacement
 INCIDENT_RELEASE_PUBLIC_RECORD_TARGET ?= 10000
@@ -26,7 +34,7 @@ GPU_REPLICAS ?= 1
 GPU_SOURCE_MACHINESET ?=
 GPU_OUTPUT ?=
 
-.PHONY: help kustomize-gitops apply-demo-ai-extras check-demo-incident-generators check-fresh-cluster-gitops check-fresh-cluster-ai check-fresh-cluster-runtime check-fresh-cluster validate-python repo-tree render-gpu-node-pool add-gpu-node-pool trigger-build-pipeline step-1-generate-demo-incident step-2-backfill-training-dataset step-3-build-incident-release step-4-publish-feature-bundle step-5-train-and-deploy-classifier legacy-train-and-deploy-classifier smoke-check-featurestore-serving stop-incident-release list-incident-release-datasets generate-demo-incident trigger-anomaly-platform-pipeline trigger-feature-bundle-pipeline trigger-featurestore-pipeline trigger-incident-release-pipeline trigger-incident-release
+.PHONY: help kustomize-gitops apply-demo-ai-extras check-demo-incident-generators check-fresh-cluster-gitops check-fresh-cluster-ai check-fresh-cluster-runtime check-fresh-cluster validate-python repo-tree render-gpu-node-pool add-gpu-node-pool trigger-build-pipeline step-1-generate-demo-incident step-2-backfill-training-dataset step-3-build-incident-release step-4-publish-feature-bundle step-5-train-and-deploy-classifier legacy-train-and-deploy-classifier smoke-check-featurestore-serving stop-incident-release list-incident-release-datasets generate-demo-incident trigger-anomaly-platform-pipeline trigger-feature-bundle-pipeline trigger-featurestore-pipeline trigger-incident-release-pipeline trigger-incident-release backfill-step-1-generate-training-dataset backfill-step-2-build-feature-bundle backfill-step-3-train-and-register-classifier backfill-step-4-activate-serving-endpoint backfill-step-5-smoke-check-serving backfill-step-4-smoke-check-serving
 
 help: ## Print available make targets
 	@printf "Available commands:\n"
@@ -52,7 +60,7 @@ check-fresh-cluster-ai: ## Check AI, serving, and model registry readiness
 	oc get dspa,featurestore -n "$(DATASCIENCE_NAMESPACE)"
 	oc get kafka -n "$(DATA_NAMESPACE)"
 	oc get workflow -n "$(DATASCIENCE_NAMESPACE)"
-	oc get inferenceservice -n "$(DATASCIENCE_NAMESPACE)" | rg 'ani-predictive-fs|ani-predictive-fs-mlserver'
+	oc get inferenceservice -n "$(DATASCIENCE_NAMESPACE)" | rg 'ani-predictive-fs|ani-predictive-backfill|ani-predictive-fs-mlserver'
 	oc get modelregistry -n "$(MODEL_REGISTRY_NAMESPACE)"
 	oc get svc -n "$(MODEL_REGISTRY_NAMESPACE)" "$(MODEL_REGISTRY_SERVICE)"
 
@@ -118,12 +126,46 @@ step-2-backfill-training-dataset: ## Step 2: Generate a large labeled feature-wi
 	printf "Watch jobs: oc get jobs -n %s -l app.kubernetes.io/part-of=sipp-backfill-100k,ani.redhat.com/backfill-dataset-version=%s\n" "$(SIPP_NAMESPACE)" "$$dataset_version"; \
 	printf "Watch pods: oc get pods -n %s -l app.kubernetes.io/part-of=sipp-backfill-100k,ani.redhat.com/backfill-dataset-version=%s\n" "$(SIPP_NAMESPACE)" "$$dataset_version"; \
 	printf "Backfill datasets are training-only and are not valid incident-release sources.\n"; \
+	printf "Next backfill-model step: make backfill-step-2-build-feature-bundle\n"; \
 	printf "Next step for incident release: make step-3-build-incident-release\n"; \
 	printf "Incident-linked dataset default: %s\n" "$(INCIDENT_RELEASE_LINKED_DATASET_VERSION)"; \
 	printf "List versions later: make list-incident-release-datasets\n"; \
 	printf "Stop run: make stop-incident-release INCIDENT_RELEASE_DATASET_VERSION=%s\n" "$$dataset_version"
 
 trigger-incident-release: step-2-backfill-training-dataset
+
+backfill-step-1-generate-training-dataset: ## Backfill Step 1: Generate the large shared backfill dataset used only for offline training and bundle publishing
+	@$(MAKE) step-2-backfill-training-dataset
+
+backfill-step-2-build-feature-bundle: ## Backfill Step 2: Build a Kaggle-ready backfill bundle with parquet and CSV exports from the shared backfill dataset
+	@printf "Creating backfill feature bundle trigger job in %s (dataset=%s, bundle=%s)\n" "$(DATASCIENCE_NAMESPACE)" "$(BACKFILL_DATASET_VERSION)" "$(BACKFILL_BUNDLE_VERSION)"; \
+	BACKFILL_DATASET_VERSION="$(BACKFILL_DATASET_VERSION)" \
+	BACKFILL_BUNDLE_VERSION="$(BACKFILL_BUNDLE_VERSION)" \
+	DEMO_PROJECT="$(DEMO_PROJECT)" \
+	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/backfill-feature-bundle-run-job.yaml").read_text(); replacements = {"__BACKFILL_DATASET_VERSION__": os.environ["BACKFILL_DATASET_VERSION"], "__BACKFILL_BUNDLE_VERSION__": os.environ["BACKFILL_BUNDLE_VERSION"], "__DEMO_PROJECT__": os.environ["DEMO_PROJECT"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -
+
+backfill-step-3-train-and-register-classifier: ## Backfill Step 3: Train the best AutoGluon backfill model, register it, and refresh the always-on backfill predictor artifact path
+	@printf "Creating backfill featurestore training trigger job in %s (bundle=%s, serving_model=%s)\n" "$(DATASCIENCE_NAMESPACE)" "$(BACKFILL_BUNDLE_VERSION)" "$(BACKFILL_SERVING_MODEL_NAME)"; \
+	BACKFILL_BUNDLE_VERSION="$(BACKFILL_BUNDLE_VERSION)" \
+	BACKFILL_FEATURE_SERVICE_NAME="$(BACKFILL_FEATURE_SERVICE_NAME)" \
+	BACKFILL_CANDIDATE_VERSION="$(BACKFILL_CANDIDATE_VERSION)" \
+	BACKFILL_MODEL_NAME="$(BACKFILL_MODEL_NAME)" \
+	BACKFILL_MODEL_VERSION_NAME="$(BACKFILL_MODEL_VERSION_NAME)" \
+	BACKFILL_SERVING_MODEL_NAME="$(BACKFILL_SERVING_MODEL_NAME)" \
+	BACKFILL_SERVING_RUNTIME_NAME="$(BACKFILL_SERVING_RUNTIME_NAME)" \
+	BACKFILL_SERVING_PREFIX="$(BACKFILL_SERVING_PREFIX)" \
+	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/backfill-featurestore-run-job.yaml").read_text(); replacements = {"__BACKFILL_BUNDLE_VERSION__": os.environ["BACKFILL_BUNDLE_VERSION"], "__BACKFILL_FEATURE_SERVICE_NAME__": os.environ["BACKFILL_FEATURE_SERVICE_NAME"], "__BACKFILL_CANDIDATE_VERSION__": os.environ["BACKFILL_CANDIDATE_VERSION"], "__BACKFILL_MODEL_NAME__": os.environ["BACKFILL_MODEL_NAME"], "__BACKFILL_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODEL_VERSION_NAME"], "__BACKFILL_SERVING_MODEL_NAME__": os.environ["BACKFILL_SERVING_MODEL_NAME"], "__BACKFILL_SERVING_RUNTIME_NAME__": os.environ["BACKFILL_SERVING_RUNTIME_NAME"], "__BACKFILL_SERVING_PREFIX__": os.environ["BACKFILL_SERVING_PREFIX"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -
+
+backfill-step-4-activate-serving-endpoint: ## Backfill Step 4: Create or refresh the backfill serving runtime and inference endpoint so it can stay active beside the live model
+	@printf "Applying backfill serving resources in %s\n" "$(DATASCIENCE_NAMESPACE)"
+	oc apply -f "$(DEMO_TRIGGER_DIR)/backfill-serving-resources.yaml"
+	oc wait --for=condition=Ready inferenceservice/ani-predictive-backfill -n "$(DATASCIENCE_NAMESPACE)" --timeout=10m
+
+backfill-step-5-smoke-check-serving: ## Backfill Step 5: Smoke-check the backfill predictor endpoint before switching the UI classifier profile to backfill
+	@printf "Creating backfill serving smoke check job in %s\n" "$(DATASCIENCE_NAMESPACE)"
+	oc create -f "$(DEMO_TRIGGER_DIR)/backfill-serving-smoke-job.yaml"
+
+backfill-step-4-smoke-check-serving: backfill-step-5-smoke-check-serving
 
 step-3-build-incident-release: ## Step 3: Compile one incident-release bundle from the incident-linked live dataset; backfill datasets are rejected
 	@source_dataset_version="$(INCIDENT_RELEASE_SOURCE_DATASET_VERSION)"; \

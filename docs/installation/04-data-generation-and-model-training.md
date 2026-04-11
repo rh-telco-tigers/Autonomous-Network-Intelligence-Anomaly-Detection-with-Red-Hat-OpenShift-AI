@@ -2,14 +2,15 @@
 
 ## Objective
 
-Generate incident-linked data, publish the feature bundle, train and deploy the predictive model, and verify that the app is using the deployed feature-store-backed predictor.
+Generate incident-linked data for the live model path, generate a separate backfill model path when needed, and verify that the app can switch between the two active predictive endpoints.
 
 ## Before You Start
 
 - Finish [Installation](./02-installation.md) and [Validation](./03-validation.md).
 - Confirm `ani-runtime` is `Synced` / `Healthy` and the predictive `InferenceService` resources in `ani-datascience` are `READY=True`.
 - Run the initial image build at least once with `make trigger-build-pipeline`.
-- Use the feature-store path in this guide. The preferred serving endpoint is `ani-predictive-fs`.
+- Use the feature-store path in this guide. The live serving endpoint is `ani-predictive-fs`.
+- The backfill serving endpoint is `ani-predictive-backfill`.
 
 If `ani-datascience` is degraded only because `llama-32-3b-instruct` is pending on missing GPU capacity, you can still continue with this predictive-model workflow.
 
@@ -47,6 +48,7 @@ Important:
 - backfill writes to the shared dataset version `backfill-sipp-100k`
 - backfill is training-only
 - backfill is not a valid source for Step 3
+- if you want a separate backfill-trained model, continue with the Backfill Model Path later in this guide
 
 ## 3. List Dataset Versions If You Need To Inspect State
 
@@ -160,6 +162,86 @@ make step-1-generate-demo-incident DEMO_INCIDENT_SCENARIO=busy_destination
 ```
 
 If this succeeds and the incident shows up in the demo UI, the UI path is consuming the deployed predictive model through the live control-plane and anomaly-service flow.
+
+## Backfill Model Path
+
+Use this path when you want a separate model trained from the full backfill dataset instead of the incident-linked live bundle.
+
+### 1. Generate Or Refresh The Shared Backfill Dataset
+
+```sh
+make backfill-step-1-generate-training-dataset
+```
+
+### 2. Build The Backfill Bundle
+
+This publishes a bundle with both Parquet and CSV exports so the result is ready for offline analysis or Kaggle-style release packaging.
+
+```sh
+make backfill-step-2-build-feature-bundle
+```
+
+Watch:
+
+```sh
+oc get jobs -n ani-datascience | rg 'ani-backfill-feature-bundle'
+oc get wf -n ani-datascience | rg 'ani-backfill-feature-bundle-publish'
+```
+
+### 3. Train And Register The Backfill Model
+
+```sh
+make backfill-step-3-train-and-register-classifier
+```
+
+Watch:
+
+```sh
+oc get jobs -n ani-datascience | rg 'ani-backfill-featurestore'
+oc get wf -n ani-datascience | rg 'ani-backfill-featurestore-train-and-register'
+```
+
+Expected result:
+
+- the AutoGluon backfill model is registered
+- the exported serving artifact is published under the backfill storage path
+- the live endpoint `ani-predictive-fs` stays up at the same time
+
+### 4. Activate The Backfill Serving Endpoint
+
+This step creates the backfill `InferenceService` and metrics monitor after the trained artifact path exists.
+
+```sh
+make backfill-step-4-activate-serving-endpoint
+```
+
+Validate:
+
+```sh
+oc get inferenceservice -n ani-datascience | rg 'ani-predictive-backfill'
+```
+
+### 5. Smoke-Check The Backfill Predictor
+
+```sh
+make backfill-step-5-smoke-check-serving
+```
+
+Then inspect the latest smoke job:
+
+```sh
+oc get jobs -n ani-datascience | rg 'ani-backfill-serving-smoke'
+oc logs -n ani-datascience job/<latest-backfill-smoke-job-name>
+```
+
+### 6. Switch The Demo UI Between Live And Backfill
+
+Open the demo UI overview page. The `Classifier routing` card lets you switch:
+
+- `Live model` -> `ani-predictive-fs`
+- `Backfill model` -> `ani-predictive-backfill`
+
+Changing that selector updates the control-plane classifier profile. New classifications and new incidents then use the selected predictor path without shutting down the other model.
 
 ## Notes
 

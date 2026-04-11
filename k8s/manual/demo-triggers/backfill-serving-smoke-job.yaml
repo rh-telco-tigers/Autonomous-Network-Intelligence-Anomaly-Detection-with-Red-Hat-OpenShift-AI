@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: ani-backfill-serving-smoke-
+  namespace: ani-datascience
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 1800
+  template:
+    metadata:
+      labels:
+        app: ani-backfill-serving-smoke
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: smoke-check
+          image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+          command:
+            - python
+            - ai/training/featurestore_runtime_smoke_check.py
+            - --endpoint
+            - http://ani-predictive-backfill-predictor.ani-datascience.svc.cluster.local:8080
+            - --model-name
+            - ani-predictive-backfill
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

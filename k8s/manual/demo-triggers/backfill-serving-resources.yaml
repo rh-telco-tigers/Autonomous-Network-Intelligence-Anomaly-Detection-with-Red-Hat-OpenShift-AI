@@ -1,0 +1,50 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: ani-predictive-backfill
+  namespace: ani-datascience
+  labels:
+    opendatahub.io/dashboard: "true"
+  annotations:
+    opendatahub.io/model-type: predictive-featurestore-backfill
+    openshift.io/display-name: ani-predictive-backfill
+    serving.kserve.io/deploymentMode: RawDeployment
+    serving.kserve.io/enable-prometheus-scraping: "true"
+    ani.redhat.com/serving-alias: current
+spec:
+  predictor:
+    serviceAccountName: model-storage-sa
+    minReplicas: 1
+    maxReplicas: 1
+    model:
+      runtime: ani-autogluon-mlserver-runtime
+      modelFormat:
+        name: autogluon
+      protocolVersion: v2
+      storageUri: s3://ani-models/predictive-featurestore/ani-predictive-backfill/current/
+      resources:
+        requests:
+          cpu: 100m
+          memory: 1Gi
+        limits:
+          cpu: 500m
+          memory: 2Gi
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: ani-predictive-backfill-metrics
+  namespace: ani-datascience
+  labels:
+    monitoring.opendatahub.io/scrape: "true"
+spec:
+  namespaceSelector:
+    matchNames:
+      - ani-datascience
+  selector:
+    matchLabels:
+      serving.kserve.io/inferenceservice: ani-predictive-backfill
+  podMetricsEndpoints:
+    - path: /metrics
+      targetPort: 8082
+      interval: 30s

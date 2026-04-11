@@ -22,6 +22,7 @@ DEFAULT_PIPELINE_PARAMETERS = {
     "bundle_version": "ani-feature-bundle-v1",
     "source_dataset_versions_json": "[\"live-sipp-v1\"]",
     "project": "ani-demo",
+    "require_control_plane_history": "true",
 }
 
 

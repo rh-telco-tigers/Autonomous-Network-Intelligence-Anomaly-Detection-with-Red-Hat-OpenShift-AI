@@ -244,12 +244,14 @@ def _build_bundle_step(
     source_dataset_versions_json: str,
     workspace_root: str,
     project: str,
+    require_control_plane_history: str = "true",
 ) -> Dict[str, Any]:
     return build_bundle(
         bundle_version=bundle_version,
         source_dataset_versions=_parse_source_dataset_versions(source_dataset_versions_json),
         workspace_root=workspace_root,
         project=project,
+        require_control_plane_history=require_control_plane_history.strip().lower() in {"1", "true", "yes", "on"},
     )
 
 
@@ -1062,6 +1064,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--bundle-version")
     parser.add_argument("--bundle-manifest")
     parser.add_argument("--source-dataset-versions-json")
+    parser.add_argument("--require-control-plane-history", default="true")
     parser.add_argument("--project", default="ani-demo")
     parser.add_argument("--training-manifest")
     parser.add_argument("--baseline-manifest")
@@ -1106,6 +1109,7 @@ def main() -> None:
             args.source_dataset_versions_json,
             args.workspace_root,
             args.project,
+            args.require_control_plane_history,
         )
         output_is_text = True
     elif args.step == "resolve-bundle":

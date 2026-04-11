@@ -36,6 +36,13 @@ from shared.cluster_env import (
     predictive_service_url,
     rca_service_url,
 )
+from shared.classifier_profiles import (
+    DEFAULT_ACTIVE_CLASSIFIER_PROFILE,
+    classifier_profile_catalog,
+    classifier_profile_payloads,
+    normalize_classifier_profile,
+    resolve_active_classifier_profile,
+)
 from shared.cors import install_cors
 from shared.debug_trace import interaction_trace_packets, make_trace_packet
 from shared.eda import (
@@ -52,6 +59,7 @@ from shared.db import (
     attach_rca,
     create_ticket_resolution_extract,
     create_incident,
+    get_app_setting_record,
     get_incident,
     get_incident_action,
     get_incident_remediation,
@@ -77,6 +85,7 @@ from shared.db import (
     record_verification,
     remediation_success_rates,
     replace_remediations,
+    set_app_setting,
     set_incident_remediation_status,
     transition_incident_state,
     upsert_incident_ticket,
@@ -255,6 +264,11 @@ class ModelPromotionRequest(BaseModel):
     stage: str = "prod"
 
 
+class ClassifierProfileSelectionRequest(BaseModel):
+    profile: str
+    updated_by: str
+
+
 class ConsoleScenarioRequest(BaseModel):
     scenario: str
     project: str = "ani-demo"
@@ -411,6 +425,57 @@ def _string_from_env(name: str, default: str) -> str:
     return os.getenv(name, default).strip() or default
 
 
+def _classifier_profile_setting() -> Dict[str, object]:
+    stored = get_app_setting_record(CLASSIFIER_PROFILE_SETTING_KEY)
+    if stored is None:
+        return {
+            "profile": DEFAULT_ACTIVE_CLASSIFIER_PROFILE,
+            "updated_at": None,
+            "source": "default",
+        }
+    value = stored.get("value")
+    if isinstance(value, dict):
+        profile = normalize_classifier_profile(str(value.get("profile") or DEFAULT_ACTIVE_CLASSIFIER_PROFILE))
+    else:
+        profile = normalize_classifier_profile(str(value or DEFAULT_ACTIVE_CLASSIFIER_PROFILE))
+    return {
+        "profile": profile,
+        "updated_at": stored.get("updated_at"),
+        "source": "stored",
+    }
+
+
+def _classifier_profile_status() -> Dict[str, object]:
+    setting = _classifier_profile_setting()
+    catalog = classifier_profile_catalog()
+    runtime_catalog: Dict[str, Dict[str, object]] = {}
+    for key, profile in catalog.items():
+        endpoint = str(profile.get("endpoint") or "").rstrip("/")
+        reachable = False
+        status = "not_configured"
+        if endpoint:
+            probe = _probe_service(str(profile.get("label") or key.title()), endpoint, path="/v2/health/ready")
+            reachable = bool(probe.get("ok"))
+            status = str(probe.get("status") or ("ready" if reachable else "unreachable"))
+        runtime_catalog[key] = dict(profile) | {
+            "configured": bool(profile.get("configured")) and reachable,
+            "reachable": reachable,
+            "status": status,
+        }
+    active_profile, _active = resolve_active_classifier_profile(str(setting.get("profile") or ""), runtime_catalog)
+    return {
+        "active_profile": active_profile,
+        "requested_profile": str(setting.get("profile") or DEFAULT_ACTIVE_CLASSIFIER_PROFILE),
+        "profiles": classifier_profile_payloads(
+            str(setting.get("profile") or DEFAULT_ACTIVE_CLASSIFIER_PROFILE),
+            active_profile=active_profile,
+            profiles=runtime_catalog,
+        ),
+        "updated_at": setting.get("updated_at"),
+        "source": setting.get("source"),
+    }
+
+
 def _safe_imsi_for_automation(incident: Dict[str, object]) -> str:
     feature_snapshot = incident.get("feature_snapshot")
     if isinstance(feature_snapshot, dict):
@@ -437,6 +502,11 @@ PREDICTIVE_SERVICE_URL = (
     os.getenv("PREDICTIVE_FS_SERVICE_URL", "").strip()
     or predictive_service_url()
 ).rstrip("/")
+PREDICTIVE_BACKFILL_SERVICE_URL = (
+    os.getenv("PREDICTIVE_BACKFILL_SERVICE_URL", "").strip()
+    or os.getenv("PREDICTIVE_ENDPOINT_BACKFILL", "").strip()
+).rstrip("/")
+CLASSIFIER_PROFILE_SETTING_KEY = "active_classifier_profile"
 _SERVICE_SNAPSHOT_CACHE_LOCK = threading.Lock()
 _SERVICE_SNAPSHOT_CACHE: List[Dict[str, object]] | None = None
 _SERVICE_SNAPSHOT_CACHE_EXPIRES_AT = 0.0
@@ -2493,6 +2563,8 @@ def _service_snapshot() -> List[Dict[str, object]]:
     ]
     if PREDICTIVE_SERVICE_URL:
         services.append(_probe_service("Predictive Service", PREDICTIVE_SERVICE_URL, path="/v2/health/ready"))
+    if PREDICTIVE_BACKFILL_SERVICE_URL:
+        services.append(_probe_service("Backfill Predictive Service", PREDICTIVE_BACKFILL_SERVICE_URL, path="/v2/health/ready"))
     if SERVICE_SNAPSHOT_CACHE_SECONDS > 0:
         with _SERVICE_SNAPSHOT_CACHE_LOCK:
             _SERVICE_SNAPSHOT_CACHE = services
@@ -3098,6 +3170,7 @@ def _active_incident_summary(open_incidents: List[Dict[str, object]]) -> Dict[st
 def _build_console_state(project: str) -> Dict[str, object]:
     incidents = list_incidents(project=project)
     services = _service_snapshot()
+    classifier_profiles = _classifier_profile_status()
     incident_summaries = [_incident_summary_view(incident) for incident in incidents]
     recent_incident_summaries = incident_summaries[:CONSOLE_RECENT_INCIDENT_LIMIT]
     latest_incident = incidents[0] if incidents else None
@@ -3132,6 +3205,9 @@ def _build_console_state(project: str) -> Dict[str, object]:
         "incidents": recent_incident_summaries,
         "services": services,
         "integrations": integrations,
+        "models": {
+            "classifier_profiles": classifier_profiles,
+        },
         "scenarios": console_scenario_catalog(),
     }
 
@@ -4521,7 +4597,54 @@ def approvals(limit: int = 100, incident_id: str | None = None, auth: AuthContex
 @app.get("/models")
 def models(auth: AuthContext | None = Depends(require_api_key)):
     ensure_role(auth, "operator")
-    return load_registry()
+    return load_registry() | {"classifier_profiles": _classifier_profile_status()}
+
+
+@app.get("/models/classifier-profile")
+def classifier_profile_status(auth: AuthContext | None = Depends(require_api_key)):
+    ensure_role(auth, "operator")
+    return _classifier_profile_status()
+
+
+@app.post("/models/classifier-profile")
+def set_classifier_profile(
+    payload: ClassifierProfileSelectionRequest,
+    auth: AuthContext | None = Depends(require_api_key),
+):
+    ensure_role(auth, "operator")
+    requested = normalize_classifier_profile(payload.profile)
+    current_status = _classifier_profile_status()
+    profiles = {
+        str(item.get("key") or ""): item
+        for item in list(current_status.get("profiles") or [])
+        if isinstance(item, dict)
+    }
+    profile = profiles.get(requested)
+    if profile is None:
+        raise HTTPException(status_code=400, detail=f"Unknown classifier profile {payload.profile!r}")
+    if not bool(profile.get("configured")):
+        raise HTTPException(status_code=400, detail=f"Classifier profile {requested!r} is not ready")
+    setting = set_app_setting(
+        CLASSIFIER_PROFILE_SETTING_KEY,
+        {
+            "profile": requested,
+            "updated_by": payload.updated_by,
+        },
+    )
+    record_audit(
+        "classifier_profile_selected",
+        payload.updated_by,
+        {
+            "profile": requested,
+            "label": str(profile.get("label") or requested),
+            "model_name": str(profile.get("model_name") or ""),
+            "endpoint": str(profile.get("endpoint") or ""),
+        },
+    )
+    _clear_service_snapshot_cache()
+    status = _classifier_profile_status()
+    status["updated_at"] = setting.get("updated_at")
+    return status
 
 
 @app.get("/models/{version}")
@@ -4598,6 +4721,7 @@ def platform_status(auth: AuthContext | None = Depends(require_api_key)):
         "open_incidents": sum(1 for incident in incidents if is_active_state(str(incident.get("status") or NEW))),
         "approval_count": len(list_approvals(limit=100)),
         "model_registry": load_registry(),
+        "classifier_profiles": _classifier_profile_status(),
         "integrations": integration_status(),
         "automation_actions": _list_automation_actions(),
     }

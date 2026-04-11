@@ -106,6 +106,9 @@ export type ConsoleState = {
   approvals?: ApprovalRecord[];
   services: ServiceSnapshot[];
   integrations: Record<string, Record<string, unknown>>;
+  models?: {
+    classifier_profiles?: ClassifierProfileSelectionState;
+  };
   automation_actions?: Array<{
     action: string;
     playbook: string;
@@ -121,7 +124,28 @@ export type ConsoleState = {
     tone: string;
     is_nominal?: boolean;
   }>;
-  models?: Record<string, unknown>;
+};
+
+export type ClassifierProfile = {
+  key: string;
+  label: string;
+  description: string;
+  endpoint: string;
+  model_name: string;
+  model_version_label: string;
+  configured: boolean;
+  reachable?: boolean;
+  status?: string;
+  active: boolean;
+  requested: boolean;
+};
+
+export type ClassifierProfileSelectionState = {
+  active_profile: string | null;
+  requested_profile: string | null;
+  profiles: ClassifierProfile[];
+  updated_at?: string | null;
+  source?: string;
 };
 
 export type AuditEvent = {

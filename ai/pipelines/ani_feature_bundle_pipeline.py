@@ -20,6 +20,7 @@ def build_bundle(
     bundle_version: str,
     source_dataset_versions_json: str,
     project: str,
+    require_control_plane_history: str,
     output_manifest: dsl.OutputPath(str),
     workspace_root: str = WORKSPACE_ROOT,
 ):
@@ -33,6 +34,8 @@ def build_bundle(
             bundle_version,
             "--source-dataset-versions-json",
             source_dataset_versions_json,
+            "--require-control-plane-history",
+            require_control_plane_history,
             "--project",
             project,
             "--workspace-root",
@@ -90,7 +93,6 @@ def _configure_bundle_task(
     task.set_env_variable("MINIO_BUCKET", DATASET_STORE_BUCKET)
     task.set_env_variable("MINIO_ACCESS_KEY", DATASET_STORE_ACCESS_KEY)
     task.set_env_variable("MINIO_SECRET_KEY", DATASET_STORE_SECRET_KEY)
-    task.set_env_variable("BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY", "true")
 
 
 @dsl.pipeline(name="ani-feature-bundle-publish")
@@ -98,6 +100,7 @@ def ani_feature_bundle_pipeline(
     bundle_version: str = "ani-feature-bundle-v1",
     source_dataset_versions_json: str = "[\"live-sipp-v1\"]",
     project: str = "ani-demo",
+    require_control_plane_history: str = "true",
     control_plane_url: str = CONTROL_PLANE_URL,
     control_plane_api_key: str = CONTROL_PLANE_API_KEY,
     dataset_store_mode: str = DATASET_STORE_MODE,
@@ -111,6 +114,7 @@ def ani_feature_bundle_pipeline(
         bundle_version=bundle_version,
         source_dataset_versions_json=source_dataset_versions_json,
         project=project,
+        require_control_plane_history=require_control_plane_history,
     )
     validated = validate_bundle(bundle_manifest_path=published.outputs["output_manifest"])
     config = {

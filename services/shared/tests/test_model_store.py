@@ -48,6 +48,10 @@ class _FakeResponse:
 
 
 class ModelStoreTests(unittest.TestCase):
+    def setUp(self) -> None:
+        model_store._CLASSIFIER_PROFILE_CACHE = None
+        model_store._CLASSIFIER_PROFILE_CACHE_EXPIRES_AT = 0.0
+
     def _registry(self) -> dict[str, object]:
         return {
             "deployed_model_version": "predictive-serving-v1",
@@ -118,6 +122,87 @@ class ModelStoreTests(unittest.TestCase):
 
         self.assertIn("Remote predictive endpoint http://predictive.example.com", str(raised.exception))
         self.assertIn("weights.json", str(raised.exception))
+
+    def test_control_plane_selected_backfill_profile_uses_backfill_endpoint(self) -> None:
+        response = _FakeResponse(
+            {
+                "outputs": [
+                    {
+                        "name": "class_probabilities",
+                        "datatype": "FP32",
+                        "shape": [1, len(CANONICAL_LABELS)],
+                        "data": [[0.8, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.1, 0.01]],
+                    }
+                ]
+            }
+        )
+
+        with (
+            mock.patch.object(model_store, "load_registry", return_value=self._registry()),
+            mock.patch.object(
+                model_store.requests,
+                "get",
+                return_value=_FakeResponse(
+                    {
+                        "requested_profile": "backfill",
+                        "active_profile": "backfill",
+                        "profiles": [],
+                    }
+                ),
+            ),
+            mock.patch.object(model_store.requests, "post", return_value=response) as post_request,
+            mock.patch.dict(
+                model_store.os.environ,
+                {
+                    "CONTROL_PLANE_URL": "http://control-plane.example.com",
+                    "PREDICTIVE_ENDPOINT_LIVE": "http://predictive-live.example.com",
+                    "PREDICTIVE_MODEL_NAME_LIVE": "ani-predictive-fs",
+                    "PREDICTIVE_ENDPOINT_BACKFILL": "http://predictive-backfill.example.com",
+                    "PREDICTIVE_MODEL_NAME_BACKFILL": "ani-predictive-backfill",
+                    "PREDICTIVE_MODEL_VERSION_LABEL_BACKFILL": "ani-predictive-backfill",
+                },
+                clear=False,
+            ),
+        ):
+            result = model_store.score_features_detailed({"register_rate": 0.1}, anomaly_type_hint="network_degradation")
+
+        self.assertEqual(result["classifier_profile"], "backfill")
+        self.assertEqual(result["model_version"], "ani-predictive-backfill")
+        self.assertEqual(post_request.call_args.args[0], "http://predictive-backfill.example.com/v2/models/ani-predictive-backfill/infer")
+
+    def test_backfill_profile_does_not_fall_back_to_live_artifact_when_remote_fails(self) -> None:
+        with (
+            mock.patch.object(model_store, "load_registry", return_value=self._registry()),
+            mock.patch.object(
+                model_store.requests,
+                "get",
+                return_value=_FakeResponse(
+                    {
+                        "requested_profile": "backfill",
+                        "active_profile": "backfill",
+                        "profiles": [],
+                    }
+                ),
+            ),
+            mock.patch.object(model_store.requests, "post", side_effect=RuntimeError("predictive service unavailable")),
+            mock.patch.dict(
+                model_store.os.environ,
+                {
+                    "CONTROL_PLANE_URL": "http://control-plane.example.com",
+                    "PREDICTIVE_ENDPOINT_LIVE": "http://predictive-live.example.com",
+                    "PREDICTIVE_MODEL_NAME_LIVE": "ani-predictive-fs",
+                    "PREDICTIVE_ENDPOINT_BACKFILL": "http://predictive-backfill.example.com",
+                    "PREDICTIVE_MODEL_NAME_BACKFILL": "ani-predictive-backfill",
+                    "PREDICTIVE_MODEL_VERSION_LABEL_BACKFILL": "ani-predictive-backfill",
+                },
+                clear=False,
+            ),
+        ):
+            with self.assertRaises(model_store.ModelUnavailableError) as raised:
+                model_store.score_features_detailed({"register_rate": 0.1}, anomaly_type_hint="network_degradation")
+
+        self.assertIn("classifier profile backfill", str(raised.exception))
+        self.assertIn("http://predictive-backfill.example.com", str(raised.exception))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,130 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: ani-backfill-featurestore-kfp-manual-
+  namespace: ani-datascience
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 1800
+  template:
+    metadata:
+      labels:
+        app: ani-backfill-featurestore-kfp-manual
+    spec:
+      serviceAccountName: ani-kfp-bootstrap
+      restartPolicy: OnFailure
+      containers:
+        - name: publish-pipeline
+          image: registry.access.redhat.com/ubi9/python-311:latest
+          env:
+            - name: HOME
+              value: /tmp
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: BACKFILL_BUNDLE_VERSION
+              value: __BACKFILL_BUNDLE_VERSION__
+            - name: BACKFILL_FEATURE_SERVICE_NAME
+              value: __BACKFILL_FEATURE_SERVICE_NAME__
+            - name: BACKFILL_CANDIDATE_VERSION
+              value: __BACKFILL_CANDIDATE_VERSION__
+            - name: BACKFILL_MODEL_NAME
+              value: __BACKFILL_MODEL_NAME__
+            - name: BACKFILL_MODEL_VERSION_NAME
+              value: __BACKFILL_MODEL_VERSION_NAME__
+            - name: BACKFILL_SERVING_MODEL_NAME
+              value: __BACKFILL_SERVING_MODEL_NAME__
+            - name: BACKFILL_SERVING_RUNTIME_NAME
+              value: __BACKFILL_SERVING_RUNTIME_NAME__
+            - name: BACKFILL_SERVING_PREFIX
+              value: __BACKFILL_SERVING_PREFIX__
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              python -m pip install --no-cache-dir --target /tmp/kfp-site kfp==2.8.0
+              export PYTHONPATH="/tmp/kfp-site:${PYTHONPATH}"
+              export PIPELINE_NAME="ani-backfill-featurestore-train-and-register"
+              export RUN_NAME="ani-backfill-featurestore-$(date +%Y%m%d-%H%M%S)"
+              export PIPELINE_PARAMETERS_JSON="$(python - <<'PY'
+              import json
+              import os
+
+              print(
+                  json.dumps(
+                      {
+                          "bundle_version": os.getenv("BACKFILL_BUNDLE_VERSION", "ani-backfill-feature-bundle-v1"),
+                          "feature_service_name": os.getenv("BACKFILL_FEATURE_SERVICE_NAME", "ani_anomaly_scoring_v1"),
+                          "candidate_version": os.getenv("BACKFILL_CANDIDATE_VERSION", "candidate-backfill-fs-v1"),
+                          "automl_engine": "autogluon",
+                          "model_name": os.getenv("BACKFILL_MODEL_NAME", "ani-anomaly-featurestore-backfill"),
+                          "model_version_name": os.getenv("BACKFILL_MODEL_VERSION_NAME", "ani-anomaly-featurestore-backfill-v1"),
+                          "serving_model_name": os.getenv("BACKFILL_SERVING_MODEL_NAME", "ani-predictive-backfill"),
+                          "serving_runtime_name": os.getenv("BACKFILL_SERVING_RUNTIME_NAME", "ani-autogluon-mlserver-runtime"),
+                          "serving_model_format_name": "autogluon",
+                          "serving_model_format_version": "1",
+                          "serving_protocol_version": "v2",
+                          "serving_prefix": os.getenv("BACKFILL_SERVING_PREFIX", "predictive-featurestore"),
+                          "serving_alias": "current",
+                          "control_plane_url": os.getenv(
+                              "CONTROL_PLANE_URL",
+                              "http://control-plane.ani-runtime.svc.cluster.local:8080",
+                          ),
+                          "control_plane_api_key": os.getenv("CONTROL_PLANE_API_KEY", "demo-token"),
+                          "dataset_store_mode": os.getenv("DATASET_STORE_MODE", "s3"),
+                          "dataset_store_endpoint": os.getenv(
+                              "DATASET_STORE_ENDPOINT",
+                              "http://model-storage-minio.ani-data.svc.cluster.local:9000",
+                          ),
+                          "dataset_store_bucket": os.getenv("DATASET_STORE_BUCKET", "ani-models"),
+                          "dataset_store_prefix": os.getenv("DATASET_STORE_PREFIX", "pipelines/ani-datascience/datasets"),
+                          "dataset_store_access_key": os.getenv("DATASET_STORE_ACCESS_KEY", "minioadmin"),
+                          "dataset_store_secret_key": os.getenv("DATASET_STORE_SECRET_KEY", "minioadmin"),
+                          "featurestore_mode": os.getenv("FEATURESTORE_MODE", "remote"),
+                          "featurestore_project": os.getenv("FEATURE_STORE_PROJECT", "ani_anomaly_featurestore"),
+                          "featurestore_registry_path": os.getenv(
+                              "FEATURESTORE_REGISTRY_PATH",
+                              "feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443",
+                          ),
+                          "featurestore_online_store_path": os.getenv(
+                              "FEATURESTORE_ONLINE_STORE_PATH",
+                              "https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443",
+                          ),
+                          "featurestore_ca_cert_path": os.getenv(
+                              "FEATURESTORE_CA_CERT_PATH",
+                              "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt",
+                          ),
+                          "featurestore_auth_type": os.getenv("FEATURESTORE_AUTH_TYPE", "no_auth"),
+                          "featurestore_s3_endpoint_url": os.getenv(
+                              "FEAST_S3_ENDPOINT_URL",
+                              "http://model-storage-minio.ani-data.svc.cluster.local:9000",
+                          ),
+                          "featurestore_aws_region": os.getenv("AWS_REGION", "us-east-1"),
+                          "featurestore_aws_access_key_id": os.getenv("DATASET_STORE_ACCESS_KEY", "minioadmin"),
+                          "featurestore_aws_secret_access_key": os.getenv("DATASET_STORE_SECRET_KEY", "minioadmin"),
+                          "model_registry_endpoint": os.getenv(
+                              "MODEL_REGISTRY_ENDPOINT",
+                              "https://model-catalog.rhoai-model-registries.svc.cluster.local:8443",
+                          ),
+                      }
+                  )
+              )
+              PY
+              )"
+              python /opt/kfp/publish_featurestore_pipeline.py
+          volumeMounts:
+            - name: kfp-assets
+              mountPath: /opt/kfp
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: kfp-assets
+          configMap:
+            name: ani-featurestore-kfp-assets

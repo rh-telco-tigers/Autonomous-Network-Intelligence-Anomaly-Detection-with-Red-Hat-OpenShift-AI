@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Bar,
   BarChart,
@@ -17,11 +18,13 @@ import {
 } from "recharts";
 
 import { EmptyState } from "@/components/empty-state";
+import { useApiToken } from "@/components/providers/app-providers";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { TransientDataWarning } from "@/components/transient-data-warning";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useConsoleStateQuery } from "@/lib/api";
+import { Select } from "@/components/ui/select";
+import { LONG_RUNNING_REQUEST_TIMEOUT_MS, request, useConsoleStateQuery } from "@/lib/api";
 import { formatInteger, formatRelativeNumber, formatTime, titleize } from "@/lib/utils";
 
 const chartPalette = ["#38bdf8", "#f97316", "#ef4444", "#10b981", "#8b5cf6", "#facc15", "#14b8a6", "#fb7185"];
@@ -36,7 +39,24 @@ const chartTooltipLabelStyle = { color: "var(--chart-tooltip-label)", fontWeight
 const chartTooltipItemStyle = { color: "var(--chart-tooltip-text)" };
 
 export default function OverviewPage() {
+  const { token } = useApiToken();
+  const queryClient = useQueryClient();
   const { data, isLoading, error } = useConsoleStateQuery(20_000);
+  const classifierProfiles = data?.models?.classifier_profiles;
+  const updateClassifierProfile = useMutation({
+    mutationFn: async (profile: string) =>
+      request(`/api/models/classifier-profile`, token, {
+        method: "POST",
+        body: JSON.stringify({
+          profile,
+          updated_by: "demo-ui",
+        }),
+        timeoutMs: LONG_RUNNING_REQUEST_TIMEOUT_MS,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["console-state"] });
+    },
+  });
 
   if (isLoading && !data) {
     return <div className="text-sm text-[var(--text-muted)]">Loading overview...</div>;
@@ -91,6 +111,73 @@ export default function OverviewPage() {
           detail="Confidence of the most recent predicted class"
         />
       </div>
+
+      {classifierProfiles ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Classifier routing</CardTitle>
+            <CardDescription>
+              Choose whether new classifications use the live incident-linked model or the backfill-trained model.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-[minmax(0,260px)_1fr]">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[var(--text-strong)]" htmlFor="classifier-profile">
+                Active model path
+              </label>
+              <Select
+                id="classifier-profile"
+                value={classifierProfiles.requested_profile ?? classifierProfiles.active_profile ?? "live"}
+                disabled={updateClassifierProfile.isPending}
+                onChange={(event) => {
+                  const nextProfile = event.target.value;
+                  if (!nextProfile || nextProfile === (classifierProfiles.requested_profile ?? classifierProfiles.active_profile)) {
+                    return;
+                  }
+                  updateClassifierProfile.mutate(nextProfile);
+                }}
+              >
+                {classifierProfiles.profiles.map((profile) => (
+                  <option key={profile.key} value={profile.key} disabled={!profile.configured}>
+                    {profile.label}
+                    {!profile.configured ? " (not configured)" : ""}
+                  </option>
+                ))}
+              </Select>
+              <div className="text-xs text-[var(--text-subtle)]">
+                Active profile: {titleize(classifierProfiles.active_profile ?? "unknown")}
+              </div>
+              {updateClassifierProfile.isError ? (
+                <div className="text-xs text-[var(--danger-fg)]">
+                  {updateClassifierProfile.error instanceof Error
+                    ? updateClassifierProfile.error.message
+                    : "Could not update classifier routing."}
+                </div>
+              ) : null}
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {classifierProfiles.profiles.map((profile) => (
+                <div
+                  key={profile.key}
+                  className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-[var(--text-strong)]">{profile.label}</div>
+                      <div className="mt-1 text-sm text-[var(--text-secondary)]">{profile.description}</div>
+                    </div>
+                    <StatusBadge value={profile.active ? "ACTIVE" : profile.configured ? "READY" : "OFFLINE"} />
+                  </div>
+                  <div className="mt-3 space-y-1 text-xs text-[var(--text-subtle)]">
+                    <div>Model: {profile.model_version_label || profile.model_name || "Not configured"}</div>
+                    <div>Endpoint: {profile.endpoint || "Not configured"}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <Card>

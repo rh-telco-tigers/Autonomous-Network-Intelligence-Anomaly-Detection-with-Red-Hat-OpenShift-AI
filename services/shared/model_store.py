@@ -1,15 +1,25 @@
 import json
 import math
 import os
+import threading
+import time
 from pathlib import Path
 from typing import Dict, Tuple
 
 from joblib import load as joblib_load
 import requests
 
+from shared.classifier_profiles import (
+    DEFAULT_ACTIVE_CLASSIFIER_PROFILE,
+    classifier_profile_catalog,
+    classifier_profile_payloads,
+    normalize_classifier_profile,
+    resolve_active_classifier_profile,
+)
 from shared.debug_trace import interaction_trace_packets, trace_now
 from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type, canonical_anomaly_types
 from shared.model_registry import load_registry as load_registry_document
+from shared.security import outbound_headers
 
 
 NUMERIC_FEATURES = [
@@ -29,17 +39,78 @@ class ModelUnavailableError(RuntimeError):
     pass
 
 
+_CLASSIFIER_PROFILE_CACHE_LOCK = threading.Lock()
+_CLASSIFIER_PROFILE_CACHE: Dict[str, object] | None = None
+_CLASSIFIER_PROFILE_CACHE_EXPIRES_AT = 0.0
+
+
+def _classifier_profile_cache_seconds() -> float:
+    raw_value = str(os.getenv("CLASSIFIER_PROFILE_CACHE_SECONDS", "5")).strip()
+    try:
+        value = float(raw_value)
+    except ValueError:
+        return 5.0
+    return max(0.0, value)
+
+
+def _classifier_profile_selection() -> str:
+    global _CLASSIFIER_PROFILE_CACHE, _CLASSIFIER_PROFILE_CACHE_EXPIRES_AT
+    base_url = os.getenv("CONTROL_PLANE_URL", "").rstrip("/")
+    fallback = normalize_classifier_profile(os.getenv("PREDICTIVE_ACTIVE_PROFILE", DEFAULT_ACTIVE_CLASSIFIER_PROFILE))
+    if not base_url:
+        return fallback
+
+    cache_seconds = _classifier_profile_cache_seconds()
+    now = time.time()
+    if cache_seconds > 0:
+        with _CLASSIFIER_PROFILE_CACHE_LOCK:
+            if _CLASSIFIER_PROFILE_CACHE is not None and now < _CLASSIFIER_PROFILE_CACHE_EXPIRES_AT:
+                return str(
+                    _CLASSIFIER_PROFILE_CACHE.get("active_profile")
+                    or _CLASSIFIER_PROFILE_CACHE.get("requested_profile")
+                    or fallback
+                )
+
+    try:
+        response = requests.get(
+            f"{base_url}/models/classifier-profile",
+            headers=outbound_headers(),
+            timeout=5,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        requested = normalize_classifier_profile(
+            str((payload or {}).get("active_profile") or (payload or {}).get("requested_profile") or fallback)
+        )
+        if cache_seconds > 0:
+            with _CLASSIFIER_PROFILE_CACHE_LOCK:
+                _CLASSIFIER_PROFILE_CACHE = payload if isinstance(payload, dict) else {"requested_profile": requested}
+                _CLASSIFIER_PROFILE_CACHE_EXPIRES_AT = now + cache_seconds
+        return requested
+    except Exception:
+        return fallback
+
+
+def _active_predictive_profile() -> tuple[str | None, Dict[str, object] | None, Dict[str, Dict[str, object]], str]:
+    catalog = classifier_profile_catalog()
+    requested = _classifier_profile_selection()
+    active_key, profile = resolve_active_classifier_profile(requested, catalog)
+    return active_key, profile, catalog, requested
+
+
 def _predictive_endpoint() -> str:
-    return os.getenv("PREDICTIVE_ENDPOINT", "").rstrip("/")
+    _active_key, profile, _catalog, _requested = _active_predictive_profile()
+    return str((profile or {}).get("endpoint") or "").rstrip("/")
 
 
 def _predictive_model_name() -> str:
-    explicit = os.getenv("PREDICTIVE_MODEL_NAME", "ani-predictive-fs").strip()
-    return explicit or "ani-predictive-fs"
+    _active_key, profile, _catalog, _requested = _active_predictive_profile()
+    return str((profile or {}).get("model_name") or "ani-predictive-fs")
 
 
 def _reported_remote_model_version(default: str | None = None) -> str | None:
-    explicit = os.getenv("PREDICTIVE_MODEL_VERSION_LABEL", "").strip()
+    _active_key, profile, _catalog, _requested = _active_predictive_profile()
+    explicit = str((profile or {}).get("model_version_label") or "").strip()
     if explicit:
         return explicit
     if _predictive_endpoint():
@@ -60,7 +131,8 @@ def load_registry() -> Dict[str, object] | None:
 
 def current_model_status() -> Dict[str, object]:
     registry = load_registry()
-    endpoint = _predictive_endpoint()
+    active_profile, profile, catalog, requested_profile = _active_predictive_profile()
+    endpoint = str((profile or {}).get("endpoint") or "").rstrip("/")
     registry_deployed = registry.get("deployed_model_version") if registry else None
     deployed = _reported_remote_model_version(registry_deployed)
     artifact_path = None
@@ -75,10 +147,21 @@ def current_model_status() -> Dict[str, object]:
     return {
         "registry_loaded": bool(registry and registry.get("models")),
         "deployed_model_version": deployed,
-        "predictive_model_name": _predictive_model_name() if endpoint else None,
+        "predictive_model_name": str((profile or {}).get("model_name") or "") if endpoint else None,
         "predictive_endpoint": endpoint or None,
         "artifact_present": bool(artifact_path and artifact_path.exists()),
-        "scoring_modes": ["remote-kserve-v2", "local-artifact"] if endpoint else ["local-artifact"],
+        "scoring_modes": (
+            ["remote-kserve-v2", "local-artifact"]
+            if endpoint and bool((profile or {}).get("allow_local_fallback"))
+            else (["remote-kserve-v2"] if endpoint else ["local-artifact"])
+        ),
+        "active_classifier_profile": active_profile,
+        "requested_classifier_profile": requested_profile,
+        "classifier_profiles": classifier_profile_payloads(
+            requested_profile,
+            active_profile=active_profile,
+            profiles=catalog,
+        ),
     }
 
 
@@ -189,9 +272,11 @@ def score_features_detailed(
     reported_version = str(metadata["version"])
     class_labels = _canonical_class_labels(metadata, {})
     debug_trace_packets: list[Dict[str, object]] = []
+    active_profile_key, active_profile, _catalog, requested_profile = _active_predictive_profile()
     remote_prediction, remote_trace_packets = _remote_score(
         features,
         class_labels,
+        predictive_profile=active_profile,
         anomaly_type_hint=anomaly_type_hint,
         include_debug_trace=include_debug_trace,
     )
@@ -201,7 +286,14 @@ def score_features_detailed(
     if remote_prediction is not None:
         prediction = remote_prediction
         reported_version = str(_reported_remote_model_version(reported_version) or reported_version)
+        if active_profile_key:
+            scoring_mode = f"remote-kserve:{active_profile_key}"
     else:
+        if active_profile and not bool(active_profile.get("allow_local_fallback")) and str(active_profile.get("endpoint") or "").strip():
+            raise ModelUnavailableError(
+                f"Remote predictive endpoint {str(active_profile.get('endpoint') or '').rstrip('/')} "
+                f"for classifier profile {active_profile_key or requested_profile} did not return a usable prediction"
+            )
         artifact = _load_local_artifact(deployed)
         model_type = artifact.get("model_type") if isinstance(artifact, dict) else None
         class_labels = _canonical_class_labels(metadata, artifact)
@@ -244,6 +336,7 @@ def score_features_detailed(
         **prediction,
         "model_version": reported_version,
         "scoring_mode": scoring_mode,
+        "classifier_profile": active_profile_key,
         "provided_anomaly_type_hint": canonical_anomaly_type(anomaly_type_hint) if anomaly_type_hint else None,
     }
     if include_debug_trace:
@@ -318,11 +411,12 @@ def _local_model_trace_packets(
 def _remote_score(
     features: Dict[str, object],
     class_labels: list[str],
+    predictive_profile: Dict[str, object] | None = None,
     anomaly_type_hint: str | None = None,
     include_debug_trace: bool = False,
 ) -> tuple[Dict[str, object] | None, list[Dict[str, object]]]:
-    endpoint = _predictive_endpoint()
-    model_name = _predictive_model_name()
+    endpoint = str((predictive_profile or {}).get("endpoint") or "").rstrip("/")
+    model_name = str((predictive_profile or {}).get("model_name") or "")
     if not endpoint:
         return None, []
 

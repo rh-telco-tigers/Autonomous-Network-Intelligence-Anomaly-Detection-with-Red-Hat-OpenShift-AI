@@ -18,6 +18,14 @@ data:
   PREDICTIVE_ENDPOINT: http://ani-predictive-fs-predictor.ani-datascience.svc.cluster.local:8080
   PREDICTIVE_MODEL_NAME: ani-predictive-fs
   PREDICTIVE_MODEL_VERSION_LABEL: ani-predictive-fs
+  PREDICTIVE_ACTIVE_PROFILE: live
+  PREDICTIVE_ENDPOINT_LIVE: http://ani-predictive-fs-predictor.ani-datascience.svc.cluster.local:8080
+  PREDICTIVE_MODEL_NAME_LIVE: ani-predictive-fs
+  PREDICTIVE_MODEL_VERSION_LABEL_LIVE: ani-predictive-fs
+  PREDICTIVE_BACKFILL_SERVICE_URL: http://ani-predictive-backfill-predictor.ani-datascience.svc.cluster.local:8080
+  PREDICTIVE_ENDPOINT_BACKFILL: http://ani-predictive-backfill-predictor.ani-datascience.svc.cluster.local:8080
+  PREDICTIVE_MODEL_NAME_BACKFILL: ani-predictive-backfill
+  PREDICTIVE_MODEL_VERSION_LABEL_BACKFILL: ani-predictive-backfill
   INCIDENT_AUTO_RCA_SAMPLE_RATE: "0.9"
   AI_PLAYBOOK_GENERATION_ENABLED: "true"
   AI_PLAYBOOK_GENERATION_KAFKA_BOOTSTRAP_SERVERS: ani-release-kafka-kafka-bootstrap.ani-data.svc.cluster.local:9092

@@ -161,13 +161,6 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _env_flag(name: str, default: bool = False) -> bool:
-    raw_value = os.getenv(name)
-    if raw_value is None:
-        return default
-    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _bundle_relative_root(bundle_version: str) -> str:
     return f"feature-bundles/{bundle_version}"
 
@@ -352,6 +345,7 @@ def _load_control_plane_history(
     window_ids: set[str],
     approval_limit: int,
     audit_limit: int,
+    require_control_plane_history: bool,
 ) -> dict[str, Any]:
     try:
         incidents_raw = _control_plane_get("/incidents", {"project": project})
@@ -387,7 +381,7 @@ def _load_control_plane_history(
             },
         }
     except Exception as exc:
-        if _env_flag("BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY", False):
+        if require_control_plane_history:
             raise
         return {
             "incidents": [],
@@ -694,12 +688,15 @@ def build_bundle(
     project: str = DEFAULT_PROJECT,
     approval_limit: int = DEFAULT_APPROVAL_LIMIT,
     audit_limit: int = DEFAULT_AUDIT_LIMIT,
+    require_control_plane_history: bool = True,
 ) -> dict[str, Any]:
     snapshot_id = source_snapshot_id or f"snapshot-{bundle_version}"
     local_root = _bundle_local_root(workspace_root, bundle_version)
     parquet_root = local_root / "parquet"
+    csv_root = local_root / "csv"
     feature_store_root = local_root / "feature_store"
     parquet_root.mkdir(parents=True, exist_ok=True)
+    csv_root.mkdir(parents=True, exist_ok=True)
     feature_store_root.mkdir(parents=True, exist_ok=True)
 
     windows_by_dataset: dict[str, list[dict[str, Any]]] = {}
@@ -719,6 +716,7 @@ def build_bundle(
         window_ids=set(dataset_versions_by_window),
         approval_limit=approval_limit,
         audit_limit=audit_limit,
+        require_control_plane_history=require_control_plane_history,
     )
     incidents = control_plane_history["incidents"]
     approvals = control_plane_history["approvals"]
@@ -775,6 +773,11 @@ def build_bundle(
     rca_summary_path = parquet_root / "rca_summary.parquet"
     offline_source_path = feature_store_root / "offline_source.parquet"
     entity_rows_path = feature_store_root / "entity_rows.parquet"
+    window_features_csv_path = csv_root / "window_features.csv"
+    window_context_csv_path = csv_root / "window_context.csv"
+    window_labels_csv_path = csv_root / "window_labels.csv"
+    incidents_csv_path = csv_root / "incidents.csv"
+    rca_summary_csv_path = csv_root / "rca_summary.csv"
     quality_report_path = local_root / "quality_report.json"
     dataset_card_path = local_root / "dataset_card.md"
     manifest_path = local_root / "manifest.json"
@@ -786,6 +789,11 @@ def build_bundle(
     rca_frame.to_parquet(rca_summary_path, index=False)
     offline_source_frame.to_parquet(offline_source_path, index=False)
     entity_frame.to_parquet(entity_rows_path, index=False)
+    features_frame.to_csv(window_features_csv_path, index=False)
+    context_frame.to_csv(window_context_csv_path, index=False)
+    labels_frame.to_csv(window_labels_csv_path, index=False)
+    incidents_frame.to_csv(incidents_csv_path, index=False)
+    rca_frame.to_csv(rca_summary_csv_path, index=False)
 
     quality = _quality_report(
         feature_rows,
@@ -871,6 +879,13 @@ def build_bundle(
                 "incidents_parquet": _artifact_uri(root_uri, "parquet/incidents.parquet"),
                 "rca_summary_parquet": _artifact_uri(root_uri, "parquet/rca_summary.parquet"),
             },
+            "csv": {
+                "window_features_csv": _artifact_uri(root_uri, "csv/window_features.csv"),
+                "window_context_csv": _artifact_uri(root_uri, "csv/window_context.csv"),
+                "window_labels_csv": _artifact_uri(root_uri, "csv/window_labels.csv"),
+                "incidents_csv": _artifact_uri(root_uri, "csv/incidents.csv"),
+                "rca_summary_csv": _artifact_uri(root_uri, "csv/rca_summary.csv"),
+            },
             "feature_store": {
                 "offline_source_parquet": _artifact_uri(root_uri, "feature_store/offline_source.parquet"),
                 "entity_rows_parquet": _artifact_uri(root_uri, "feature_store/entity_rows.parquet"),
@@ -934,6 +949,38 @@ def localize_bundle_manifest(bundle_manifest_path: str | Path, workspace_root: s
             _download_file_reference(
                 manifest["artifacts"]["tables"]["rca_summary_parquet"],
                 local_root / "parquet" / "rca_summary.parquet",
+            )
+        ),
+    }
+    artifacts["csv"] = {
+        "window_features_csv": str(
+            _download_file_reference(
+                manifest["artifacts"]["csv"]["window_features_csv"],
+                local_root / "csv" / "window_features.csv",
+            )
+        ),
+        "window_context_csv": str(
+            _download_file_reference(
+                manifest["artifacts"]["csv"]["window_context_csv"],
+                local_root / "csv" / "window_context.csv",
+            )
+        ),
+        "window_labels_csv": str(
+            _download_file_reference(
+                manifest["artifacts"]["csv"]["window_labels_csv"],
+                local_root / "csv" / "window_labels.csv",
+            )
+        ),
+        "incidents_csv": str(
+            _download_file_reference(
+                manifest["artifacts"]["csv"]["incidents_csv"],
+                local_root / "csv" / "incidents.csv",
+            )
+        ),
+        "rca_summary_csv": str(
+            _download_file_reference(
+                manifest["artifacts"]["csv"]["rca_summary_csv"],
+                local_root / "csv" / "rca_summary.csv",
             )
         ),
     }

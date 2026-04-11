@@ -1,0 +1,88 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: ani-backfill-feature-bundle-kfp-manual-
+  namespace: ani-datascience
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 1800
+  template:
+    metadata:
+      labels:
+        app: ani-backfill-feature-bundle-kfp-manual
+    spec:
+      serviceAccountName: ani-kfp-bootstrap
+      restartPolicy: OnFailure
+      containers:
+        - name: publish-pipeline
+          image: registry.access.redhat.com/ubi9/python-311:latest
+          env:
+            - name: HOME
+              value: /tmp
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: BACKFILL_DATASET_VERSION
+              value: __BACKFILL_DATASET_VERSION__
+            - name: BACKFILL_BUNDLE_VERSION
+              value: __BACKFILL_BUNDLE_VERSION__
+            - name: DEMO_PROJECT
+              value: __DEMO_PROJECT__
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              python -m pip install --no-cache-dir --target /tmp/kfp-site kfp==2.8.0
+              export PYTHONPATH="/tmp/kfp-site:${PYTHONPATH}"
+              export PIPELINE_NAME="ani-backfill-feature-bundle-publish"
+              export RUN_NAME="ani-backfill-feature-bundle-$(date +%Y%m%d-%H%M%S)"
+              export PIPELINE_PARAMETERS_JSON="$(python - <<'PY'
+              import json
+              import os
+
+              dataset_version = os.getenv("BACKFILL_DATASET_VERSION", "backfill-sipp-100k")
+              bundle_version = os.getenv("BACKFILL_BUNDLE_VERSION", "ani-backfill-feature-bundle-v1")
+
+              print(
+                  json.dumps(
+                      {
+                          "bundle_version": bundle_version,
+                          "source_dataset_versions_json": json.dumps([dataset_version]),
+                          "project": os.getenv("DEMO_PROJECT", "ani-demo"),
+                          "require_control_plane_history": "false",
+                          "control_plane_url": os.getenv(
+                              "CONTROL_PLANE_URL",
+                              "http://control-plane.ani-runtime.svc.cluster.local:8080",
+                          ),
+                          "control_plane_api_key": os.getenv("CONTROL_PLANE_API_KEY", "demo-token"),
+                          "dataset_store_mode": os.getenv("DATASET_STORE_MODE", "s3"),
+                          "dataset_store_endpoint": os.getenv(
+                              "DATASET_STORE_ENDPOINT",
+                              "http://model-storage-minio.ani-data.svc.cluster.local:9000",
+                          ),
+                          "dataset_store_bucket": os.getenv("DATASET_STORE_BUCKET", "ani-models"),
+                          "dataset_store_prefix": os.getenv("DATASET_STORE_PREFIX", "pipelines/ani-datascience/datasets"),
+                          "dataset_store_access_key": os.getenv("DATASET_STORE_ACCESS_KEY", "minioadmin"),
+                          "dataset_store_secret_key": os.getenv("DATASET_STORE_SECRET_KEY", "minioadmin"),
+                      }
+                  )
+              )
+              PY
+              )"
+              python /opt/kfp/publish_feature_bundle_pipeline.py
+          volumeMounts:
+            - name: kfp-assets
+              mountPath: /opt/kfp
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: kfp-assets
+          configMap:
+            name: ani-feature-bundle-kfp-assets
