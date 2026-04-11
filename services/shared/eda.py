@@ -535,9 +535,9 @@ def _ensure_activation(
     organization = existing.get("organization") if isinstance(existing.get("organization"), dict) else {}
     comparisons = {
         "description": existing.get("description"),
-        "decision_environment_id": decision_environment.get("id"),
-        "rulebook_id": rulebook.get("id"),
-        "organization_id": organization.get("id"),
+        "decision_environment_id": decision_environment.get("id") or existing.get("decision_environment_id"),
+        "rulebook_id": rulebook.get("id") or existing.get("rulebook_id"),
+        "organization_id": organization.get("id") or existing.get("organization_id"),
         "restart_policy": existing.get("restart_policy"),
         "log_level": existing.get("log_level"),
         "awx_token_id": existing.get("awx_token_id"),
