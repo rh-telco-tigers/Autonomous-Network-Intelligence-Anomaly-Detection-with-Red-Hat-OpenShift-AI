@@ -3,7 +3,7 @@ kind: Kustomization
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
-  - name: ims-featurestore-repo
+  - name: ani-featurestore-repo
     files:
       - entities.py=assets/entities.py
       - feature_views.py=assets/feature_views.py

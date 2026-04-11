@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: ims-demo-dashboard
-  namespace: ims-demo-lab
+  name: ani-demo-dashboard
+  namespace: ani-demo-lab
   labels:
     grafana_dashboard: "1"
 data:
-  ims-demo-overview.json: |
+  ani-demo-overview.json: |
     {
       "annotations": {
         "list": []
@@ -30,7 +30,7 @@ data:
           "id": 1,
           "targets": [
             {
-              "expr": "sum(increase(ims_demo_incidents_total[1h]))",
+              "expr": "sum(increase(ani_demo_incidents_total[1h]))",
               "legendFormat": "incidents"
             }
           ],
@@ -54,7 +54,7 @@ data:
           "id": 2,
           "targets": [
             {
-              "expr": "histogram_quantile(0.95, sum(rate(ims_demo_http_request_duration_seconds_bucket[5m])) by (le, service))",
+              "expr": "histogram_quantile(0.95, sum(rate(ani_demo_http_request_duration_seconds_bucket[5m])) by (le, service))",
               "legendFormat": "{{service}}"
             }
           ],
@@ -78,7 +78,7 @@ data:
           "id": 3,
           "targets": [
             {
-              "expr": "histogram_quantile(0.5, sum(rate(ims_demo_rca_confidence_bucket[15m])) by (le, project, generation_mode))",
+              "expr": "histogram_quantile(0.5, sum(rate(ani_demo_rca_confidence_bucket[15m])) by (le, project, generation_mode))",
               "legendFormat": "{{project}} {{generation_mode}}"
             }
           ],
@@ -102,7 +102,7 @@ data:
           "id": 4,
           "targets": [
             {
-              "expr": "sum(increase(ims_demo_automation_actions_total[1h])) by (action, status)",
+              "expr": "sum(increase(ani_demo_automation_actions_total[1h])) by (action, status)",
               "legendFormat": "{{action}} {{status}}"
             }
           ],
@@ -126,7 +126,7 @@ data:
           "id": 5,
           "targets": [
             {
-              "expr": "sum(increase(ims_demo_model_promotions_total[24h])) by (stage, status)",
+              "expr": "sum(increase(ani_demo_model_promotions_total[24h])) by (stage, status)",
               "legendFormat": "{{stage}} {{status}}"
             }
           ],
@@ -137,7 +137,7 @@ data:
       "schemaVersion": 38,
       "style": "dark",
       "tags": [
-        "ims-demo",
+        "ani-demo",
         "anomaly-detection"
       ],
       "templating": {

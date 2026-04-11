@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sipp-authentication-failure
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   schedule: "2 * * * *"
   suspend: false
@@ -18,11 +18,14 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ani-platform-config
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ani-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -39,11 +42,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ani-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
-                  value: ims-models
+                  value: ani-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ani-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -55,11 +58,11 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ani-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
-                  value: ims-demo
+                  value: ani-demo
                 - name: CONTROL_PLANE_INCIDENT_STATUS
                   value: resolved
                 - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
@@ -87,7 +90,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sipp-registration-failure
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   schedule: "7 * * * *"
   suspend: false
@@ -103,11 +106,14 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ani-platform-config
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ani-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -124,11 +130,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ani-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
-                  value: ims-models
+                  value: ani-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ani-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -140,11 +146,11 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ani-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
-                  value: ims-demo
+                  value: ani-demo
                 - name: CONTROL_PLANE_INCIDENT_STATUS
                   value: resolved
                 - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
@@ -172,7 +178,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sipp-routing-error
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   schedule: "12 * * * *"
   suspend: false
@@ -188,11 +194,14 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ani-platform-config
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ani-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -209,11 +218,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ani-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
-                  value: ims-models
+                  value: ani-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ani-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -225,11 +234,11 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ani-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
-                  value: ims-demo
+                  value: ani-demo
                 - name: CONTROL_PLANE_INCIDENT_STATUS
                   value: resolved
                 - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
@@ -257,7 +266,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sipp-busy-destination
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   schedule: "16 * * * *"
   suspend: false
@@ -273,11 +282,14 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ani-platform-config
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ani-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -294,11 +306,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ani-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
-                  value: ims-models
+                  value: ani-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ani-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -310,11 +322,11 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ani-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
-                  value: ims-demo
+                  value: ani-demo
                 - name: CONTROL_PLANE_INCIDENT_STATUS
                   value: resolved
                 - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
@@ -342,7 +354,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sipp-call-setup-timeout
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   schedule: "18 * * * *"
   suspend: false
@@ -358,11 +370,14 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ani-platform-config
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ani-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -379,11 +394,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ani-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
-                  value: ims-models
+                  value: ani-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ani-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -395,11 +410,11 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ani-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
-                  value: ims-demo
+                  value: ani-demo
                 - name: CONTROL_PLANE_INCIDENT_STATUS
                   value: resolved
                 - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
@@ -427,7 +442,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sipp-call-drop-mid-session
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   schedule: "22 * * * *"
   suspend: false
@@ -443,11 +458,14 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ani-platform-config
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ani-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -464,11 +482,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ani-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
-                  value: ims-models
+                  value: ani-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ani-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -480,11 +498,11 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ani-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
-                  value: ims-demo
+                  value: ani-demo
                 - name: CONTROL_PLANE_INCIDENT_STATUS
                   value: resolved
                 - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
@@ -512,7 +530,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sipp-server-internal-error
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   schedule: "27 * * * *"
   suspend: false
@@ -528,11 +546,14 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ani-platform-config
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ani-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -549,11 +570,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ani-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
-                  value: ims-models
+                  value: ani-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ani-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -565,11 +586,11 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ani-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
-                  value: ims-demo
+                  value: ani-demo
                 - name: CONTROL_PLANE_INCIDENT_STATUS
                   value: resolved
                 - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
@@ -597,7 +618,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sipp-network-degradation
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   schedule: "42 * * * *"
   suspend: false
@@ -613,11 +634,14 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ani-platform-config
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ani-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -634,11 +658,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ani-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
-                  value: ims-models
+                  value: ani-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ani-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -650,11 +674,11 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ani-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
-                  value: ims-demo
+                  value: ani-demo
                 - name: CONTROL_PLANE_INCIDENT_STATUS
                   value: resolved
                 - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
@@ -682,7 +706,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sipp-retransmission-spike
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   schedule: "52 * * * *"
   suspend: false
@@ -698,11 +722,14 @@ spec:
           restartPolicy: Never
           containers:
             - name: sipp
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/sipp-runner:latest
+              image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
               imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: ani-platform-config
               args:
                 - --target-host
-                - ims-pcscf.ims-demo-lab.svc.cluster.local
+                - ims-pcscf.ani-sipp.svc.cluster.local
                 - --target-port
                 - "5060"
                 - --scenario-file
@@ -719,11 +746,11 @@ spec:
                 - live-sipp-v1
               env:
                 - name: DATASET_STORE_ENDPOINT
-                  value: http://model-storage-minio.ims-demo-lab.svc.cluster.local:9000
+                  value: http://model-storage-minio.ani-data.svc.cluster.local:9000
                 - name: DATASET_STORE_BUCKET
-                  value: ims-models
+                  value: ani-models
                 - name: DATASET_STORE_PREFIX
-                  value: pipelines/ims-demo-lab/datasets
+                  value: pipelines/ani-datascience/datasets
                 - name: DATASET_STORE_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
@@ -735,11 +762,11 @@ spec:
                       name: model-storage-credentials
                       key: AWS_SECRET_ACCESS_KEY
                 - name: CONTROL_PLANE_URL
-                  value: http://control-plane.ims-demo-lab.svc.cluster.local:8080
+                  value: http://control-plane.ani-runtime.svc.cluster.local:8080
                 - name: CONTROL_PLANE_API_KEY
                   value: demo-token
                 - name: CONTROL_PLANE_PROJECT
-                  value: ims-demo
+                  value: ani-demo
                 - name: CONTROL_PLANE_INCIDENT_STATUS
                   value: resolved
                 - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION

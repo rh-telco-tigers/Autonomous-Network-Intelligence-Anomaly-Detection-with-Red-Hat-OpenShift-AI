@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: false
   vars:
-    target_namespace: "{{ target_namespace | default('ims-demo-lab') }}"
+    target_namespace: "{{ target_namespace | default('ani-demo-lab') }}"
     target_deployment: "{{ target_deployment | default('ims-scscf') }}"
     target_replicas: "{{ (target_replicas | default(2)) | int }}"
     kubernetes_api_token: >-

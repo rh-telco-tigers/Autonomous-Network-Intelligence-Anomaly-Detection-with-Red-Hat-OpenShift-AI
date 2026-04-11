@@ -3,43 +3,42 @@
 import hashlib
 import json
 import os
+import ssl
 import time
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from kfp import Client
 
 
 DEFAULT_DSPA_NAME = "dspa"
-DEFAULT_PIPELINE_NAME = "ims-featurestore-train-and-register"
-DEFAULT_EXPERIMENT_NAME = "ims-featurestore"
-DEFAULT_RUN_NAME_PREFIX = "ims-featurestore-manual"
-DEFAULT_PACKAGE_PATH = "/opt/kfp/ims_featurestore_pipeline.yaml"
+DEFAULT_PIPELINE_NAME = "ani-featurestore-train-and-register"
+DEFAULT_EXPERIMENT_NAME = "ani-featurestore"
+DEFAULT_RUN_NAME_PREFIX = "ani-featurestore-manual"
+DEFAULT_PACKAGE_PATH = "/opt/kfp/ani_featurestore_pipeline.yaml"
 DEFAULT_KFP_HOST_TEMPLATE = "https://ds-pipeline-{dspa}.{namespace}.svc.cluster.local:8443"
 DEFAULT_SERVICE_CA_CERT = "/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
 DEFAULT_SA_TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+DEFAULT_MODEL_REGISTRY_NAMESPACE = "rhoai-model-registries"
+DEFAULT_MODEL_REGISTRY_SERVICE = "model-catalog"
+DEFAULT_MODEL_REGISTRY_ROUTE_NAME = "model-catalog-https"
+DEFAULT_KUBERNETES_CA_CERT = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 DEFAULT_PIPELINE_PARAMETERS = {
-    "bundle_version": "ims-feature-bundle-v1",
-    "feature_service_name": "ims_anomaly_scoring_v1",
-    "baseline_version": "baseline-fs-v1",
+    "bundle_version": "ani-feature-bundle-v1",
+    "feature_service_name": "ani_anomaly_scoring_v1",
     "candidate_version": "candidate-fs-v1",
     "automl_engine": "autogluon",
-    "model_name": "ims-anomaly-featurestore",
-    "model_version_name": "ims-anomaly-featurestore-v1",
-    "serving_model_name": "ims-predictive-fs",
-    "serving_runtime_name": "nvidia-triton-runtime",
-    "serving_model_format_name": "triton",
-    "serving_model_format_version": "2",
+    "model_name": "ani-anomaly-featurestore",
+    "model_version_name": "ani-anomaly-featurestore-v1",
+    "serving_model_name": "ani-predictive-fs",
+    "serving_runtime_name": "ani-autogluon-mlserver-runtime",
+    "serving_model_format_name": "autogluon",
+    "serving_model_format_version": "1",
     "serving_protocol_version": "v2",
     "serving_prefix": "predictive-featurestore",
     "serving_alias": "current",
-    "mlserver_serving_model_name": "ims-predictive-fs-mlserver",
-    "mlserver_serving_runtime_name": "mlserver-sklearn-runtime",
-    "mlserver_serving_model_format_name": "sklearn",
-    "mlserver_serving_model_format_version": "1",
-    "mlserver_serving_protocol_version": "v2",
-    "mlserver_serving_prefix": "predictive-featurestore-mlserver",
-    "mlserver_serving_alias": "current",
 }
 
 
@@ -56,13 +55,65 @@ def _namespace() -> str:
     return Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read_text().strip()
 
 
+def _kubernetes_request(path: str) -> dict[str, Any] | None:
+    token_path = Path(os.getenv("KFP_TOKEN_PATH", DEFAULT_SA_TOKEN_PATH))
+    if not token_path.exists():
+        return None
+    api_host = os.getenv("KUBERNETES_SERVICE_HOST", "kubernetes.default.svc")
+    api_port = os.getenv("KUBERNETES_SERVICE_PORT_HTTPS", os.getenv("KUBERNETES_SERVICE_PORT", "443"))
+    ca_path = Path(DEFAULT_KUBERNETES_CA_CERT)
+    context = ssl.create_default_context(cafile=str(ca_path)) if ca_path.exists() else ssl.create_default_context()
+    request = Request(
+        f"https://{api_host}:{api_port}{path}",
+        headers={"Authorization": f"Bearer {token_path.read_text().strip()}"},
+    )
+    try:
+        with urlopen(request, timeout=5, context=context) as response:
+            payload = response.read().decode()
+    except (HTTPError, URLError, OSError, ValueError):
+        return None
+    if not payload:
+        return {}
+    try:
+        return json.loads(payload)
+    except ValueError:
+        return None
+
+
+def discover_model_registry_endpoint() -> str | None:
+    explicit = os.getenv("MODEL_REGISTRY_ENDPOINT", "").strip()
+    if explicit and ".svc.cluster.local" not in explicit:
+        return explicit.rstrip("/")
+
+    namespace = os.getenv("MODEL_REGISTRY_NAMESPACE", DEFAULT_MODEL_REGISTRY_NAMESPACE).strip() or DEFAULT_MODEL_REGISTRY_NAMESPACE
+    service_name = os.getenv("MODEL_REGISTRY_SERVICE", DEFAULT_MODEL_REGISTRY_SERVICE).strip() or DEFAULT_MODEL_REGISTRY_SERVICE
+    service_payload = _kubernetes_request(f"/api/v1/namespaces/{namespace}/services/{service_name}") or {}
+    annotations = ((service_payload.get("metadata") or {}).get("annotations") or {}) if isinstance(service_payload, dict) else {}
+    external_address = str(annotations.get("routing.opendatahub.io/external-address-rest") or "").strip()
+    if external_address:
+        external_host = external_address.removeprefix("https://").rstrip("/")
+        return f"https://{external_host}"
+
+    route_name = os.getenv("MODEL_REGISTRY_ROUTE_NAME", DEFAULT_MODEL_REGISTRY_ROUTE_NAME).strip() or DEFAULT_MODEL_REGISTRY_ROUTE_NAME
+    route_payload = _kubernetes_request(f"/apis/route.openshift.io/v1/namespaces/{namespace}/routes/{route_name}") or {}
+    route_spec = (route_payload.get("spec") or {}) if isinstance(route_payload, dict) else {}
+    route_host = str(route_spec.get("host") or "").strip()
+    if route_host:
+        return f"https://{route_host}"
+    return explicit.rstrip("/") or None
+
+
 def _load_pipeline_parameters() -> dict[str, Any]:
     raw = os.getenv("PIPELINE_PARAMETERS_JSON", "").strip()
     if not raw:
-        return dict(DEFAULT_PIPELINE_PARAMETERS)
-    parsed = json.loads(raw)
+        parsed = dict(DEFAULT_PIPELINE_PARAMETERS)
+    else:
+        parsed = json.loads(raw)
     if not isinstance(parsed, dict):
         raise ValueError("PIPELINE_PARAMETERS_JSON must be a JSON object")
+    registry_endpoint = discover_model_registry_endpoint()
+    if registry_endpoint:
+        parsed["model_registry_endpoint"] = registry_endpoint
     return parsed
 
 

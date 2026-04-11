@@ -111,7 +111,7 @@ loadmodule "proto_tcp.so"
 #### aaa_diameter module
 loadmodule "aaa_diameter.so"
 modparam("aaa_diameter", "fd_log_level", 1) # max amount of logging, quite annoying
-modparam("aaa_diameter", "realm", "ims-demo-lab.svc.cluster.local")
+modparam("aaa_diameter", "realm", "ani-sipp.svc.cluster.local")
 modparam("aaa_diameter", "peer_identity", "hss")
 modparam("aaa_diameter", "aaa_url",
 	"diameter:/etc/opensips/freeDiameter.conf;extra-avps-file:/etc/opensips/icscf.dictionary")
@@ -186,16 +186,16 @@ route{
 		xlog("L_ERR", "[$ci] Received REGISTER for $tu - doing UAR\n");
 
 		$var(payload) = "[
-			{ \"Session-Id\": \"ims-icscf.ims-demo-lab.svc.cluster.local;"+$Ts+"."+$Tsm+";"+$pp+"\" },
-			{ \"Origin-Host\": \"ims-icscf.ims-demo-lab.svc.cluster.local\" },
-			{ \"Origin-Realm\": \"ims-demo-lab.svc.cluster.local\" },
-			{ \"Destination-Realm\": \"ims-demo-lab.svc.cluster.local\" },
+			{ \"Session-Id\": \"ims-icscf.ani-sipp.svc.cluster.local;"+$Ts+"."+$Tsm+";"+$pp+"\" },
+			{ \"Origin-Host\": \"ims-icscf.ani-sipp.svc.cluster.local\" },
+			{ \"Origin-Realm\": \"ani-sipp.svc.cluster.local\" },
+			{ \"Destination-Realm\": \"ani-sipp.svc.cluster.local\" },
 			{ \"Vendor-Specific-Application-Id\": [{\"Vendor-Id\": 10415},
 				{\"Auth-Application-Id\": 16777216}]},
 			{ \"Auth-Session-State\": 1 },
 			{ \"User-Name\": \""+$fU+"@"+$fd+"\" },
 			{ \"Public-Identity\": \""+$fu+"\" },
-			{ \"Visited-Network-Identifier\": \"ims-demo-lab.svc.cluster.local\" }
+			{ \"Visited-Network-Identifier\": \"ani-sipp.svc.cluster.local\" }
 		]";
 
 		$var(rc) = dm_send_request(16777216, 300, $var(payload), $var(rpl_avps));
@@ -204,7 +204,7 @@ route{
 		# TODO: parse reply, fetch Server-Name and cache it
 
 		# relay to S-CSCF
-	    	$ru = "sip:ims-scscf.ims-demo-lab.svc.cluster.local:6060";
+	    	$ru = "sip:ims-scscf.ani-sipp.svc.cluster.local:6060";
 
 		#t_on_reply("register_reply");
 	 	route(relay);

@@ -6,7 +6,7 @@ This document explains how the Phase 3 training pipeline builds a dataset, train
 
 ## Status
 
-AutoGluon remains the candidate-model engine in the training code, but the preferred cluster workflow is now the feature-store KFP path: `ims-feature-bundle-publish` prepares the bundle, `ims-featurestore-train-and-register` retrieves the training frame through Feature Store, compares the baseline and AutoGluon on canonical `anomaly_type`, and then exports serving-friendly multiclass runtime artifacts for Triton and MLServer instead of deploying the raw AutoGluon predictor directly.
+AutoGluon remains the candidate-model engine in the training code, but the preferred cluster workflow is now the feature-store KFP path: `ani-feature-bundle-publish` prepares the bundle, `ani-featurestore-train-and-register` retrieves the training frame through Feature Store, compares the baseline and AutoGluon on canonical `anomaly_type`, and then exports serving-friendly multiclass runtime artifacts for Triton and MLServer instead of deploying the raw AutoGluon predictor directly.
 
 ## End-To-End Flow
 
@@ -27,7 +27,7 @@ flowchart TD
 
 ## Training Data Source
 
-The preferred cluster pipeline starts from a published `bundle_version`, syncs the Feature Store repo, and retrieves the training frame through Feast using feature service `ims_anomaly_scoring_v1`.
+The preferred cluster pipeline starts from a published `bundle_version`, syncs the Feature Store repo, and retrieves the training frame through Feast using feature service `ani_anomaly_scoring_v1`.
 
 Current behavior:
 
@@ -195,8 +195,8 @@ After the pipeline chooses a source model version, it trains a separate serving-
 
 That serving runtime is exported as:
 
-- a Triton repository for `ims-predictive-fs`
-- an MLServer sklearn bundle for `ims-predictive-fs-mlserver`
+- a Triton repository for `ani-predictive-fs`
+- an MLServer sklearn bundle for `ani-predictive-fs-mlserver`
 
 Both exports are published to versioned storage paths and stable `current` aliases. The selected source model version remains the lineage parent recorded in metadata and the model registry.
 
@@ -222,13 +222,13 @@ The runtime artifact version actually exported for serving and referenced by dep
 
 ## Current Bootstrap And Cluster Snapshot
 
-The repo still carries the older bootstrap artifacts for `ims-predictive`, including checked-in `baseline-v1` and `predictive-serving-v1` entries. Those remain useful for local bootstrap and compatibility checks.
+The repo still carries the older bootstrap artifacts for the legacy Triton bundle under `ai/models/serving/predictive/ims-predictive/` (served in-cluster as `ani-predictive`), including checked-in `baseline-v1` and `predictive-serving-v1` entries. Those remain useful for local bootstrap and compatibility checks.
 
 The live feature-store rollout adds a separate cluster-native path:
 
-- model registry name `ims-anomaly-featurestore`
-- Triton serving target `ims-predictive-fs`
-- MLServer serving target `ims-predictive-fs-mlserver`
+- model registry name `ani-anomaly-featurestore`
+- Triton serving target `ani-predictive-fs`
+- MLServer serving target `ani-predictive-fs-mlserver`
 - versioned object-store exports under `predictive-featurestore/...` and `predictive-featurestore-mlserver/...`
 
 Treat those serving target names as deployment topology. They are not the same thing as `best_model`, `selected_model_version`, or the raw AutoGluon predictor identity.
@@ -237,7 +237,7 @@ Treat those serving target names as deployment topology. They are not the same t
 
 - `ai/training/train_and_register.py`
 - `ai/training/featurestore_train.py`
-- `ai/pipelines/ims_featurestore_pipeline.py`
+- `ai/pipelines/ani_featurestore_pipeline.py`
 - `ai/models/artifacts/baseline-v1.json`
 - `ai/models/serving/predictive/ims-predictive/1/weights.json`
 - `ai/registry/model_registry.json`

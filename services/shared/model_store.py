@@ -34,8 +34,8 @@ def _predictive_endpoint() -> str:
 
 
 def _predictive_model_name() -> str:
-    explicit = os.getenv("PREDICTIVE_MODEL_NAME", "ims-predictive-fs").strip()
-    return explicit or "ims-predictive-fs"
+    explicit = os.getenv("PREDICTIVE_MODEL_NAME", "ani-predictive-fs").strip()
+    return explicit or "ani-predictive-fs"
 
 
 def _reported_remote_model_version(default: str | None = None) -> str | None:
@@ -78,8 +78,15 @@ def current_model_status() -> Dict[str, object]:
         "predictive_model_name": _predictive_model_name() if endpoint else None,
         "predictive_endpoint": endpoint or None,
         "artifact_present": bool(artifact_path and artifact_path.exists()),
-        "scoring_modes": ["remote-kserve-triton", "local-artifact"] if endpoint else ["local-artifact"],
+        "scoring_modes": ["remote-kserve-v2", "local-artifact"] if endpoint else ["local-artifact"],
     }
+
+
+def _resolve_artifact_path(model: Dict[str, object]) -> Path:
+    artifact_path = Path(str(model.get("artifact") or ""))
+    if not artifact_path.is_absolute():
+        artifact_path = _registry_path().parent.parent / artifact_path
+    return artifact_path
 
 
 def load_deployed_model() -> Dict[str, object] | None:
@@ -89,13 +96,9 @@ def load_deployed_model() -> Dict[str, object] | None:
     deployed = registry.get("deployed_model_version")
     for model in registry.get("models", []):
         if model.get("version") == deployed:
-            artifact_path = Path(model["artifact"])
-            if not artifact_path.is_absolute():
-                artifact_path = _registry_path().parent.parent / artifact_path
-            artifact = _load_artifact(artifact_path, str(model.get("kind", "")))
             return {
                 "metadata": model,
-                "artifact": artifact,
+                "artifact_path": _resolve_artifact_path(model),
             }
     return None
 
@@ -182,11 +185,9 @@ def score_features_detailed(
     if not deployed:
         raise ModelUnavailableError("No deployed model is registered for anomaly scoring")
 
-    artifact = deployed["artifact"]
     metadata = deployed["metadata"]
     reported_version = str(metadata["version"])
-    model_type = artifact.get("model_type") if isinstance(artifact, dict) else None
-    class_labels = _canonical_class_labels(metadata, artifact)
+    class_labels = _canonical_class_labels(metadata, {})
     debug_trace_packets: list[Dict[str, object]] = []
     remote_prediction, remote_trace_packets = _remote_score(
         features,
@@ -200,41 +201,45 @@ def score_features_detailed(
     if remote_prediction is not None:
         prediction = remote_prediction
         reported_version = str(_reported_remote_model_version(reported_version) or reported_version)
-    elif metadata.get("kind") == "triton_python_multiclass_logistic_regression":
-        prediction = _score_triton_export(features, artifact)
-        scoring_mode = "triton-artifact"
-        if include_debug_trace:
-            debug_trace_packets.extend(
-                _local_model_trace_packets(features, prediction, "triton-artifact", reported_version, str(metadata.get("kind") or ""))
-            )
-    elif metadata.get("kind") in {"sklearn_multiclass_logistic_regression", "sklearn_logistic_regression"}:
-        prediction = _score_serving_model(features, artifact, metadata)
-        scoring_mode = "local-artifact"
-        if include_debug_trace:
-            debug_trace_packets.extend(
-                _local_model_trace_packets(features, prediction, "local-artifact", reported_version, str(metadata.get("kind") or ""))
-            )
-    elif model_type == "baseline_multiclass_logistic_regression":
-        prediction = _score_baseline(features, artifact)
-        scoring_mode = "baseline-artifact"
-        if include_debug_trace:
-            debug_trace_packets.extend(
-                _local_model_trace_packets(features, prediction, "baseline-artifact", reported_version, str(model_type or "baseline"))
-            )
-    elif model_type == "autogluon_tabular_multiclass":
-        prediction = _score_autogluon(features, artifact, metadata)
-        scoring_mode = "autogluon-artifact"
-        if include_debug_trace:
-            debug_trace_packets.extend(
-                _local_model_trace_packets(features, prediction, "autogluon-artifact", reported_version, str(model_type or "autogluon"))
-            )
     else:
-        prediction = _score_legacy_runtime(features, artifact, metadata, anomaly_type_hint)
-        scoring_mode = "legacy-fallback"
-        if include_debug_trace:
-            debug_trace_packets.extend(
-                _local_model_trace_packets(features, prediction, "legacy-fallback", reported_version, str(model_type or metadata.get("kind") or "legacy"))
-            )
+        artifact = _load_local_artifact(deployed)
+        model_type = artifact.get("model_type") if isinstance(artifact, dict) else None
+        class_labels = _canonical_class_labels(metadata, artifact)
+        if metadata.get("kind") == "triton_python_multiclass_logistic_regression":
+            prediction = _score_triton_export(features, artifact)
+            scoring_mode = "triton-artifact"
+            if include_debug_trace:
+                debug_trace_packets.extend(
+                    _local_model_trace_packets(features, prediction, "triton-artifact", reported_version, str(metadata.get("kind") or ""))
+                )
+        elif metadata.get("kind") in {"sklearn_multiclass_logistic_regression", "sklearn_logistic_regression"}:
+            prediction = _score_serving_model(features, artifact, metadata)
+            scoring_mode = "local-artifact"
+            if include_debug_trace:
+                debug_trace_packets.extend(
+                    _local_model_trace_packets(features, prediction, "local-artifact", reported_version, str(metadata.get("kind") or ""))
+                )
+        elif model_type == "baseline_multiclass_logistic_regression":
+            prediction = _score_baseline(features, artifact)
+            scoring_mode = "baseline-artifact"
+            if include_debug_trace:
+                debug_trace_packets.extend(
+                    _local_model_trace_packets(features, prediction, "baseline-artifact", reported_version, str(model_type or "baseline"))
+                )
+        elif model_type == "autogluon_tabular_multiclass":
+            prediction = _score_autogluon(features, artifact, metadata)
+            scoring_mode = "autogluon-artifact"
+            if include_debug_trace:
+                debug_trace_packets.extend(
+                    _local_model_trace_packets(features, prediction, "autogluon-artifact", reported_version, str(model_type or "autogluon"))
+                )
+        else:
+            prediction = _score_legacy_runtime(features, artifact, metadata, anomaly_type_hint)
+            scoring_mode = "legacy-fallback"
+            if include_debug_trace:
+                debug_trace_packets.extend(
+                    _local_model_trace_packets(features, prediction, "legacy-fallback", reported_version, str(model_type or metadata.get("kind") or "legacy"))
+                )
     result = {
         **prediction,
         "model_version": reported_version,
@@ -244,6 +249,24 @@ def score_features_detailed(
     if include_debug_trace:
         result["debug_trace"] = debug_trace_packets
     return result
+
+
+def _load_local_artifact(deployed: Dict[str, object]) -> Dict[str, object] | object:
+    metadata = deployed["metadata"]
+    artifact_path = deployed.get("artifact_path")
+    if not isinstance(artifact_path, Path) or not artifact_path.exists():
+        version = str(metadata.get("version") or "unknown")
+        path = str(artifact_path or "")
+        endpoint = _predictive_endpoint()
+        if endpoint:
+            raise ModelUnavailableError(
+                f"Remote predictive endpoint {endpoint} did not return a usable prediction and the local artifact "
+                f"for model {version} is missing at {path or '<unknown>'}"
+            )
+        raise ModelUnavailableError(
+            f"Local scoring artifact for model {version} is missing at {path or '<unknown>'}"
+        )
+    return _load_artifact(artifact_path, str(metadata.get("kind", "")))
 
 
 def _flatten_numbers(value: object) -> list[float]:

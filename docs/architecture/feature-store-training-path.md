@@ -4,16 +4,16 @@
 
 This document defines the live feature-store-backed architecture for the IMS anomaly platform across Feature Store, KFP training, model registry, and serving.
 
-The objective is no longer to sketch a hypothetical next path. The bundle publication pipeline, the `ims-featurestore` Feast deployment, the `ims-featurestore-train-and-register` pipeline, the OpenShift AI Model Registry publication step, and the dual Triton and MLServer serving exports are now part of the current rollout.
+The objective is no longer to sketch a hypothetical next path. The bundle publication pipeline, the `ani-featurestore` Feast deployment, the `ani-featurestore-train-and-register` pipeline, the OpenShift AI Model Registry publication step, and the dual Triton and MLServer serving exports are now part of the current rollout.
 
 This architecture must:
 
-- keep the legacy `ims-anomaly-platform-train-and-register` path available as a compatibility bridge
+- keep the legacy `ani-anomaly-platform-train-and-register` path available as a compatibility bridge
 - continue collecting incidents, RCA payloads, and feature windows in the running platform
 - create a final, versioned bundle dataset that is ready to publish into Feature Store
 - define how that dataset maps to Feature Store data sources, features, feature views, and feature services
 - run a cluster-native Kubeflow pipeline that reads from Feature Store, trains a model, and publishes a model version into the Red Hat OpenShift AI Model Registry
-- deploy the feature-store-trained model into serving runtimes without breaking the legacy `ims-predictive` service
+- deploy the feature-store-trained model into serving runtimes without breaking the legacy `ani-predictive` service
 
 This document extends the current [engineering specification](./engineering-spec.md) and the release-oriented [incident release and offline training contract](./incident-release-corpus-and-offline-training.md).
 
@@ -64,14 +64,14 @@ Today the platform supports both the legacy direct MinIO path and the feature-st
 
 Current runtime facts:
 
-- `services/sipp-runner/run_scenario.py` writes JSON feature windows to MinIO under `pipelines/ims-demo-lab/datasets/datasets/<dataset_version>/feature-windows/...`
-- `ai/training/build_feature_bundle.py` and the release tooling create versioned bundle datasets under `pipelines/ims-demo-lab/datasets/feature-bundles/<bundle_version>/`
-- `k8s/base/feature-store/featurestore-instance.yaml` deploys `ims-featurestore` through OpenShift AI Feature Store / Feast
-- `ai/pipelines/ims_feature_bundle_pipeline.py` publishes and validates bundle versions
-- `ai/pipelines/ims_featurestore_pipeline.py` resolves bundles, syncs Feast definitions, retrieves the training frame, trains and evaluates the baseline and AutoGluon candidate, exports Triton and MLServer bundles, and registers the selected model in OpenShift AI Model Registry
-- the live feature-store serving targets are `ims-predictive-fs` (Triton) and `ims-predictive-fs-mlserver` (MLServer)
+- `services/sipp-runner/run_scenario.py` writes JSON feature windows to MinIO under `pipelines/ani-demo-lab/datasets/<dataset_version>/feature-windows/...`
+- `ai/training/build_feature_bundle.py` and the release tooling create versioned bundle datasets under `pipelines/ani-demo-lab/datasets/feature-bundles/<bundle_version>/` (GitOps Feature Store config may also reference `s3://ani-models/pipelines/ani-datascience/datasets/feature-bundles/` for the same logical bundles)
+- `k8s/base/feature-store/featurestore-instance.yaml` deploys `ani-featurestore` through OpenShift AI Feature Store / Feast
+- `ai/pipelines/ani_feature_bundle_pipeline.py` publishes and validates bundle versions
+- `ai/pipelines/ani_featurestore_pipeline.py` resolves bundles, syncs Feast definitions, retrieves the training frame, trains and evaluates the baseline and AutoGluon candidate, exports Triton and MLServer bundles, and registers the selected model in OpenShift AI Model Registry
+- the live feature-store serving targets are `ani-predictive-fs` (Triton) and `ani-predictive-fs-mlserver` (MLServer)
 - `services/shared/model_store.py` and `anomaly-service` consume the feature-store serving path through the KServe V2 `/infer` contract
-- the older `ims-anomaly-platform-train-and-register` pipeline and `ims-predictive` service remain available as a compatibility and bootstrap path
+- the older `ani-anomaly-platform-train-and-register` pipeline and `ani-predictive` service remain available as a compatibility and bootstrap path
 
 The legacy path is still available, but the feature-store path is now the preferred cluster-native model lifecycle.
 
@@ -101,15 +101,15 @@ flowchart TD
   Offline["Feature Store offline store"]
   Online["Feature Store online store<br/>optional first release"]
 
-  NewKFP["ims-featurestore-train-and-register"]
-  ArtifactT["Triton bundle<br/>ims-predictive-fs"]
-  ArtifactM["MLServer bundle<br/>ims-predictive-fs-mlserver"]
+  NewKFP["ani-featurestore-train-and-register"]
+  ArtifactT["Triton bundle<br/>ani-predictive-fs"]
+  ArtifactM["MLServer bundle<br/>ani-predictive-fs-mlserver"]
   MR["RHOAI Model Registry"]
-  ServeT["ims-predictive-fs<br/>KServe / Triton"]
-  ServeM["ims-predictive-fs-mlserver<br/>KServe / MLServer"]
+  ServeT["ani-predictive-fs<br/>KServe / Triton"]
+  ServeM["ani-predictive-fs-mlserver<br/>KServe / MLServer"]
 
   CurrentKFP["legacy bootstrap KFP"]
-  CurrentServe["legacy ims-predictive"]
+  CurrentServe["legacy ani-predictive"]
 
   SIPP --> Windows
   Windows --> Bundle
@@ -169,8 +169,8 @@ Required identifiers:
 
 Recommended naming examples:
 
-- `ims-feature-bundle-2026-04-01`
-- `ims-feature-bundle-v1`
+- `ani-feature-bundle-2026-04-01`
+- `ani-feature-bundle-v1`
 
 ### 6.3 Bundle Contents
 
@@ -179,7 +179,7 @@ The bundle dataset should be stored as an internal, feature-store-ready snapshot
 Recommended structure:
 
 ```text
-s3://ims-models/feature-bundles/<bundle_version>/
+s3://ani-models/feature-bundles/<bundle_version>/
   manifest.json
   dataset_card.md
   quality_report.json
@@ -252,18 +252,18 @@ The Feature Store path should map the bundle dataset into the following objects.
 | Feature Store object | Proposal for this repo |
 | --- | --- |
 | Project / repo | `ai/featurestore/feature_repo/` |
-| Batch data source | Parquet files from `s3://ims-models/feature-bundles/<bundle_version>/parquet/` |
+| Batch data source | Parquet files from `s3://ani-models/feature-bundles/<bundle_version>/parquet/` |
 | Entity | `feature_window` with join key `window_id` |
-| Primary feature view | `ims_window_numeric_v1` |
-| Context feature view | `ims_window_context_v1` |
-| Training label view | `ims_training_label_v1` |
-| Feature service | `ims_anomaly_scoring_v1` |
+| Primary feature view | `ani_window_numeric_v1` |
+| Context feature view | `ani_window_context_v1` |
+| Training label view | `ani_training_label_v1` |
+| Feature service | `ani_anomaly_scoring_v1` |
 | Offline retrieval | feature service plus label join for training |
 | Online store | optional in first release; enable after live push flow is defined |
 
 ### 7.3 Proposed Feature Views
 
-#### `ims_window_numeric_v1`
+#### `ani_window_numeric_v1`
 
 Purpose:
 
@@ -286,7 +286,7 @@ Timestamp:
 
 - `event_timestamp` derived from the window end or capture time
 
-#### `ims_window_context_v1`
+#### `ani_window_context_v1`
 
 Purpose:
 
@@ -301,7 +301,7 @@ Suggested fields:
 - `dataset_version`
 - `source_snapshot_id`
 
-#### `ims_training_label_v1`
+#### `ani_training_label_v1`
 
 Purpose:
 
@@ -322,7 +322,7 @@ The initial feature service should represent the model input contract, not the e
 
 Recommended initial feature service:
 
-- `ims_anomaly_scoring_v1`
+- `ani_anomaly_scoring_v1`
 
 This feature service should include only the numeric features that the model consumes. Labels, RCA, and incident metadata remain outside the feature service.
 
@@ -353,15 +353,15 @@ We now run a dedicated feature-store training pipeline rather than extending the
 
 Recommended new pipeline name:
 
-- `ims-featurestore-train-and-register`
+- `ani-featurestore-train-and-register`
 
 Companion bundle pipeline:
 
-- `ims-feature-bundle-publish`
+- `ani-feature-bundle-publish`
 
 Rules:
 
-- the legacy `ims-anomaly-platform-train-and-register` pipeline remains untouched
+- the legacy `ani-anomaly-platform-train-and-register` pipeline remains untouched
 - the new pipeline consumes a `bundle_version`, not a raw `dataset_version`
 - the new pipeline writes to the Red Hat OpenShift AI Model Registry
 - the new pipeline prepares artifacts for separate Triton and MLServer serving endpoints
@@ -444,7 +444,7 @@ Each model version registered by the new pipeline should include:
 
 Recommended model naming:
 
-- model: `ims-anomaly-featurestore`
+- model: `ani-anomaly-featurestore`
 - versions: dataset- or date-scoped, for example `bundle-2026-04-01-v1`
 
 ### 9.3 Compatibility Bridge
@@ -465,15 +465,15 @@ The live feature-store rollout uses separate serving targets.
 
 Current names:
 
-- `ims-predictive-fs`
-- `ims-predictive-fs-mlserver`
+- `ani-predictive-fs`
+- `ani-predictive-fs-mlserver`
 
 Rules:
 
-- do not replace `ims-predictive` on the first rollout
+- do not replace `ani-predictive` on the first rollout
 - keep the legacy serving runtime available for fallback and bootstrap
-- use `ims-predictive-fs` as the current default remote-scoring endpoint
-- keep `ims-predictive-fs-mlserver` available for side-by-side parity validation
+- use `ani-predictive-fs` as the current default remote-scoring endpoint
+- keep `ani-predictive-fs-mlserver` available for side-by-side parity validation
 - do not attempt an in-place Triton-to-MLServer cutover
 
 ### 10.2 Serving Artifact
@@ -482,8 +482,8 @@ The serving layer now exports separate artifacts for Triton and MLServer rather 
 
 Current exports:
 
-- a Triton-serving repository for `ims-predictive-fs`
-- an MLServer sklearn bundle for `ims-predictive-fs-mlserver`
+- a Triton-serving repository for `ani-predictive-fs`
+- an MLServer sklearn bundle for `ani-predictive-fs-mlserver`
 - versioned and stable `current` aliases in object storage
 - model-registry lineage that points back to the selected source model version
 
@@ -529,11 +529,11 @@ ai/training/
   featurestore_train.py
   model_registry_client.py
 ai/pipelines/
-  ims_featurestore_pipeline.py
-  generated/ims_featurestore_pipeline.yaml
+  ani_featurestore_pipeline.py
+  generated/ani_featurestore_pipeline.yaml
 k8s/base/
   feature-store/
-  kfp/assets/ims_featurestore_pipeline.yaml
+  kfp/assets/ani_featurestore_pipeline.yaml
   serving/featurestore-serving.yaml
   serving/featurestore-serving-mlserver.yaml
 ```
@@ -553,7 +553,7 @@ Deliverables:
 - bundle schema
 - manifest contract
 - versioning rules
-- feature selection for `ims_window_numeric_v1`
+- feature selection for `ani_window_numeric_v1`
 
 ### Milestone 2: Build the final bundle dataset (implemented)
 

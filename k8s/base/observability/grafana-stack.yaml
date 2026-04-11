@@ -2,13 +2,13 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: grafana-reader
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 ---
 apiVersion: v1
 kind: Secret
 metadata:
   name: grafana-reader-token
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
   annotations:
     kubernetes.io/service-account.name: grafana-reader
 type: kubernetes.io/service-account-token
@@ -16,11 +16,11 @@ type: kubernetes.io/service-account-token
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: ims-demo-grafana-cluster-monitoring-view
+  name: ani-demo-grafana-cluster-monitoring-view
 subjects:
   - kind: ServiceAccount
     name: grafana-reader
-    namespace: ims-demo-lab
+    namespace: ani-demo-lab
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -30,16 +30,16 @@ apiVersion: grafana.integreatly.org/v1beta1
 kind: Grafana
 metadata:
   name: grafana
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
   labels:
-    dashboards: ims-demo
+    dashboards: ani-demo
 spec:
   config:
     log:
       mode: console
     security:
       admin_user: admin
-      admin_password: ims-demo-grafana
+      admin_password: ani-demo-grafana
     "auth.anonymous":
       enabled: "true"
       org_role: Viewer
@@ -48,7 +48,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: grafana
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   to:
     kind: Service
@@ -64,12 +64,12 @@ spec:
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDatasource
 metadata:
-  name: ims-demo-prometheus
-  namespace: ims-demo-lab
+  name: ani-demo-prometheus
+  namespace: ani-demo-lab
 spec:
   instanceSelector:
     matchLabels:
-      dashboards: ims-demo
+      dashboards: ani-demo
   valuesFrom:
     - targetPath: secureJsonData.httpHeaderValue1
       valueFrom:
@@ -77,7 +77,7 @@ spec:
           name: grafana-reader-token
           key: token
   datasource:
-    name: ims-demo-prometheus
+    name: ani-demo-prometheus
     type: prometheus
     access: proxy
     url: https://thanos-querier.openshift-monitoring.svc.cluster.local:9091

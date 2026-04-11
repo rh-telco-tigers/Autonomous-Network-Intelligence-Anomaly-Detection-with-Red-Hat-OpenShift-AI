@@ -15,7 +15,7 @@ from shared.security import AuthContext, ensure_project_access, ensure_role, req
 
 class ScoreRequest(BaseModel):
     features: Dict[str, object] = Field(default_factory=dict)
-    project: str = "ims-demo"
+    project: str = "ani-demo"
     feature_window_id: Optional[str] = None
     scenario_name: Optional[str] = None
     anomaly_type_hint: Optional[str] = None

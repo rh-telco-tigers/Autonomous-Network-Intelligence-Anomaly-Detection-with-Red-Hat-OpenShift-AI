@@ -5,13 +5,13 @@ import shutil
 
 from kfp import compiler
 
-from ims_incident_release_pipeline import ims_incident_release_pipeline
+from ani_incident_release_pipeline import ani_incident_release_pipeline
 
 
 def main() -> None:
     pipeline_root = Path(__file__).resolve().parent
-    generated_path = pipeline_root.parent / "generated" / "ims_incident_release_pipeline.yaml"
-    asset_path = pipeline_root.parent.parent / "k8s" / "base" / "kfp" / "assets" / "ims_incident_release_pipeline.yaml"
+    generated_path = pipeline_root.parent / "generated" / "ani_incident_release_pipeline.yaml"
+    asset_path = pipeline_root.parent.parent / "k8s" / "base" / "kfp" / "assets" / "ani_incident_release_pipeline.yaml"
     publisher_path = pipeline_root / "publish_pipeline.py"
     publisher_asset_path = pipeline_root.parent.parent / "k8s" / "base" / "kfp" / "assets" / "publish_incident_release_pipeline.py"
 
@@ -19,7 +19,7 @@ def main() -> None:
     asset_path.parent.mkdir(parents=True, exist_ok=True)
     publisher_asset_path.parent.mkdir(parents=True, exist_ok=True)
     compiler.Compiler().compile(
-        pipeline_func=ims_incident_release_pipeline,
+        pipeline_func=ani_incident_release_pipeline,
         package_path=str(generated_path),
     )
     shutil.copyfile(generated_path, asset_path)

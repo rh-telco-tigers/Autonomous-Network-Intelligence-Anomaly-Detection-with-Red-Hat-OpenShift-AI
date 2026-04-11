@@ -15,8 +15,9 @@ import type {
   TicketLookupResponse,
 } from "@/lib/types";
 
-const defaultProject = process.env.NEXT_PUBLIC_IMS_PROJECT ?? "ims-demo";
-const REQUEST_TIMEOUT_MS = 12_000;
+const defaultProject = process.env.NEXT_PUBLIC_IMS_PROJECT ?? "ani-demo";
+const DEFAULT_REQUEST_TIMEOUT_MS = 12_000;
+export const LONG_RUNNING_REQUEST_TIMEOUT_MS = 45_000;
 const CONSOLE_STALE_TIME_MS = 30_000;
 const INCIDENT_LIST_STALE_TIME_MS = 20_000;
 const INCIDENT_WORKFLOW_STALE_TIME_MS = 15_000;
@@ -29,9 +30,14 @@ type PlaybookInstructionPreviewResponse = {
   draft: boolean;
 };
 
-export async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
+export type RequestOptions = RequestInit & {
+  timeoutMs?: number;
+};
+
+export async function request<T>(path: string, token: string, init?: RequestOptions): Promise<T> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutMs = init?.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(path, {
       ...init,
@@ -61,7 +67,7 @@ export async function request<T>(path: string, token: string, init?: RequestInit
     return payload as T;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`Request timed out after ${Math.round(REQUEST_TIMEOUT_MS / 1000)}s`);
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
     }
     throw error;
   } finally {
@@ -255,6 +261,7 @@ export function useScenarioRunner() {
       request<ScenarioRunResponse>("/api/console/run-scenario", token, {
         method: "POST",
         body: JSON.stringify({ scenario, project: defaultProject }),
+        timeoutMs: LONG_RUNNING_REQUEST_TIMEOUT_MS,
       }),
     onSuccess: (payload) => {
       queryClient.setQueryData(["console-state", defaultProject, token], payload.state);
@@ -276,6 +283,7 @@ export function useWorkflowMutation<TBody extends object, TResult = unknown>(
       return request<TResult>(pathBuilder(input.incidentId, options?.extra), token, {
         method: "POST",
         body: JSON.stringify(input.body),
+        timeoutMs: LONG_RUNNING_REQUEST_TIMEOUT_MS,
       });
     },
     onSuccess: (_payload, variables) => {

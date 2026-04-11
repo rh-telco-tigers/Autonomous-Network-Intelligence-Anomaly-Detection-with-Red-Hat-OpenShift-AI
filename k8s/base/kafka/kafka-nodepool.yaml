@@ -5,7 +5,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "15"
   labels:
-    strimzi.io/cluster: ims-release-kafka
+    strimzi.io/cluster: ani-release-kafka
 spec:
   replicas: 1
   roles:

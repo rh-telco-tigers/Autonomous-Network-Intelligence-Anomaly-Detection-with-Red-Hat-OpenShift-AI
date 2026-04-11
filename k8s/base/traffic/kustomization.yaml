@@ -2,7 +2,6 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 configMapGenerator:
   - name: sipp-scenarios
-    namespace: ims-demo-lab
     files:
       - scenarios/register-normal.xml
       - scenarios/register-storm.xml

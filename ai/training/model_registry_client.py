@@ -4,12 +4,20 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 
-DEFAULT_MODEL_REGISTRY_ENDPOINT = "http://model-registry-service.rhoai-model-registries.svc.cluster.local:8080"
+DEFAULT_MODEL_REGISTRY_ENDPOINT = "https://model-catalog.rhoai-model-registries.svc.cluster.local:8443"
+DEFAULT_MODEL_REGISTRY_CUSTOM_CA = "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
+DEFAULT_MODEL_REGISTRY_NAMESPACE = "rhoai-model-registries"
+DEFAULT_MODEL_REGISTRY_SERVICE = "model-catalog"
+DEFAULT_MODEL_REGISTRY_ROUTE_NAME = "model-catalog-https"
+DEFAULT_KUBERNETES_CA_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 
 
 def _now() -> str:
@@ -55,6 +63,9 @@ def build_model_registry_payload(
     registry_endpoint: str | None = None,
     metadata: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
+    resolved_endpoint = _resolve_registry_endpoint(
+        registry_endpoint or os.getenv("RHOAI_MODEL_REGISTRY_ENDPOINT", DEFAULT_MODEL_REGISTRY_ENDPOINT)
+    )
     return {
         "model_name": model_name,
         "model_version_name": model_version_name,
@@ -67,7 +78,7 @@ def build_model_registry_payload(
         "pipeline_name": pipeline_name,
         "pipeline_run_id": pipeline_run_id or _pipeline_run_id(),
         "deployment_readiness_status": deployment_readiness_status,
-        "registry_endpoint": registry_endpoint or os.getenv("RHOAI_MODEL_REGISTRY_ENDPOINT", DEFAULT_MODEL_REGISTRY_ENDPOINT),
+        "registry_endpoint": resolved_endpoint,
         "generated_at": _now(),
         "metrics": metrics,
         "metadata": metadata or {},
@@ -81,6 +92,70 @@ def _read_default_token() -> str | None:
     token_path = Path("/var/run/secrets/kubernetes.io/serviceaccount/token")
     if token_path.exists():
         return token_path.read_text().strip()
+    return None
+
+
+def _kubernetes_request(path: str) -> Dict[str, Any] | None:
+    token = _read_default_token()
+    if not token:
+        return None
+    api_host = os.getenv("KUBERNETES_SERVICE_HOST", "kubernetes.default.svc")
+    api_port = os.getenv("KUBERNETES_SERVICE_PORT_HTTPS", os.getenv("KUBERNETES_SERVICE_PORT", "443"))
+    ca_path = Path(DEFAULT_KUBERNETES_CA_PATH)
+    context = ssl.create_default_context(cafile=str(ca_path)) if ca_path.exists() else ssl.create_default_context()
+    request = Request(
+        f"https://{api_host}:{api_port}{path}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    try:
+        with urlopen(request, timeout=5, context=context) as response:
+            payload = response.read().decode()
+    except (HTTPError, URLError, OSError, ValueError):
+        return None
+    if not payload:
+        return {}
+    try:
+        return json.loads(payload)
+    except ValueError:
+        return None
+
+
+def _discover_model_registry_route_endpoint() -> str | None:
+    namespace = os.getenv("MODEL_REGISTRY_NAMESPACE", DEFAULT_MODEL_REGISTRY_NAMESPACE).strip() or DEFAULT_MODEL_REGISTRY_NAMESPACE
+    service_name = os.getenv("MODEL_REGISTRY_SERVICE", DEFAULT_MODEL_REGISTRY_SERVICE).strip() or DEFAULT_MODEL_REGISTRY_SERVICE
+    service_payload = _kubernetes_request(f"/api/v1/namespaces/{namespace}/services/{service_name}") or {}
+    annotations = ((service_payload.get("metadata") or {}).get("annotations") or {}) if isinstance(service_payload, dict) else {}
+    external_address = str(annotations.get("routing.opendatahub.io/external-address-rest") or "").strip()
+    if external_address:
+        external_host = external_address.removeprefix("https://").rstrip("/")
+        return f"https://{external_host}"
+
+    route_name = os.getenv("MODEL_REGISTRY_ROUTE_NAME", DEFAULT_MODEL_REGISTRY_ROUTE_NAME).strip() or DEFAULT_MODEL_REGISTRY_ROUTE_NAME
+    route_payload = _kubernetes_request(f"/apis/route.openshift.io/v1/namespaces/{namespace}/routes/{route_name}") or {}
+    route_spec = (route_payload.get("spec") or {}) if isinstance(route_payload, dict) else {}
+    route_host = str(route_spec.get("host") or "").strip()
+    if route_host:
+        return f"https://{route_host}"
+    return None
+
+
+def _resolve_registry_endpoint(value: str | None) -> str:
+    explicit = str(value or "").strip()
+    if explicit and ".svc.cluster.local" not in explicit:
+        return explicit
+    discovered = _discover_model_registry_route_endpoint()
+    return discovered or explicit
+
+
+def _read_default_custom_ca(endpoint: str) -> str | None:
+    if ".svc.cluster.local" not in endpoint:
+        return None
+    explicit = os.getenv("RHOAI_MODEL_REGISTRY_CUSTOM_CA", "").strip()
+    if explicit:
+        return explicit
+    default_ca = Path(DEFAULT_MODEL_REGISTRY_CUSTOM_CA)
+    if default_ca.exists():
+        return str(default_ca)
     return None
 
 
@@ -106,12 +181,15 @@ def _metadata_value(value: Any) -> Any:
 
 
 def _try_register_with_kubeflow_hub(payload: Dict[str, Any]) -> Dict[str, Any]:
-    endpoint = str(payload.get("registry_endpoint") or os.getenv("RHOAI_MODEL_REGISTRY_ENDPOINT", DEFAULT_MODEL_REGISTRY_ENDPOINT)).strip()
+    endpoint = _resolve_registry_endpoint(
+        payload.get("registry_endpoint") or os.getenv("RHOAI_MODEL_REGISTRY_ENDPOINT", DEFAULT_MODEL_REGISTRY_ENDPOINT)
+    )
     if not endpoint:
         return {
             "status": "failed",
             "reason": "Model registry endpoint is not configured",
         }
+    payload["registry_endpoint"] = endpoint
 
     try:
         from kubeflow.hub import ModelRegistryClient
@@ -124,7 +202,7 @@ def _try_register_with_kubeflow_hub(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     token = _read_default_token()
     author = os.getenv("RHOAI_MODEL_REGISTRY_AUTHOR", "featurestore-pipeline").strip() or "featurestore-pipeline"
-    custom_ca = os.getenv("RHOAI_MODEL_REGISTRY_CUSTOM_CA", "").strip() or None
+    custom_ca = _read_default_custom_ca(endpoint)
     try:
         registry_metadata = {
             key: _metadata_value(value)
@@ -151,7 +229,7 @@ def _try_register_with_kubeflow_hub(payload: Dict[str, Any]) -> Dict[str, Any]:
             version=payload["model_version_name"],
             model_format_name=payload["model_format_name"],
             model_format_version=payload["model_format_version"],
-            owner=os.getenv("RHOAI_MODEL_REGISTRY_OWNER", "ims-demo"),
+            owner=os.getenv("RHOAI_MODEL_REGISTRY_OWNER", "ani-demo"),
             version_description=payload["metadata"].get("description", ""),
             metadata=registry_metadata,
         )

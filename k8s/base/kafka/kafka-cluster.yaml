@@ -1,7 +1,7 @@
 apiVersion: kafka.strimzi.io/v1beta2
 kind: Kafka
 metadata:
-  name: ims-release-kafka
+  name: ani-release-kafka
   annotations:
     argocd.argoproj.io/sync-wave: "16"
     strimzi.io/node-pools: enabled

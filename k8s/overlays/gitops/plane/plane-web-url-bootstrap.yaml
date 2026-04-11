@@ -1,0 +1,181 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plane-web-url-bootstrap
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: plane-web-url-bootstrap
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["plane-app-vars"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["plane-admin-wl", "plane-api-wl", "plane-live-wl", "plane-space-wl", "plane-web-wl"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["route.openshift.io"]
+    resources: ["routes"]
+    resourceNames: ["plane-web"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plane-web-url-bootstrap
+subjects:
+  - kind: ServiceAccount
+    name: plane-web-url-bootstrap
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: plane-web-url-bootstrap
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: plane-web-url-config-bootstrap-v2
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      serviceAccountName: plane-web-url-bootstrap
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: artifacts.plane.so/makeplane/plane-backend:v1.2.3
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              python - <<'PY'
+              import json
+              import os
+              import ssl
+              import time
+              import urllib.error
+              import urllib.request
+
+              namespace = (os.getenv("POD_NAMESPACE") or "plane").strip() or "plane"
+              token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+              ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+              def k8s_request(
+                  path: str,
+                  *,
+                  method: str = "GET",
+                  payload: dict | None = None,
+                  expected_statuses: tuple[int, ...] = (200,),
+                  ignore_statuses: tuple[int, ...] = (),
+                  content_type: str = "application/json",
+              ):
+                  with open(token_path, "r", encoding="utf-8") as handle:
+                      token = handle.read().strip()
+                  headers = {"Authorization": f"Bearer {token}"}
+                  data = None
+                  if payload is not None:
+                      headers["Content-Type"] = content_type
+                      data = json.dumps(payload).encode("utf-8")
+                  request = urllib.request.Request(
+                      f"https://kubernetes.default.svc{path}",
+                      data=data,
+                      headers=headers,
+                      method=method,
+                  )
+                  context = ssl.create_default_context(cafile=ca_path)
+                  try:
+                      with urllib.request.urlopen(request, timeout=30, context=context) as response:
+                          body = response.read().decode("utf-8")
+                          return json.loads(body) if body.strip() else {}
+                  except urllib.error.HTTPError as exc:
+                      body = exc.read().decode("utf-8")
+                      if exc.code in ignore_statuses:
+                          return json.loads(body) if body.strip() else None
+                      if exc.code not in expected_statuses:
+                          raise
+                      return json.loads(body) if body.strip() else {}
+
+              host = ""
+              deadline = time.time() + 450
+              while time.time() < deadline:
+                  route_payload = k8s_request(
+                      f"/apis/route.openshift.io/v1/namespaces/{namespace}/routes/plane-web",
+                      ignore_statuses=(404,),
+                  ) or {}
+                  route_spec = route_payload.get("spec") if isinstance(route_payload, dict) else {}
+                  route_status = route_payload.get("status") if isinstance(route_payload, dict) else {}
+                  host = str((route_spec or {}).get("host") or "").strip()
+                  if not host:
+                      ingress_entries = (route_status or {}).get("ingress") or []
+                      if ingress_entries:
+                          host = str((ingress_entries[0] or {}).get("host") or "").strip()
+                  if host:
+                      break
+                  time.sleep(5)
+
+              if not host:
+                  raise SystemExit("plane-web route host not available")
+
+              cors_origins = f"http://{host},https://{host}"
+              web_url = f"https://{host}"
+              k8s_request(
+                  f"/api/v1/namespaces/{namespace}/configmaps/plane-app-vars",
+                  method="PATCH",
+                  payload={
+                      "data": {
+                          "APP_BASE_URL": web_url,
+                          "WEB_URL": web_url,
+                          "CORS_ALLOWED_ORIGINS": cors_origins,
+                      }
+                  },
+                  expected_statuses=(200,),
+                  content_type="application/merge-patch+json",
+              )
+
+              rollout_patch = {
+                  "spec": {
+                      "template": {
+                          "metadata": {
+                              "annotations": {
+                                  "ani.redhat.com/plane-web-url-ts": str(int(time.time()))
+                              }
+                          }
+                      }
+                  }
+              }
+              for deployment in (
+                  "plane-admin-wl",
+                  "plane-api-wl",
+                  "plane-live-wl",
+                  "plane-space-wl",
+                  "plane-web-wl",
+              ):
+                  k8s_request(
+                      f"/apis/apps/v1/namespaces/{namespace}/deployments/{deployment}",
+                      method="PATCH",
+                      payload=rollout_patch,
+                      expected_statuses=(200,),
+                      content_type="application/strategic-merge-patch+json",
+                  )
+
+              print(f"patched Plane URLs to {web_url}", flush=True)
+              print("triggered Plane deployment rollouts", flush=True)
+              PY
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

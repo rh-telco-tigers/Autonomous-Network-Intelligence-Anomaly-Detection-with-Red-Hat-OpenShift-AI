@@ -39,10 +39,10 @@ def _default_registry() -> Dict[str, Any]:
             "min_stability_score": 0.85,
             "status": "unknown",
         },
-        "serving_artifact": "models/serving/predictive/ims-predictive/1/weights.json",
+        "serving_artifact": "models/serving/predictive/ani-predictive/1/weights.json",
         "serving_repository": "models/serving/predictive",
         "serving_runtime": "nvidia-triton-runtime",
-        "serving_model_name": "ims-predictive",
+        "serving_model_name": "ani-predictive",
         "promotion_history": [],
         "models": [],
     }

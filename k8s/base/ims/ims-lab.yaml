@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mongo
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   replicas: 1
   selector:
@@ -47,7 +47,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: mongo
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   selector:
     app: mongo
@@ -60,7 +60,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mysql
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   replicas: 1
   selector:
@@ -82,6 +82,11 @@ spec:
           ports:
             - containerPort: 3306
               name: mysql
+          startupProbe:
+            tcpSocket:
+              port: mysql
+            periodSeconds: 5
+            failureThreshold: 24
           readinessProbe:
             tcpSocket:
               port: mysql
@@ -94,13 +99,13 @@ spec:
               memory: 256Mi
             limits:
               cpu: 250m
-              memory: 512Mi
+              memory: 1Gi
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: mysql
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   selector:
     app: mysql
@@ -113,7 +118,18 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: openimss-webui
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
+  annotations:
+    image.openshift.io/triggers: |-
+      [
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-open5gs:latest"
+          },
+          "fieldPath": "spec.template.spec.containers[?(@.name==\"open5gs\")].image"
+        }
+      ]
 spec:
   replicas: 1
   selector:
@@ -126,12 +142,12 @@ spec:
     spec:
       containers:
         - name: open5gs
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-open5gs:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/openimss-open5gs:latest
           env:
             - name: COMPONENT_NAME
               value: webui
             - name: MONGO_IP
-              value: mongo.ims-demo-lab.svc.cluster.local
+              value: mongo.ani-sipp.svc.cluster.local
             - name: WEBUI_WORKDIR
               value: /tmp/openimss-webui
           ports:
@@ -171,7 +187,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: openimss-webui
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   selector:
     app: openimss-webui
@@ -184,7 +200,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: openimss-webui
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   to:
     kind: Service
@@ -199,7 +215,18 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ims-hss
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
+  annotations:
+    image.openshift.io/triggers: |-
+      [
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-open5gs:latest"
+          },
+          "fieldPath": "spec.template.spec.containers[?(@.name==\"open5gs\")].image"
+        }
+      ]
 spec:
   replicas: 1
   selector:
@@ -212,14 +239,14 @@ spec:
     spec:
       containers:
         - name: open5gs
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-open5gs:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/openimss-open5gs:latest
           env:
             - name: COMPONENT_NAME
               value: hss-1
             - name: MONGO_IP
-              value: mongo.ims-demo-lab.svc.cluster.local
+              value: mongo.ani-sipp.svc.cluster.local
             - name: HSS_IP
-              value: ims-hss.ims-demo-lab.svc.cluster.local
+              value: ims-hss.ani-sipp.svc.cluster.local
             - name: MME_IP
               value: 127.0.0.1
             - name: MCC
@@ -227,9 +254,9 @@ spec:
             - name: MNC
               value: "01"
             - name: DIAMETER_REALM
-              value: ims-demo-lab.svc.cluster.local
+              value: ani-sipp.svc.cluster.local
             - name: HSS_DIAMETER_IDENTITY
-              value: ims-hss.ims-demo-lab.svc.cluster.local
+              value: ims-hss.ani-sipp.svc.cluster.local
           ports:
             - containerPort: 3868
               name: diameter
@@ -285,7 +312,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ims-hss
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   selector:
     app: ims-hss
@@ -303,7 +330,25 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ims-icscf
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
+  annotations:
+    image.openshift.io/triggers: |-
+      [
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-opensips:latest"
+          },
+          "fieldPath": "spec.template.spec.initContainers[?(@.name==\"init-opensips-config\")].image"
+        },
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-opensips:latest"
+          },
+          "fieldPath": "spec.template.spec.containers[?(@.name==\"opensips\")].image"
+        }
+      ]
 spec:
   replicas: 1
   selector:
@@ -316,7 +361,7 @@ spec:
     spec:
       initContainers:
         - name: init-opensips-config
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/openimss-opensips:latest
           command:
             - /bin/sh
             - -c
@@ -335,7 +380,7 @@ spec:
               mountPath: /work
       containers:
         - name: opensips
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/openimss-opensips:latest
           env:
             - name: COMPONENT_NAME
               value: icscf-1
@@ -383,7 +428,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ims-icscf
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   selector:
     app: ims-icscf
@@ -405,7 +450,25 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ims-scscf
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
+  annotations:
+    image.openshift.io/triggers: |-
+      [
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-opensips:latest"
+          },
+          "fieldPath": "spec.template.spec.initContainers[?(@.name==\"init-opensips-config\")].image"
+        },
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-opensips:latest"
+          },
+          "fieldPath": "spec.template.spec.containers[?(@.name==\"opensips\")].image"
+        }
+      ]
 spec:
   replicas: 1
   selector:
@@ -418,7 +481,7 @@ spec:
     spec:
       initContainers:
         - name: init-opensips-config
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/openimss-opensips:latest
           command:
             - /bin/sh
             - -c
@@ -437,7 +500,7 @@ spec:
               mountPath: /work
       containers:
         - name: opensips
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/openimss-opensips:latest
           env:
             - name: COMPONENT_NAME
               value: scscf-1
@@ -485,7 +548,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ims-scscf
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   selector:
     app: ims-scscf
@@ -507,7 +570,25 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ims-pcscf
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
+  annotations:
+    image.openshift.io/triggers: |-
+      [
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-opensips:latest"
+          },
+          "fieldPath": "spec.template.spec.initContainers[?(@.name==\"init-opensips-config\")].image"
+        },
+        {
+          "from": {
+            "kind": "ImageStreamTag",
+            "name": "openimss-opensips:latest"
+          },
+          "fieldPath": "spec.template.spec.containers[?(@.name==\"opensips\")].image"
+        }
+      ]
 spec:
   replicas: 1
   selector:
@@ -520,7 +601,7 @@ spec:
     spec:
       initContainers:
         - name: init-opensips-config
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/openimss-opensips:latest
           command:
             - /bin/sh
             - -c
@@ -539,7 +620,7 @@ spec:
               mountPath: /work
       containers:
         - name: opensips
-          image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/openimss-opensips:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/openimss-opensips:latest
           env:
             - name: COMPONENT_NAME
               value: pcscf-1
@@ -587,7 +668,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ims-pcscf
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   selector:
     app: ims-pcscf

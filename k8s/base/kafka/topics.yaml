@@ -1,11 +1,11 @@
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
-  name: ims-incidents-bronze
+  name: ani-incidents-bronze
   annotations:
     argocd.argoproj.io/sync-wave: "17"
   labels:
-    strimzi.io/cluster: ims-release-kafka
+    strimzi.io/cluster: ani-release-kafka
 spec:
   partitions: 3
   replicas: 1
@@ -15,11 +15,11 @@ spec:
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
-  name: ims-feature-windows-bronze
+  name: ani-feature-windows-bronze
   annotations:
     argocd.argoproj.io/sync-wave: "17"
   labels:
-    strimzi.io/cluster: ims-release-kafka
+    strimzi.io/cluster: ani-release-kafka
 spec:
   partitions: 3
   replicas: 1
@@ -29,11 +29,11 @@ spec:
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
-  name: ims-release-artifacts
+  name: ani-release-artifacts
   annotations:
     argocd.argoproj.io/sync-wave: "17"
   labels:
-    strimzi.io/cluster: ims-release-kafka
+    strimzi.io/cluster: ani-release-kafka
 spec:
   partitions: 3
   replicas: 1
@@ -47,7 +47,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "17"
   labels:
-    strimzi.io/cluster: ims-release-kafka
+    strimzi.io/cluster: ani-release-kafka
 spec:
   partitions: 3
   replicas: 1

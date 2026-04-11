@@ -1,2 +1,2 @@
 id(int,auto) setid(int) destination(string) socket(string,null) state(int) probe_mode(int) weight(string) priority(int) attrs(string) description(string) 
-1:1:sip\:ims-icscf.ims-demo-lab.svc.cluster.local\:4060:null:0:1:1:1:'carrier':'icscf'
+1:1:sip\:ims-icscf.ani-sipp.svc.cluster.local\:4060:null:0:1:1:1:'carrier':'icscf'

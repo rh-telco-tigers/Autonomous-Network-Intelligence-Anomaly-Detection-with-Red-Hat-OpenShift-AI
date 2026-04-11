@@ -2,7 +2,6 @@ apiVersion: dscinitialization.opendatahub.io/v2
 kind: DSCInitialization
 metadata:
   name: default-dsci
-  namespace: redhat-ods-operator
   annotations:
     argocd.argoproj.io/sync-wave: "10"
 spec:
@@ -10,11 +9,9 @@ spec:
   monitoring:
     managementState: Managed
     namespace: redhat-ods-monitoring
-  serviceMesh:
-    managementState: Removed
   trustedCABundle:
-    managementState: Managed
     customCABundle: ""
+    managementState: Managed
 ---
 apiVersion: datasciencecluster.opendatahub.io/v2
 kind: DataScienceCluster
@@ -22,7 +19,8 @@ metadata:
   name: default-dsc
   namespace: redhat-ods-operator
   annotations:
-    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/sync-wave: "11"
+    ani.redhat.com/rhoai-bootstrap-revision: "1"
 spec:
   components:
     kserve:

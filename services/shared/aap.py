@@ -9,6 +9,13 @@ from typing import Any, Dict, List
 
 import requests
 
+from shared.gitea import (
+    generated_playbook_draft_branch,
+    generated_playbook_main_branch,
+    generated_playbook_path,
+    generated_playbook_repo_scm_url,
+)
+
 
 class AAPAutomationError(RuntimeError):
     pass
@@ -16,19 +23,19 @@ class AAPAutomationError(RuntimeError):
 
 ACTION_DEFINITIONS: Dict[str, Dict[str, str]] = {
     "scale_scscf": {
-        "job_template_name": "IMS Scale S-CSCF Path",
+        "job_template_name": "ANI Scale S-CSCF Path",
         "playbook": "automation/ansible/playbooks/scale-scscf.yaml",
         "description": "Scale the S-CSCF deployment after operator approval.",
         "cases": "registration_storm,call_setup_timeout,server_internal_error",
     },
     "rate_limit_pcscf": {
-        "job_template_name": "IMS Rate Limit P-CSCF Ingress",
+        "job_template_name": "ANI Rate Limit P-CSCF Ingress",
         "playbook": "automation/ansible/playbooks/rate-limit-pcscf.yaml",
         "description": "Apply the low-risk P-CSCF ingress guardrail through AAP after approval.",
         "cases": "registration_storm,retransmission_spike,network_degradation",
     },
     "quarantine_imsi": {
-        "job_template_name": "IMS Quarantine Subscriber or Source",
+        "job_template_name": "ANI Quarantine Subscriber or Source",
         "playbook": "automation/ansible/playbooks/quarantine-imsi.yaml",
         "description": "Record a quarantine request for the offending subscriber or traffic source.",
         "cases": "authentication_failure,registration_failure,malformed_sip",
@@ -37,12 +44,12 @@ ACTION_DEFINITIONS: Dict[str, Dict[str, str]] = {
 
 CALLBACK_TEMPLATE_DEFINITIONS: Dict[str, Dict[str, str]] = {
     "eda_transition_incident_state": {
-        "job_template_name": "IMS EDA Transition Incident State",
+        "job_template_name": "ANI EDA Transition Incident State",
         "playbook": "automation/eda/playbooks/transition-incident-state.yml",
         "description": "Call the control-plane transition endpoint from Event-Driven Ansible.",
     },
     "eda_execute_incident_action": {
-        "job_template_name": "IMS EDA Execute Incident Action",
+        "job_template_name": "ANI EDA Execute Incident Action",
         "playbook": "automation/eda/playbooks/execute-incident-action.yml",
         "description": "Call the control-plane automation execution endpoint from Event-Driven Ansible.",
     },
@@ -163,6 +170,53 @@ def launch_action(action: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def launch_repo_playbook(incident_id: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]:
+    normalized_incident_id = str(incident_id or "").strip()
+    if not normalized_incident_id:
+        raise AAPAutomationError("incident_id is required to launch an AI-generated playbook through AAP.")
+
+    organization = _require_object_id("/api/v2/organizations/", _organization_name(), "organization")
+    inventory_id = _ensure_inventory(organization)
+    project_id = _ensure_ai_playbook_project(organization)
+    _sync_project(project_id, project_name=_ai_playbook_project_name())
+    kubernetes_credential_id = _ensure_kubernetes_credential(organization)
+    playbook_path = generated_playbook_path(normalized_incident_id)
+    scm_branch = generated_playbook_draft_branch(normalized_incident_id)
+    template_id = _ensure_job_template(
+        organization_id=organization,
+        inventory_id=inventory_id,
+        project_id=project_id,
+        credential_id=kubernetes_credential_id,
+        action=f"ai_generated_{normalized_incident_id}",
+        playbook=playbook_path,
+        description=f"Run the AI-generated playbook for incident {normalized_incident_id} from the draft branch.",
+        template_name=_ai_playbook_job_template_name(normalized_incident_id),
+        ask_scm_branch_on_launch=True,
+    )
+    payload = _request(
+        "POST",
+        f"/api/v2/job_templates/{template_id}/launch/",
+        expected_status=(200, 201, 202),
+        json={"extra_vars": extra_vars, "scm_branch": scm_branch},
+    )
+    job_id = int(payload.get("job") or payload.get("id") or 0)
+    if job_id <= 0:
+        raise AAPAutomationError(f"AAP did not return a job id for AI-generated playbook incident '{normalized_incident_id}'.")
+    return {
+        "job_id": job_id,
+        "job_template_id": template_id,
+        "job_template_name": _ai_playbook_job_template_name(normalized_incident_id),
+        "project_id": project_id,
+        "project_name": _ai_playbook_project_name(),
+        "playbook": playbook_path,
+        "scm_branch": scm_branch,
+        "status": str(payload.get("status") or "pending"),
+        "job_api_url": _absolute_url(f"/api/v2/jobs/{job_id}/"),
+        "job_stdout_url": _absolute_url(f"/api/v2/jobs/{job_id}/stdout/?format=txt_download"),
+        "controller_app_url": _controller_app_url(),
+    }
+
+
 def wait_for_job(job_id: int, timeout_seconds: int = 300, poll_interval_seconds: int = 5) -> Dict[str, Any]:
     deadline = time.time() + max(timeout_seconds, 1)
     interval = max(poll_interval_seconds, 1)
@@ -187,7 +241,7 @@ def launch_runner_job(action: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]
     incident_id = str(extra_vars.get("incident_id") or "incident")
     suffix = incident_id.replace("-", "")[:8] or "demo"
     timestamp = str(int(time.time()))[-8:]
-    job_name = f"ims-{action.replace('_', '-')[:20]}-{suffix}-{timestamp}"[:63].rstrip("-")
+    job_name = f"ani-{action.replace('_', '-')[:20]}-{suffix}-{timestamp}"[:63].rstrip("-")
     namespace = _runner_namespace()
     payload = {
         "apiVersion": "batch/v1",
@@ -196,9 +250,9 @@ def launch_runner_job(action: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]
             "name": job_name,
             "namespace": namespace,
             "labels": {
-                "app.kubernetes.io/name": "ims-remediation-runner",
-                "ims.demo/action": action,
-                "ims.demo/incident-id": incident_id,
+                "app.kubernetes.io/name": "ani-remediation-runner",
+                "ani.demo/action": action,
+                "ani.demo/incident-id": incident_id,
             },
         },
         "spec": {
@@ -208,7 +262,7 @@ def launch_runner_job(action: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]
                 "metadata": {
                     "labels": {
                         "job-name": job_name,
-                        "ims.demo/action": action,
+                        "ani.demo/action": action,
                     }
                 },
                 "spec": {
@@ -228,7 +282,7 @@ def launch_runner_job(action: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]
                             "command": ["/bin/bash", "-lc"],
                             "args": [
                                 "set -euo pipefail\n"
-                                "workdir=/tmp/ims-remediation\n"
+                                "workdir=/tmp/ani-remediation\n"
                                 "rm -rf \"$workdir\"\n"
                                 "git clone --depth 1 --branch \"$AAP_GIT_BRANCH\" \"$AAP_GIT_URL\" \"$workdir\"\n"
                                 "cd \"$workdir\"\n"
@@ -252,6 +306,93 @@ def launch_runner_job(action: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]
         "job_namespace": namespace,
         "status": "created",
         "controller_app_url": _controller_app_url(),
+    }
+
+
+def launch_dynamic_playbook(playbook_yaml: str, playbook_label: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]:
+    normalized_playbook = str(playbook_yaml or "").strip()
+    if not normalized_playbook:
+        raise AAPAutomationError("AAP runner fallback requires non-empty dynamic playbook content.")
+
+    incident_id = str(extra_vars.get("incident_id") or "incident")
+    suffix = incident_id.replace("-", "")[:8] or "demo"
+    timestamp = str(int(time.time()))[-8:]
+    job_name = f"ani-ai-playbook-{suffix}-{timestamp}"[:63].rstrip("-")
+    namespace = _runner_namespace()
+    filename = Path(str(playbook_label or "ai-generated-playbook.yml")).name or "ai-generated-playbook.yml"
+    if not filename.endswith((".yml", ".yaml")):
+        filename = f"{filename}.yml"
+
+    payload = {
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {
+            "name": job_name,
+            "namespace": namespace,
+            "labels": {
+                "app.kubernetes.io/name": "ani-remediation-runner",
+                "ani.demo/action": "ai-generated-playbook",
+                "ani.demo/incident-id": incident_id,
+            },
+        },
+        "spec": {
+            "backoffLimit": 0,
+            "ttlSecondsAfterFinished": 1800,
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "job-name": job_name,
+                        "ani.demo/action": "ai-generated-playbook",
+                    }
+                },
+                "spec": {
+                    "serviceAccountName": _runner_service_account(),
+                    "restartPolicy": "Never",
+                    "containers": [
+                        {
+                            "name": "ansible-runner",
+                            "image": _runner_image(),
+                            "imagePullPolicy": "IfNotPresent",
+                            "env": [
+                                {"name": "AAP_GIT_URL", "value": _project_scm_url()},
+                                {"name": "AAP_GIT_BRANCH", "value": _project_branch()},
+                                {
+                                    "name": "AAP_DYNAMIC_PLAYBOOK_B64",
+                                    "value": base64.b64encode(normalized_playbook.encode("utf-8")).decode("ascii"),
+                                },
+                                {"name": "AAP_DYNAMIC_PLAYBOOK_FILENAME", "value": filename},
+                                {"name": "EXTRA_VARS_JSON", "value": json.dumps(extra_vars)},
+                            ],
+                            "command": ["/bin/bash", "-lc"],
+                            "args": [
+                                "set -euo pipefail\n"
+                                "workdir=/tmp/ani-remediation\n"
+                                "rm -rf \"$workdir\"\n"
+                                "git clone --depth 1 --branch \"$AAP_GIT_BRANCH\" \"$AAP_GIT_URL\" \"$workdir\"\n"
+                                "cd \"$workdir\"\n"
+                                "playbook_path=\"$workdir/${AAP_DYNAMIC_PLAYBOOK_FILENAME}\"\n"
+                                "printf '%s' \"$AAP_DYNAMIC_PLAYBOOK_B64\" | base64 -d > \"$playbook_path\"\n"
+                                "printf '%s' \"$EXTRA_VARS_JSON\" >/tmp/extra-vars.json\n"
+                                "ansible-playbook \"$playbook_path\" -i localhost, -c local -e @/tmp/extra-vars.json\n"
+                            ],
+                        }
+                    ],
+                },
+            },
+        },
+    }
+    _kubernetes_request(
+        "POST",
+        f"/apis/batch/v1/namespaces/{namespace}/jobs",
+        expected_status=(200, 201),
+        json=payload,
+    )
+    return {
+        "job_name": job_name,
+        "job_namespace": namespace,
+        "status": "created",
+        "controller_app_url": _controller_app_url(),
+        "playbook_label": filename,
     }
 
 
@@ -348,10 +489,7 @@ def _controller_url() -> str:
 
 
 def _controller_app_url() -> str:
-    return (
-        os.getenv("AAP_CONTROLLER_APP_URL", "").strip()
-        or "https://aap-controller-aap.apps.ocp.4h2g6.sandbox195.opentlc.com"
-    ).rstrip("/")
+    return os.getenv("AAP_CONTROLLER_APP_URL", "").strip().rstrip("/")
 
 
 def _controller_username() -> str:
@@ -383,7 +521,7 @@ def _organization_name() -> str:
 
 
 def _inventory_name() -> str:
-    return os.getenv("AAP_INVENTORY_NAME", "IMS Incident Local Inventory").strip() or "IMS Incident Local Inventory"
+    return os.getenv("AAP_INVENTORY_NAME", "ANI Incident Local Inventory").strip() or "ANI Incident Local Inventory"
 
 
 def _inventory_host_name() -> str:
@@ -391,7 +529,7 @@ def _inventory_host_name() -> str:
 
 
 def _project_name() -> str:
-    return os.getenv("AAP_PROJECT_NAME", "IMS Incident Automation").strip() or "IMS Incident Automation"
+    return os.getenv("AAP_PROJECT_NAME", "ANI Incident Automation").strip() or "ANI Incident Automation"
 
 
 def _project_scm_url() -> str:
@@ -405,10 +543,31 @@ def _project_branch() -> str:
     return os.getenv("AAP_PROJECT_BRANCH", "main").strip() or "main"
 
 
+def _ai_playbook_project_name() -> str:
+    return os.getenv("AAP_AI_PLAYBOOK_PROJECT_NAME", "ANI AI Generated Playbooks").strip() or "ANI AI Generated Playbooks"
+
+
+def _ai_playbook_project_scm_url() -> str:
+    return os.getenv("AAP_AI_PLAYBOOK_PROJECT_SCM_URL", "").strip() or generated_playbook_repo_scm_url()
+
+
+def _ai_playbook_project_branch() -> str:
+    return os.getenv("AAP_AI_PLAYBOOK_PROJECT_BRANCH", "").strip() or generated_playbook_main_branch()
+
+
+def _ai_playbook_job_template_prefix() -> str:
+    return os.getenv("AAP_AI_PLAYBOOK_TEMPLATE_PREFIX", "ANI AI Generated Playbook").strip() or "ANI AI Generated Playbook"
+
+
+def _ai_playbook_job_template_name(incident_id: str) -> str:
+    normalized_incident_id = str(incident_id or "").strip()
+    return f"{_ai_playbook_job_template_prefix()} {normalized_incident_id}".strip()
+
+
 def _kubernetes_credential_name() -> str:
     return (
         os.getenv("AAP_KUBERNETES_CREDENTIAL_NAME", "").strip()
-        or "IMS OpenShift API Credential"
+        or "ANI OpenShift API Credential"
     )
 
 
@@ -459,7 +618,7 @@ def _job_template_name(action: str) -> str:
 
 
 def _absolute_url(path: str) -> str:
-    return f"{_controller_app_url()}{path}"
+    return f"{(_controller_app_url() or _controller_url())}{path}"
 
 
 def _request(
@@ -515,7 +674,7 @@ def _ensure_inventory(organization_id: int) -> int:
     desired = {
         "name": name,
         "organization": organization_id,
-        "description": "Local execution inventory for operator-approved IMS remediation playbooks.",
+        "description": "Local execution inventory for operator-approved ANI remediation playbooks.",
     }
     if inventory is None:
         inventory = _request("POST", "/api/v2/inventories/", expected_status=(200, 201), json=desired)
@@ -541,19 +700,26 @@ def _ensure_inventory_host(inventory_id: int) -> None:
     )
 
 
-def _ensure_project(organization_id: int) -> int:
-    name = _project_name()
+def _ensure_git_project(
+    organization_id: int,
+    *,
+    name: str,
+    description: str,
+    scm_url: str,
+    scm_branch: str,
+    allow_override: bool,
+) -> int:
     payload = _request("GET", "/api/v2/projects/", params={"name": name, "page_size": 200})
     project = next((item for item in payload.get("results", []) if str(item.get("name") or "") == name), None)
     desired = {
         "name": name,
         "organization": organization_id,
-        "description": "IMS incident remediation automation sourced from the cluster Git repository.",
+        "description": description,
         "scm_type": "git",
-        "scm_url": _project_scm_url(),
-        "scm_branch": _project_branch(),
+        "scm_url": scm_url,
+        "scm_branch": scm_branch,
         "scm_update_on_launch": True,
-        "allow_override": False,
+        "allow_override": allow_override,
     }
     if project is None:
         project = _request("POST", "/api/v2/projects/", expected_status=(200, 201), json=desired)
@@ -567,7 +733,30 @@ def _ensure_project(organization_id: int) -> int:
     return int(project["id"])
 
 
-def _sync_project(project_id: int) -> None:
+def _ensure_project(organization_id: int) -> int:
+    return _ensure_git_project(
+        organization_id,
+        name=_project_name(),
+        description="ANI incident remediation automation sourced from the cluster Git repository.",
+        scm_url=_project_scm_url(),
+        scm_branch=_project_branch(),
+        allow_override=False,
+    )
+
+
+def _ensure_ai_playbook_project(organization_id: int) -> int:
+    return _ensure_git_project(
+        organization_id,
+        name=_ai_playbook_project_name(),
+        description="AI-generated incident playbooks sourced from the cluster Gitea repository.",
+        scm_url=_ai_playbook_project_scm_url(),
+        scm_branch=_ai_playbook_project_branch(),
+        allow_override=True,
+    )
+
+
+def _sync_project(project_id: int, *, project_name: str | None = None) -> None:
+    display_name = project_name or _project_name()
     payload = _request(
         "POST",
         f"/api/v2/projects/{project_id}/update/",
@@ -586,10 +775,10 @@ def _sync_project(project_id: int) -> None:
             return
         if status in {"failed", "error", "canceled"}:
             raise AAPAutomationError(
-                f"AAP project sync failed for '{_project_name()}': {update.get('result_traceback') or status}"
+                f"AAP project sync failed for '{display_name}': {update.get('result_traceback') or status}"
             )
         time.sleep(4)
-    raise AAPAutomationError(f"AAP project sync timed out for '{_project_name()}'.")
+    raise AAPAutomationError(f"AAP project sync timed out for '{display_name}'.")
 
 
 def _kubernetes_credential_type_id() -> int:
@@ -677,8 +866,11 @@ def _ensure_job_template(
     action: str,
     playbook: str,
     description: str,
+    *,
+    template_name: str | None = None,
+    ask_scm_branch_on_launch: bool = False,
 ) -> int:
-    name = _job_template_name(action)
+    name = str(template_name or _job_template_name(action)).strip() or _job_template_name(action)
     payload = _request("GET", "/api/v2/job_templates/", params={"name": name, "page_size": 200})
     template = next((item for item in payload.get("results", []) if str(item.get("name") or "") == name), None)
     desired = {
@@ -690,6 +882,7 @@ def _ensure_job_template(
         "organization": organization_id,
         "playbook": playbook,
         "ask_variables_on_launch": True,
+        "ask_scm_branch_on_launch": ask_scm_branch_on_launch,
         "verbosity": 1,
     }
     if template is None:
@@ -698,7 +891,16 @@ def _ensure_job_template(
         _ensure_job_template_credential(template_id, credential_id)
         return template_id
     patch: Dict[str, Any] = {}
-    for field in ("description", "inventory", "project", "organization", "playbook", "ask_variables_on_launch", "verbosity"):
+    for field in (
+        "description",
+        "inventory",
+        "project",
+        "organization",
+        "playbook",
+        "ask_variables_on_launch",
+        "ask_scm_branch_on_launch",
+        "verbosity",
+    ):
         if template.get(field) != desired[field]:
             patch[field] = desired[field]
     if patch:
@@ -768,7 +970,7 @@ def _runner_job_logs(namespace: str, job_name: str) -> str:
     ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
     response = requests.get(
         f"{_kubernetes_api_url()}/api/v1/namespaces/{namespace}/pods/{pod_name}/log",
-        headers={"Authorization": f"Bearer {token}", "Accept": "text/plain"},
+        headers={"Authorization": f"Bearer {token}", "Accept": "*/*"},
         verify=ca_path,
         timeout=float(os.getenv("AAP_KUBERNETES_TIMEOUT_SECONDS", "15")),
     )

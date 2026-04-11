@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plane-app-vars
+data:
+  APP_BASE_URL: ""
+  SENTRY_DSN: ""
+  SENTRY_ENVIRONMENT: ""
+  DEBUG: "0"
+  DOCKERIZED: "1"
+  GUNICORN_WORKERS: "1"
+  MINIO_ENDPOINT_SSL: "0"
+  API_KEY_RATE_LIMIT: "600/minute"
+  WEB_URL: ""
+  CORS_ALLOWED_ORIGINS: ""
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: plane-app-secrets
+stringData:
+  SECRET_KEY: "60gp0byfz2dvffa45cxl20p1scy9xbpf6d8c5y0geejgkyp1b5"
+  LIVE_SERVER_SECRET_KEY: "htbqvBJAgpm9bzvf3r4urJer0ENReatceh"
+  REDIS_URL: "redis://plane-redis.plane.svc.cluster.local:6379/"
+  DATABASE_URL: "postgresql://plane:plane@plane-pgdb.plane.svc.cluster.local/plane"
+  AMQP_URL: "amqp://plane:plane@plane-rabbitmq.plane.svc.cluster.local/"
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: plane-doc-store-secrets
+stringData:
+  FILE_SIZE_LIMIT: "5242880"
+  AWS_S3_BUCKET_NAME: "uploads"
+  USE_MINIO: "1"
+  MINIO_ROOT_USER: "planeadmin"
+  MINIO_ROOT_PASSWORD: "planepassword"
+  AWS_ACCESS_KEY_ID: "planeadmin"
+  AWS_SECRET_ACCESS_KEY: "planepassword"
+  AWS_S3_ENDPOINT_URL: http://plane-minio.plane.svc.cluster.local:9000

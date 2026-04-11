@@ -30,12 +30,17 @@ class _FakeResponse:
 class PlaneTicketProviderTests(unittest.TestCase):
     def setUp(self) -> None:
         tickets._PLANE_STATE_CACHE.clear()
+        tickets._PLANE_PROJECT_CACHE.clear()
         self.env = {
             "PLANE_BASE_URL": "https://plane.example.com",
             "PLANE_APP_URL": "https://app.example.com",
             "PLANE_API_KEY": "plane-token",
             "PLANE_WORKSPACE_SLUG": "ims-workspace",
             "PLANE_PROJECT_ID": "ims-project",
+        }
+        self.project_payload = {
+            "id": "ims-project",
+            "identifier": "IMS",
         }
         self.states_payload = {
             "results": [
@@ -75,15 +80,22 @@ class PlaneTicketProviderTests(unittest.TestCase):
 
         with (
             patch.dict(tickets.os.environ, self.env, clear=False),
-            patch.object(tickets.requests, "get", return_value=_FakeResponse(self.states_payload)) as get_mock,
+            patch.object(
+                tickets.requests,
+                "get",
+                side_effect=[_FakeResponse(self.states_payload), _FakeResponse(self.project_payload)],
+            ) as get_mock,
             patch.object(tickets.requests, "post", return_value=_FakeResponse(created_payload)) as post_mock,
         ):
             provider = tickets.PlaneTicketProvider()
             result = provider.create_ticket(incident, workflow_payload, source_url="https://demo-ui.example.com/incidents/1")
 
-        self.assertEqual(get_mock.call_count, 1)
+        self.assertEqual(get_mock.call_count, 2)
         self.assertEqual(post_mock.call_args.kwargs["json"]["state"], "state-in-progress")
         self.assertEqual(result["ticket_status"], "In Progress")
+        self.assertEqual(result["project_identifier"], "IMS")
+        self.assertEqual(result["sequence_id"], "42")
+        self.assertEqual(result["url"], "https://app.example.com/ims-workspace/browse/IMS-42/")
 
     def test_create_ticket_recovers_existing_plane_issue_after_conflict(self) -> None:
         incident = self._incident(workflow.ESCALATED)
@@ -101,7 +113,11 @@ class PlaneTicketProviderTests(unittest.TestCase):
 
         with (
             patch.dict(tickets.os.environ, self.env, clear=False),
-            patch.object(tickets.requests, "get", return_value=_FakeResponse(self.states_payload)) as get_mock,
+            patch.object(
+                tickets.requests,
+                "get",
+                side_effect=[_FakeResponse(self.states_payload), _FakeResponse(self.project_payload)],
+            ) as get_mock,
             patch.object(
                 tickets.requests,
                 "post",
@@ -116,7 +132,7 @@ class PlaneTicketProviderTests(unittest.TestCase):
             provider = tickets.PlaneTicketProvider()
             result = provider.create_ticket(incident, workflow_payload)
 
-        self.assertEqual(get_mock.call_count, 1)
+        self.assertEqual(get_mock.call_count, 2)
         self.assertEqual(post_mock.call_count, 1)
         self.assertEqual(patch_mock.call_count, 1)
         self.assertEqual(result["status"], "synced")
@@ -124,6 +140,9 @@ class PlaneTicketProviderTests(unittest.TestCase):
         self.assertEqual(result["external_key"], "42")
         self.assertEqual(result["workspace_id"], "ims-workspace")
         self.assertEqual(result["project_id"], "ims-project")
+        self.assertEqual(result["project_identifier"], "IMS")
+        self.assertEqual(result["sequence_id"], "42")
+        self.assertEqual(result["url"], "https://app.example.com/ims-workspace/browse/IMS-42/")
 
     def test_sync_ticket_marks_verified_workflow_as_done(self) -> None:
         incident = self._incident(workflow.VERIFIED)
@@ -138,17 +157,47 @@ class PlaneTicketProviderTests(unittest.TestCase):
 
         with (
             patch.dict(tickets.os.environ, self.env, clear=False),
-            patch.object(tickets.requests, "get", return_value=_FakeResponse(self.states_payload)) as get_mock,
+            patch.object(
+                tickets.requests,
+                "get",
+                side_effect=[_FakeResponse(self.states_payload), _FakeResponse(self.project_payload)],
+            ) as get_mock,
             patch.object(tickets.requests, "patch", return_value=_FakeResponse(synced_payload)) as patch_mock,
         ):
             provider = tickets.PlaneTicketProvider()
             result = provider.sync_ticket(incident, workflow_payload, existing_ticket)
 
-        self.assertEqual(get_mock.call_count, 1)
+        self.assertEqual(get_mock.call_count, 2)
         self.assertEqual(patch_mock.call_args.kwargs["json"]["state"], "state-done")
         self.assertEqual(result["ticket_status"], "Done")
         self.assertEqual(result["workspace_id"], "ims-workspace")
         self.assertEqual(result["project_id"], "ims-project")
+        self.assertEqual(result["project_identifier"], "IMS")
+        self.assertEqual(result["sequence_id"], "42")
+        self.assertEqual(result["url"], "https://app.example.com/ims-workspace/browse/IMS-42/")
+
+    def test_normalize_ticket_record_rewrites_legacy_plane_issue_url(self) -> None:
+        legacy_ticket = {
+            "provider": "plane",
+            "external_key": "42",
+            "external_id": "plane-issue-1",
+            "workspace_id": "ims-workspace",
+            "project_id": "ims-project",
+            "url": "https://app.example.com/ims-workspace/projects/ims-project/issues/plane-issue-1",
+            "metadata": {},
+        }
+
+        with (
+            patch.dict(tickets.os.environ, self.env, clear=False),
+            patch.object(tickets.requests, "get", return_value=_FakeResponse(self.project_payload)) as get_mock,
+        ):
+            normalized = tickets.normalize_ticket_record(legacy_ticket)
+
+        self.assertIsNotNone(normalized)
+        self.assertEqual(get_mock.call_count, 1)
+        self.assertEqual(normalized["url"], "https://app.example.com/ims-workspace/browse/IMS-42/")
+        self.assertEqual(normalized["metadata"]["project_identifier"], "IMS")
+        self.assertEqual(normalized["metadata"]["sequence_id"], "42")
 
 
 if __name__ == "__main__":

@@ -13,6 +13,8 @@ from shared.workflow import plane_priority_for_severity, plane_state_for_workflo
 
 PLANE_STATE_CACHE_TTL_SECONDS = 60.0
 _PLANE_STATE_CACHE: dict[tuple[str, str, str], tuple[float, List[Dict[str, Any]]]] = {}
+PLANE_PROJECT_CACHE_TTL_SECONDS = 300.0
+_PLANE_PROJECT_CACHE: dict[tuple[str, str, str], tuple[float, Dict[str, Any]]] = {}
 
 
 class TicketProviderError(RuntimeError):
@@ -95,6 +97,24 @@ def _fetch_plane_project_states(base_url: str, workspace_slug: str, project_id: 
     return states
 
 
+def _fetch_plane_project(base_url: str, workspace_slug: str, project_id: str, api_key: str) -> Dict[str, Any]:
+    cache_key = (base_url, workspace_slug, project_id)
+    now = time.time()
+    cached = _PLANE_PROJECT_CACHE.get(cache_key)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    response = requests.get(
+        f"{base_url}/api/v1/workspaces/{workspace_slug}/projects/{project_id}/",
+        headers=_plane_api_headers(api_key),
+        timeout=15,
+    )
+    response.raise_for_status()
+    payload = _response_json_object(response)
+    _PLANE_PROJECT_CACHE[cache_key] = (now + PLANE_PROJECT_CACHE_TTL_SECONDS, payload)
+    return payload
+
+
 def _resolve_plane_state(states: List[Dict[str, Any]], desired_name: str) -> Dict[str, Any] | None:
     normalized_desired = _normalize_plane_label(desired_name)
     if not normalized_desired:
@@ -123,6 +143,97 @@ def _resolve_plane_state(states: List[Dict[str, Any]], desired_name: str) -> Dic
             if _normalize_plane_label(state.get("group")) == normalized_group:
                 return state
     return None
+
+
+def _plane_sequence_id(*candidates: object) -> str:
+    for candidate in candidates:
+        value = str(candidate or "").strip()
+        if value.isdigit():
+            return value
+    return ""
+
+
+def _resolve_plane_project_identifier(
+    base_url: str,
+    workspace_slug: str,
+    project_id: str,
+    api_key: str,
+) -> str:
+    if not all([base_url, workspace_slug, project_id, api_key]):
+        return ""
+    try:
+        project = _fetch_plane_project(base_url, workspace_slug, project_id, api_key)
+    except requests.RequestException:
+        return ""
+    return str(project.get("identifier") or "").strip()
+
+
+def _plane_ticket_url(
+    app_url: str,
+    workspace_slug: str,
+    project_identifier: str,
+    sequence_id: str,
+    fallback_url: str = "",
+) -> str:
+    app_base = str(app_url or "").rstrip("/")
+    workspace = str(workspace_slug or "").strip()
+    identifier = str(project_identifier or "").strip()
+    sequence = str(sequence_id or "").strip()
+    if app_base and workspace and identifier and sequence:
+        return f"{app_base}/{workspace}/browse/{identifier}-{sequence}/"
+    return str(fallback_url or "").strip()
+
+
+def normalize_ticket_record(ticket: Dict[str, Any] | None) -> Dict[str, Any] | None:
+    if not isinstance(ticket, dict):
+        return ticket
+
+    provider = str(ticket.get("provider") or "").strip().lower()
+    if provider != "plane":
+        return ticket
+
+    current_url = str(ticket.get("url") or "").strip()
+    if "/browse/" in current_url:
+        return ticket
+
+    metadata = ticket.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    sequence_id = _plane_sequence_id(
+        metadata.get("sequence_id"),
+        ticket.get("external_key"),
+    )
+    workspace_slug = str(ticket.get("workspace_id") or os.getenv("PLANE_WORKSPACE_SLUG") or "").strip()
+    project_id = str(ticket.get("project_id") or os.getenv("PLANE_PROJECT_ID") or "").strip()
+    project_identifier = str(metadata.get("project_identifier") or "").strip()
+    if not project_identifier:
+        project_identifier = _resolve_plane_project_identifier(
+            str(os.getenv("PLANE_BASE_URL") or "").rstrip("/"),
+            workspace_slug,
+            project_id,
+            str(os.getenv("PLANE_API_KEY") or "").strip(),
+        )
+
+    normalized_url = _plane_ticket_url(
+        str(os.getenv("PLANE_APP_URL") or "").rstrip("/"),
+        workspace_slug,
+        project_identifier,
+        sequence_id,
+        fallback_url=current_url,
+    )
+    if not normalized_url or normalized_url == current_url:
+        return ticket
+
+    normalized_metadata = dict(metadata)
+    if sequence_id:
+        normalized_metadata["sequence_id"] = sequence_id
+    if project_identifier:
+        normalized_metadata["project_identifier"] = project_identifier
+    return ticket | {
+        "url": normalized_url,
+        "metadata": normalized_metadata,
+    }
 
 
 def _rca_payload(record: Dict[str, Any]) -> Dict[str, Any]:
@@ -256,6 +367,14 @@ class PlaneTicketProvider(TicketProvider):
             "name": str(resolved.get("name") or desired_name),
         }
 
+    def _project_identifier(self) -> str:
+        return _resolve_plane_project_identifier(
+            self.base_url,
+            self.workspace_slug,
+            self.project_id,
+            self.api_key,
+        )
+
     def status(self) -> Dict[str, object]:
         live = self._live_configured()
         return {
@@ -313,7 +432,7 @@ class PlaneTicketProvider(TicketProvider):
             "name": _ticket_title(incident),
             "description_html": build_ticket_description_html(incident, workflow, incident_url=source_url),
             "priority": plane_priority_for_severity(str(incident.get("severity") or "medium")),
-            "external_source": "ims-demo",
+            "external_source": "ani-demo",
             "external_id": str(incident.get("id") or ""),
         }
         plane_state_id = str(plane_state.get("id") or "")
@@ -344,6 +463,7 @@ class PlaneTicketProvider(TicketProvider):
         payload_state = payload.get("state_detail") if isinstance(payload, dict) else {}
         ticket_status = str((payload_state or {}).get("name") or plane_state.get("name") or "")
         sequence = payload.get("sequence_id")
+        project_identifier = self._project_identifier()
         comment_payload: Dict[str, Any] | None = None
         if note.strip() and external_id:
             comment_response = requests.post(
@@ -351,7 +471,7 @@ class PlaneTicketProvider(TicketProvider):
                 headers=self._headers(),
                 json={
                     "comment_html": _comment_html(note.strip()),
-                    "external_source": "ims-demo",
+                    "external_source": "ani-demo",
                     "external_id": f"{incident.get('id')}-create-{uuid.uuid4().hex[:8]}",
                 },
                 timeout=15,
@@ -364,9 +484,17 @@ class PlaneTicketProvider(TicketProvider):
             "mode": "api",
             "external_id": external_id,
             "external_key": str(sequence or external_id),
-            "url": f"{self.app_url}/{self.workspace_slug}/projects/{self.project_id}/issues/{external_id}",
+            "url": _plane_ticket_url(
+                self.app_url,
+                self.workspace_slug,
+                project_identifier,
+                str(sequence or ""),
+                fallback_url=f"{self.app_url}/{self.workspace_slug}/projects/{self.project_id}/issues/{external_id}",
+            ),
             "workspace_id": self.workspace_slug,
             "project_id": self.project_id,
+            "project_identifier": project_identifier,
+            "sequence_id": str(sequence or ""),
             "title": str(payload.get("name") or _ticket_title(incident)),
             "ticket_status": ticket_status,
             "source_url": source_url,
@@ -440,6 +568,8 @@ class PlaneTicketProvider(TicketProvider):
         payload = response.json()
         payload_state = payload.get("state_detail") if isinstance(payload, dict) else {}
         ticket_status = str((payload_state or {}).get("name") or plane_state.get("name") or "")
+        sequence = payload.get("sequence_id") or ticket.get("external_key") or ""
+        project_identifier = self._project_identifier()
         comment_payload: Dict[str, Any] | None = None
         if note.strip():
             comment_response = requests.post(
@@ -447,7 +577,7 @@ class PlaneTicketProvider(TicketProvider):
                 headers=self._headers(),
                 json={
                     "comment_html": _comment_html(note.strip()),
-                    "external_source": "ims-demo",
+                    "external_source": "ani-demo",
                     "external_id": f"{incident.get('id')}-sync-{uuid.uuid4().hex[:8]}",
                 },
                 timeout=15,
@@ -459,10 +589,18 @@ class PlaneTicketProvider(TicketProvider):
             "provider": "plane",
             "mode": "api",
             "external_id": external_id,
-            "external_key": str(payload.get("sequence_id") or ticket.get("external_key") or external_id),
-            "url": f"{self.app_url}/{self.workspace_slug}/projects/{self.project_id}/issues/{external_id}",
+            "external_key": str(sequence or external_id),
+            "url": _plane_ticket_url(
+                self.app_url,
+                self.workspace_slug,
+                project_identifier,
+                str(sequence or ""),
+                fallback_url=f"{self.app_url}/{self.workspace_slug}/projects/{self.project_id}/issues/{external_id}",
+            ),
             "workspace_id": self.workspace_slug,
             "project_id": self.project_id,
+            "project_identifier": project_identifier,
+            "sequence_id": str(sequence or ""),
             "title": str(payload.get("name") or _ticket_title(incident)),
             "ticket_status": ticket_status,
             "source_url": source_url,

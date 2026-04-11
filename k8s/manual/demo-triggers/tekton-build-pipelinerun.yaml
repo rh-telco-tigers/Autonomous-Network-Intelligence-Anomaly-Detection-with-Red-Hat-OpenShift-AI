@@ -1,16 +1,16 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  generateName: ims-demo-build-
-  namespace: ims-demo-lab
+  generateName: ani-platform-build-
+  namespace: ani-tekton
 spec:
   pipelineRef:
-    name: ims-demo-container-build
+    name: ani-platform-container-build
   params:
     - name: git-url
       value: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
     - name: git-revision
-      value: main
+      value: __GIT_REVISION__
   taskRunTemplate:
     serviceAccountName: pipeline
   timeouts:

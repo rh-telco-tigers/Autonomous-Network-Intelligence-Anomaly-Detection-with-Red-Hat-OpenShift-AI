@@ -2,13 +2,13 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: plane-integration-bootstrap
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: plane-integration-bootstrap
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 rules:
   - apiGroups:
       - ""
@@ -40,11 +40,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: plane-integration-bootstrap
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 subjects:
   - kind: ServiceAccount
     name: plane-integration-bootstrap
-    namespace: ims-demo-lab
+    namespace: ani-demo-lab
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -53,15 +53,12 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: plane-integration-bootstrap
-  namespace: ims-demo-lab
+  name: plane-integration-secret-bootstrap-v8
+  namespace: ani-demo-lab
   annotations:
-    argocd.argoproj.io/hook: Sync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "70"
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   backoffLimit: 3
-  ttlSecondsAfterFinished: 300
   template:
     metadata:
       labels:
@@ -79,6 +76,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: PLANE_NAMESPACE
+              value: plane
             - name: CONTROL_PLANE_API_KEY
               value: demo-token
             - name: PLANE_BOOTSTRAP_WAIT_SECONDS
@@ -86,7 +85,7 @@ spec:
             - name: PLANE_BOOTSTRAP_STATUS_WAIT_SECONDS
               value: "300"
             - name: PLANE_ADMIN_EMAIL
-              value: plane-admin@ims-demo.local
+              value: plane-admin@ani-demo.local
             - name: PLANE_ADMIN_USERNAME
               value: plane-admin
             - name: PLANE_ADMIN_PASSWORD
@@ -97,6 +96,8 @@ spec:
               value: Admin
             - name: PLANE_ADMIN_DISPLAY_NAME
               value: Plane Admin
+            - name: PLANE_WORKSPACE_SLUG
+              value: ani-demo
             - name: PLANE_WORKSPACE_NAME
               value: IMS Demo
             - name: PLANE_PROJECT_NAME
@@ -104,7 +105,7 @@ spec:
             - name: PLANE_PROJECT_IDENTIFIER
               value: IMS
             - name: PLANE_CONTROL_PLANE_TOKEN_LABEL
-              value: ims-demo-control-plane
+              value: ani-demo-control-plane
             - name: PLANE_CONTROL_PLANE_TOKEN_DESCRIPTION
               value: PAT for IMS control-plane ticket sync
           envFrom:
@@ -128,32 +129,35 @@ spec:
               import urllib.error
               import urllib.request
               import uuid
+              from urllib.parse import urlparse
 
               os.environ.setdefault("DJANGO_SETTINGS_MODULE", "plane.settings.production")
 
               import django
               from django.apps import apps
               from django.contrib.auth import get_user_model
+              from django.core.cache import cache
               from django.db.utils import OperationalError
 
               django.setup()
 
               from plane.license.models import Instance, InstanceAdmin
 
-              namespace = (os.getenv("POD_NAMESPACE") or "ims-demo-lab").strip() or "ims-demo-lab"
+              control_plane_namespace = (os.getenv("POD_NAMESPACE") or "ani-runtime").strip() or "ani-runtime"
+              plane_namespace = (os.getenv("PLANE_NAMESPACE") or "plane").strip() or "plane"
               wait_seconds = int(os.getenv("PLANE_BOOTSTRAP_WAIT_SECONDS", "900"))
               status_wait_seconds = int(os.getenv("PLANE_BOOTSTRAP_STATUS_WAIT_SECONDS", "300"))
               control_plane_api_key = os.getenv("CONTROL_PLANE_API_KEY", "demo-token").strip() or "demo-token"
               control_plane_status_url = (
                   os.getenv("CONTROL_PLANE_STATUS_URL")
-                  or f"http://control-plane.{namespace}.svc.cluster.local:8080/integrations/status"
+                  or f"http://control-plane.{control_plane_namespace}.svc.cluster.local:8080/integrations/status"
               ).rstrip("/")
-              token_label = os.getenv("PLANE_CONTROL_PLANE_TOKEN_LABEL", "ims-demo-control-plane").strip() or "ims-demo-control-plane"
+              token_label = os.getenv("PLANE_CONTROL_PLANE_TOKEN_LABEL", "ani-demo-control-plane").strip() or "ani-demo-control-plane"
               token_description = (
                   os.getenv("PLANE_CONTROL_PLANE_TOKEN_DESCRIPTION", "PAT for IMS control-plane ticket sync").strip()
                   or "PAT for IMS control-plane ticket sync"
               )
-              preferred_admin_email = os.getenv("PLANE_ADMIN_EMAIL", "plane-admin@ims-demo.local").strip()
+              preferred_admin_email = os.getenv("PLANE_ADMIN_EMAIL", "plane-admin@ani-demo.local").strip()
               preferred_admin_username = os.getenv("PLANE_ADMIN_USERNAME", "plane-admin").strip() or "plane-admin"
               preferred_admin_password = os.getenv("PLANE_ADMIN_PASSWORD", "plane").strip() or "plane"
               preferred_admin_first_name = os.getenv("PLANE_ADMIN_FIRST_NAME", "Plane").strip() or "Plane"
@@ -161,16 +165,16 @@ spec:
               preferred_admin_display_name = (
                   os.getenv("PLANE_ADMIN_DISPLAY_NAME", "Plane Admin").strip() or "Plane Admin"
               )
-              preferred_workspace_slug = os.getenv("PLANE_WORKSPACE_SLUG", "ims-demo").strip() or "ims-demo"
+              preferred_workspace_slug = os.getenv("PLANE_WORKSPACE_SLUG", "ani-demo").strip() or "ani-demo"
               preferred_workspace_name = os.getenv("PLANE_WORKSPACE_NAME", "IMS Demo").strip() or "IMS Demo"
               preferred_project_name = os.getenv("PLANE_PROJECT_NAME", "IMS Demo").strip() or "IMS Demo"
               preferred_project_identifier = (
                   os.getenv("PLANE_PROJECT_IDENTIFIER", "IMS").strip().upper() or "IMS"
               )
-              plane_base_url = f"http://plane-api.{namespace}.svc.cluster.local:8000"
-              plane_app_url = (os.getenv("WEB_URL") or "").strip().rstrip("/")
-              if plane_app_url.startswith("http://"):
-                  plane_app_url = "https://" + plane_app_url.removeprefix("http://")
+              plane_base_url = f"http://plane-api.{plane_namespace}.svc.cluster.local:8000"
+              plane_app_url = (
+                  os.getenv("PLANE_APP_URL") or os.getenv("APP_BASE_URL") or os.getenv("WEB_URL") or ""
+              ).strip().rstrip("/")
 
               service_account_token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
               service_account_ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
@@ -234,6 +238,23 @@ spec:
                       cafile=service_account_ca_path,
                   )
 
+              if not plane_app_url:
+                  route_payload = k8s_request(
+                      f"/apis/route.openshift.io/v1/namespaces/{plane_namespace}/routes/plane-web",
+                      ignore_statuses=(404,),
+                  ) or {}
+                  route_spec = route_payload.get("spec") if isinstance(route_payload, dict) else {}
+                  route_status = route_payload.get("status") if isinstance(route_payload, dict) else {}
+                  route_host = str((route_spec or {}).get("host") or "").strip()
+                  if not route_host:
+                      ingress_entries = (route_status or {}).get("ingress") or []
+                      if ingress_entries:
+                          route_host = str((ingress_entries[0] or {}).get("host") or "").strip()
+                  if route_host:
+                      plane_app_url = f"https://{route_host}"
+              if plane_app_url.startswith("http://"):
+                  plane_app_url = "https://" + plane_app_url.removeprefix("http://")
+
               def decode_secret_data(payload: dict | None) -> dict[str, str]:
                   if not isinstance(payload, dict):
                       return {}
@@ -262,7 +283,7 @@ spec:
                   return bool((plane_status or {}).get("live_configured"))
 
               def rollout_control_plane() -> bool:
-                  deployment_path = f"/apis/apps/v1/namespaces/{namespace}/deployments/control-plane"
+                  deployment_path = f"/apis/apps/v1/namespaces/{control_plane_namespace}/deployments/control-plane"
                   existing = k8s_request(deployment_path, ignore_statuses=(404,))
                   if existing is None:
                       print("control-plane deployment not present yet; skipping rollout", flush=True)
@@ -275,7 +296,7 @@ spec:
                               "template": {
                                   "metadata": {
                                       "annotations": {
-                                          "ims.redhat.com/plane-bootstrap-ts": str(int(time.time()))
+                                          "ani.redhat.com/plane-bootstrap-ts": str(int(time.time()))
                                       }
                                   }
                               }
@@ -288,6 +309,7 @@ spec:
                   return True
 
               User = get_user_model()
+              Profile = apps.get_model("db", "Profile")
               Workspace = apps.get_model("db", "Workspace")
               WorkspaceMember = apps.get_model("db", "WorkspaceMember")
               Project = apps.get_model("db", "Project")
@@ -298,6 +320,10 @@ spec:
               def ensure_admin_user():
                   user = User.objects.filter(email=preferred_admin_email).first()
                   if user is None:
+                      user = User.objects.filter(username=preferred_admin_username).first()
+                      if user is not None:
+                          print(f"reusing Plane admin user {preferred_admin_username}", flush=True)
+                  if user is None:
                       user = User.objects.create_superuser(
                           preferred_admin_username,
                           preferred_admin_email,
@@ -307,6 +333,8 @@ spec:
 
                   updates = []
                   desired_user_fields = {
+                      "email": preferred_admin_email,
+                      "username": preferred_admin_username,
                       "display_name": preferred_admin_display_name,
                       "first_name": preferred_admin_first_name,
                       "last_name": preferred_admin_last_name,
@@ -319,27 +347,72 @@ spec:
                       if getattr(user, field_name) != value:
                           setattr(user, field_name, value)
                           updates.append(field_name)
+                  if not user.check_password(preferred_admin_password):
+                      user.set_password(preferred_admin_password)
+                      updates.append("password")
                   if updates:
                       user.save(update_fields=updates)
                       print(f"updated Plane admin user fields: {', '.join(updates)}", flush=True)
 
-                  instance = Instance.objects.order_by("-created_at").first()
-                  if instance is not None:
+                  return user
+
+              def ensure_instance_setup(user):
+                  instances = list(Instance.objects.filter(deleted_at__isnull=True).order_by("-created_at"))
+                  if not instances:
+                      raise RuntimeError("Plane instance record not ready")
+
+                  desired_domain = ""
+                  if plane_app_url:
+                      try:
+                          desired_domain = str(urlparse(plane_app_url).hostname or "").strip()
+                      except Exception:
+                          desired_domain = ""
+
+                  for instance in instances:
+                      instance_updates = []
+                      desired_instance_fields = {
+                          "instance_name": preferred_workspace_name,
+                          "is_setup_done": True,
+                          "is_signup_screen_visited": True,
+                      }
+                      if desired_domain:
+                          desired_instance_fields["domain"] = desired_domain
+                      for field_name, value in desired_instance_fields.items():
+                          if getattr(instance, field_name) != value:
+                              setattr(instance, field_name, value)
+                              instance_updates.append(field_name)
+                      if instance_updates:
+                          instance.save(update_fields=instance_updates)
+                          print(
+                              f"updated Plane instance {instance.id} fields: {', '.join(instance_updates)}",
+                              flush=True,
+                          )
+
                       instance_admin, created = InstanceAdmin.objects.get_or_create(
                           user=user,
                           instance=instance,
-                          defaults={"role": 20},
+                          defaults={"role": 20, "is_verified": True},
                       )
                       if created:
-                          print(f"created Plane instance admin for {preferred_admin_email}", flush=True)
-                      elif instance_admin.role != 20:
-                          instance_admin.role = 20
-                          instance_admin.save(update_fields=["role"])
-                          print(f"updated Plane instance admin role for {preferred_admin_email}", flush=True)
-                  else:
-                      print("waiting for Plane instance record", flush=True)
+                          print(f"created Plane instance admin for {preferred_admin_email} on {instance.id}", flush=True)
+                      else:
+                          admin_updates = []
+                          if instance_admin.role != 20:
+                              instance_admin.role = 20
+                              admin_updates.append("role")
+                          if not instance_admin.is_verified:
+                              instance_admin.is_verified = True
+                              admin_updates.append("is_verified")
+                          if admin_updates:
+                              instance_admin.save(update_fields=admin_updates)
+                              print(
+                                  f"updated Plane instance admin for {preferred_admin_email}: {', '.join(admin_updates)}",
+                                  flush=True,
+                              )
 
-                  return user
+                  cache.clear()
+                  print("cleared Plane cache after instance reconciliation", flush=True)
+                  return instances[0]
 
               def ensure_workspace(user):
                   workspace = Workspace.objects.filter(slug=preferred_workspace_slug).first()
@@ -364,6 +437,37 @@ spec:
                       print(f"updated Plane workspace membership for {preferred_admin_email}", flush=True)
 
                   return workspace
+
+              def ensure_profile(user, workspace):
+                  profile, created = Profile.objects.get_or_create(user=user)
+                  if created:
+                      print(f"created Plane profile for {preferred_admin_email}", flush=True)
+
+                  profile_updates = []
+                  if workspace is not None and profile.last_workspace_id != workspace.id:
+                      profile.last_workspace_id = workspace.id
+                      profile_updates.append("last_workspace_id")
+                  if not profile.is_onboarded:
+                      profile.is_onboarded = True
+                      profile_updates.append("is_onboarded")
+
+                  desired_onboarding_step = {
+                      "workspace_join": True,
+                      "profile_complete": True,
+                      "workspace_create": True,
+                      "workspace_invite": True,
+                  }
+                  current_onboarding_step = dict(profile.onboarding_step or {})
+                  if any(current_onboarding_step.get(key) != value for key, value in desired_onboarding_step.items()):
+                      current_onboarding_step.update(desired_onboarding_step)
+                      profile.onboarding_step = current_onboarding_step
+                      profile_updates.append("onboarding_step")
+
+                  if profile_updates:
+                      profile.save(update_fields=profile_updates)
+                      print(f"updated Plane profile fields: {', '.join(profile_updates)}", flush=True)
+
+                  return profile
 
               def ensure_project(user, workspace):
                   project = (
@@ -482,6 +586,8 @@ spec:
 
               deadline = time.time() + wait_seconds
               user = None
+              instance = None
+              profile = None
               workspace = None
               project = None
               last_error = None
@@ -489,7 +595,9 @@ spec:
                   try:
                       user = ensure_admin_user()
                       workspace = ensure_workspace(user)
+                      profile = ensure_profile(user, workspace)
                       project = ensure_project(user, workspace)
+                      instance = ensure_instance_setup(user)
                   except OperationalError as exc:
                       last_error = exc
                       print(f"waiting for Plane database: {exc}", flush=True)
@@ -501,13 +609,13 @@ spec:
                       time.sleep(10)
                       continue
 
-                  if user and workspace and project:
+                  if user and instance and profile and workspace and project:
                       break
 
-                  print("waiting for Plane user/workspace/project seed objects", flush=True)
+                  print("waiting for Plane instance/user/profile/workspace/project seed objects", flush=True)
                   time.sleep(10)
 
-              if not user or not workspace or not project:
+              if not user or not instance or not profile or not workspace or not project:
                   raise SystemExit(f"Plane seed data was not ready before bootstrap timeout: {last_error}")
 
               token = APIToken.objects.filter(label=token_label, user=user, is_active=True).order_by("-updated_at").first()
@@ -534,18 +642,18 @@ spec:
                   "PLANE_API_KEY": str(token.token),
               }
 
-              secret_path = f"/api/v1/namespaces/{namespace}/secrets/plane-integration-auth"
+              secret_path = f"/api/v1/namespaces/{control_plane_namespace}/secrets/plane-integration-auth"
               current_secret = k8s_request(secret_path, ignore_statuses=(404,))
               current_values = decode_secret_data(current_secret)
 
               if current_secret is None:
                   k8s_request(
-                      f"/api/v1/namespaces/{namespace}/secrets",
+                      f"/api/v1/namespaces/{control_plane_namespace}/secrets",
                       method="POST",
                       payload={
                           "apiVersion": "v1",
                           "kind": "Secret",
-                          "metadata": {"name": "plane-integration-auth", "namespace": namespace},
+                          "metadata": {"name": "plane-integration-auth", "namespace": control_plane_namespace},
                           "type": "Opaque",
                           "stringData": desired_secret_data,
                       },
@@ -553,28 +661,57 @@ spec:
                   )
                   print("created plane-integration-auth", flush=True)
               elif any(current_values.get(key, "") != value for key, value in desired_secret_data.items()):
-                  k8s_request(
-                      secret_path,
-                      method="PATCH",
-                      payload={"stringData": desired_secret_data},
-                      expected_statuses=(200,),
-                      content_type="application/merge-patch+json",
-                  )
-                  print("patched plane-integration-auth", flush=True)
+                  try:
+                      k8s_request(
+                          secret_path,
+                          method="PATCH",
+                          payload={"stringData": desired_secret_data},
+                          expected_statuses=(200,),
+                          content_type="application/merge-patch+json",
+                      )
+                      print("patched plane-integration-auth", flush=True)
+                  except urllib.error.HTTPError as exc:
+                      if exc.code != 404:
+                          raise
+                      k8s_request(
+                          f"/api/v1/namespaces/{control_plane_namespace}/secrets",
+                          method="POST",
+                          payload={
+                              "apiVersion": "v1",
+                              "kind": "Secret",
+                              "metadata": {"name": "plane-integration-auth", "namespace": control_plane_namespace},
+                              "type": "Opaque",
+                              "stringData": desired_secret_data,
+                          },
+                          expected_statuses=(201,),
+                      )
+                      print("recreated plane-integration-auth after concurrent prune", flush=True)
               else:
                   print("plane-integration-auth already matches desired Plane settings", flush=True)
 
-              status_deadline = time.time() + status_wait_seconds
-              rolled_out = False
-              while time.time() < status_deadline:
-                  if plane_live_configured():
-                      print("control-plane reports Plane integration live", flush=True)
-                      break
-                  if not rolled_out:
-                      rolled_out = rollout_control_plane()
-                  time.sleep(10)
+              rolled_out = rollout_control_plane()
+              if plane_live_configured():
+                  print("control-plane reports Plane integration live", flush=True)
               else:
-                  raise SystemExit("control-plane never reported Plane integration as live")
+                  status_deadline = time.time() + status_wait_seconds
+                  while time.time() < status_deadline:
+                      if plane_live_configured():
+                          print("control-plane reports Plane integration live", flush=True)
+                          break
+                      time.sleep(10)
+                  else:
+                      if rolled_out:
+                          print(
+                              "Plane credentials were seeded and control-plane rollout was requested; "
+                              "skipping failure while control-plane catches up",
+                              flush=True,
+                          )
+                      else:
+                          print(
+                              "Plane credentials were seeded before control-plane became available; "
+                              "the next control-plane start will pick them up automatically",
+                              flush=True,
+                          )
               PY
           resources:
             requests:

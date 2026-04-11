@@ -3,6 +3,9 @@ kind: Subscription
 metadata:
   name: servicemeshoperator3
   namespace: openshift-operators
+  annotations:
+    argocd.argoproj.io/sync-wave: "30"
+    argocd.argoproj.io/sync-options: Force=true,Replace=true
 spec:
   channel: stable
   config:
@@ -13,8 +16,7 @@ spec:
       requests:
         cpu: 10m
         memory: 64Mi
-  installPlanApproval: Manual
+  installPlanApproval: Automatic
   name: servicemeshoperator3
   source: redhat-operators
   sourceNamespace: openshift-marketplace
-  startingCSV: servicemeshoperator3.v3.1.0

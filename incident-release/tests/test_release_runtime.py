@@ -103,7 +103,7 @@ class ReleaseRuntimeTests(unittest.TestCase):
             incidents.append(
                 {
                     "id": incident_id,
-                    "project": "ims-demo",
+                    "project": "ani-demo",
                     "status": "open",
                     "anomaly_score": 0.91 if anomaly_type != "normal" else 0.03,
                     "anomaly_type": anomaly_type,
@@ -115,9 +115,9 @@ class ReleaseRuntimeTests(unittest.TestCase):
                         **features,
                     },
                     "rca_payload": {
-                        "root_cause": f"https://demo.example/ims-demo-lab/{incident_id}",
+                        "root_cause": f"https://demo.example/ani-demo-lab/{incident_id}",
                         "confidence": 0.87,
-                        "recommendation": f"Review {incident_id} in ims-demo-lab.svc.cluster.local",
+                        "recommendation": f"Review {incident_id} in ani-demo-lab.svc.cluster.local",
                         "retrieved_documents": [{"id": f"doc-{index}"}],
                     },
                     "created_at": f"2026-04-01T00:0{index}:00+00:00",
@@ -148,7 +148,7 @@ class ReleaseRuntimeTests(unittest.TestCase):
             feature_windows.append(
                 {
                     "object_key": f"datasets/live-sipp-v1/feature-windows/{anomaly_type}/{window_id}.json",
-                    "s3_uri": f"s3://ims-models/datasets/live-sipp-v1/feature-windows/{anomaly_type}/{window_id}.json",
+                    "s3_uri": f"s3://ani-models/datasets/live-sipp-v1/feature-windows/{anomaly_type}/{window_id}.json",
                     "local_path": self._write_json(
                         window_path,
                         {
@@ -173,7 +173,7 @@ class ReleaseRuntimeTests(unittest.TestCase):
         incidents.append(
             {
                 "id": "incident-5",
-                "project": "ims-demo",
+                "project": "ani-demo",
                 "status": "resolved",
                 "anomaly_score": 0.72,
                 "anomaly_type": "malformed_invite",
@@ -185,7 +185,7 @@ class ReleaseRuntimeTests(unittest.TestCase):
                     "latency_p95": 210.0,
                 },
                 "rca_payload": {
-                    "root_cause": "Historical artifact from ims-demo-lab namespace",
+                    "root_cause": "Historical artifact from ani-demo-lab namespace",
                     "confidence": 0.61,
                     "recommendation": "Review svc.cluster.local traces",
                     "retrieved_documents": [],
@@ -211,7 +211,7 @@ class ReleaseRuntimeTests(unittest.TestCase):
                 "release_version": "release-v1",
                 "source_snapshot_id": "snapshot-1",
                 "snapshot_cutoff_ts": "2026-04-01T00:59:59+00:00",
-                "project": "ims-demo",
+                "project": "ani-demo",
                 "source_dataset_version": "live-sipp-v1",
                 "feature_schema_version": release_runtime.FEATURE_SCHEMA_VERSION,
                 "artifacts": {
@@ -239,7 +239,7 @@ class ReleaseRuntimeTests(unittest.TestCase):
             incidents = [
                 {
                     "id": "incident-1",
-                    "project": "ims-demo",
+                    "project": "ani-demo",
                     "status": "open",
                     "anomaly_type": "registration_storm",
                     "feature_window_id": "window-1",
@@ -287,25 +287,25 @@ class ReleaseRuntimeTests(unittest.TestCase):
                 manifest = release_runtime.snapshot_sources(
                     release_version="release-v1",
                     source_dataset_version="live-sipp-v1",
-                    project="ims-demo",
+                    project="ani-demo",
                     workspace_root=str(root),
                 )
 
             self.assertTrue(manifest["kafka"]["enabled"])
             self.assertEqual(
-                manifest["kafka"]["topics"]["ims-incidents-bronze"]["published_records"],
+                manifest["kafka"]["topics"]["ani-incidents-bronze"]["published_records"],
                 1,
             )
             self.assertEqual(
-                manifest["kafka"]["topics"]["ims-feature-windows-bronze"]["published_records"],
+                manifest["kafka"]["topics"]["ani-feature-windows-bronze"]["published_records"],
                 1,
             )
             self.assertEqual(
-                published_topics["ims-incidents-bronze"][0][1]["event_type"],
+                published_topics["ani-incidents-bronze"][0][1]["event_type"],
                 "incident_snapshot_exported",
             )
             self.assertEqual(
-                published_topics["ims-feature-windows-bronze"][0][1]["event_type"],
+                published_topics["ani-feature-windows-bronze"][0][1]["event_type"],
                 "feature_window_snapshot_exported",
             )
 
@@ -331,7 +331,7 @@ class ReleaseRuntimeTests(unittest.TestCase):
 
             self.assertEqual(validation["validation_results"]["status"], "passed")
             self.assertEqual(manifest["label_taxonomy_version"], release_runtime.LABEL_TAXONOMY_VERSION)
-            self.assertEqual(release_runtime.LABEL_TAXONOMY_VERSION, "ims_incident_taxonomy_v2")
+            self.assertEqual(release_runtime.LABEL_TAXONOMY_VERSION, "ani_incident_taxonomy_v2")
             self.assertEqual(len(balanced_df), 10)
             self.assertTrue((balanced_df["training_eligibility_status"] == "eligible").all())
             self.assertNotIn("reconstructed_from_incident_snapshot", set(training_df["linkage_status"]))
@@ -353,7 +353,7 @@ class ReleaseRuntimeTests(unittest.TestCase):
             )
             self.assertIn("traffic_surge", storm_conditions)
             self.assertIn("retry_spike", storm_conditions)
-            self.assertTrue((incident_df["rca_root_cause_redacted"].fillna("").str.contains("ims-demo-lab")).sum() == 0)
+            self.assertTrue((incident_df["rca_root_cause_redacted"].fillna("").str.contains("ani-demo-lab")).sum() == 0)
             eligible_ids = set(training_df.loc[training_df["training_eligibility_status"] == "eligible", "record_public_id"])
             split_ids = {item["record_public_id"] for item in split_manifest}
             self.assertTrue(split_ids.issubset(eligible_ids))
@@ -411,7 +411,7 @@ class ReleaseRuntimeTests(unittest.TestCase):
             validation = release_runtime.validate_release(normalized_manifest_ref=json.dumps(manifest))
 
             def fake_upload(path: Path, prefix: str) -> str:
-                return f"s3://ims-models/{prefix}/{path.name}"
+                return f"s3://ani-models/{prefix}/{path.name}"
 
             published_topics: dict[str, list[tuple[str, dict[str, object]]]] = {}
 
@@ -443,14 +443,14 @@ class ReleaseRuntimeTests(unittest.TestCase):
             self.assertIn("training_examples_balanced_csv", published["artifacts"])
             self.assertTrue(published["kafka"]["enabled"])
             self.assertEqual(
-                published["kafka"]["topics"]["ims-release-artifacts"]["published_records"],
-                len(published_topics["ims-release-artifacts"]),
+                published["kafka"]["topics"]["ani-release-artifacts"]["published_records"],
+                len(published_topics["ani-release-artifacts"]),
             )
             self.assertIn(
                 "release_published",
-                {event["event_type"] for _, event in published_topics["ims-release-artifacts"]},
+                {event["event_type"] for _, event in published_topics["ani-release-artifacts"]},
             )
-            bundle_path = root / "published" / "release-v1" / "ims_incident_release_bundle.zip"
+            bundle_path = root / "published" / "release-v1" / "ani_incident_release_bundle.zip"
             self.assertTrue(bundle_path.exists())
 
 

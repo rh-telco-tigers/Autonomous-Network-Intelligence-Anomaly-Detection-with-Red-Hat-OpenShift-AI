@@ -6,7 +6,7 @@ This phase exposes the selected anomaly model through a stable inference runtime
 
 ## Status
 
-This phase is live through the legacy `ims-predictive` Triton path plus the feature-store rollout endpoints `ims-predictive-fs` (Triton) and `ims-predictive-fs-mlserver` (MLServer). Triton remains the default remote-scoring runtime; MLServer is live as a side-by-side parity path.
+This phase is live through the legacy `ani-predictive` Triton path plus the feature-store rollout endpoints `ani-predictive-fs` (Triton) and `ani-predictive-fs-mlserver` (MLServer). Triton remains the default remote-scoring runtime; MLServer is live as a side-by-side parity path.
 
 ## What This Phase Covers
 

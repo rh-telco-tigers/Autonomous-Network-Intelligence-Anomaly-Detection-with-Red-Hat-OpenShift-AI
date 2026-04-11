@@ -16,4 +16,4 @@ The first implementation target is offline training from a versioned feature bun
 - the bundle dataset remains the immutable training source of truth for this path
 - Feature Store is used first for offline training retrieval
 - online materialization is a later milestone
-- the new KFP pipeline will use this repo without altering the current `ims_anomaly_pipeline.py`
+- the new KFP pipeline will use this repo without altering the current `ani_anomaly_pipeline.py`

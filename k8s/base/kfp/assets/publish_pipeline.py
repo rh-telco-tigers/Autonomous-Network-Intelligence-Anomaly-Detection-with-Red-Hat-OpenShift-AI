@@ -11,10 +11,10 @@ from kfp import Client
 
 
 DEFAULT_DSPA_NAME = "dspa"
-DEFAULT_PIPELINE_NAME = "ims-anomaly-platform-train-and-register"
-DEFAULT_EXPERIMENT_NAME = "ims-demo"
+DEFAULT_PIPELINE_NAME = "ani-anomaly-platform-train-and-register"
+DEFAULT_EXPERIMENT_NAME = "ani-demo"
 DEFAULT_RUN_NAME_PREFIX = "ims-anomaly-platform-manual"
-DEFAULT_PACKAGE_PATH = "/opt/kfp/ims_anomaly_pipeline.yaml"
+DEFAULT_PACKAGE_PATH = "/opt/kfp/ani_anomaly_pipeline.yaml"
 DEFAULT_KFP_HOST_TEMPLATE = "https://ds-pipeline-{dspa}.{namespace}.svc.cluster.local:8443"
 DEFAULT_SERVICE_CA_CERT = "/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
 DEFAULT_SA_TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"

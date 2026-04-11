@@ -75,7 +75,7 @@ def send_slack_notification(text: str) -> Dict[str, str]:
             return {"status": "skipped", "reason": "SLACK_WEBHOOK_URL not configured"}
         return {
             "status": "simulated",
-            "channel": "#ims-demo",
+            "channel": "#ani-demo",
             "message_id": f"slack-{uuid.uuid4().hex[:12]}",
             "mode": "demo-relay",
             "text": text,

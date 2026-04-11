@@ -4,6 +4,8 @@ resources:
   - namespaces/namespaces.yaml
   - rbac/argocd-image-registry.yaml
   - configs/image-registry.yaml
+  - configs/node-feature-discovery.yaml
+  - configs/gpu-cluster-policy.yaml
   - operatorgroups/grafana-operator.yaml
   - operatorgroups/redhat-ods-operator.yaml
   - operatorgroups/openshift-nfd.yaml
@@ -14,7 +16,6 @@ resources:
   - subscriptions/rhoai.yaml
   - subscriptions/nfd.yaml
   - subscriptions/gpu-operator.yaml
-  - subscriptions/service-mesh.yaml
   - subscriptions/pipelines.yaml
   - subscriptions/serverless.yaml
   - subscriptions/authorino.yaml

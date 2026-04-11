@@ -112,7 +112,7 @@ loadmodule "proto_tcp.so"
 #### aaa_diameter module
 loadmodule "aaa_diameter.so"
 modparam("aaa_diameter", "fd_log_level", 1) # max amount of logging, quite annoying
-modparam("aaa_diameter", "realm", "ims-demo-lab.svc.cluster.local")
+modparam("aaa_diameter", "realm", "ani-sipp.svc.cluster.local")
 modparam("aaa_diameter", "peer_identity", "hss")
 modparam("aaa_diameter", "aaa_url",
 	"diameter:/etc/opensips/freeDiameter.conf;extra-avps-file:/etc/opensips/scscf.dictionary")
@@ -191,10 +191,10 @@ route{
 		if ($auth.resp == NULL) {
 			xlog("L_ERR", "[$ci] Received REGISTER for $tu - doing MAR\n");
 			$var(payload) = "[
-				{ \"Session-Id\": \"ims-scscf.ims-demo-lab.svc.cluster.local;"+$Ts+"."+$Tsm+";"+$pp+"\" },
-				{ \"Origin-Host\": \"ims-scscf.ims-demo-lab.svc.cluster.local\" },
-				{ \"Origin-Realm\": \"ims-demo-lab.svc.cluster.local\" },
-				{ \"Destination-Realm\": \"ims-demo-lab.svc.cluster.local\" },
+				{ \"Session-Id\": \"ims-scscf.ani-sipp.svc.cluster.local;"+$Ts+"."+$Tsm+";"+$pp+"\" },
+				{ \"Origin-Host\": \"ims-scscf.ani-sipp.svc.cluster.local\" },
+				{ \"Origin-Realm\": \"ani-sipp.svc.cluster.local\" },
+				{ \"Destination-Realm\": \"ani-sipp.svc.cluster.local\" },
 				{ \"Vendor-Specific-Application-Id\": [{\"Vendor-Id\": 10415},
 					{\"Auth-Application-Id\": 16777216}]},
 				{ \"Auth-Session-State\": 1 },
@@ -202,24 +202,24 @@ route{
 				{ \"Public-Identity\": \""+$fu+"\" },
 				{ \"3GPP-SIP-Number-Auth-Items\": 1 },
 				{ \"3GPP-SIP-Auth-Data-Item\": [{\"3GPP-SIP-Authentication-Scheme\": \"unknown\"}]},
-				{ \"Server-Name\": \"sip:ims-scscf.ims-demo-lab.svc.cluster.local:6060\" }
+				{ \"Server-Name\": \"sip:ims-scscf.ani-sipp.svc.cluster.local:6060\" }
 			]";
 
 			$var(rc) = dm_send_request(16777216, 303, $var(payload), $var(rpl_avps));
 			xlog("[$ci] MAA rc: $var(rc), MAA AVPs: $var(rpl_avps)\n");
 
 			# TODO: parse reply, fetch 3GPP-SIP-Auth-Data-Item and build Authorization header
-			#append_to_reply("WWW-Authenticate: Digest realm=\"ims-demo-lab.svc.cluster.local\", nonce=\"KFQ/MpR3cE3V9PxucEQR5KED8uUMYIAALFyk6dsIJI8=\", algorithm=AKAv1-MD5, ck=\"db7f8c4a58e17083974bba3b936d34c4\", ik=\"6151667b9ef815c1dcb87473685f062a\", qop=\"auth,auth-int\"\r\n");
+			#append_to_reply("WWW-Authenticate: Digest realm=\"ani-sipp.svc.cluster.local\", nonce=\"KFQ/MpR3cE3V9PxucEQR5KED8uUMYIAALFyk6dsIJI8=\", algorithm=AKAv1-MD5, ck=\"db7f8c4a58e17083974bba3b936d34c4\", ik=\"6151667b9ef815c1dcb87473685f062a\", qop=\"auth,auth-int\"\r\n");
 			#t_reply(401,"Unauthorized");
-			www_challenge("ims-demo-lab.svc.cluster.local", "auth");
+			www_challenge("ani-sipp.svc.cluster.local", "auth");
 
 		} else { 
 			xlog("L_ERR", "[$ci] Received REGISTER for $tu - doing SAR\n");
 			$var(payload) = "[
-				{ \"Session-Id\": \"ims-scscf.ims-demo-lab.svc.cluster.local;"+$Ts+"."+$Tsm+";"+$pp+"\" },
-				{ \"Origin-Host\": \"ims-scscf.ims-demo-lab.svc.cluster.local\" },
-				{ \"Origin-Realm\": \"ims-demo-lab.svc.cluster.local\" },
-				{ \"Destination-Realm\": \"ims-demo-lab.svc.cluster.local\" },
+				{ \"Session-Id\": \"ims-scscf.ani-sipp.svc.cluster.local;"+$Ts+"."+$Tsm+";"+$pp+"\" },
+				{ \"Origin-Host\": \"ims-scscf.ani-sipp.svc.cluster.local\" },
+				{ \"Origin-Realm\": \"ani-sipp.svc.cluster.local\" },
+				{ \"Destination-Realm\": \"ani-sipp.svc.cluster.local\" },
 				{ \"Vendor-Specific-Application-Id\": [{\"Vendor-Id\": 10415},
 					{\"Auth-Application-Id\": 16777216}]},
 				{ \"Auth-Session-State\": 1 },
@@ -227,14 +227,14 @@ route{
 				{ \"Public-Identity\": \""+$fu+"\" },
 				{ \"Server-Assignment-Type\": 1 },
 				{ \"User-Data-Already-Available\": 0},
-				{ \"Server-Name\": \"sip:ims-scscf.ims-demo-lab.svc.cluster.local:6060\" }
+				{ \"Server-Name\": \"sip:ims-scscf.ani-sipp.svc.cluster.local:6060\" }
 			]";
 
 			$var(rc) = dm_send_request(16777216, 301, $var(payload), $var(rpl_avps));
 			xlog("[$ci] SAA rc: $var(rc), SAA AVPs: $var(rpl_avps)\n");
 			$avp(attr) = $ct.fields(params);
 			append_to_reply("Contact: $hdr(Contact);expires=600\r\n");
-			append_to_reply("Service-Route: <sip:orig@ims-scscf.ims-demo-lab.svc.cluster.local:6060;lr>\r\n");
+			append_to_reply("Service-Route: <sip:orig@ims-scscf.ani-sipp.svc.cluster.local:6060;lr>\r\n");
 			append_to_reply("P-Associated-URI: <$fu>\r\n");
 			append_to_reply("Path: $hdr(Path)\r\n");
 			if (save("location", "path-lazy, no-reply")) {
@@ -252,7 +252,7 @@ route{
 			t_reply(503, "Internal Error");
 			exit;
 		}
-		$ru = "sip:" + $rU + "@ims-icscf.ims-demo-lab.svc.cluster.local:4060";
+		$ru = "sip:" + $rU + "@ims-icscf.ani-sipp.svc.cluster.local:4060";
 		if (!t_relay()) {
 			xlog("L_ERR", "[$ci] Cannot relay to $ru\n");
 			t_reply(503, "Internal Error");

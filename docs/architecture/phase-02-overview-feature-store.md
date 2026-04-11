@@ -6,7 +6,7 @@ This phase turns persisted runtime data into explicit feature definitions so tra
 
 ## Status
 
-This phase is live. `ims-featurestore` is deployed through OpenShift AI Feature Store / Feast, its registry and UI are available in-cluster, and the KFP training path now syncs definitions and retrieves training data from the Feature Store offline path. Online materialization remains optional.
+This phase is live. `ani-featurestore` is deployed through OpenShift AI Feature Store / Feast, its registry and UI are available in-cluster, and the KFP training path now syncs definitions and retrieves training data from the Feature Store offline path. Online materialization remains optional.
 
 ## What This Phase Covers
 

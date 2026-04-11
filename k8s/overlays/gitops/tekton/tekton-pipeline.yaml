@@ -1,0 +1,181 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: ani-platform-container-build
+spec:
+  params:
+    - name: git-url
+      type: string
+    - name: git-revision
+      type: string
+  workspaces:
+    - name: source
+  tasks:
+    - name: clone
+      retries: 1
+      timeout: 15m0s
+      taskRef:
+        name: git-clone-lite
+      params:
+        - name: URL
+          value: $(params.git-url)
+        - name: REVISION
+          value: $(params.git-revision)
+        - name: DELETE_EXISTING
+          value: "true"
+      workspaces:
+        - name: output
+          workspace: source
+    - name: build-sipp-runner
+      retries: 1
+      timeout: 45m0s
+      runAfter:
+        - clone
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: services/sipp-runner/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-feature-gateway
+      retries: 1
+      timeout: 45m0s
+      runAfter:
+        - build-sipp-runner
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ani-runtime/feature-gateway:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: services/feature-gateway/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-anomaly-service
+      retries: 1
+      timeout: 45m0s
+      runAfter:
+        - build-feature-gateway
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ani-runtime/anomaly-service:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: services/anomaly-service/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-rca-service
+      retries: 1
+      timeout: 45m0s
+      runAfter:
+        - build-anomaly-service
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ani-runtime/rca-service:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: services/rca-service/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-demo-ui
+      retries: 1
+      timeout: 45m0s
+      runAfter:
+        - build-rca-service
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ani-runtime/demo-ui:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: services/demo-ui/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-control-plane
+      retries: 1
+      timeout: 45m0s
+      runAfter:
+        - build-demo-ui
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ani-runtime/control-plane:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: services/control-plane/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-ani-ai-trainer
+      retries: 1
+      timeout: 45m0s
+      runAfter:
+        - build-control-plane
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: ai/training/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-ani-ai-featurestore-trainer
+      retries: 1
+      timeout: 45m0s
+      runAfter:
+        - build-ani-ai-trainer
+      taskRef:
+        name: buildah-heavy
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: ai/featurestore/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-ani-incident-release
+      retries: 1
+      timeout: 45m0s
+      runAfter:
+        - build-ani-ai-featurestore-trainer
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-incident-release:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: incident-release/Containerfile
+      workspaces:
+        - name: source
+          workspace: source

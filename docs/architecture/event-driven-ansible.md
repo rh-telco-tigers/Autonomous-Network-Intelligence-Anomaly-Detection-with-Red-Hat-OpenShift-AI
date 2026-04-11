@@ -10,13 +10,13 @@ This document is about AAP EDA webhook activations. It is separate from Plane we
 
 The current project uses AAP Event-Driven Ansible for two allowlisted remediation cases:
 
-- `IMS Critical Incident Escalation`
-- `IMS Critical Signal Guardrail`
+- `ANI Critical Incident Escalation`
+- `ANI Critical Signal Guardrail`
 
 The control-plane bootstraps these resources on startup:
 
-- EDA project `IMS Incident Event Policies`
-- decision environment `IMS Incident Decisions`
+- EDA project `ANI Incident Event Policies`
+- decision environment `ANI Incident Decisions`
 - running activations for both rulebooks
 - controller callback templates used by the rulebooks
 - in-cluster Services that expose each activation webhook in the `aap` namespace
@@ -67,8 +67,8 @@ Current webhook listeners:
 
 | Rulebook | Policy name | Port | Trigger event |
 | --- | --- | --- | --- |
-| `rulebooks/critical-incident-escalation.yml` | `IMS Critical Incident Escalation` | `5000` | `rca_attached` |
-| `rulebooks/critical-signal-guardrail.yml` | `IMS Critical Signal Guardrail` | `5001` | `remediations_generated` |
+| `rulebooks/critical-incident-escalation.yml` | `ANI Critical Incident Escalation` | `5000` | `rca_attached` |
+| `rulebooks/critical-signal-guardrail.yml` | `ANI Critical Signal Guardrail` | `5001` | `remediations_generated` |
 
 The control-plane does not send events to a public URL. Instead, `services/shared/eda.py` discovers the activation delivery URLs and also creates an internal cluster URL of the form:
 
@@ -96,7 +96,7 @@ The event includes fields such as:
 - `workflow_revision`
 - `anomaly_score`
 
-The `IMS Critical Incident Escalation` rulebook acts only when all of the following are true:
+The `ANI Critical Incident Escalation` rulebook acts only when all of the following are true:
 
 - `event.payload.event_type == "rca_attached"`
 - `event.payload.severity == "Critical"`
@@ -117,7 +117,7 @@ In addition to the common incident fields, the payload includes remediation-deri
 - `scale_scscf_available`
 - `quarantine_imsi_available`
 
-The `IMS Critical Signal Guardrail` rulebook acts only when all of the following are true:
+The `ANI Critical Signal Guardrail` rulebook acts only when all of the following are true:
 
 - `event.payload.event_type == "remediations_generated"`
 - `event.payload.severity == "Critical"`
@@ -133,8 +133,8 @@ EDA does not directly change incident state or directly run arbitrary Kubernetes
 
 Instead, EDA launches one of two controller callback templates:
 
-- `IMS EDA Transition Incident State`
-- `IMS EDA Execute Incident Action`
+- `ANI EDA Transition Incident State`
+- `ANI EDA Execute Incident Action`
 
 Those templates run small playbooks that call the control-plane APIs:
 
@@ -165,8 +165,8 @@ flowchart TD
   Services --> Publish
 
   Publish --> Rulebook{"EDA rulebook match?"}
-  Rulebook -->|critical incident escalation| TransitionJT["AAP callback template:<br/>IMS EDA Transition Incident State"]
-  Rulebook -->|critical signal guardrail| ExecuteJT["AAP callback template:<br/>IMS EDA Execute Incident Action"]
+  Rulebook -->|critical incident escalation| TransitionJT["AAP callback template:<br/>ANI EDA Transition Incident State"]
+  Rulebook -->|critical signal guardrail| ExecuteJT["AAP callback template:<br/>ANI EDA Execute Incident Action"]
 
   TransitionJT --> TransitionAPI["POST /incidents/{id}/transition"]
   ExecuteJT --> ActionAPI["POST /incidents/{id}/automation/actions/{action_ref}/execute"]

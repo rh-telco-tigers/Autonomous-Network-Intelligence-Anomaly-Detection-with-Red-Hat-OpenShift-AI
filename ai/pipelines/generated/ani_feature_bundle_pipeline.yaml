@@ -1,0 +1,224 @@
+# PIPELINE DEFINITION
+# Name: ani-feature-bundle-publish
+# Inputs:
+#    bundle_version: str [Default: 'ani-feature-bundle-v1']
+#    control_plane_api_key: str [Default: 'demo-token']
+#    control_plane_url: str [Default: 'http://control-plane.ani-runtime.svc.cluster.local:8080']
+#    dataset_store_access_key: str [Default: 'minioadmin']
+#    dataset_store_bucket: str [Default: 'ani-models']
+#    dataset_store_endpoint: str [Default: 'http://model-storage-minio.ani-data.svc.cluster.local:9000']
+#    dataset_store_mode: str [Default: 's3']
+#    dataset_store_prefix: str [Default: 'pipelines/ani-datascience/datasets']
+#    dataset_store_secret_key: str [Default: 'minioadmin']
+#    project: str [Default: 'ani-demo']
+#    source_dataset_versions_json: str [Default: '["live-sipp-v1"]']
+components:
+  comp-build-bundle:
+    executorLabel: exec-build-bundle
+    inputDefinitions:
+      parameters:
+        bundle_version:
+          parameterType: STRING
+        project:
+          parameterType: STRING
+        source_dataset_versions_json:
+          parameterType: STRING
+        workspace_root:
+          defaultValue: /tmp/ani-featurestore
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+  comp-validate-bundle:
+    executorLabel: exec-validate-bundle
+    inputDefinitions:
+      parameters:
+        bundle_manifest_path:
+          parameterType: STRING
+        workspace_root:
+          defaultValue: /tmp/ani-featurestore
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-build-bundle:
+      container:
+        args:
+        - --step
+        - build-bundle
+        - --bundle-version
+        - '{{$.inputs.parameters[''bundle_version'']}}'
+        - --source-dataset-versions-json
+        - '{{$.inputs.parameters[''source_dataset_versions_json'']}}'
+        - --project
+        - '{{$.inputs.parameters[''project'']}}'
+        - --workspace-root
+        - '{{$.inputs.parameters[''workspace_root'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: HOME
+          value: /tmp
+        - name: CONTROL_PLANE_URL
+          value: http://control-plane.ani-runtime.svc.cluster.local:8080
+        - name: CONTROL_PLANE_API_KEY
+          value: demo-token
+        - name: DATASET_STORE_MODE
+          value: s3
+        - name: DATASET_STORE_ENDPOINT
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        - name: DATASET_STORE_BUCKET
+          value: ani-models
+        - name: DATASET_STORE_ACCESS_KEY
+          value: minioadmin
+        - name: DATASET_STORE_SECRET_KEY
+          value: minioadmin
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ani-datascience/datasets
+        - name: MINIO_ENDPOINT
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        - name: MINIO_BUCKET
+          value: ani-models
+        - name: MINIO_ACCESS_KEY
+          value: minioadmin
+        - name: MINIO_SECRET_KEY
+          value: minioadmin
+        - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
+          value: 'true'
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+    exec-validate-bundle:
+      container:
+        args:
+        - --step
+        - validate-bundle
+        - --bundle-manifest
+        - '{{$.inputs.parameters[''bundle_manifest_path'']}}'
+        - --workspace-root
+        - '{{$.inputs.parameters[''workspace_root'']}}'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - ai/training/featurestore_train.py
+        env:
+        - name: HOME
+          value: /tmp
+        - name: CONTROL_PLANE_URL
+          value: http://control-plane.ani-runtime.svc.cluster.local:8080
+        - name: CONTROL_PLANE_API_KEY
+          value: demo-token
+        - name: DATASET_STORE_MODE
+          value: s3
+        - name: DATASET_STORE_ENDPOINT
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        - name: DATASET_STORE_BUCKET
+          value: ani-models
+        - name: DATASET_STORE_ACCESS_KEY
+          value: minioadmin
+        - name: DATASET_STORE_SECRET_KEY
+          value: minioadmin
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ani-datascience/datasets
+        - name: MINIO_ENDPOINT
+          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        - name: MINIO_BUCKET
+          value: ani-models
+        - name: MINIO_ACCESS_KEY
+          value: minioadmin
+        - name: MINIO_SECRET_KEY
+          value: minioadmin
+        - name: BUNDLE_REQUIRE_CONTROL_PLANE_HISTORY
+          value: 'true'
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+pipelineInfo:
+  name: ani-feature-bundle-publish
+root:
+  dag:
+    tasks:
+      build-bundle:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-build-bundle
+        inputs:
+          parameters:
+            bundle_version:
+              componentInputParameter: bundle_version
+            project:
+              componentInputParameter: project
+            source_dataset_versions_json:
+              componentInputParameter: source_dataset_versions_json
+        taskInfo:
+          name: build-bundle
+      validate-bundle:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-validate-bundle
+        dependentTasks:
+        - build-bundle
+        inputs:
+          parameters:
+            bundle_manifest_path:
+              taskOutputParameter:
+                outputParameterKey: output_manifest
+                producerTask: build-bundle
+        taskInfo:
+          name: validate-bundle
+  inputDefinitions:
+    parameters:
+      bundle_version:
+        defaultValue: ani-feature-bundle-v1
+        isOptional: true
+        parameterType: STRING
+      control_plane_api_key:
+        defaultValue: demo-token
+        isOptional: true
+        parameterType: STRING
+      control_plane_url:
+        defaultValue: http://control-plane.ani-runtime.svc.cluster.local:8080
+        isOptional: true
+        parameterType: STRING
+      dataset_store_access_key:
+        defaultValue: minioadmin
+        isOptional: true
+        parameterType: STRING
+      dataset_store_bucket:
+        defaultValue: ani-models
+        isOptional: true
+        parameterType: STRING
+      dataset_store_endpoint:
+        defaultValue: http://model-storage-minio.ani-data.svc.cluster.local:9000
+        isOptional: true
+        parameterType: STRING
+      dataset_store_mode:
+        defaultValue: s3
+        isOptional: true
+        parameterType: STRING
+      dataset_store_prefix:
+        defaultValue: pipelines/ani-datascience/datasets
+        isOptional: true
+        parameterType: STRING
+      dataset_store_secret_key:
+        defaultValue: minioadmin
+        isOptional: true
+        parameterType: STRING
+      project:
+        defaultValue: ani-demo
+        isOptional: true
+        parameterType: STRING
+      source_dataset_versions_json:
+        defaultValue: '["live-sipp-v1"]'
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.8.0

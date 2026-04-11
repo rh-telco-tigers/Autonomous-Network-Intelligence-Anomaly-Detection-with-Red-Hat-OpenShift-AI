@@ -1,0 +1,73 @@
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: ani-autogluon-mlserver-runtime
+  namespace: ani-demo-lab
+  annotations:
+    argocd.argoproj.io/sync-options: Replace=true
+    opendatahub.io/apiProtocol: REST
+    opendatahub.io/runtime-version: autogluon-v1
+    opendatahub.io/serving-runtime-scope: global
+    openshift.io/display-name: ANI AutoGluon MLServer Runtime
+  labels:
+    opendatahub.io/dashboard: "true"
+spec:
+  annotations:
+    monitoring.opendatahub.io/scrape: "true"
+    opendatahub.io/kserve-runtime: mlserver
+    prometheus.io/path: /metrics
+    prometheus.io/port: "8082"
+  supportedModelFormats:
+    - name: autogluon
+      version: "1"
+      autoSelect: true
+  protocolVersions:
+    - v2
+  multiModel: false
+  containers:
+    - name: kserve-container
+      image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+      imagePullPolicy: Always
+      workingDir: /tmp
+      command:
+        - /bin/sh
+        - -lc
+        - mkdir -p /tmp/mlserver-metrics /tmp/mlserver-envs && exec mlserver start /mnt/models
+      args: []
+      env:
+        - name: HOME
+          value: /tmp
+        - name: PYTHONPATH
+          value: /workspace:/workspace/services
+        - name: MLSERVER_HTTP_PORT
+          value: "8080"
+        - name: MLSERVER_GRPC_PORT
+          value: "9000"
+        - name: MLSERVER_METRICS_PORT
+          value: "8082"
+        - name: MLSERVER_PARALLEL_WORKERS
+          value: "0"
+        - name: MLSERVER_ENVIRONMENTS_DIR
+          value: /tmp/mlserver-envs
+        - name: MLSERVER_METRICS_DIR
+          value: /tmp/mlserver-metrics
+        - name: PROMETHEUS_MULTIPROC_DIR
+          value: /tmp/mlserver-metrics
+        - name: MODELS_DIR
+          value: /mnt/models
+      ports:
+        - containerPort: 8080
+          protocol: TCP
+        - name: grpc
+          containerPort: 9000
+          protocol: TCP
+        - name: metrics
+          containerPort: 8082
+          protocol: TCP
+      resources:
+        requests:
+          cpu: 100m
+          memory: 1Gi
+        limits:
+          cpu: 500m
+          memory: 2Gi

@@ -9,68 +9,68 @@ from shared.workflow import is_active_state
 
 
 REQUEST_COUNT = Counter(
-    "ims_demo_http_requests_total",
+    "ani_demo_http_requests_total",
     "HTTP requests processed by demo services",
     ["service", "method", "path", "status"],
 )
 
 REQUEST_LATENCY = Histogram(
-    "ims_demo_http_request_duration_seconds",
+    "ani_demo_http_request_duration_seconds",
     "HTTP request duration for demo services",
     ["service", "method", "path"],
 )
 
 INCIDENT_COUNT = Counter(
-    "ims_demo_incidents_total",
+    "ani_demo_incidents_total",
     "Incidents created in the demo control plane",
     ["project", "anomaly_type", "status"],
 )
 
 ACTIVE_INCIDENTS = Gauge(
-    "ims_demo_active_incidents",
+    "ani_demo_active_incidents",
     "Current active incidents grouped by predictive model output and model version",
     ["project", "anomaly_type", "model_version"],
 )
 
 RCA_CONFIDENCE = Histogram(
-    "ims_demo_rca_confidence",
+    "ani_demo_rca_confidence",
     "Confidence distribution for generated RCA responses",
     ["project", "generation_mode"],
     buckets=(0.0, 0.25, 0.5, 0.75, 0.9, 1.0),
 )
 
 AUTOMATION_ACTIONS = Counter(
-    "ims_demo_automation_actions_total",
+    "ani_demo_automation_actions_total",
     "Automation approvals and executions observed in the demo control plane",
     ["action", "status"],
 )
 
 INTEGRATION_EVENTS = Counter(
-    "ims_demo_integration_events_total",
+    "ani_demo_integration_events_total",
     "Slack and Jira integration events emitted by the demo platform",
     ["integration", "status"],
 )
 
 MODEL_PROMOTIONS = Counter(
-    "ims_demo_model_promotions_total",
+    "ani_demo_model_promotions_total",
     "Model promotion operations recorded by the demo model registry",
     ["stage", "status"],
 )
 
 WORKFLOW_TRANSITIONS = Counter(
-    "ims_demo_workflow_transitions_total",
+    "ani_demo_workflow_transitions_total",
     "Workflow transitions recorded by the demo control plane",
     ["from_state", "to_state"],
 )
 
 TICKET_SYNC_EVENTS = Counter(
-    "ims_demo_ticket_sync_events_total",
+    "ani_demo_ticket_sync_events_total",
     "Ticket creation and sync operations observed by the demo control plane",
     ["provider", "direction", "status"],
 )
 
 VERIFICATION_EVENTS = Counter(
-    "ims_demo_verification_events_total",
+    "ani_demo_verification_events_total",
     "Verification outcomes captured by the demo control plane",
     ["status"],
 )
@@ -84,7 +84,7 @@ def set_active_incidents(incidents: Iterable[Mapping[str, object]]) -> None:
     ACTIVE_INCIDENTS.clear()
     counts = CollectionCounter(
         (
-            str(incident.get("project") or "ims-demo"),
+            str(incident.get("project") or "ani-demo"),
             str(incident.get("anomaly_type") or "unknown"),
             str(incident.get("model_version") or "unknown"),
         )

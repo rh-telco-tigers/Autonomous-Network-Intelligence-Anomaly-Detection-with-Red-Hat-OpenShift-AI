@@ -105,7 +105,7 @@ flowchart TD
 
   subgraph Offline["Offline training path"]
     Splits["Deterministic split manifests"]
-    Train["ims-offline-train pipeline"]
+    Train["ani-offline-train pipeline"]
     Registry["model registry"]
     Gold --> Splits --> Train --> Registry
   end
@@ -129,7 +129,7 @@ The final release workflow is based only on persisted platform artifacts.
 
 | Source | Repository implementation | Role in release workflow |
 | --- | --- | --- |
-| Feature windows | `services/sipp-runner/run_scenario.py` uploads JSON windows to MinIO under `pipelines/ims-demo-lab/datasets/datasets/<dataset_version>/feature-windows/...` | Primary model-training feature source |
+| Feature windows | `services/sipp-runner/run_scenario.py` uploads JSON windows to MinIO under `pipelines/ani-demo-lab/datasets/<dataset_version>/feature-windows/...` | Primary model-training feature source |
 | Incident store | `services/shared/db.py` stores `incidents`, `approvals`, and `audit_events` in the control-plane database | System of record for all historical incidents and operator workflow history |
 | RCA enrichment | `services/control-plane/app.py` attaches RCA payloads to incidents and publishes normalized records to Milvus collections `incident_evidence`, `incident_reasoning`, and `incident_resolution` | Stage-specific evidence, RCA, remediation, and verified resolution enrichment |
 | Model metadata | `services/shared/model_registry.py` and `ai/registry/model_registry.json` | Feature schema, dataset lineage, selected model, and serving metadata |
@@ -180,7 +180,7 @@ The workflow must use strict, non-overlapping identifiers.
 
 | Field | Meaning |
 | --- | --- |
-| `release_version` | Version of the public dataset bundle, for example `ims-incident-corpus-2026-04` |
+| `release_version` | Version of the public dataset bundle, for example `ani-incident-corpus-2026-04` |
 | `source_snapshot_id` | Immutable snapshot identifier for the exact export run |
 | `source_dataset_version` | Original live feature-window dataset version, such as `live-sipp-v1` |
 | `feature_schema_version` | Version of the flattened numeric feature schema |
@@ -260,14 +260,14 @@ Recommended structure:
 
 ```json
 {
-  "release_version": "ims-incident-corpus-2026-04",
+  "release_version": "ani-incident-corpus-2026-04",
   "source_snapshot_id": "snapshot-2026-04-01T12:00:00Z",
   "release_mode": "full_snapshot",
-  "previous_release_version": "ims-incident-corpus-2026-03",
+  "previous_release_version": "ani-incident-corpus-2026-03",
   "generated_at": "2026-04-01T12:42:17Z",
   "git_commit": "abc1234",
   "feature_schema_version": "feature_schema_v1",
-  "label_taxonomy_version": "ims_incident_taxonomy_v2",
+  "label_taxonomy_version": "ani_incident_taxonomy_v2",
   "split_policy_version": "split-policy-v1",
   "privacy_policy_version": "privacy-allowlist-v1",
   "model_contract_version": "offline-model-contract-v1",
@@ -332,9 +332,9 @@ Gold is the public release layer.
 
 Gold artifacts:
 
-- `ims_incident_history.parquet`
-- `ims_training_examples.parquet`
-- `ims_training_examples_balanced.parquet`
+- `ani_incident_history.parquet`
+- `ani_training_examples.parquet`
+- `ani_training_examples_balanced.parquet`
 - `train_split_manifest.parquet`
 - `validation_split_manifest.parquet`
 - `test_split_manifest.parquet`
@@ -355,7 +355,7 @@ The release workflow must export all existing control-plane incidents, including
 - `acknowledged`
 - `resolved`
 
-No incident may be silently dropped from `ims_incident_history.parquet`.
+No incident may be silently dropped from `ani_incident_history.parquet`.
 
 The first release stage must export:
 
@@ -384,7 +384,7 @@ Instead, the release must mark the relevant status fields explicitly.
 
 The public release should not force one file to serve every purpose.
 
-### 10.1 `ims_incident_history.parquet`
+### 10.1 `ani_incident_history.parquet`
 
 One row per incident.
 
@@ -437,7 +437,7 @@ Internal raw fields such as:
 
 must remain in bronze or silver only.
 
-### 10.2 `ims_training_examples.parquet`
+### 10.2 `ani_training_examples.parquet`
 
 One row per training candidate.
 
@@ -468,7 +468,7 @@ Required columns:
 - `training_eligibility_status`
 - `model_version`
 
-### 10.3 `ims_training_examples_balanced.parquet`
+### 10.3 `ani_training_examples_balanced.parquet`
 
 This is a convenience artifact for researchers and starter notebooks.
 
@@ -518,7 +518,7 @@ Rules:
 - for this workflow, `reconstructed_from_incident_snapshot` rows are always assigned `training_eligibility_status = ineligible_missing_features`
 - rows linked only to non-authoritative sources such as `control_plane_snapshot` or `scenario-fallback` must be marked `linked_non_authoritative_window`
 - `linked_non_authoritative_window` rows must never be promoted to `training_eligibility_status = eligible`
-- reconstructed rows may remain in `ims_training_examples.parquet` for auditability, but they must never appear in split manifests or balanced training export
+- reconstructed rows may remain in `ani_training_examples.parquet` for auditability, but they must never appear in split manifests or balanced training export
 
 ### 11.3 `training_eligibility_status`
 
@@ -531,10 +531,10 @@ Allowed values:
 
 Rules:
 
-- all rows in `ims_training_examples.parquet` must have one of these four values
+- all rows in `ani_training_examples.parquet` must have one of these four values
 - only `eligible` rows may appear in split manifests and balanced training export
-- incidents with missing features still appear in `ims_incident_history.parquet`
-- incidents with ambiguous taxonomy mapping still appear in `ims_incident_history.parquet`
+- incidents with missing features still appear in `ani_incident_history.parquet`
+- incidents with ambiguous taxonomy mapping still appear in `ani_incident_history.parquet`
 
 ## 12. Label Taxonomy
 
@@ -659,7 +659,7 @@ The release must maintain an explicit mapping between internal and public fields
 
 ## 15. Release Pipeline Stages
 
-The release pipeline should be implemented as a dedicated workflow, for example `ims-incident-release`. It should materialize stable stage outputs instead of acting like one large monolithic export script.
+The release pipeline should be implemented as a dedicated workflow, for example `ani-incident-release`. It should materialize stable stage outputs instead of acting like one large monolithic export script.
 
 ```mermaid
 flowchart TD
@@ -783,12 +783,12 @@ Thresholds:
 
 ## 16. Offline Training Contract
 
-Offline training is a separate workflow, for example `ims-offline-train`.
+Offline training is a separate workflow, for example `ani-offline-train`.
 
 Inputs:
 
 - `release_manifest.json`
-- `ims_training_examples.parquet`
+- `ani_training_examples.parquet`
 - split manifests
 - `model_family`
 - trainer-specific configuration
@@ -831,13 +831,13 @@ Required changes:
 
 Add a pipeline source such as:
 
-- `ai/pipelines/ims_incident_release_pipeline.py`
+- `ai/pipelines/ani_incident_release_pipeline.py`
 
 ### 17.2 Dedicated offline training pipeline
 
 Add a pipeline source such as:
 
-- `ai/pipelines/ims_offline_train_pipeline.py`
+- `ai/pipelines/ani_offline_train_pipeline.py`
 
 ### 17.3 Refactor monolithic training logic
 
@@ -922,7 +922,7 @@ The release must fail if any of the following are true:
 
 Mandatory release gates:
 
-- 100% of control-plane incidents exported to `ims_incident_history.parquet`
+- 100% of control-plane incidents exported to `ani_incident_history.parquet`
 - 100% of training rows assigned a `training_eligibility_status`
 - 100% of public rows assigned a `source_snapshot_id`
 - 0 unexpected public columns
@@ -977,8 +977,8 @@ This design is considered complete when the platform can:
 
 The next document should be an implementation spec for:
 
-- `ai/pipelines/ims_incident_release_pipeline.py`
-- `ai/pipelines/ims_offline_train_pipeline.py`
+- `ai/pipelines/ani_incident_release_pipeline.py`
+- `ai/pipelines/ani_offline_train_pipeline.py`
 - exporter module boundaries
 - release manifest schema
 - Kaggle secret handling

@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ani-sipp
+resources:
+  - ani-platform-config.yaml
+  - model-storage-credentials.yaml
+  - ../../../base/traffic
+images:
+  - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner
+    newName: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner
+    newTag: latest

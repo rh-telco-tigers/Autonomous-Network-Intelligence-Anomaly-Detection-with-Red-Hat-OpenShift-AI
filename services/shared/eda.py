@@ -19,7 +19,7 @@ class EDAAutomationError(RuntimeError):
 
 POLICY_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "critical_incident_escalation": {
-        "name": "IMS Critical Incident Escalation",
+        "name": "ANI Critical Incident Escalation",
         "rulebook": "rulebooks/critical-incident-escalation.yml",
         "webhook_port": 5000,
         "description": "Escalate critical incidents to Plane after RCA is attached.",
@@ -29,7 +29,7 @@ POLICY_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "controller_template_key": "eda_transition_incident_state",
     },
     "critical_signal_guardrail": {
-        "name": "IMS Critical Signal Guardrail",
+        "name": "ANI Critical Signal Guardrail",
         "rulebook": "rulebooks/critical-signal-guardrail.yml",
         "webhook_port": 5001,
         "description": "Apply the low-risk P-CSCF ingress guardrail after remediations are generated.",
@@ -224,10 +224,7 @@ def _api_url() -> str:
 
 
 def _app_url() -> str:
-    return (
-        os.getenv("EDA_APP_URL", "").strip()
-        or "https://aap-eda-aap.apps.ocp.4h2g6.sandbox195.opentlc.com"
-    ).rstrip("/")
+    return os.getenv("EDA_APP_URL", "").strip().rstrip("/")
 
 
 def _username() -> str:
@@ -277,7 +274,7 @@ def _organization_id() -> int:
 
 
 def _project_name() -> str:
-    return os.getenv("EDA_PROJECT_NAME", "IMS Incident Event Policies").strip() or "IMS Incident Event Policies"
+    return os.getenv("EDA_PROJECT_NAME", "ANI Incident Event Policies").strip() or "ANI Incident Event Policies"
 
 
 def _project_url() -> str:
@@ -292,7 +289,7 @@ def _project_branch() -> str:
 
 
 def _decision_environment_name() -> str:
-    return os.getenv("EDA_DECISION_ENVIRONMENT_NAME", "IMS Incident Decisions").strip() or "IMS Incident Decisions"
+    return os.getenv("EDA_DECISION_ENVIRONMENT_NAME", "ANI Incident Decisions").strip() or "ANI Incident Decisions"
 
 
 def _decision_environment_image() -> str:
@@ -356,7 +353,7 @@ def _controller_organization_name() -> str:
 
 
 def _controller_token_name() -> str:
-    return os.getenv("EDA_CONTROLLER_TOKEN_NAME", "IMS EDA Controller Token").strip() or "IMS EDA Controller Token"
+    return os.getenv("EDA_CONTROLLER_TOKEN_NAME", "ANI EDA Controller Token").strip() or "ANI EDA Controller Token"
 
 
 def _project_payload(organization_id: int) -> Dict[str, Any]:
@@ -423,7 +420,7 @@ def _ensure_decision_environment(organization_id: int) -> int:
     existing = _find_named_item("/api/eda/v1/decision-environments/", _decision_environment_name())
     desired = {
         "name": _decision_environment_name(),
-        "description": "Decision environment for IMS incident event-driven policies.",
+        "description": "Decision environment for ANI incident event-driven policies.",
         "image_url": _decision_environment_image(),
         "organization_id": organization_id,
     }
@@ -626,7 +623,7 @@ def _ensure_awx_token_id() -> int:
         expected_status=(200, 201),
         json={
             "name": name,
-            "description": "Controller token used by EDA run_job_template actions for IMS incident automation.",
+            "description": "Controller token used by EDA run_job_template actions for ANI incident automation.",
             "token": token_value,
         },
     )
@@ -718,8 +715,8 @@ def _ensure_activation_webhook_service(
             "namespace": namespace,
             "labels": {
                 "app": "eda",
-                "ims.demo/managed-by": "control-plane",
-                "ims.demo/policy-key": policy_key,
+                "ani.demo/managed-by": "control-plane",
+                "ani.demo/policy-key": policy_key,
             },
         },
         "spec": {

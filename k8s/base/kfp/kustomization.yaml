@@ -1,22 +1,21 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: ims-demo-lab
 configMapGenerator:
-  - name: ims-kfp-assets
+  - name: ani-kfp-assets
     files:
-      - ims_anomaly_pipeline.yaml=assets/ims_anomaly_pipeline.yaml
+      - ani_anomaly_pipeline.yaml=assets/ani_anomaly_pipeline.yaml
       - publish_pipeline.py=assets/publish_pipeline.py
-  - name: ims-feature-bundle-kfp-assets
+  - name: ani-feature-bundle-kfp-assets
     files:
-      - ims_feature_bundle_pipeline.yaml=assets/ims_feature_bundle_pipeline.yaml
+      - ani_feature_bundle_pipeline.yaml=assets/ani_feature_bundle_pipeline.yaml
       - publish_feature_bundle_pipeline.py=assets/publish_feature_bundle_pipeline.py
-  - name: ims-featurestore-kfp-assets
+  - name: ani-featurestore-kfp-assets
     files:
-      - ims_featurestore_pipeline.yaml=assets/ims_featurestore_pipeline.yaml
+      - ani_featurestore_pipeline.yaml=assets/ani_featurestore_pipeline.yaml
       - publish_featurestore_pipeline.py=assets/publish_featurestore_pipeline.py
-  - name: ims-incident-release-kfp-assets
+  - name: ani-incident-release-kfp-assets
     files:
-      - ims_incident_release_pipeline.yaml=assets/ims_incident_release_pipeline.yaml
+      - ani_incident_release_pipeline.yaml=assets/ani_incident_release_pipeline.yaml
       - publish_incident_release_pipeline.py=assets/publish_incident_release_pipeline.py
 generatorOptions:
   disableNameSuffixHash: true

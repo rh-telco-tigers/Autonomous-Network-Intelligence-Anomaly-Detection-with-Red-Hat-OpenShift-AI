@@ -1,0 +1,143 @@
+# PIPELINE DEFINITION
+# Name: ani-incident-release
+# Inputs:
+#    previous_release_version: str [Default: '']
+#    project: str [Default: 'ani-demo']
+#    public_record_target: int [Default: 10000.0]
+#    release_mode: str [Default: 'draft-replacement']
+#    release_version: str [Default: 'live-sipp-v1-draft']
+#    source_dataset_version: str [Default: 'live-sipp-v1']
+#    source_snapshot_id: str [Default: '']
+components:
+  comp-run-release:
+    executorLabel: exec-run-release
+    inputDefinitions:
+      parameters:
+        previous_release_version:
+          parameterType: STRING
+        project:
+          parameterType: STRING
+        public_record_target:
+          parameterType: NUMBER_INTEGER
+        release_mode:
+          parameterType: STRING
+        release_version:
+          parameterType: STRING
+        source_dataset_version:
+          parameterType: STRING
+        source_snapshot_id:
+          defaultValue: ''
+          isOptional: true
+          parameterType: STRING
+        workspace_root:
+          defaultValue: /tmp/ani-incident-release
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_manifest:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-run-release:
+      container:
+        args:
+        - --step
+        - run-release
+        - --release-version
+        - '{{$.inputs.parameters[''release_version'']}}'
+        - --source-dataset-version
+        - '{{$.inputs.parameters[''source_dataset_version'']}}'
+        - --project
+        - '{{$.inputs.parameters[''project'']}}'
+        - --public-record-target
+        - '{{$.inputs.parameters[''public_record_target'']}}'
+        - --release-mode
+        - '{{$.inputs.parameters[''release_mode'']}}'
+        - --previous-release-version
+        - '{{$.inputs.parameters[''previous_release_version'']}}'
+        - --workspace-root
+        - '{{$.inputs.parameters[''workspace_root'']}}'
+        - --source-snapshot-id
+        - '{{$.inputs.parameters[''source_snapshot_id'']}}'
+        - --approval-limit
+        - '1000'
+        - --audit-limit
+        - '1000'
+        - --output
+        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+        command:
+        - python
+        - incident-release/python/release_cli.py
+        env:
+        - name: CONTROL_PLANE_URL
+          value: http://control-plane.ani-runtime.svc.cluster.local:8080
+        - name: CONTROL_PLANE_API_KEY
+          value: demo-token
+        - name: DATASET_STORE_PREFIX
+          value: pipelines/ani-datascience/datasets
+        - name: KAFKA_ENABLED
+          value: 'true'
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: ani-release-kafka-kafka-bootstrap.ani-data.svc.cluster.local:9092
+        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-incident-release:latest
+pipelineInfo:
+  name: ani-incident-release
+root:
+  dag:
+    tasks:
+      run-release:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-run-release
+        inputs:
+          parameters:
+            previous_release_version:
+              componentInputParameter: previous_release_version
+            project:
+              componentInputParameter: project
+            public_record_target:
+              componentInputParameter: public_record_target
+            release_mode:
+              componentInputParameter: release_mode
+            release_version:
+              componentInputParameter: release_version
+            source_dataset_version:
+              componentInputParameter: source_dataset_version
+            source_snapshot_id:
+              componentInputParameter: source_snapshot_id
+        taskInfo:
+          name: run-release
+  inputDefinitions:
+    parameters:
+      previous_release_version:
+        defaultValue: ''
+        isOptional: true
+        parameterType: STRING
+      project:
+        defaultValue: ani-demo
+        isOptional: true
+        parameterType: STRING
+      public_record_target:
+        defaultValue: 10000.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      release_mode:
+        defaultValue: draft-replacement
+        isOptional: true
+        parameterType: STRING
+      release_version:
+        defaultValue: live-sipp-v1-draft
+        isOptional: true
+        parameterType: STRING
+      source_dataset_version:
+        defaultValue: live-sipp-v1
+        isOptional: true
+        parameterType: STRING
+      source_snapshot_id:
+        defaultValue: ''
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.8.0

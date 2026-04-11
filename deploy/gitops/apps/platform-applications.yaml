@@ -1,0 +1,341 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ani-namespaces
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  destination:
+    namespace: openshift-gitops
+    server: https://kubernetes.default.svc
+  project: ani-demo
+  source:
+    path: k8s/overlays/gitops/namespaces
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ani-rhoai-platform
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  destination:
+    namespace: redhat-ods-operator
+    server: https://kubernetes.default.svc
+  project: ani-demo
+  source:
+    path: k8s/overlays/gitops/rhoai
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ani-data
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  ignoreDifferences:
+    - group: route.openshift.io
+      kind: Route
+      jsonPointers:
+        - /metadata/annotations/openshift.io~1host.generated
+        - /spec/host
+  destination:
+    namespace: ani-data
+    server: https://kubernetes.default.svc
+  project: ani-demo
+  source:
+    path: k8s/overlays/gitops/data
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ani-tekton
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "12"
+spec:
+  destination:
+    namespace: ani-tekton
+    server: https://kubernetes.default.svc
+  project: ani-demo
+  source:
+    path: k8s/overlays/gitops/tekton
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ani-sipp-core
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "15"
+spec:
+  ignoreDifferences:
+    - group: route.openshift.io
+      kind: Route
+      jsonPointers:
+        - /metadata/annotations/openshift.io~1host.generated
+        - /spec/host
+    - group: apps
+      kind: Deployment
+      jqPathExpressions:
+        - .spec.template.spec.containers[].image
+        - .spec.template.spec.initContainers[]?.image
+    - group: apps
+      kind: Deployment
+      name: ims-scscf
+      namespace: ani-sipp
+      jsonPointers:
+        - /spec/replicas
+    - group: apps
+      kind: Deployment
+      name: ims-pcscf
+      namespace: ani-sipp
+      jsonPointers:
+        - /metadata/annotations/ani.demo~1rate-limit-review
+  destination:
+    namespace: ani-sipp
+    server: https://kubernetes.default.svc
+  project: ani-demo
+  source:
+    path: k8s/overlays/gitops/sipp-core
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ani-runtime
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  ignoreDifferences:
+    - group: route.openshift.io
+      kind: Route
+      jsonPointers:
+        - /metadata/annotations/openshift.io~1host.generated
+        - /spec/host
+  destination:
+    namespace: ani-runtime
+    server: https://kubernetes.default.svc
+  project: ani-demo
+  source:
+    path: k8s/overlays/gitops/runtime
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ani-datascience
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "30"
+spec:
+  ignoreDifferences:
+    - group: route.openshift.io
+      kind: Route
+      jsonPointers:
+        - /metadata/annotations/openshift.io~1host.generated
+        - /spec/host
+    - group: serving.kserve.io
+      kind: InferenceService
+      jsonPointers:
+        - /metadata/annotations/ani-demo~1refresh-ts
+        - /metadata/annotations/ani-demo~1runtime-fix-ts
+        - /metadata/annotations/ani-demo~1storage-fix-ts
+        - /metadata/annotations/ani-demo~1zero-cpu-ts
+        - /metadata/finalizers
+        - /spec/predictor/automountServiceAccountToken
+        - /spec/predictor/model/name
+  destination:
+    namespace: ani-datascience
+    server: https://kubernetes.default.svc
+  project: ani-demo
+  source:
+    path: k8s/overlays/gitops/datascience
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ani-observability
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "40"
+spec:
+  ignoreDifferences:
+    - group: route.openshift.io
+      kind: Route
+      jsonPointers:
+        - /metadata/annotations/openshift.io~1host.generated
+        - /spec/host
+  destination:
+    namespace: ani-observability
+    server: https://kubernetes.default.svc
+  project: ani-demo
+  source:
+    path: k8s/overlays/gitops/observability
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ani-sipp-traffic
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "45"
+spec:
+  destination:
+    namespace: ani-sipp
+    server: https://kubernetes.default.svc
+  project: ani-demo
+  source:
+    path: k8s/overlays/gitops/sipp-traffic
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ani-aap
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "50"
+spec:
+  destination:
+    namespace: aap
+    server: https://kubernetes.default.svc
+  project: ani-demo
+  source:
+    path: k8s/overlays/gitops/aap
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ani-plane
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "18"
+spec:
+  ignoreDifferences:
+    - group: route.openshift.io
+      kind: Route
+      jsonPointers:
+        - /metadata/annotations/openshift.io~1host.generated
+        - /spec/host
+    - group: ""
+      kind: ConfigMap
+      name: plane-app-vars
+      namespace: plane
+      jsonPointers:
+        - /data/APP_BASE_URL
+        - /data/WEB_URL
+        - /data/CORS_ALLOWED_ORIGINS
+  destination:
+    namespace: plane
+    server: https://kubernetes.default.svc
+  project: ani-demo
+  source:
+    path: k8s/overlays/gitops/plane
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true

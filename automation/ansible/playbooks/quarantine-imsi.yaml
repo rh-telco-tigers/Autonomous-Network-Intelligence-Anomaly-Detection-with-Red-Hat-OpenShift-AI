@@ -3,8 +3,8 @@
   hosts: localhost
   gather_facts: false
   vars:
-    target_namespace: "{{ target_namespace | default('ims-demo-lab') }}"
-    target_configmap: "{{ target_configmap | default('ims-remediation-state') }}"
+    target_namespace: "{{ target_namespace | default('ani-demo-lab') }}"
+    target_configmap: "{{ target_configmap | default('ani-remediation-state') }}"
     quarantine_key: "{{ quarantine_key | default('quarantined_imsi') }}"
     imsi: "{{ imsi | default('001010000000001') }}"
     quarantine_reason: "{{ quarantine_reason | default('event_or_operator_request') }}"

@@ -1,4 +1,4 @@
-project: ims_anomaly_featurestore
+project: ani_anomaly_featurestore
 registry: data/registry.db
 provider: local
 entity_key_serialization_version: 3

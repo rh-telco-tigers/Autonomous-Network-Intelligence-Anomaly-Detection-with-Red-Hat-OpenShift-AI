@@ -1,8 +1,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ims-feature-bundle-kfp-bootstrap
-  namespace: ims-demo-lab
+  name: ani-feature-bundle-kfp-bootstrap
+  namespace: ani-demo-lab
   annotations:
     argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
@@ -12,16 +12,16 @@ spec:
   template:
     metadata:
       labels:
-        app: ims-feature-bundle-kfp-bootstrap
+        app: ani-feature-bundle-kfp-bootstrap
     spec:
-      serviceAccountName: ims-kfp-bootstrap
+      serviceAccountName: ani-kfp-bootstrap
       restartPolicy: OnFailure
       containers:
         - name: publish-pipeline
           image: registry.access.redhat.com/ubi9/python-311:latest
           envFrom:
             - configMapRef:
-                name: ims-platform-config
+                name: ani-platform-config
           env:
             - name: HOME
               value: /tmp
@@ -29,16 +29,20 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: REQUIRED_IMAGESTREAM_TAGS
+              value: ani-ai-featurestore-trainer:latest
+            - name: IMAGESTREAM_WAIT_TIMEOUT_SECONDS
+              value: "3600"
             - name: DSPA_NAME
               value: dspa
             - name: PIPELINE_PACKAGE_PATH
-              value: /opt/kfp/ims_feature_bundle_pipeline.yaml
+              value: /opt/kfp/ani_feature_bundle_pipeline.yaml
             - name: PIPELINE_NAME
-              value: ims-feature-bundle-publish
+              value: ani-feature-bundle-publish
             - name: EXPERIMENT_NAME
-              value: ims-featurestore
+              value: ani-featurestore
             - name: RUN_NAME
-              value: ims-feature-bundle-demo
+              value: ani-feature-bundle-demo
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -59,6 +63,47 @@ spec:
             - -lc
           args:
             - |
+              python - <<'PY'
+              import os
+              import ssl
+              import time
+              from pathlib import Path
+              from urllib.error import HTTPError, URLError
+              from urllib.parse import quote
+              from urllib.request import Request, urlopen
+
+              namespace = os.environ["POD_NAMESPACE"]
+              tags = [item.strip() for item in os.getenv("REQUIRED_IMAGESTREAM_TAGS", "").split(",") if item.strip()]
+              timeout_seconds = int(os.getenv("IMAGESTREAM_WAIT_TIMEOUT_SECONDS", "3600"))
+              if not tags:
+                  raise SystemExit(0)
+
+              api_host = os.getenv("KUBERNETES_SERVICE_HOST", "kubernetes.default.svc")
+              api_port = os.getenv("KUBERNETES_SERVICE_PORT_HTTPS", os.getenv("KUBERNETES_SERVICE_PORT", "443"))
+              token = Path("/var/run/secrets/kubernetes.io/serviceaccount/token").read_text().strip()
+              ca_path = Path("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+              context = ssl.create_default_context(cafile=str(ca_path)) if ca_path.exists() else ssl.create_default_context()
+              deadline = time.time() + timeout_seconds
+
+              for tag in tags:
+                  encoded = quote(tag, safe="")
+                  url = f"https://{api_host}:{api_port}/apis/image.openshift.io/v1/namespaces/{namespace}/imagestreamtags/{encoded}"
+                  while time.time() < deadline:
+                      request = Request(url, headers={"Authorization": f"Bearer {token}"})
+                      try:
+                          with urlopen(request, timeout=5, context=context) as response:
+                              if 200 <= response.status < 300:
+                                  print(f"ImageStreamTag ready: {tag}", flush=True)
+                                  break
+                      except HTTPError as exc:
+                          if exc.code not in {404, 503}:
+                              print(f"waiting for {tag}: {exc}", flush=True)
+                      except URLError as exc:
+                          print(f"waiting for {tag}: {exc}", flush=True)
+                      time.sleep(10)
+                  else:
+                      raise SystemExit(f"required ImageStreamTag did not become ready: {tag}")
+              PY
               export PIPELINE_PARAMETERS_JSON="$(python - <<'PY'
               import json
               import os
@@ -66,9 +111,9 @@ spec:
               print(
                   json.dumps(
                       {
-                          "bundle_version": os.getenv("FEATURESTORE_BUNDLE_VERSION", "ims-feature-bundle-v1"),
+                          "bundle_version": os.getenv("FEATURESTORE_BUNDLE_VERSION", "ani-feature-bundle-v1"),
                           "source_dataset_versions_json": os.getenv("FEATURESTORE_SOURCE_DATASET_VERSIONS_JSON", "[\"live-sipp-v1\"]"),
-                          "project": os.getenv("IMS_PROJECT", os.getenv("DEMO_PROJECT", "ims-demo")),
+                          "project": os.getenv("IMS_PROJECT", os.getenv("DEMO_PROJECT", "ani-demo")),
                           "control_plane_url": os.environ["CONTROL_PLANE_URL"],
                           "control_plane_api_key": os.environ["CONTROL_PLANE_API_KEY"],
                           "dataset_store_mode": os.getenv("DATASET_STORE_MODE", "s3"),
@@ -98,4 +143,4 @@ spec:
       volumes:
         - name: kfp-assets
           configMap:
-            name: ims-feature-bundle-kfp-assets
+            name: ani-feature-bundle-kfp-assets

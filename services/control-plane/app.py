@@ -23,6 +23,7 @@ from shared.aap import (
     action_supported as aap_action_supported,
     bootstrap_resources as aap_bootstrap_resources,
     launch_action as aap_launch_action,
+    launch_repo_playbook as aap_launch_repo_playbook,
     launch_runner_job as aap_launch_runner_job,
     wait_for_job as aap_wait_for_job,
     wait_for_runner_job as aap_wait_for_runner_job,
@@ -41,6 +42,11 @@ from shared.eda import (
     EDAAutomationError,
     bootstrap_resources as eda_bootstrap_resources,
     publish_event as eda_publish_event,
+)
+from shared.gitea import (
+    GiteaAutomationError,
+    promote_generated_playbook,
+    sync_generated_playbook_to_draft,
 )
 from shared.db import (
     attach_rca,
@@ -116,7 +122,7 @@ from shared.rag import (
     retrieve_knowledge_articles,
 )
 from shared.security import AuthContext, ensure_project_access, ensure_role, outbound_headers, require_api_key
-from shared.tickets import TicketProviderError, get_ticket_provider
+from shared.tickets import TicketProviderError, get_ticket_provider, normalize_ticket_record
 from shared.workflow import (
     APPROVED,
     AWAITING_APPROVAL,
@@ -154,7 +160,7 @@ DEFAULT_INCIDENT_AUTO_RCA_SAMPLE_RATE = 1.0
 
 class IncidentCreate(BaseModel):
     incident_id: str
-    project: str = "ims-demo"
+    project: str = "ani-demo"
     anomaly_score: float
     anomaly_type: str
     predicted_confidence: float = 0.0
@@ -251,7 +257,7 @@ class ModelPromotionRequest(BaseModel):
 
 class ConsoleScenarioRequest(BaseModel):
     scenario: str
-    project: str = "ims-demo"
+    project: str = "ani-demo"
 
 
 class IncidentTransitionRequest(BaseModel):
@@ -268,6 +274,7 @@ class RemediationActionRequest(BaseModel):
     execute: bool = False
     source_of_action: str = "platform_ui"
     source_url: str = ""
+    playbook_yaml: str = ""
 
 
 class VerificationRequest(BaseModel):
@@ -302,6 +309,7 @@ class RemediationDecisionRequest(BaseModel):
     approved_by: str
     notes: str = ""
     source_url: str = ""
+    playbook_yaml: str = ""
 
 
 class PlaybookGenerationRequest(BaseModel):
@@ -580,7 +588,7 @@ def _current_remediation_items(remediations: List[Dict[str, object]]) -> List[Di
 
 def _workflow_payload(incident: Dict[str, object]) -> Dict[str, object]:
     incident_id = str(incident.get("id") or "")
-    project = str(incident.get("project") or "ims-demo")
+    project = str(incident.get("project") or "ani-demo")
     all_incidents = list_incidents(project=project)
     audit_events = list_audit_events(limit=200, incident_id=incident_id)
     enriched_incident = _enrich_incident(incident, audit_events, all_incidents)
@@ -588,7 +596,7 @@ def _workflow_payload(incident: Dict[str, object]) -> Dict[str, object]:
     remediations = list_incident_remediations(incident_id)
     actions = list_incident_actions(incident_id)
     verifications = list_incident_verifications(incident_id)
-    tickets = list_incident_tickets(incident_id)
+    tickets = [normalize_ticket_record(ticket) for ticket in list_incident_tickets(incident_id)]
     resolution_extracts = list_ticket_resolution_extracts(incident_id)
     detailed_tickets = []
     for ticket in tickets:
@@ -827,6 +835,13 @@ def _apply_ai_playbook_generation_callback(
 
     action_ref = str(payload.action_ref or "").strip() or _generated_playbook_action_ref(payload.correlation_id)
     playbook_ref = str(payload.playbook_ref or "").strip() or action_ref
+    gitea_metadata = _sync_ai_generated_playbook_to_gitea(
+        incident_id,
+        remediation,
+        playbook_yaml,
+        actor=provider_name,
+        reason="Draft AI playbook callback",
+    )
     updated = update_incident_remediation(
         incident_id,
         int(remediation.get("id") or 0),
@@ -848,14 +863,18 @@ def _apply_ai_playbook_generation_callback(
         preconditions=_string_list(payload.preconditions) or _string_list(remediation.get("preconditions")),
         expected_outcome=str(payload.expected_outcome or remediation.get("expected_outcome") or "").strip(),
         status="available",
-        metadata=metadata
-        | {
-            "generation_kind": "generated",
-            "generation_status": "generated",
-            "generation_error": "",
-            "generated_action_ref": action_ref,
-            "generated_playbook_ref": playbook_ref,
-        },
+        metadata=(
+            metadata
+            | {
+                "generation_kind": "generated",
+                "generation_status": "generated",
+                "generation_error": "",
+                "generated_action_ref": action_ref,
+                "generated_playbook_ref": playbook_ref,
+                "generation_payload_metadata": payload.metadata,
+            }
+            | gitea_metadata
+        ),
         playbook_yaml=playbook_yaml,
     )
     if not updated:
@@ -1004,13 +1023,13 @@ def _ai_playbook_generation_bootstrap_servers() -> List[str]:
     raw = (
         os.getenv("AI_PLAYBOOK_GENERATION_KAFKA_BOOTSTRAP_SERVERS", "").strip()
         or os.getenv("KAFKA_BOOTSTRAP_SERVERS", "").strip()
-        or "ims-release-kafka-kafka-bootstrap.ims-demo-lab.svc.cluster.local:9092"
+        or "ani-release-kafka-kafka-bootstrap.ani-demo-lab.svc.cluster.local:9092"
     )
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 def _ai_playbook_generation_client_id() -> str:
-    return _string_from_env("AI_PLAYBOOK_GENERATION_KAFKA_CLIENT_ID", "ims-control-plane-playbook-generator")
+    return _string_from_env("AI_PLAYBOOK_GENERATION_KAFKA_CLIENT_ID", "ani-control-plane-playbook-generator")
 
 
 def _ai_playbook_generation_security_protocol() -> str:
@@ -1052,6 +1071,13 @@ def _is_ai_playbook_generation_request(remediation: Dict[str, object] | None) ->
     )
 
 
+def _is_ai_generated_playbook_remediation(remediation: Dict[str, object] | None) -> bool:
+    if not remediation or _is_ai_playbook_generation_request(remediation):
+        return False
+    metadata = _remediation_metadata(remediation)
+    return bool(remediation.get("playbook_ref")) and bool(metadata.get("ai_generated")) and str(metadata.get("generation_kind") or "") == "generated"
+
+
 def _generated_playbook_yaml(remediation: Dict[str, object] | None) -> str:
     if not remediation:
         return ""
@@ -1060,6 +1086,162 @@ def _generated_playbook_yaml(remediation: Dict[str, object] | None) -> str:
         return direct_yaml
     metadata = _remediation_metadata(remediation)
     return str(metadata.get("playbook_yaml") or "").strip()
+
+
+def _gitea_sync_metadata(sync_result: Dict[str, Any]) -> Dict[str, object]:
+    return {
+        "gitea_repo_owner": str(sync_result.get("repo_owner") or "").strip(),
+        "gitea_repo_name": str(sync_result.get("repo_name") or "").strip(),
+        "gitea_repo_scm_url": str(sync_result.get("scm_url") or "").strip(),
+        "gitea_main_branch": str(sync_result.get("main_branch") or "").strip(),
+        "gitea_draft_branch": str(sync_result.get("draft_branch") or "").strip(),
+        "gitea_playbook_path": str(sync_result.get("playbook_path") or "").strip(),
+        "gitea_draft_commit_sha": str(sync_result.get("draft_commit_sha") or "").strip(),
+        "gitea_sync_status": str(sync_result.get("status") or "drafted").strip(),
+        "gitea_sync_updated_at": _now_iso(),
+    }
+
+
+def _gitea_promotion_metadata(promotion_result: Dict[str, Any], approved_by: str) -> Dict[str, object]:
+    metadata = _gitea_sync_metadata(promotion_result)
+    metadata.update(
+        {
+            "gitea_pr_number": int(promotion_result.get("pr_number") or 0),
+            "gitea_pr_url": str(promotion_result.get("pr_url") or "").strip(),
+            "gitea_merge_commit_sha": str(promotion_result.get("merge_commit_sha") or "").strip(),
+            "gitea_promotion_status": str(promotion_result.get("status") or "merged").strip(),
+            "gitea_promoted_at": _now_iso(),
+            "gitea_promoted_by": approved_by,
+        }
+    )
+    return metadata
+
+
+def _sync_ai_generated_playbook_to_gitea(
+    incident_id: str,
+    remediation: Dict[str, object],
+    playbook_yaml: str,
+    *,
+    actor: str,
+    reason: str,
+) -> Dict[str, object]:
+    title = str(remediation.get("title") or "AI generated Ansible playbook").strip() or "AI generated Ansible playbook"
+    try:
+        sync_result = sync_generated_playbook_to_draft(
+            incident_id,
+            playbook_yaml,
+            commit_message=f"{reason}: {title} ({incident_id})",
+        )
+    except GiteaAutomationError as exc:
+        logger.warning("Gitea draft sync failed for incident %s remediation %s: %s", incident_id, remediation.get("id"), exc)
+        raise HTTPException(status_code=502, detail=f"Failed to sync the AI-generated playbook draft to Gitea: {exc}") from exc
+    record_audit(
+        "ai_playbook_draft_synced",
+        actor,
+        {
+            "remediation_id": remediation.get("id"),
+            "draft_branch": sync_result.get("draft_branch"),
+            "playbook_path": sync_result.get("playbook_path"),
+            "commit_sha": sync_result.get("draft_commit_sha"),
+            "status": sync_result.get("status"),
+        },
+        incident_id=incident_id,
+    )
+    return _gitea_sync_metadata(sync_result)
+
+
+def _promote_ai_generated_playbook_remediation(
+    incident_id: str,
+    remediation: Dict[str, object],
+    *,
+    approved_by: str,
+) -> Dict[str, object]:
+    title = str(remediation.get("title") or "AI generated Ansible playbook").strip() or "AI generated Ansible playbook"
+    try:
+        promotion_result = promote_generated_playbook(
+            incident_id,
+            title=f"Promote AI-generated playbook for incident {incident_id}",
+            body=(
+                f"Approve the incident-scoped AI-generated playbook `{title}`.\n\n"
+                f"- incident_id: `{incident_id}`\n"
+                f"- remediation_id: `{int(remediation.get('id') or 0)}`\n"
+                f"- playbook_ref: `{str(remediation.get('playbook_ref') or remediation.get('action_ref') or '')}`"
+            ),
+        )
+    except GiteaAutomationError as exc:
+        logger.warning("Gitea promotion failed for incident %s remediation %s: %s", incident_id, remediation.get("id"), exc)
+        raise HTTPException(status_code=502, detail=f"Failed to promote the AI-generated playbook to main: {exc}") from exc
+    metadata = _gitea_promotion_metadata(promotion_result, approved_by)
+    updated = update_incident_remediation(
+        incident_id,
+        int(remediation.get("id") or 0),
+        based_on_revision=int(remediation.get("based_on_revision") or 1),
+        metadata=_merge_remediation_metadata(remediation, metadata),
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to persist AI-generated playbook promotion metadata")
+    record_audit(
+        "ai_playbook_promoted",
+        approved_by,
+        {
+            "remediation_id": updated.get("id"),
+            "draft_branch": promotion_result.get("draft_branch"),
+            "main_branch": promotion_result.get("main_branch"),
+            "playbook_path": promotion_result.get("playbook_path"),
+            "pr_number": promotion_result.get("pr_number"),
+            "merge_commit_sha": promotion_result.get("merge_commit_sha"),
+        },
+        incident_id=incident_id,
+    )
+    return updated
+
+
+def _persist_ai_generated_playbook_yaml(
+    incident_id: str,
+    remediation: Dict[str, object],
+    playbook_yaml: str,
+    updated_by: str,
+) -> Dict[str, object]:
+    normalized_playbook = str(playbook_yaml or "").strip()
+    if not normalized_playbook:
+        raise HTTPException(status_code=400, detail="playbook_yaml cannot be empty for an AI-generated playbook")
+    if not _is_ai_generated_playbook_remediation(remediation):
+        raise HTTPException(status_code=400, detail="playbook_yaml edits are supported only for AI-generated playbooks")
+    gitea_metadata = _sync_ai_generated_playbook_to_gitea(
+        incident_id,
+        remediation,
+        normalized_playbook,
+        actor=updated_by,
+        reason="Update AI playbook draft",
+    )
+
+    updated = update_incident_remediation(
+        incident_id,
+        int(remediation.get("id") or 0),
+        based_on_revision=int(remediation.get("based_on_revision") or 1),
+        metadata=_merge_remediation_metadata(
+            remediation,
+            {
+                "playbook_yaml_updated_at": _now_iso(),
+                "playbook_yaml_updated_by": updated_by,
+            },
+        )
+        | gitea_metadata,
+        playbook_yaml=normalized_playbook,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to persist edited AI-generated playbook")
+    record_audit(
+        "ai_playbook_yaml_updated",
+        updated_by,
+        {
+            "remediation_id": updated.get("id"),
+            "action_ref": updated.get("action_ref"),
+            "playbook_ref": updated.get("playbook_ref"),
+        },
+        incident_id=incident_id,
+    )
+    return updated
 
 
 def _candidate_remediation_titles(incident_id: str, ignored_id: int | None = None) -> List[str]:
@@ -1097,7 +1279,7 @@ def _build_playbook_generation_instruction(
         f"Generate a reviewable Ansible playbook for IMS incident {incident_id}.",
         "",
         "Incident context:",
-        f"- project: {incident.get('project') or 'ims-demo'}",
+        f"- project: {incident.get('project') or 'ani-demo'}",
         f"- anomaly_type: {canonical_anomaly_type(str(incident.get('anomaly_type') or NORMAL_ANOMALY_TYPE))}",
         f"- severity: {incident.get('severity') or 'Unknown'}",
         f"- predicted_confidence: {_incident_confidence(incident):.2f}",
@@ -1237,7 +1419,7 @@ def _publish_incident_evidence_record(incident: Dict[str, object]) -> None:
     content = {
         "incident_id": incident_id,
         "stage": "evidence",
-        "project": str(incident.get("project") or "ims-demo"),
+        "project": str(incident.get("project") or "ani-demo"),
         "anomaly_type": anomaly_type,
         "severity": severity,
         "status": str(incident.get("status") or NEW),
@@ -1533,6 +1715,8 @@ def _sync_ticket_provider(
                 "mode": result.get("mode"),
                 "raw": result.get("raw", {}),
                 "source_url": reference_url,
+                "project_identifier": result.get("project_identifier"),
+                "sequence_id": result.get("sequence_id"),
             },
         )
         payload_hash = hashlib.sha256(json.dumps(result, sort_keys=True).encode("utf-8")).hexdigest()
@@ -1668,21 +1852,21 @@ def _aap_extra_vars_for_action(
     }
     if action_ref == "scale_scscf":
         return base | {
-            "target_namespace": os.getenv("AAP_SCALE_SCSCF_NAMESPACE", "ims-demo-lab"),
+            "target_namespace": os.getenv("AAP_SCALE_SCSCF_NAMESPACE", "ani-demo-lab"),
             "target_deployment": os.getenv("AAP_SCALE_SCSCF_DEPLOYMENT", "ims-scscf"),
             "target_replicas": _positive_int_from_env("AAP_SCALE_SCSCF_REPLICAS", 2),
         }
     if action_ref == "rate_limit_pcscf":
         return base | {
-            "target_namespace": _string_from_env("AAP_RATE_LIMIT_PCSCF_NAMESPACE", "ims-demo-lab"),
+            "target_namespace": _string_from_env("AAP_RATE_LIMIT_PCSCF_NAMESPACE", "ani-demo-lab"),
             "target_deployment": _string_from_env("AAP_RATE_LIMIT_PCSCF_DEPLOYMENT", "ims-pcscf"),
-            "annotation_key": _string_from_env("AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY", "ims.demo/rate-limit-review"),
+            "annotation_key": _string_from_env("AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY", "ani.demo/rate-limit-review"),
             "annotation_value": _string_from_env("AAP_RATE_LIMIT_PCSCF_ANNOTATION_VALUE", "approved"),
         }
     if action_ref == "quarantine_imsi":
         return base | {
-            "target_namespace": _string_from_env("AAP_QUARANTINE_NAMESPACE", "ims-demo-lab"),
-            "target_configmap": _string_from_env("AAP_QUARANTINE_CONFIGMAP", "ims-remediation-state"),
+            "target_namespace": _string_from_env("AAP_QUARANTINE_NAMESPACE", "ani-demo-lab"),
+            "target_configmap": _string_from_env("AAP_QUARANTINE_CONFIGMAP", "ani-remediation-state"),
             "quarantine_key": _string_from_env("AAP_QUARANTINE_KEY", "quarantined_imsi"),
             "quarantine_reason": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
             "imsi": _safe_imsi_for_automation(incident),
@@ -1752,6 +1936,43 @@ def _launch_aap_automation(
         }
 
 
+def _launch_aap_dynamic_playbook(
+    action_ref: str,
+    playbook_yaml: str,
+    incident: Dict[str, object],
+    remediation: Dict[str, object] | None,
+    approved_by: str,
+    notes: str,
+) -> Dict[str, object]:
+    playbook_ref = str((remediation or {}).get("playbook_ref") or action_ref or "ai-generated-playbook").strip() or "ai-generated-playbook"
+    metadata = _remediation_metadata(remediation)
+    extra_vars = _aap_extra_vars_for_action(action_ref, incident, remediation, approved_by, notes) | {
+        "action_ref": action_ref,
+        "playbook_ref": playbook_ref,
+        "ai_generated": True,
+    }
+    launch = aap_launch_repo_playbook(str(incident.get("id") or ""), extra_vars)
+    return {
+        "backend": "aap-controller",
+        "job_id": launch["job_id"],
+        "job_template_id": launch["job_template_id"],
+        "job_template_name": launch["job_template_name"],
+        "job_api_url": launch["job_api_url"],
+        "job_stdout_url": launch["job_stdout_url"],
+        "controller_app_url": launch.get("controller_app_url"),
+        "project_id": launch.get("project_id"),
+        "project_name": launch.get("project_name"),
+        "playbook": launch.get("playbook") or playbook_ref,
+        "playbook_label": playbook_ref,
+        "scm_branch": launch.get("scm_branch") or str(metadata.get("gitea_draft_branch") or ""),
+        "requested_vars": extra_vars,
+        "launch_summary": (
+            f"Launched AAP job {launch['job_id']} for AI-generated playbook {playbook_ref} "
+            f"from branch {launch.get('scm_branch') or str(metadata.get('gitea_draft_branch') or 'draft')}."
+        ),
+    }
+
+
 def _eda_event_payload(
     event_type: str,
     incident: Dict[str, object],
@@ -1764,7 +1985,7 @@ def _eda_event_payload(
         "event_type": event_type,
         "timestamp": _now_iso(),
         "incident_id": str(incident.get("id") or ""),
-        "project": str(incident.get("project") or "ims-demo"),
+        "project": str(incident.get("project") or "ani-demo"),
         "anomaly_type": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
         "severity": _incident_severity_label(incident),
         "status": normalize_workflow_state(str(incident.get("status") or NEW)),
@@ -1928,7 +2149,7 @@ def _finalize_aap_automation(
             approved_by,
             "incident_action",
         )
-        set_active_incidents(list_incidents(project=str(refreshed_incident.get("project") or "ims-demo")))
+        set_active_incidents(list_incidents(project=str(refreshed_incident.get("project") or "ani-demo")))
 
 
 def _request_json(method: str, url: str, payload: Dict[str, object] | None = None) -> Dict[str, object]:
@@ -2637,7 +2858,7 @@ def _ticket_context(
     if not incident_id:
         return None, "", 0
 
-    tickets = list_incident_tickets(incident_id)
+    tickets = [normalize_ticket_record(ticket) for ticket in list_incident_tickets(incident_id)]
     if not tickets:
         return None, "", 0
 
@@ -2716,7 +2937,7 @@ def _incident_summary_view(
 
     return {
         "id": str(incident.get("id") or ""),
-        "project": str(incident.get("project") or "ims-demo"),
+        "project": str(incident.get("project") or "ani-demo"),
         "status": workflow_state,
         "workflow_state": workflow_state,
         "workflow_revision": int(incident.get("workflow_revision") or 1),
@@ -2919,7 +3140,7 @@ def _build_console_state(project: str) -> Dict[str, object]:
 def healthz():
     return {
         "status": "ok",
-        "db_path": os.getenv("CONTROL_PLANE_DB_PATH", "/tmp/ims-demo-control-plane.db"),
+        "db_path": os.getenv("CONTROL_PLANE_DB_PATH", "/tmp/ani-demo-control-plane.db"),
         "ansible_available": shutil.which("ansible-playbook") is not None,
         "automation_mode": _automation_mode(),
         "registry_loaded": bool(load_registry().get("models")),
@@ -3043,7 +3264,7 @@ def get_incident_debug_trace(incident_id: str, auth: AuthContext | None = Depend
         raise HTTPException(status_code=404, detail="Incident not found")
     ensure_project_access(auth, incident["project"])
     return {
-        "incident": _enrich_incident(incident, list_audit_events(limit=500, incident_id=incident_id), list_incidents(project=str(incident.get("project") or "ims-demo"))),
+        "incident": _enrich_incident(incident, list_audit_events(limit=500, incident_id=incident_id), list_incidents(project=str(incident.get("project") or "ani-demo"))),
         "trace_packets": _debug_trace_packets_for_incident(incident),
     }
 
@@ -3308,6 +3529,20 @@ def _execute_incident_action(
             detail="Use the AI playbook generation endpoint for this remediation before approving or executing it",
         )
 
+    actor = auth.subject if auth else payload.approved_by
+    current_state = normalize_workflow_state(str(incident.get("status") or NEW))
+    remediation_status = str((remediation or {}).get("status") or "").strip().lower()
+    reuse_existing_approval = current_state == APPROVED and payload.execute and remediation_status == "approved"
+    submitted_playbook_yaml = str(payload.playbook_yaml or "").strip()
+    if remediation and submitted_playbook_yaml and _is_ai_generated_playbook_remediation(remediation):
+        if reuse_existing_approval and submitted_playbook_yaml != _generated_playbook_yaml(remediation):
+            raise HTTPException(
+                status_code=409,
+                detail="The AI-generated playbook changed after approval. Re-approve it before execution so the merged version matches the executed draft.",
+            )
+    if remediation and str(payload.playbook_yaml or "").strip():
+        remediation = _persist_ai_generated_playbook_yaml(incident_id, remediation, payload.playbook_yaml, actor)
+
     action_ref = str(
         payload.action
         or (remediation or {}).get("action_ref")
@@ -3318,13 +3553,9 @@ def _execute_incident_action(
         raise HTTPException(status_code=400, detail="Action reference is required")
     dynamic_playbook_yaml = _generated_playbook_yaml(remediation)
 
-    actor = auth.subject if auth else payload.approved_by
     started_at = _now_iso() if payload.execute else None
     finished_at = None
     action_result_json: Dict[str, object] = {"execute": payload.execute, "action_ref": action_ref}
-    current_state = normalize_workflow_state(str(incident.get("status") or NEW))
-    remediation_status = str((remediation or {}).get("status") or "").strip().lower()
-    reuse_existing_approval = current_state == APPROVED and payload.execute and remediation_status == "approved"
 
     if current_state in {EXECUTED, EXECUTION_FAILED, VERIFICATION_FAILED} or (
         current_state == APPROVED and not reuse_existing_approval
@@ -3354,6 +3585,24 @@ def _execute_incident_action(
             "Operator opened remediation workflow.",
         )
 
+    if remediation and _is_ai_generated_playbook_remediation(remediation) and not reuse_existing_approval:
+        remediation = _promote_ai_generated_playbook_remediation(
+            incident_id,
+            remediation,
+            approved_by=actor,
+        )
+        promotion_metadata = _remediation_metadata(remediation)
+        action_result_json |= {
+            "gitea_repo_owner": str(promotion_metadata.get("gitea_repo_owner") or ""),
+            "gitea_repo_name": str(promotion_metadata.get("gitea_repo_name") or ""),
+            "gitea_playbook_path": str(promotion_metadata.get("gitea_playbook_path") or ""),
+            "gitea_draft_branch": str(promotion_metadata.get("gitea_draft_branch") or ""),
+            "gitea_main_branch": str(promotion_metadata.get("gitea_main_branch") or ""),
+            "gitea_pr_number": promotion_metadata.get("gitea_pr_number"),
+            "gitea_pr_url": str(promotion_metadata.get("gitea_pr_url") or ""),
+            "gitea_merge_commit_sha": str(promotion_metadata.get("gitea_merge_commit_sha") or ""),
+        }
+
     if not reuse_existing_approval:
         incident = _transition_incident_with_audit(
             incident,
@@ -3377,42 +3626,67 @@ def _execute_incident_action(
             f"Executing automation for {action_ref}.",
         )
         if dynamic_playbook_yaml:
-            output, raw_status = _execute_playbook(
-                action_ref,
-                playbook_content=dynamic_playbook_yaml,
-                playbook_label=str((remediation or {}).get("playbook_ref") or action_ref),
-            )
-            finished_at = _now_iso()
-            action_result_json |= {
-                "backend": "dynamic-playbook",
-                "playbook": str((remediation or {}).get("playbook_ref") or action_ref),
-                "raw_status": raw_status,
-                "ai_generated": True,
-            }
-            if raw_status in {"executed", "simulated"}:
-                execution_status = "executed"
-                incident = _transition_incident_with_audit(
-                    get_incident(incident_id) or incident,
-                    EXECUTED,
-                    actor,
-                    f"Automation completed for {action_ref}.",
-                )
-            elif raw_status in {"failed", "rejected"}:
-                execution_status = "failed"
-                incident = _transition_incident_with_audit(
-                    get_incident(incident_id) or incident,
-                    EXECUTION_FAILED,
-                    actor,
-                    f"Automation failed for {action_ref}.",
-                )
+            if _aap_automation_enabled():
+                try:
+                    launch = _launch_aap_dynamic_playbook(
+                        action_ref,
+                        dynamic_playbook_yaml,
+                        incident,
+                        remediation,
+                        payload.approved_by,
+                        payload.notes,
+                    )
+                    execution_status = "executing"
+                    output = str(launch.get("launch_summary") or f"Launched AAP automation for {action_ref}.")
+                    action_result_json |= launch | {"raw_status": "launched", "ai_generated": True}
+                except AAPAutomationError as exc:
+                    execution_status = "failed"
+                    finished_at = _now_iso()
+                    output = str(exc)
+                    action_result_json |= {"backend": "aap-controller", "raw_status": "launch_failed", "error": str(exc), "ai_generated": True}
+                    incident = _transition_incident_with_audit(
+                        get_incident(incident_id) or incident,
+                        EXECUTION_FAILED,
+                        actor,
+                        f"AAP automation failed to launch for {action_ref}.",
+                    )
             else:
-                execution_status = "approved"
-                incident = _transition_incident_with_audit(
-                    get_incident(incident_id) or incident,
-                    APPROVED,
-                    actor,
-                    f"Automation for {action_ref} was gated before execution.",
+                output, raw_status = _execute_playbook(
+                    action_ref,
+                    playbook_content=dynamic_playbook_yaml,
+                    playbook_label=str((remediation or {}).get("playbook_ref") or action_ref),
                 )
+                finished_at = _now_iso()
+                action_result_json |= {
+                    "backend": "dynamic-playbook",
+                    "playbook": str((remediation or {}).get("playbook_ref") or action_ref),
+                    "raw_status": raw_status,
+                    "ai_generated": True,
+                }
+                if raw_status in {"executed", "simulated"}:
+                    execution_status = "executed"
+                    incident = _transition_incident_with_audit(
+                        get_incident(incident_id) or incident,
+                        EXECUTED,
+                        actor,
+                        f"Automation completed for {action_ref}.",
+                    )
+                elif raw_status in {"failed", "rejected"}:
+                    execution_status = "failed"
+                    incident = _transition_incident_with_audit(
+                        get_incident(incident_id) or incident,
+                        EXECUTION_FAILED,
+                        actor,
+                        f"Automation failed for {action_ref}.",
+                    )
+                else:
+                    execution_status = "approved"
+                    incident = _transition_incident_with_audit(
+                        get_incident(incident_id) or incident,
+                        APPROVED,
+                        actor,
+                        f"Automation for {action_ref} was gated before execution.",
+                    )
         elif aap_action_supported(action_ref):
             try:
                 launch = _launch_aap_automation(action_ref, incident, remediation, payload.approved_by, payload.notes)
@@ -3637,6 +3911,7 @@ def approve_remediation(
             notes=payload.notes,
             execute=False,
             source_url=payload.source_url,
+            playbook_yaml=payload.playbook_yaml,
         ),
         auth,
     )
@@ -3658,6 +3933,7 @@ def execute_remediation(
             notes=payload.notes,
             execute=True,
             source_url=payload.source_url,
+            playbook_yaml=payload.playbook_yaml,
         ),
         auth,
         background_tasks,
@@ -3872,7 +4148,7 @@ def verify_incident(
         )
 
     current_ticket = None
-    tickets = list_incident_tickets(incident_id)
+    tickets = [normalize_ticket_record(ticket) for ticket in list_incident_tickets(incident_id)]
     if tickets:
         current_ticket = next((ticket for ticket in tickets if ticket.get("id") == updated.get("current_ticket_id")), tickets[0])
     extract = _maybe_create_resolution_extract(updated, verification, action=action, ticket=current_ticket)
@@ -4054,6 +4330,7 @@ def get_ticket_reference(
     ticket = get_ticket_by_provider_external_id(provider, external_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    ticket = normalize_ticket_record(ticket)
 
     incident_id = str(ticket.get("incident_id") or "")
     incident = get_incident(incident_id)
@@ -4157,7 +4434,7 @@ async def plane_webhook(request: Request):
             or ""
         )
 
-    ticket = get_ticket_by_provider_external_id("plane", external_id) if external_id else None
+    ticket = normalize_ticket_record(get_ticket_by_provider_external_id("plane", external_id)) if external_id else None
     payload_hash = hashlib.sha256(raw_body).hexdigest()
     if not ticket:
         record_ticket_sync("plane", "inbound", "unmapped")
@@ -4327,7 +4604,7 @@ def platform_status(auth: AuthContext | None = Depends(require_api_key)):
 
 
 @app.get("/console/state")
-def console_state(project: str = "ims-demo", auth: AuthContext | None = Depends(require_api_key)):
+def console_state(project: str = "ani-demo", auth: AuthContext | None = Depends(require_api_key)):
     ensure_project_access(auth, project)
     return _build_console_state(project)
 
@@ -4456,6 +4733,10 @@ def _automation_mode() -> str:
     if os.getenv("ENABLE_AUTOMATION", "false").lower() == "true":
         return "execute"
     return "simulate"
+
+
+def _aap_automation_enabled() -> bool:
+    return os.getenv("AAP_AUTOMATION_ENABLED", "true").strip().lower() == "true"
 
 
 def _execute_playbook(

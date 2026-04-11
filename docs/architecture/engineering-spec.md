@@ -127,7 +127,7 @@ flowchart TD
 
   MinIO["MinIO"]
   KFP["KFP pipelines"]
-  KServe["KServe model serving<br/>ims-predictive-fs"]
+  KServe["KServe model serving<br/>ani-predictive-fs"]
 
   Milvus["Milvus"]
   LLM["Generative proxy / vLLM"]
@@ -170,14 +170,14 @@ flowchart TD
   IMS["OpenIMSs"]
   Windows["Labeled feature windows<br/>live-sipp-v1"]
   MinIO["MinIO dataset store"]
-  Bundle["bundle publish<br/>ims-feature-bundle-publish"]
-  Feast["OpenShift AI Feature Store<br/>ims-featurestore"]
-  Train["ims-featurestore-train-and-register"]
+  Bundle["bundle publish<br/>ani-feature-bundle-publish"]
+  Feast["OpenShift AI Feature Store<br/>ani-featurestore"]
+  Train["ani-featurestore-train-and-register"]
   Evaluate["train-baseline / train-autogluon<br/>evaluate / select-best"]
   Registry["OpenShift AI Model Registry"]
-  TritonRepo["Triton export<br/>ims-predictive-fs"]
-  MLRepo["MLServer export<br/>ims-predictive-fs-mlserver"]
-  Legacy["legacy bootstrap path<br/>ims-anomaly-platform-train-and-register"]
+  TritonRepo["Triton export<br/>ani-predictive-fs"]
+  MLRepo["MLServer export<br/>ani-predictive-fs-mlserver"]
+  Legacy["legacy bootstrap path<br/>ani-anomaly-platform-train-and-register"]
 
   SIPP --> IMS
   SIPP --> Windows
@@ -205,7 +205,7 @@ flowchart TD
   Window["feature window"]
   AN["anomaly-service"]
   Registry["model registry"]
-  KServe["ims-predictive-fs"]
+  KServe["ani-predictive-fs"]
   RCA["rca-service"]
   Milvus["Milvus"]
   LLM["Generative proxy / vLLM"]
@@ -482,12 +482,12 @@ The system enforces:
 ```yaml
 pipelines:
   bundle_publish:
-    name: ims-feature-bundle-publish
+    name: ani-feature-bundle-publish
     steps:
       - build-bundle
       - validate-bundle
   featurestore_train_register:
-    name: ims-featurestore-train-and-register
+    name: ani-featurestore-train-and-register
     steps:
       - resolve-bundle
       - validate-bundle
@@ -569,7 +569,7 @@ FeatureWindow -> /score -> remote-kserve multiclass prediction -> Incident creat
 
 ```json
 {
-  "project": "ims-demo",
+  "project": "ani-demo",
   "scenario_name": "registration_storm",
   "feature_window_id": "fw-123",
   "features": {
@@ -606,7 +606,7 @@ Response:
       "probability": 0.99
     }
   ],
-  "model_version": "ims-predictive-fs",
+  "model_version": "ani-predictive-fs",
   "scoring_mode": "remote-kserve",
   "created_at": "..."
 }
@@ -617,8 +617,8 @@ Response:
 ```json
 {
   "incident_id": "uuid",
-  "project": "ims-demo",
-  "model_version": "ims-predictive-fs",
+  "project": "ani-demo",
+  "model_version": "ani-predictive-fs",
   "feature_window_id": "fw-123",
   "anomaly_score": 0.99,
   "anomaly_type": "network_degradation",
@@ -673,8 +673,8 @@ Response:
 
 The checked-in implementation is now dual-runtime rather than Triton-only.
 
-- `k8s/base/serving/featurestore-serving.yaml` binds `ims-predictive-fs` to `nvidia-triton-runtime` with `modelFormat.name: triton`
-- `k8s/base/serving/featurestore-serving-mlserver.yaml` defines `ims-predictive-fs-mlserver` for an MLServer sklearn runtime
+- `k8s/base/serving/featurestore-serving.yaml` binds `ani-predictive-fs` to `nvidia-triton-runtime` with `modelFormat.name: triton`
+- `k8s/base/serving/featurestore-serving-mlserver.yaml` defines `ani-predictive-fs-mlserver` for an MLServer sklearn runtime
 - `ai/training/featurestore_train.py` exports both a Triton repository (`config.pbtxt`, `model.py`, `weights.json`) and an MLServer bundle (`model.joblib`, `model-settings.json`)
 - the same training path generates deployment metadata for both runtime formats
 - `services/shared/model_store.py` calls the V2 endpoint at `/v2/models/{model_name}/infer`, accepts `class_probabilities` or `predict_proba`, and uses `anomaly_score` when the runtime provides it
@@ -683,7 +683,7 @@ This means the current serving path is built around a shared KServe V2 contract 
 
 ##### MLServer Parity Path
 
-MLServer is no longer only a design target. It is deployed side by side through `ims-predictive-fs-mlserver` and consumes the same 9-feature request contract as Triton. Triton remains the default runtime while MLServer is used for parity checks and rollout validation.
+MLServer is no longer only a design target. It is deployed side by side through `ani-predictive-fs-mlserver` and consumes the same 9-feature request contract as Triton. Triton remains the default runtime while MLServer is used for parity checks and rollout validation.
 
 ##### Can Triton Be Replaced In Place?
 
@@ -708,8 +708,8 @@ Decision:
 flowchart TD
   KFP["feature-store KFP pipeline"] --> ExportT["Triton export"]
   KFP --> ExportM["MLServer sklearn export"]
-  ExportT --> TritonISVC["ims-predictive-fs<br/>Triton InferenceService"]
-  ExportM --> MLISVC["ims-predictive-fs-mlserver<br/>MLServer InferenceService"]
+  ExportT --> TritonISVC["ani-predictive-fs<br/>Triton InferenceService"]
+  ExportM --> MLISVC["ani-predictive-fs-mlserver<br/>MLServer InferenceService"]
   Client["anomaly-service / control-plane"] --> Adapter["score adapter"]
   Adapter --> TritonISVC
   Adapter -. smoke tests / canary .-> MLISVC
@@ -722,7 +722,7 @@ flowchart TD
 Recommended storage layout:
 
 ```text
-s3://ims-models/predictive-featurestore-mlserver/ims-predictive-fs-mlserver/current/
+s3://ani-models/predictive-featurestore-mlserver/ani-predictive-fs-mlserver/current/
   model-settings.json
   model.joblib
   serving-metadata.json
@@ -732,7 +732,7 @@ Minimal `model-settings.json`:
 
 ```json
 {
-  "name": "ims-predictive-fs-mlserver",
+  "name": "ani-predictive-fs-mlserver",
   "implementation": "mlserver_sklearn.SKLearnModel",
   "parameters": {
     "uri": "./model.joblib",
@@ -758,8 +758,8 @@ Checked-in resources:
 
 Deployment notes:
 
-- `ims-predictive-fs` is the current default Triton-backed remote-scoring endpoint
-- `mlserver-sklearn-runtime` and `ims-predictive-fs-mlserver` form the live side-by-side parity path
+- `ani-predictive-fs` is the current default Triton-backed remote-scoring endpoint
+- `mlserver-sklearn-runtime` and `ani-predictive-fs-mlserver` form the live side-by-side parity path
 - the MLServer manifest is kept separate from the legacy default serving base so rollout and cutover stay explicit
 
 ##### Implemented Repo Changes And Remaining Hardening
@@ -787,11 +787,11 @@ Deployment notes:
 
 Active Triton path:
 
-- `http://ims-predictive-fs-predictor.ims-demo-lab.svc.cluster.local:8080`
+- `http://ani-predictive-fs-predictor.ani-demo-lab.svc.cluster.local:8080`
 
 Live MLServer parity path:
 
-- `http://ims-predictive-fs-mlserver-predictor.ims-demo-lab.svc.cluster.local:8080`
+- `http://ani-predictive-fs-mlserver-predictor.ani-demo-lab.svc.cluster.local:8080`
 
 Request contract should remain:
 
@@ -837,9 +837,9 @@ Primary source categories:
 
 Operational guidance for indexed content:
 
-- `ims_runbooks` stores stable operator-authored knowledge, including category-specific KB articles for signaling, authentication, validation, routing, session, server, and network incidents
+- `ani_runbooks` stores stable operator-authored knowledge, including category-specific KB articles for signaling, authentication, validation, routing, session, server, and network incidents
 - the category KB is seeded from `ai/rag/runbooks/*-knowledge.json`, with at least ten articles per incident category so the demo can always surface relevant operational guidance
-- legacy markdown runbooks remain valid seed input and are still embedded into `ims_runbooks`
+- legacy markdown runbooks remain valid seed input and are still embedded into `ani_runbooks`
 - historical incidents are stored as symptom, root cause, and resolution narratives with incident metadata
 - topology metadata is stored as dependency-aware service relationships and path context
 - logs and SIP traces are stored as selective extracted snippets or summarized patterns, not as full raw streams
@@ -884,20 +884,20 @@ For the demo profile, the Milvus corpus should remain intentionally small and pr
 
 Recommended logical collections:
 
-- `ims_runbooks`
+- `ani_runbooks`
 - `incident_evidence`
 - `incident_reasoning`
 - `incident_resolution`
-- `ims_topology`
-- `ims_signal_patterns`
+- `ani_topology`
+- `ani_signal_patterns`
 
 The practical retrieval split is:
 
-- `ims_runbooks`: reusable category-based KB articles and stable operator-authored runbooks
+- `ani_runbooks`: reusable category-based KB articles and stable operator-authored runbooks
 - `incident_evidence`: normalized observed incident facts and feature summaries
 - `incident_reasoning`: RCA and remediation reasoning records
 - `incident_resolution`: verified outcomes that should rank highest for future reuse
-- `ims_topology` and `ims_signal_patterns`: smaller supporting context collections for path and pattern grounding
+- `ani_topology` and `ani_signal_patterns`: smaller supporting context collections for path and pattern grounding
 
 ### 5.2.1 Bootstrap and New Cluster Readiness
 
@@ -920,7 +920,7 @@ This means the KB is not a manual post-install content load. It is part of the p
 3. incident category resolved from anomaly taxonomy
 4. RCA query built from incident facts, feature deviations, and recommendation context
 5. Milvus searched for stage-specific evidence, reasoning, and verified resolution records
-6. `ims_runbooks` searched for category-matched KB articles
+6. `ani_runbooks` searched for category-matched KB articles
 7. supporting context retrieved and ranked
 8. prompt assembled
 9. LLM inference executed
@@ -942,7 +942,7 @@ Prompt construction includes:
 - alarm and incident data
 - runtime context
 - topology relationships
-- incident-category KB articles from `ims_runbooks`
+- incident-category KB articles from `ani_runbooks`
 - retrieved reference material
 
 The output must be grounded in retrieved evidence and returned in a structured schema.

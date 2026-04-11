@@ -1,4 +1,4 @@
-name: "ims-predictive"
+name: "ani-predictive"
 backend: "python"
 max_batch_size: 16
 input [

@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: demo-incident-pulse
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 spec:
   schedule: "*/3 * * * *"
   suspend: false
@@ -19,11 +19,11 @@ spec:
           restartPolicy: Never
           containers:
             - name: demo-incident-pulse
-              image: image-registry.openshift-image-registry.svc:5000/ims-demo-lab/control-plane:latest
+              image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/control-plane:latest
               imagePullPolicy: Always
               envFrom:
                 - configMapRef:
-                    name: ims-platform-config
+                    name: ani-platform-config
               command:
                 - python
                 - -c
@@ -36,7 +36,7 @@ spec:
                   import requests
 
                   url = os.environ["CONTROL_PLANE_URL"].rstrip("/") + "/console/run-scenario"
-                  project = os.getenv("DEMO_PROJECT", "ims-demo")
+                  project = os.getenv("DEMO_PROJECT", "ani-demo")
                   scenarios = [
                       item.strip()
                       for item in os.getenv(

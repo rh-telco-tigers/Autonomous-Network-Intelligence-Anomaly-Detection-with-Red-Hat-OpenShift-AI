@@ -1,6 +1,0 @@
-$patch: delete
-apiVersion: serving.kserve.io/v1beta1
-kind: InferenceService
-metadata:
-  name: ims-predictive
-  namespace: ims-demo-lab

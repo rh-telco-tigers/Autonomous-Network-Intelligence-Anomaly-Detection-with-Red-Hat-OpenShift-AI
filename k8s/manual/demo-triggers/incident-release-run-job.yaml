@@ -1,17 +1,17 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  generateName: ims-incident-release-kfp-manual-
-  namespace: ims-demo-lab
+  generateName: ani-incident-release-kfp-manual-
+  namespace: ani-datascience
 spec:
   backoffLimit: 6
   ttlSecondsAfterFinished: 1800
   template:
     metadata:
       labels:
-        app: ims-incident-release-kfp-manual
+        app: ani-incident-release-kfp-manual
     spec:
-      serviceAccountName: ims-kfp-bootstrap
+      serviceAccountName: ani-kfp-bootstrap
       restartPolicy: OnFailure
       containers:
         - name: publish-pipeline
@@ -23,11 +23,39 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: INCIDENT_RELEASE_VERSION
+              value: __INCIDENT_RELEASE_VERSION__
+            - name: INCIDENT_RELEASE_SOURCE_DATASET_VERSION
+              value: __INCIDENT_RELEASE_SOURCE_DATASET_VERSION__
+            - name: INCIDENT_RELEASE_MODE
+              value: __INCIDENT_RELEASE_MODE__
+            - name: INCIDENT_RELEASE_PUBLIC_RECORD_TARGET
+              value: "__INCIDENT_RELEASE_PUBLIC_RECORD_TARGET__"
+            - name: INCIDENT_RELEASE_PREVIOUS_VERSION
+              value: __INCIDENT_RELEASE_PREVIOUS_VERSION__
           command:
             - /bin/bash
             - -lc
           args:
             - |
+              export PIPELINE_PARAMETERS_JSON="$(python - <<'PY'
+              import json
+              import os
+
+              print(
+                  json.dumps(
+                      {
+                          "release_version": os.getenv("INCIDENT_RELEASE_VERSION", "live-sipp-v1-draft"),
+                          "source_dataset_version": os.getenv("INCIDENT_RELEASE_SOURCE_DATASET_VERSION", "live-sipp-v1"),
+                          "project": "ani-demo",
+                          "public_record_target": int(os.getenv("INCIDENT_RELEASE_PUBLIC_RECORD_TARGET", "10000")),
+                          "release_mode": os.getenv("INCIDENT_RELEASE_MODE", "draft-replacement"),
+                          "previous_release_version": os.getenv("INCIDENT_RELEASE_PREVIOUS_VERSION", ""),
+                      }
+                  )
+              )
+              PY
+              )"
               python -m pip install --no-cache-dir --target /tmp/kfp-site kfp==2.8.0
               export PYTHONPATH="/tmp/kfp-site:${PYTHONPATH}"
               python /opt/kfp/publish_incident_release_pipeline.py
@@ -45,4 +73,4 @@ spec:
       volumes:
         - name: kfp-assets
           configMap:
-            name: ims-incident-release-kfp-assets
+            name: ani-incident-release-kfp-assets

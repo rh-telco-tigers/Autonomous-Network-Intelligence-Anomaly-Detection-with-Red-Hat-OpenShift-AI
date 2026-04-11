@@ -193,7 +193,7 @@ def _score_feature_window(window: dict[str, Any]) -> dict[str, Any] | None:
         _anomaly_service_url("/score"),
         json={
             "features": features,
-            "project": os.getenv("CONTROL_PLANE_PROJECT", "ims-demo").strip() or "ims-demo",
+            "project": os.getenv("CONTROL_PLANE_PROJECT", "ani-demo").strip() or "ani-demo",
             "feature_window_id": str(window.get("window_id") or ""),
             "scenario_name": str(window.get("scenario_name") or ""),
             "anomaly_type_hint": str(window.get("anomaly_type") or NORMAL_ANOMALY_TYPE),
@@ -225,7 +225,7 @@ def _emit_control_plane_incident(window: dict[str, Any]) -> dict[str, Any] | Non
         }
     payload = {
         "incident_id": str(uuid.uuid4()),
-        "project": os.getenv("CONTROL_PLANE_PROJECT", "ims-demo").strip() or "ims-demo",
+        "project": os.getenv("CONTROL_PLANE_PROJECT", "ani-demo").strip() or "ani-demo",
         "anomaly_score": float(os.getenv("CONTROL_PLANE_INCIDENT_SCORE", "0.99" if int(window.get("label", 0)) else "0.05")),
         "anomaly_type": anomaly_type,
         "predicted_confidence": predicted_confidence,
@@ -486,7 +486,7 @@ def _build_feature_window(args: argparse.Namespace, trace_dir: Path, sipp_result
         "window_id": window_id,
         "window_start": datetime.fromtimestamp(start_time, tz=timezone.utc).isoformat(),
         "window_end": datetime.fromtimestamp(end_time, tz=timezone.utc).isoformat(),
-        "source": "openims-sipp-lab",
+        "source": "openani-sipp-lab",
         "feature_source": "sipp-shortmessages",
         "schema_version": FEATURE_SCHEMA_VERSION,
         "dataset_version": args.dataset_version,
@@ -577,7 +577,7 @@ def _run_sipp(args: argparse.Namespace, trace_dir: Path) -> subprocess.Completed
 
 
 def _run_once(args: argparse.Namespace) -> dict[str, Any]:
-    trace_dir = Path(tempfile.mkdtemp(prefix="ims-sipp-trace-"))
+    trace_dir = Path(tempfile.mkdtemp(prefix="ani-sipp-trace-"))
     try:
         sipp_result = _run_sipp(args, trace_dir)
         window = _build_feature_window(args, trace_dir, sipp_result)

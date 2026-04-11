@@ -12,19 +12,19 @@ from shared.debug_trace import interaction_trace_packets, trace_now
 
 
 DEFAULT_MILVUS_COLLECTIONS = (
-    "ims_runbooks",
+    "ani_runbooks",
     "incident_evidence",
     "incident_reasoning",
     "incident_resolution",
-    "ims_topology",
-    "ims_signal_patterns",
+    "ani_topology",
+    "ani_signal_patterns",
 )
-LEGACY_MILVUS_COLLECTIONS = ("ims_incidents",)
+LEGACY_MILVUS_COLLECTIONS = ("ani_incidents",)
 VECTOR_DIMENSION = 64
 MAX_CONTENT_LENGTH = 16384
 MAX_EMBEDDING_TEXT_LENGTH = 4096
 MAX_RETRIEVAL_CANDIDATES = 24
-RUNBOOK_COLLECTION = "ims_runbooks"
+RUNBOOK_COLLECTION = "ani_runbooks"
 KNOWLEDGE_ARTICLE_DOC_TYPE = "knowledge_article"
 RUNBOOK_SCHEMA_VERSION = "2026-04-06"
 TOKEN_PATTERN = re.compile(r"[a-z0-9_]{2,}")
@@ -52,12 +52,12 @@ STOP_WORDS = {
     "with",
 }
 LOCAL_COLLECTION_DIRS = {
-    "ims_runbooks": "runbooks",
+    "ani_runbooks": "runbooks",
     "incident_evidence": "incidents",
     "incident_reasoning": "incidents",
     "incident_resolution": "incidents",
-    "ims_topology": "topology",
-    "ims_signal_patterns": "signal_patterns",
+    "ani_topology": "topology",
+    "ani_signal_patterns": "signal_patterns",
 }
 COLLECTION_STAGE_DEFAULTS = {
     "incident_evidence": "evidence",
@@ -150,11 +150,11 @@ def _collection_category(path: Path, collection_name: str) -> str:
 
 
 def _collection_stage(collection_name: str) -> str:
-    return COLLECTION_STAGE_DEFAULTS.get(collection_name, collection_name.removeprefix("ims_"))
+    return COLLECTION_STAGE_DEFAULTS.get(collection_name, collection_name.removeprefix("ani_"))
 
 
 def _default_doc_type(collection_name: str) -> str:
-    return COLLECTION_DOC_TYPE_DEFAULTS.get(collection_name, collection_name.removeprefix("ims_"))
+    return COLLECTION_DOC_TYPE_DEFAULTS.get(collection_name, collection_name.removeprefix("ani_"))
 
 
 def _content_to_text(content: str | Dict[str, object]) -> str:
@@ -616,7 +616,7 @@ def _historical_incident_seed(reference: str, title: str, payload: Dict[str, obj
             "incident_id": incident_id,
             "title": title,
             "stage": "evidence",
-            "project": "ims-demo",
+            "project": "ani-demo",
             "symptoms": symptoms,
             "components": components,
             "record_status": "historical",
@@ -628,7 +628,7 @@ def _historical_incident_seed(reference: str, title: str, payload: Dict[str, obj
         metadata = {
             "stage": "evidence",
             "incident_id": incident_id,
-            "project": "ims-demo",
+            "project": "ani-demo",
             "status": "historical",
             "knowledge_weight": 0.7,
         }
@@ -651,7 +651,7 @@ def _historical_incident_seed(reference: str, title: str, payload: Dict[str, obj
             "stage": "rca",
             "incident_id": incident_id,
             "parent_id": incident_id,
-            "project": "ims-demo",
+            "project": "ani-demo",
             "status": "historical",
             "category": "historical_rca",
             "knowledge_weight": 0.8,
@@ -676,7 +676,7 @@ def _historical_incident_seed(reference: str, title: str, payload: Dict[str, obj
             "stage": "resolution",
             "incident_id": incident_id,
             "parent_id": incident_id,
-            "project": "ims-demo",
+            "project": "ani-demo",
             "status": "historical",
             "verified": True,
             "verified_by": "historical-knowledge",

@@ -116,7 +116,7 @@ def sip_response(message: str) -> bytes:
     from_header = headers.get("from", f"<sip:{NODE_ID}@{NODE_ID}>")
     to_header = headers.get("to", f"<sip:{NODE_ID}@{NODE_ID}>")
     if "tag=" not in to_header.lower():
-        to_header = f"{to_header};tag=ims-demo"
+        to_header = f"{to_header};tag=ani-demo"
     call_id = headers.get("call-id", f"{NODE_ID}-call")
     cseq = headers.get("cseq", f"1 {method}")
     contact = headers.get("contact", f"<sip:{NODE_ID}@{NODE_ID}:{SIP_PORT}>")
@@ -129,7 +129,7 @@ def sip_response(message: str) -> bytes:
         f"Call-ID: {call_id}",
         f"CSeq: {cseq}",
         f"Contact: {contact}",
-        "Server: ims-demo-node",
+        "Server: ani-demo-node",
         "Content-Length: 0",
         "",
         "",

@@ -1,11 +1,9 @@
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
-  name: redhat-ods-operator
+  name: redhat-ods-operator-og
   namespace: redhat-ods-operator
-spec:
-  targetNamespaces:
-    - redhat-ods-operator
+spec: {}
 ---
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription

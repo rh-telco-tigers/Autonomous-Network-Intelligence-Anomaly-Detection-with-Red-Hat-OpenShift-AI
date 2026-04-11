@@ -10,6 +10,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { KnowledgeArticleView } from "@/components/knowledge-article-view";
+import { LogoMark } from "@/components/logo-mark";
 import { useApiToken } from "@/components/providers/app-providers";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { request, useIncidentWorkflowQuery, usePlaybookInstructionPreviewQuery, useRelatedRecordsQuery } from "@/lib/api";
+import {
+  LONG_RUNNING_REQUEST_TIMEOUT_MS,
+  request,
+  useIncidentWorkflowQuery,
+  usePlaybookInstructionPreviewQuery,
+  useRelatedRecordsQuery,
+} from "@/lib/api";
 import { resolveTicketHref } from "@/lib/ticket-links";
 import type {
   IncidentActionRecord,
@@ -356,6 +363,7 @@ export function IncidentWorkflowDetail() {
             source_url: currentPageUrl,
             instruction_override: values.instructionOverride,
           }),
+          timeoutMs: LONG_RUNNING_REQUEST_TIMEOUT_MS,
         },
       );
     },
@@ -368,6 +376,7 @@ export function IncidentWorkflowDetail() {
       actor: string;
       notes?: string;
       mode: "approve" | "execute" | "reject";
+      playbookYaml?: string;
     }) => {
       if (!values.remediationId) {
         throw new Error("Select a remediation first.");
@@ -379,10 +388,16 @@ export function IncidentWorkflowDetail() {
       const body =
         values.mode === "reject"
           ? { rejected_by: values.actor, notes: values.notes }
-          : { approved_by: values.actor, notes: values.notes, source_url: currentPageUrl };
+          : {
+              approved_by: values.actor,
+              notes: values.notes,
+              source_url: currentPageUrl,
+              playbook_yaml: values.playbookYaml,
+            };
       return request<RemediationActionResponse>(path, token, {
         method: "POST",
         body: JSON.stringify(body),
+        timeoutMs: LONG_RUNNING_REQUEST_TIMEOUT_MS,
       });
     },
     onSuccess: refreshWorkflow,
@@ -614,7 +629,7 @@ export function IncidentWorkflowDetail() {
   });
 
   const runRemediationAction = React.useCallback(
-    async (remediation: RemediationRecord, mode: "approve" | "execute" | "reject") => {
+    async (remediation: RemediationRecord, mode: "approve" | "execute" | "reject", playbookYaml?: string) => {
       setFocusedRemediationId(remediation.id);
       try {
         const payload = await actionMutation.mutateAsync({
@@ -622,6 +637,7 @@ export function IncidentWorkflowDetail() {
           actor: actorName,
           notes: remediationNote(remediation.id),
           mode,
+          playbookYaml,
         });
         const executionStatus = payload.action?.execution_status ?? (mode === "reject" ? "rejected" : "approved");
         const escalatesToPlane = remediation.action_ref === "open_plane_escalation";
@@ -685,8 +701,8 @@ export function IncidentWorkflowDetail() {
   );
 
   const retryRemediation = React.useCallback(
-    async (remediation: RemediationRecord) => {
-      await runRemediationAction(remediation, "execute");
+    async (remediation: RemediationRecord, playbookYaml?: string) => {
+      await runRemediationAction(remediation, "execute", playbookYaml);
     },
     [runRemediationAction],
   );
@@ -902,9 +918,7 @@ export function IncidentWorkflowDetail() {
               <Link href="/incidents">Back to incidents</Link>
             </Button>
             <div className="flex items-start gap-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent)] text-sm font-bold text-slate-950 shadow-sm">
-                IMS
-              </div>
+              <LogoMark className="h-11 w-11 shrink-0" />
               <div className="min-w-0">
                 <div className="text-[11px] uppercase tracking-[0.32em] text-[var(--text-muted)]">Incident workflow</div>
                 <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[var(--text-strong)] sm:text-3xl">
@@ -1179,10 +1193,10 @@ export function IncidentWorkflowDetail() {
                         pending={pending}
                         onNoteChange={updateRemediationNote}
                         onFocus={setFocusedRemediationId}
-                        onExecute={(remediation) => void runRemediationAction(remediation, "execute")}
-                        onApprove={(remediation) => void runRemediationAction(remediation, "approve")}
+                        onExecute={(remediation, playbookYamlOverride) => void runRemediationAction(remediation, "execute", playbookYamlOverride)}
+                        onApprove={(remediation, playbookYamlOverride) => void runRemediationAction(remediation, "approve", playbookYamlOverride)}
                         onReject={(remediation) => void runRemediationAction(remediation, "reject")}
-                        onRetry={(remediation) => void retryRemediation(remediation)}
+                        onRetry={(remediation, playbookYamlOverride) => void retryRemediation(remediation, playbookYamlOverride)}
                         onEscalate={(remediation) => void escalateFromRemediation(remediation)}
                       />
                     ) : null}
@@ -1202,10 +1216,10 @@ export function IncidentWorkflowDetail() {
                             pending={pending}
                             onNoteChange={updateRemediationNote}
                             onFocus={setFocusedRemediationId}
-                            onExecute={(item) => void runRemediationAction(item, "execute")}
-                            onApprove={(item) => void runRemediationAction(item, "approve")}
+                            onExecute={(item, playbookYamlOverride) => void runRemediationAction(item, "execute", playbookYamlOverride)}
+                            onApprove={(item, playbookYamlOverride) => void runRemediationAction(item, "approve", playbookYamlOverride)}
                             onReject={(item) => void runRemediationAction(item, "reject")}
-                            onRetry={(item) => void retryRemediation(item)}
+                            onRetry={(item, playbookYamlOverride) => void retryRemediation(item, playbookYamlOverride)}
                             onEscalate={(item) => void escalateFromRemediation(item)}
                           />
                         ))
@@ -1664,16 +1678,44 @@ function RemediationActionCard({
   pending: boolean;
   onNoteChange: (remediationId: number, value: string) => void;
   onFocus: (remediationId: number) => void;
-  onExecute: (remediation: RemediationRecord) => void;
-  onApprove: (remediation: RemediationRecord) => void;
+  onExecute: (remediation: RemediationRecord, playbookYamlOverride?: string) => void;
+  onApprove: (remediation: RemediationRecord, playbookYamlOverride?: string) => void;
   onReject: (remediation: RemediationRecord) => void;
-  onRetry: (remediation: RemediationRecord) => void;
+  onRetry: (remediation: RemediationRecord, playbookYamlOverride?: string) => void;
   onEscalate: (remediation: RemediationRecord) => void;
 }) {
   const noteId = `remediation-note-${remediation.id}`;
   const decisionLocked = activity.decisionLocked;
   const attemptLabel =
     activity.attemptCount > 0 ? `${activity.attemptCount} ${activity.attemptCount === 1 ? "attempt" : "attempts"}` : "Ready";
+  const playbookId = `remediation-playbook-${remediation.id}`;
+  const isEditableAiPlaybook = isAiGeneratedRemediation(remediation);
+  const metadata = (remediation.metadata ?? {}) as Record<string, unknown>;
+  const serverPlaybookYaml = asStringValue(remediation.playbook_yaml);
+  const [playbookExpanded, setPlaybookExpanded] = React.useState(false);
+  const [playbookValue, setPlaybookValue] = React.useState(serverPlaybookYaml);
+  const [playbookCustomized, setPlaybookCustomized] = React.useState(false);
+  const giteaRepoOwner = asStringValue(metadata.gitea_repo_owner);
+  const giteaRepoName = asStringValue(metadata.gitea_repo_name);
+  const giteaRepoLabel = [giteaRepoOwner, giteaRepoName].filter(Boolean).join("/");
+  const giteaDraftBranch = asStringValue(metadata.gitea_draft_branch);
+  const giteaMainBranch = asStringValue(metadata.gitea_main_branch);
+  const giteaPlaybookPath = asStringValue(metadata.gitea_playbook_path);
+  const giteaPrNumber = asStringValue(metadata.gitea_pr_number);
+  const giteaPromotionStatus =
+    asStringValue(metadata.gitea_promotion_status) ||
+    (asStringValue(metadata.gitea_merge_commit_sha) ? "merged" : asStringValue(metadata.gitea_sync_status));
+  const showGiteaStatus = Boolean(giteaRepoLabel || giteaDraftBranch || giteaPlaybookPath || giteaPrNumber);
+
+  React.useEffect(() => {
+    setPlaybookExpanded(false);
+    setPlaybookValue(serverPlaybookYaml);
+    setPlaybookCustomized(false);
+  }, [remediation.id, serverPlaybookYaml]);
+
+  const playbookDirty = isEditableAiPlaybook && playbookCustomized && playbookValue.trim() !== serverPlaybookYaml;
+  const playbookOverride = isEditableAiPlaybook ? playbookValue : undefined;
+  const hasPlaybookYaml = Boolean(playbookValue.trim() || serverPlaybookYaml);
 
   return (
     <div
@@ -1721,6 +1763,24 @@ function RemediationActionCard({
         <SummaryItem label="Revision scope" value={`Revision ${remediation.based_on_revision ?? "current"}`} />
       </div>
 
+      {isEditableAiPlaybook && showGiteaStatus ? (
+        <div className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
+          <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Version control</div>
+          <div className="mt-3 grid gap-4 md:grid-cols-4">
+            <SummaryItem label="Repository" value={giteaRepoLabel || "Provisioning"} />
+            <SummaryItem label="Draft branch" value={giteaDraftBranch || "Pending"} />
+            <SummaryItem label="Production branch" value={giteaMainBranch || "main"} />
+            <SummaryItem label="Promotion" value={titleize((giteaPromotionStatus || "drafted").replace(/_/g, " "))} />
+          </div>
+          {giteaPlaybookPath || giteaPrNumber ? (
+            <div className="mt-3 text-xs leading-6 text-[var(--text-secondary)]">
+              {giteaPlaybookPath ? <div>Path: {giteaPlaybookPath}</div> : null}
+              {giteaPrNumber ? <div>Approval PR: #{giteaPrNumber}</div> : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {decisionLocked ? (
         <div className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
           <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Workflow state</div>
@@ -1743,13 +1803,80 @@ function RemediationActionCard({
         <div className="mt-2 text-xs text-[var(--text-muted)]">Recorded as {actor}. This note is sent with the selected action.</div>
       </div>
 
+      {isEditableAiPlaybook ? (
+        <div className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Ansible playbook</div>
+              <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+                Review the callback-generated YAML here. Edits are applied when you approve or execute this remediation.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {playbookDirty ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    onFocus(remediation.id);
+                    setPlaybookCustomized(false);
+                    setPlaybookValue(serverPlaybookYaml);
+                  }}
+                >
+                  Reset to callback YAML
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => setPlaybookExpanded((current) => !current)}
+              >
+                {playbookExpanded ? "Hide playbook" : "Show playbook"}
+              </Button>
+            </div>
+          </div>
+
+          {playbookExpanded ? (
+            hasPlaybookYaml ? (
+              <div className="mt-4">
+                <Label htmlFor={playbookId}>Playbook YAML</Label>
+                <Textarea
+                  id={playbookId}
+                  value={playbookValue}
+                  onChange={(event) => {
+                    onFocus(remediation.id);
+                    setPlaybookCustomized(true);
+                    setPlaybookValue(event.target.value);
+                  }}
+                  disabled={pending || decisionLocked}
+                  className="mt-2 min-h-[260px] font-mono text-xs leading-6"
+                />
+                <div className="mt-2 text-xs text-[var(--text-muted)]">
+                  {decisionLocked
+                    ? "This YAML is locked because the remediation has already been approved or executed."
+                    : playbookDirty
+                      ? "This edit will be persisted to the incident draft branch when you approve or execute the remediation."
+                      : "This YAML came from the external callback and is ready for review, approval, and execution."}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
+                No playbook YAML is attached to this remediation yet.
+              </div>
+            )
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="mt-4 flex flex-wrap gap-2">
         {activity.canRetry && activity.retryLabel ? (
           <Button
             size="sm"
             onClick={() => {
               onFocus(remediation.id);
-              onRetry(remediation);
+              onRetry(remediation, playbookOverride);
             }}
             disabled={pending}
           >
@@ -1760,7 +1887,7 @@ function RemediationActionCard({
           size="sm"
           onClick={() => {
             onFocus(remediation.id);
-            onExecute(remediation);
+            onExecute(remediation, playbookOverride);
           }}
           disabled={pending || decisionLocked}
           className={cn(decisionLocked && "line-through")}
@@ -1783,7 +1910,7 @@ function RemediationActionCard({
           variant="ghost"
           onClick={() => {
             onFocus(remediation.id);
-            onApprove(remediation);
+            onApprove(remediation, playbookOverride);
           }}
           disabled={pending || decisionLocked}
           className={cn(decisionLocked && "line-through")}
@@ -2772,7 +2899,17 @@ function buildRemediationPreview(remediation: RemediationRecord) {
     return `${AI_PLAYBOOK_REQUEST_DESCRIPTION} The platform publishes a plain-text generation instruction to Kafka and waits for the external generator to POST the generated playbook back.`;
   }
   if (isAiGeneratedRemediation(remediation)) {
-    return `${remediation.description} This AI-generated playbook maps to ${remediation.playbook_ref} and stays tied to workflow revision ${remediation.based_on_revision}.`;
+    const metadata = (remediation.metadata ?? {}) as Record<string, unknown>;
+    const draftBranch = asStringValue(metadata.gitea_draft_branch);
+    const playbookPath = asStringValue(metadata.gitea_playbook_path);
+    const repoOwner = asStringValue(metadata.gitea_repo_owner);
+    const repoName = asStringValue(metadata.gitea_repo_name);
+    const repoLabel = [repoOwner, repoName].filter(Boolean).join("/");
+    const repoSummary =
+      draftBranch || playbookPath || repoLabel
+        ? ` The editable draft lives in ${repoLabel || "the generated-playbook repo"} on ${draftBranch || "the draft branch"} at ${playbookPath || "the incident playbook path"}.`
+        : "";
+    return `${remediation.description} This AI-generated playbook maps to ${remediation.playbook_ref} and stays tied to workflow revision ${remediation.based_on_revision}.${repoSummary}`;
   }
   if (remediation.playbook_ref) {
     return `${remediation.description} This path maps to ${remediation.playbook_ref} and should be tied to workflow revision ${remediation.based_on_revision}.`;

@@ -1,4 +1,4 @@
-# Plane CE Helm values for the ims-demo-lab OpenShift sandbox.
+# Plane CE Helm values for the ani-demo-lab OpenShift sandbox.
 # Chart: plane/plane-ce 1.5.0
 # App: v1.2.3
 
@@ -6,7 +6,7 @@ planeVersion: v1.2.3
 
 ingress:
   enabled: false
-  appHost: plane-ims-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
+  appHost: plane-ani-demo-lab.apps.ocp.4h2g6.sandbox195.opentlc.com
   ingressClass: openshift-default
   ingress_annotations: {}
   minioHost: ""

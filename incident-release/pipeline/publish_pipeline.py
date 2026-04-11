@@ -11,17 +11,17 @@ from kfp import Client
 
 
 DEFAULT_DSPA_NAME = "dspa"
-DEFAULT_PIPELINE_NAME = "ims-incident-release"
-DEFAULT_EXPERIMENT_NAME = "ims-release"
-DEFAULT_RUN_NAME_PREFIX = "ims-incident-release-manual"
-DEFAULT_PACKAGE_PATH = "/opt/kfp/ims_incident_release_pipeline.yaml"
+DEFAULT_PIPELINE_NAME = "ani-incident-release"
+DEFAULT_EXPERIMENT_NAME = "ani-release"
+DEFAULT_RUN_NAME_PREFIX = "ani-incident-release-manual"
+DEFAULT_PACKAGE_PATH = "/opt/kfp/ani_incident_release_pipeline.yaml"
 DEFAULT_KFP_HOST_TEMPLATE = "https://ds-pipeline-{dspa}.{namespace}.svc.cluster.local:8443"
 DEFAULT_SERVICE_CA_CERT = "/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
 DEFAULT_SA_TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 DEFAULT_PIPELINE_PARAMETERS = {
     "release_version": "live-sipp-v1-draft",
     "source_dataset_version": "live-sipp-v1",
-    "project": "ims-demo",
+    "project": "ani-demo",
     "public_record_target": 10000,
     "release_mode": "draft-replacement",
     "previous_release_version": "",

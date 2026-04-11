@@ -124,9 +124,9 @@ spec:
             - name: GITEA__security__INSTALL_LOCK
               value: "true"
             - name: GITEA__security__SECRET_KEY
-              value: ims-demo-gitea-secret-key
+              value: ani-demo-gitea-secret-key
             - name: GITEA__security__INTERNAL_TOKEN
-              value: ims-demo-gitea-internal-token
+              value: ani-demo-gitea-internal-token
             - name: GITEA__service__DISABLE_REGISTRATION
               value: "true"
             - name: GITEA__server__DOMAIN
@@ -179,6 +179,13 @@ spec:
     spec:
       restartPolicy: OnFailure
       serviceAccountName: gitea
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: gitea
+              topologyKey: kubernetes.io/hostname
       initContainers:
         - name: prepare-storage
           image: docker.io/gitea/gitea:1.22.6-rootless
@@ -259,9 +266,11 @@ spec:
             - name: GITEA_REPO_NAME
               value: IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI
             - name: GITEA_WEBHOOK_URL
-              value: http://el-ims-demo-gitea.ims-demo-lab.svc.cluster.local:8080
+              value: http://el-ani-platform-gitea.ani-tekton.svc.cluster.local:8080
             - name: GITEA_WEBHOOK_SECRET
-              value: ims-demo-webhook-token
+              value: ani-demo-webhook-token
+            - name: GITEA_LEGACY_WEBHOOK_URL
+              value: http://el-ani-demo-gitea.ani-demo-lab.svc.cluster.local:8080
           command:
             - /bin/sh
             - -c
@@ -279,13 +288,44 @@ spec:
                   -d "{\"name\":\"$GITEA_REPO_NAME\",\"private\":false,\"auto_init\":false,\"default_branch\":\"main\"}" \
                   "$API/api/v1/user/repos"
               fi
-              if ! curl -fsS -u "$GITEA_ADMIN_USERNAME:$GITEA_ADMIN_PASSWORD" \
-                "$API/api/v1/repos/$GITEA_ADMIN_USERNAME/$GITEA_REPO_NAME/hooks" | grep -q "\"url\":\"$GITEA_WEBHOOK_URL\""; then
+              HOOKS_JSON="$(curl -fsS -u "$GITEA_ADMIN_USERNAME:$GITEA_ADMIN_PASSWORD" \
+                "$API/api/v1/repos/$GITEA_ADMIN_USERNAME/$GITEA_REPO_NAME/hooks")"
+              HOOKS_BY_OBJECT="$(printf '%s' "$HOOKS_JSON" | sed 's/},[[:space:]]*{/}\n{/g')"
+              hook_id_for_url() {
+                hook_url="$1"
+                printf '%s\n' "$HOOKS_BY_OBJECT" | awk -v url="$hook_url" '
+                  index($0, "\"url\":\"" url "\"") {
+                    if (match($0, /"id":[0-9]+/)) {
+                      print substr($0, RSTART + 5, RLENGTH - 5)
+                      exit
+                    }
+                  }
+                '
+              }
+              EXISTING_HOOK_ID="$(hook_id_for_url "$GITEA_WEBHOOK_URL")"
+              LEGACY_HOOK_ID="$(hook_id_for_url "$GITEA_LEGACY_WEBHOOK_URL")"
+              HOOK_PAYLOAD="$(printf '{"type":"gitea","active":true,"events":["push"],"branch_filter":"","config":{"content_type":"json","url":"%s","secret":"%s"}}' \
+                "$GITEA_WEBHOOK_URL" \
+                "$GITEA_WEBHOOK_SECRET")"
+              if [ -n "$EXISTING_HOOK_ID" ]; then
+                curl -fsS \
+                  -X PATCH \
+                  -u "$GITEA_ADMIN_USERNAME:$GITEA_ADMIN_PASSWORD" \
+                  -H 'Content-Type: application/json' \
+                  -d "$HOOK_PAYLOAD" \
+                  "$API/api/v1/repos/$GITEA_ADMIN_USERNAME/$GITEA_REPO_NAME/hooks/$EXISTING_HOOK_ID"
+              else
                 curl -fsS \
                   -u "$GITEA_ADMIN_USERNAME:$GITEA_ADMIN_PASSWORD" \
                   -H 'Content-Type: application/json' \
-                  -d "{\"type\":\"gitea\",\"active\":true,\"events\":[\"push\"],\"branch_filter\":\"main\",\"config\":{\"content_type\":\"json\",\"url\":\"$GITEA_WEBHOOK_URL\",\"secret\":\"$GITEA_WEBHOOK_SECRET\"}}" \
+                  -d "$HOOK_PAYLOAD" \
                   "$API/api/v1/repos/$GITEA_ADMIN_USERNAME/$GITEA_REPO_NAME/hooks"
+              fi
+              if [ -n "$LEGACY_HOOK_ID" ] && [ "$LEGACY_HOOK_ID" != "$EXISTING_HOOK_ID" ]; then
+                curl -fsS \
+                  -X DELETE \
+                  -u "$GITEA_ADMIN_USERNAME:$GITEA_ADMIN_PASSWORD" \
+                  "$API/api/v1/repos/$GITEA_ADMIN_USERNAME/$GITEA_REPO_NAME/hooks/$LEGACY_HOOK_ID"
               fi
       volumes:
         - name: shared-storage

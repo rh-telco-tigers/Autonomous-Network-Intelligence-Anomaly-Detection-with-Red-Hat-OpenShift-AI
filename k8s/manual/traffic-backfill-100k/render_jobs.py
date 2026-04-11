@@ -9,7 +9,7 @@ import sys
 
 
 DATASET_PLACEHOLDER = "backfill-sipp-100k-v1"
-DATASET_LABEL_KEY = "ims.redhat.com/backfill-dataset-version"
+DATASET_LABEL_KEY = "ani.redhat.com/backfill-dataset-version"
 
 
 def _parse_args() -> argparse.Namespace:

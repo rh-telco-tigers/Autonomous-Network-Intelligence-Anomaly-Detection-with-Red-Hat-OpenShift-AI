@@ -1,12 +1,12 @@
 from feast import FeatureService
 
-from feature_views import ims_window_context_v1, ims_window_numeric_v1
+from feature_views import ani_window_context_v1, ani_window_numeric_v1
 
 
-ims_anomaly_scoring_v1 = FeatureService(
-    name="ims_anomaly_scoring_v1",
+ani_anomaly_scoring_v1 = FeatureService(
+    name="ani_anomaly_scoring_v1",
     features=[
-        ims_window_numeric_v1[
+        ani_window_numeric_v1[
             [
                 "register_rate",
                 "invite_rate",
@@ -22,10 +22,10 @@ ims_anomaly_scoring_v1 = FeatureService(
     ],
 )
 
-ims_anomaly_training_v1 = FeatureService(
-    name="ims_anomaly_training_v1",
+ani_anomaly_training_v1 = FeatureService(
+    name="ani_anomaly_training_v1",
     features=[
-        ims_window_numeric_v1[
+        ani_window_numeric_v1[
             [
                 "register_rate",
                 "invite_rate",
@@ -38,7 +38,7 @@ ims_anomaly_training_v1 = FeatureService(
                 "payload_variance",
             ]
         ],
-        ims_window_context_v1[
+        ani_window_context_v1[
             [
                 "dataset_version",
                 "source_snapshot_id",

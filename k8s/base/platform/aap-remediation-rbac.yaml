@@ -2,61 +2,61 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: control-plane
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: aap-automation-config
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 data:
-  AAP_AUTOMATION_ENABLED: "false"
+  AAP_AUTOMATION_ENABLED: "true"
   AAP_CONTROLLER_URL: ""
   AAP_CONTROLLER_APP_URL: ""
   AAP_CONTROLLER_USERNAME: admin
   AAP_ORGANIZATION: Default
-  AAP_INVENTORY_NAME: IMS Incident Local Inventory
+  AAP_INVENTORY_NAME: ANI Incident Local Inventory
   AAP_INVENTORY_HOST: localhost
-  AAP_PROJECT_NAME: IMS Incident Automation
+  AAP_PROJECT_NAME: ANI Incident Automation
   AAP_PROJECT_SCM_URL: ""
   AAP_PROJECT_BRANCH: main
-  AAP_JOB_TEMPLATE_SCALE_SCSCF: IMS Scale S-CSCF Path
-  AAP_JOB_TEMPLATE_RATE_LIMIT_PCSCF: IMS Rate Limit P-CSCF Ingress
-  AAP_JOB_TEMPLATE_QUARANTINE_IMSI: IMS Quarantine Subscriber or Source
+  AAP_JOB_TEMPLATE_SCALE_SCSCF: ANI Scale S-CSCF Path
+  AAP_JOB_TEMPLATE_RATE_LIMIT_PCSCF: ANI Rate Limit P-CSCF Ingress
+  AAP_JOB_TEMPLATE_QUARANTINE_IMSI: ANI Quarantine Subscriber or Source
   AAP_JOB_TIMEOUT_SECONDS: "300"
   AAP_JOB_POLL_SECONDS: "5"
-  AAP_KUBERNETES_CREDENTIAL_NAME: IMS OpenShift API Credential
+  AAP_KUBERNETES_CREDENTIAL_NAME: ANI OpenShift API Credential
   AAP_KUBERNETES_SERVICE_ACCOUNT_NAMESPACE: aap
   AAP_KUBERNETES_SERVICE_ACCOUNT_NAME: aap-controller
   AAP_KUBERNETES_TOKEN_EXPIRATION_SECONDS: "3600"
   AAP_RUNNER_NAMESPACE: aap
   AAP_RUNNER_SERVICE_ACCOUNT: aap-controller
   AAP_EXECUTION_ENVIRONMENT_IMAGE: registry.redhat.io/ansible-automation-platform-26/ee-supported-rhel9@sha256:fe0982d489065a2a287fe076873cf1faa5410c0879def91bbc756280e924118d
-  AAP_SCALE_SCSCF_NAMESPACE: ims-demo-lab
+  AAP_SCALE_SCSCF_NAMESPACE: ani-demo-lab
   AAP_SCALE_SCSCF_DEPLOYMENT: ims-scscf
   AAP_SCALE_SCSCF_REPLICAS: "2"
-  AAP_RATE_LIMIT_PCSCF_NAMESPACE: ims-demo-lab
+  AAP_RATE_LIMIT_PCSCF_NAMESPACE: ani-demo-lab
   AAP_RATE_LIMIT_PCSCF_DEPLOYMENT: ims-pcscf
-  AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY: ims.demo/rate-limit-review
+  AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY: ani.demo/rate-limit-review
   AAP_RATE_LIMIT_PCSCF_ANNOTATION_VALUE: eda-guardrail
-  AAP_QUARANTINE_NAMESPACE: ims-demo-lab
-  AAP_QUARANTINE_CONFIGMAP: ims-remediation-state
+  AAP_QUARANTINE_NAMESPACE: ani-demo-lab
+  AAP_QUARANTINE_CONFIGMAP: ani-remediation-state
   AAP_QUARANTINE_KEY: quarantined_imsi
   AAP_QUARANTINE_DEFAULT_IMSI: "001010000000001"
-  EDA_AUTOMATION_ENABLED: "false"
+  EDA_AUTOMATION_ENABLED: "true"
   EDA_API_URL: ""
   EDA_APP_URL: ""
   EDA_ORGANIZATION: Default
-  EDA_PROJECT_NAME: IMS Incident Event Policies
+  EDA_PROJECT_NAME: ANI Incident Event Policies
   EDA_PROJECT_URL: ""
   EDA_PROJECT_BRANCH: main
-  EDA_DECISION_ENVIRONMENT_NAME: IMS Incident Decisions
+  EDA_DECISION_ENVIRONMENT_NAME: ANI Incident Decisions
   EDA_DECISION_ENVIRONMENT_IMAGE: registry.redhat.io/ansible-automation-platform-26/de-minimal-rhel9:latest
   EDA_CONTROL_PLANE_URL: ""
-  EDA_CONTROL_PLANE_API_KEY: ""
+  EDA_CONTROL_PLANE_API_KEY: "demo-token"
   EDA_AUTOMATION_ACTOR: eda-automation
   EDA_EVENT_VERIFY_SSL: "false"
-  AUTOMATION_BOOTSTRAP_ON_STARTUP: "false"
+  AUTOMATION_BOOTSTRAP_ON_STARTUP: "true"
   AUTOMATION_BOOTSTRAP_RETRY_SECONDS: "15"
   AUTOMATION_BOOTSTRAP_MAX_ATTEMPTS: "0"
 ---
@@ -64,7 +64,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: aap-scale-ims-scscf
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments/scale"]
@@ -75,7 +75,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: aap-controller-scale-ims-scscf
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 subjects:
   - kind: ServiceAccount
     name: aap-controller
@@ -89,7 +89,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: aap-remediation-runtime
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
@@ -103,7 +103,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: aap-controller-remediation-runtime
-  namespace: ims-demo-lab
+  namespace: ani-demo-lab
 subjects:
   - kind: ServiceAccount
     name: aap-controller
@@ -148,7 +148,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: control-plane
-    namespace: ims-demo-lab
+    namespace: ani-demo-lab
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

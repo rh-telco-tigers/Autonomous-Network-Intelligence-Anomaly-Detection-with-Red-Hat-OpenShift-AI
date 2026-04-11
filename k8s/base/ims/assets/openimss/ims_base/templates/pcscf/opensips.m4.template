@@ -121,7 +121,7 @@ loadmodule "dialog.so"
 #### aaa_diameter module
 loadmodule "aaa_diameter.so"
 modparam("aaa_diameter", "fd_log_level", 0) # max amount of logging, quite annoying
-modparam("aaa_diameter", "realm", "ims-demo-lab.svc.cluster.local")
+modparam("aaa_diameter", "realm", "ani-sipp.svc.cluster.local")
 modparam("aaa_diameter", "peer_identity", "hss")
 modparam("aaa_diameter", "aaa_url",
 	"diameter:/etc/opensips/freeDiameter.conf;extra-avps-file:/etc/opensips/pcscf.dictionary")
@@ -201,11 +201,11 @@ route{
 		# TODO IPSEC here
 		
 		xlog("L_ERR", "[$ci] Received REGISTER for $tu - relaying to I-CSCF\n");
-		append_hf("Path: <sip:term@ims-pcscf.ims-demo-lab.svc.cluster.local;lr>\r\n");
+		append_hf("Path: <sip:term@ims-pcscf.ani-sipp.svc.cluster.local;lr>\r\n");
 		route(dm_send_aar, "control");
 
 		# relay to I-CSCF
-	    	$du = "sip:ims-icscf.ims-demo-lab.svc.cluster.local:4060";
+	    	$du = "sip:ims-icscf.ani-sipp.svc.cluster.local:4060";
 
 		t_on_reply("register_reply");
 	 	route(relay);
@@ -268,7 +268,7 @@ onreply_route[invite_reply] {
 
 
 route[dm_send_aar] {
-	$var(session_id) = "ims-pcscf.ims-demo-lab.svc.cluster.local;"+$Ts+"."+$Tsm+";"+$pp;
+	$var(session_id) = "ims-pcscf.ani-sipp.svc.cluster.local;"+$Ts+"."+$Tsm+";"+$pp;
 
 	switch ($param(1)) {
 
@@ -304,9 +304,9 @@ route[dm_send_aar] {
 	$var(payload) = "[
 		{ \"Session-Id\": \""+$var(session_id)+"\" },
 		{ \"Auth-Application-Id\": 16777236 },
-		{ \"Origin-Host\": \"ims-pcscf.ims-demo-lab.svc.cluster.local\" },
-		{ \"Origin-Realm\": \"ims-demo-lab.svc.cluster.local\" },
-		{ \"Destination-Realm\": \"ims-demo-lab.svc.cluster.local\" },
+		{ \"Origin-Host\": \"ims-pcscf.ani-sipp.svc.cluster.local\" },
+		{ \"Origin-Realm\": \"ani-sipp.svc.cluster.local\" },
+		{ \"Destination-Realm\": \"ani-sipp.svc.cluster.local\" },
 		{ \"Vendor-Specific-Application-Id\": [{\"Vendor-Id\": 10415},
 			{\"Auth-Application-Id\": 16777236}]},
 		{ \"AF-Application-Identifier\": \"IMS Services\" },
@@ -338,9 +338,9 @@ route[session_termination] {
 	$var(payload) = "[
 		{ \"Session-Id\": \""+$dlg_val(session_id)+"\" },
 		{ \"Auth-Application-Id\": 16777236 },
-		{ \"Origin-Host\": \"ims-pcscf.ims-demo-lab.svc.cluster.local\" },
-		{ \"Origin-Realm\": \"ims-demo-lab.svc.cluster.local\" },
-		{ \"Destination-Realm\": \"ims-demo-lab.svc.cluster.local\" },
+		{ \"Origin-Host\": \"ims-pcscf.ani-sipp.svc.cluster.local\" },
+		{ \"Origin-Realm\": \"ani-sipp.svc.cluster.local\" },
+		{ \"Destination-Realm\": \"ani-sipp.svc.cluster.local\" },
 		{ \"Vendor-Specific-Application-Id\": [{\"Vendor-Id\": 10415},
 			{\"Auth-Application-Id\": 16777236}]},
 		{ \"AF-Application-Identifier\": \"IMS Services\" },

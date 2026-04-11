@@ -1,0 +1,116 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ani-runtime
+resources:
+  - image-streams.yaml
+  - model-storage-credentials.yaml
+  - plane-bootstrap-env.yaml
+  - tekton-image-access.yaml
+  - ../../../base/platform
+patches:
+  - path: ani-platform-config.yaml
+    target:
+      version: v1
+      kind: ConfigMap
+      name: ani-platform-config
+  - path: llm-provider-config.yaml
+    target:
+      version: v1
+      kind: ConfigMap
+      name: llm-provider-config
+  - path: aap-automation-config.yaml
+    target:
+      version: v1
+      kind: ConfigMap
+      name: aap-automation-config
+  - target:
+      group: rbac.authorization.k8s.io
+      version: v1
+      kind: Role
+      name: aap-scale-ims-scscf
+    patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: aap-scale-ims-scscf
+  - target:
+      group: rbac.authorization.k8s.io
+      version: v1
+      kind: RoleBinding
+      name: aap-controller-scale-ims-scscf
+    patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: aap-controller-scale-ims-scscf
+  - target:
+      group: rbac.authorization.k8s.io
+      version: v1
+      kind: Role
+      name: aap-remediation-runtime
+    patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: aap-remediation-runtime
+  - target:
+      group: rbac.authorization.k8s.io
+      version: v1
+      kind: RoleBinding
+      name: aap-controller-remediation-runtime
+    patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: aap-controller-remediation-runtime
+  - target:
+      group: rbac.authorization.k8s.io
+      version: v1
+      kind: Role
+      name: control-plane-read-aap-controller-password
+    patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: control-plane-read-aap-controller-password
+  - target:
+      group: rbac.authorization.k8s.io
+      version: v1
+      kind: RoleBinding
+      name: control-plane-read-aap-controller-password
+    patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: control-plane-read-aap-controller-password
+images:
+  - name: feature-gateway
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/feature-gateway
+    newTag: latest
+  - name: anomaly-service
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/anomaly-service
+    newTag: latest
+  - name: rca-service
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/rca-service
+    newTag: latest
+  - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/control-plane
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/control-plane
+    newTag: latest
+  - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/feature-gateway
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/feature-gateway
+    newTag: latest
+  - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/anomaly-service
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/anomaly-service
+    newTag: latest
+  - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/rca-service
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/rca-service
+    newTag: latest
+  - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/demo-ui
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/demo-ui
+    newTag: latest

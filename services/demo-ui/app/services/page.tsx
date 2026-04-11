@@ -13,32 +13,80 @@ import { formatInteger, isExternalUrl, titleize } from "@/lib/utils";
 
 type IntegrationStatus = Record<string, unknown>;
 
+type RouteLink = {
+  label: string;
+  url: string;
+};
+
+function clusterRouteUrl(origin: string, routeName: string, namespace?: string, path = "") {
+  if (!origin) {
+    return "";
+  }
+  try {
+    const parsed = new URL(origin);
+    const hostParts = parsed.host.split(".");
+    if (hostParts.length < 2) {
+      return "";
+    }
+    const clusterDomain = hostParts.slice(1).join(".");
+    const routeHost = namespace ? `${routeName}-${namespace}.${clusterDomain}` : `${routeName}.${clusterDomain}`;
+    return `${parsed.protocol}//${routeHost}${path}`;
+  } catch {
+    return "";
+  }
+}
+
+function pickPreferredUrl(...values: Array<string | undefined>) {
+  for (const value of values) {
+    const candidate = String(value ?? "").trim();
+    if (isExternalUrl(candidate)) {
+      return candidate;
+    }
+  }
+  return "";
+}
+
 function buildRouteLinks(origin: string, integrations: Record<string, IntegrationStatus>) {
-  const replaceHost = (from: string, to: string) => (origin.includes(from) ? origin.replace(from, to) : "");
   const aapIntegration = integrations.aap ?? {};
-  const aapRoute = String(aapIntegration.controller_url ?? "").trim();
   const edaIntegration = integrations.eda ?? {};
-  const edaRoute = String(edaIntegration.eda_url ?? "").trim();
   const planeIntegration = integrations.plane ?? {};
-  const planeRoute = String(planeIntegration.app_url ?? process.env.NEXT_PUBLIC_PLANE_URL ?? "").trim();
-  return [
-    { label: "Grafana", url: process.env.NEXT_PUBLIC_GRAFANA_URL ?? replaceHost("demo-ui", "grafana") },
-    { label: "Control Plane", url: process.env.NEXT_PUBLIC_CONTROL_PLANE_URL ?? replaceHost("demo-ui", "control-plane") },
-    { label: "Feature Gateway", url: replaceHost("demo-ui", "feature-gateway") },
-    { label: "Milvus Attu", url: process.env.NEXT_PUBLIC_ATTU_URL ?? replaceHost("demo-ui", "milvus-attu") },
+  const links: RouteLink[] = [
+    { label: "Grafana", url: pickPreferredUrl(process.env.NEXT_PUBLIC_GRAFANA_URL, clusterRouteUrl(origin, "grafana", "ani-observability")) },
+    {
+      label: "Control Plane",
+      url: pickPreferredUrl(process.env.NEXT_PUBLIC_CONTROL_PLANE_URL, clusterRouteUrl(origin, "control-plane", "ani-runtime", "/docs")),
+    },
+    { label: "Feature Gateway", url: clusterRouteUrl(origin, "feature-gateway", "ani-runtime", "/docs") },
+    { label: "Milvus Attu", url: pickPreferredUrl(process.env.NEXT_PUBLIC_ATTU_URL, clusterRouteUrl(origin, "milvus-attu", "ani-data")) },
+    { label: "OpenIMS WebUI", url: clusterRouteUrl(origin, "openimss-webui", "ani-sipp") },
+    { label: "Feature Store UI", url: clusterRouteUrl(origin, "feast-ani-featurestore-ui", "ani-datascience") },
+    { label: "MinIO Console", url: clusterRouteUrl(origin, "model-storage-minio-console", "ani-data") },
     {
       label: "AAP Controller",
-      url: Boolean(aapIntegration.live_configured) && isExternalUrl(aapRoute) ? aapRoute : "",
+      url: aapIntegration.live_configured
+        ? pickPreferredUrl(String(aapIntegration.controller_app_url ?? ""), clusterRouteUrl(origin, "aap-controller", "aap"))
+        : "",
     },
     {
       label: "AAP EDA",
-      url: Boolean(edaIntegration.live_configured) && isExternalUrl(edaRoute) ? edaRoute : "",
+      url: edaIntegration.live_configured
+        ? pickPreferredUrl(String(edaIntegration.eda_app_url ?? ""), clusterRouteUrl(origin, "aap-eda", "aap"))
+        : "",
     },
     {
       label: "Plane",
-      url: Boolean(planeIntegration.live_configured) && isExternalUrl(planeRoute) ? planeRoute : "",
+      url: planeIntegration.configured
+        ? pickPreferredUrl(String(planeIntegration.app_url ?? ""), process.env.NEXT_PUBLIC_PLANE_URL, clusterRouteUrl(origin, "plane"))
+        : "",
     },
-  ].filter((item) => item.url);
+  ];
+  const uniqueLinks = new Map<string, RouteLink>();
+  for (const item of links) {
+    if (isExternalUrl(item.url) && !uniqueLinks.has(item.label)) {
+      uniqueLinks.set(item.label, item);
+    }
+  }
+  return Array.from(uniqueLinks.values());
 }
 
 export default function ServicesPage() {
