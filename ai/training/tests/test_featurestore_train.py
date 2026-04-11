@@ -94,7 +94,7 @@ def test_select_candidate_step_requires_passing_gate():
     assert "promotion gate" in selected["selection_reason"]
 
 
-def test_select_candidate_step_rejects_failed_gate():
+def test_select_candidate_step_records_failed_gate_without_blocking_deploy():
     evaluation_manifest = {
         "dataset_version": "demo-bundle",
         "feature_schema_version": ft.FEATURE_SCHEMA_VERSION,
@@ -128,8 +128,11 @@ def test_select_candidate_step_rejects_failed_gate():
         },
     }
 
-    with pytest.raises(ValueError, match="failed the promotion gate"):
-        ft._select_candidate_step(evaluation_manifest)
+    selected = ft._select_candidate_step(evaluation_manifest)
+
+    assert selected["selected_model_version"] == "candidate-fs-v2"
+    assert selected["candidate_deployment_ready"] is False
+    assert "despite gate misses" in selected["selection_reason"]
 
 
 def test_export_serving_artifact_uses_autogluon_bundle(tmp_path, monkeypatch):

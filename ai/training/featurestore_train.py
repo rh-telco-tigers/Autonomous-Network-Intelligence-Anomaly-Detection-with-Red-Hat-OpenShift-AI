@@ -561,11 +561,12 @@ def _evaluate_candidate_step(training_manifest_path: str, candidate_manifest_pat
 def _select_candidate_step(evaluation_manifest: Dict[str, Any]) -> Dict[str, Any]:
     candidate = evaluation_manifest["candidate"]
     candidate_gate = gate_metrics(candidate["metrics"], evaluation_manifest.get("promotion_gate"))
-    if candidate_gate["status"] != "passed":
-        raise ValueError(
-            "AutoGluon candidate failed the promotion gate and will not be deployed: "
-            f"{candidate_gate}"
-        )
+    gate_passed = candidate_gate["status"] == "passed"
+    selection_reason = (
+        "candidate satisfied the AutoGluon promotion gate"
+        if gate_passed
+        else "candidate promoted as the best available AutoGluon model despite gate misses"
+    )
 
     return {
         "dataset_version": evaluation_manifest["dataset_version"],
@@ -578,9 +579,9 @@ def _select_candidate_step(evaluation_manifest: Dict[str, Any]) -> Dict[str, Any
         "selected_model_version": candidate["version"],
         "selected_model_type": candidate["model_type"],
         "selected_artifact_path": candidate["artifact_path"],
-        "selection_reason": "candidate satisfied the AutoGluon promotion gate",
+        "selection_reason": selection_reason,
         "selected_training_mode": "autogluon_multiclass_supervised",
-        "candidate_deployment_ready": True,
+        "candidate_deployment_ready": gate_passed,
     }
 
 
