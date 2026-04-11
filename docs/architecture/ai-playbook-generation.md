@@ -73,6 +73,56 @@ Repository behavior:
     - verification and closure as normal
 12. The AAP job is visible in the controller dashboard because the controller launches the incident-scoped playbook from the draft branch.
 
+## Workflow Diagram
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Operator
+    participant UI as Demo UI
+    participant CP as Control Plane
+    participant Kafka as Kafka Topic
+    participant Gen as External Generator
+    participant Git as Gitea Repo
+    participant AAP as AAP Controller
+    participant WF as Incident Workflow
+
+    Operator->>UI: Open incident with RCA and remediations
+    Operator->>UI: Click Generate AI Ansible playbook
+    UI->>CP: POST generate-playbook
+    CP->>Kafka: Publish plain-text instruction + correlation_id
+    UI-->>Operator: Show generation requested state
+    Gen->>Kafka: Consume instruction
+    Gen->>CP: POST callback with incident_id + correlation_id
+
+    alt Callback status = generated
+        CP->>CP: Convert pending request into ansible_playbook remediation
+        CP->>Git: Create repo if missing
+        CP->>Git: Commit playbooks/{incident_id}/playbook.yaml to draft/{incident_id}
+        CP-->>UI: Return generated remediation with editable YAML
+        Operator->>UI: Review and optionally edit YAML
+        Operator->>UI: Approve or Approve and execute
+        UI->>CP: Submit approval or execution request
+        CP->>Git: Re-sync latest reviewed YAML to draft/{incident_id}
+        CP->>Git: Create or reuse PR draft/{incident_id} -> main
+        CP->>Git: Merge PR on approval
+        CP->>AAP: Launch incident playbook from scm_branch=draft/{incident_id}
+        AAP-->>Operator: Show controller job in dashboard
+        CP->>WF: Record approval, execution, audit, verification, and ticket sync
+        CP-->>UI: Refresh workflow state and action history
+    else Callback status = failed
+        CP->>CP: Store failure metadata on remediation
+        CP-->>UI: Keep request card visible with failure reason
+    end
+```
+
+Important behavior shown above:
+
+- the external generator always calls the control-plane callback endpoint, not the AAP route
+- the incident draft branch is the execution source of truth for the reviewed playbook
+- merging to `main` records the approved version, while AAP still runs the exact incident draft branch
+- each incident writes to `playbooks/{incident_id}/playbook.yaml`, so incidents do not collide
+
 ## Kafka Topic
 
 - Topic name: `aiops-ansible-playbook-generate-instruction`
