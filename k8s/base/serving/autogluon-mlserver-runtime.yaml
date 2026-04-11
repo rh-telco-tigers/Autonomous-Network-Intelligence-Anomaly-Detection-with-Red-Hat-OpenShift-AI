@@ -27,11 +27,11 @@ spec:
   containers:
     - name: kserve-container
       image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
-      workingDir: /tmp/.metrics
+      workingDir: /tmp
       command:
         - /bin/sh
         - -lc
-        - mkdir -p /tmp/.metrics /tmp/.envs && exec /usr/local/bin/mlserver start /mnt/models
+        - mkdir -p /tmp/mlserver-metrics /tmp/mlserver-envs && exec /usr/local/bin/mlserver start /mnt/models
       args: []
       env:
         - name: HOME
@@ -47,11 +47,11 @@ spec:
         - name: MLSERVER_PARALLEL_WORKERS
           value: "0"
         - name: MLSERVER_ENVIRONMENTS_DIR
-          value: /tmp/.envs
+          value: /tmp/mlserver-envs
         - name: MLSERVER_METRICS_DIR
-          value: /tmp/.metrics
+          value: /tmp/mlserver-metrics
         - name: PROMETHEUS_MULTIPROC_DIR
-          value: /tmp/.metrics
+          value: /tmp/mlserver-metrics
         - name: MODELS_DIR
           value: /mnt/models
       ports:
