@@ -100,7 +100,7 @@ The cluster needs allocatable GPU capacity, not just a GPU node label.
 Check:
 
 ```sh
-oc get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\\.com/gpu
+oc get nodes -o go-template='{{range .items}}{{.metadata.name}}{{"\t"}}{{index .status.allocatable "nvidia.com/gpu"}}{{"\n"}}{{end}}'
 oc describe pod -n ani-datascience "$(oc get pod -n ani-datascience -o name | rg 'llama-32-3b-instruct' | head -n1 | cut -d/ -f2)"
 ```
 

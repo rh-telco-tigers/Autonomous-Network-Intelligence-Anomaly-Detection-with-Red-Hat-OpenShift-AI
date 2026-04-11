@@ -23,6 +23,13 @@ Render and apply a single-replica GPU worker pool to the current cluster:
 make add-gpu-node-pool
 ```
 
+Verify that the new node eventually reports allocatable GPU capacity:
+
+```sh
+oc get machineset -n openshift-machine-api | rg 'gpu'
+oc get nodes -o go-template='{{range .items}}{{.metadata.name}}{{"\t"}}{{index .status.allocatable "nvidia.com/gpu"}}{{"\n"}}{{end}}'
+```
+
 ## Optional overrides
 
 The defaults are chosen to work without extra parameters on the current cluster context.

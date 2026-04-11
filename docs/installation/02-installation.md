@@ -14,10 +14,10 @@ Deploy the platform on a fresh cluster through the GitOps path and bring it to a
 If the AWS cluster does not already expose allocatable GPU capacity, add a GPU worker before continuing:
 
 ```sh
-oc get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\\.com/gpu
+oc get nodes -o go-template='{{range .items}}{{.metadata.name}}{{"\t"}}{{index .status.allocatable "nvidia.com/gpu"}}{{"\n"}}{{end}}'
 make add-gpu-node-pool
 oc get machineset -n openshift-machine-api | rg 'gpu'
-oc get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\\.com/gpu
+oc get nodes -o go-template='{{range .items}}{{.metadata.name}}{{"\t"}}{{index .status.allocatable "nvidia.com/gpu"}}{{"\n"}}{{end}}'
 ```
 
 Continue only when:
