@@ -31,7 +31,7 @@ spec:
       command:
         - /bin/sh
         - -lc
-        - mkdir -p /tmp/mlserver-metrics /tmp/mlserver-envs && exec /usr/local/bin/mlserver start /mnt/models
+        - mkdir -p /tmp/mlserver-metrics /tmp/mlserver-envs && exec mlserver start /mnt/models
       args: []
       env:
         - name: HOME
