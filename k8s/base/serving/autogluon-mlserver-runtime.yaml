@@ -48,8 +48,6 @@ spec:
           value: /tmp/.envs
         - name: MLSERVER_METRICS_DIR
           value: /tmp/.metrics
-        - name: PROMETHEUS_MULTIPROC_DIR
-          value: /tmp/.metrics
         - name: MODELS_DIR
           value: /mnt/models
       ports:
