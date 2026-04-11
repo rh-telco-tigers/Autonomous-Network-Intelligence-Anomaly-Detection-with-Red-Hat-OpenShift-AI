@@ -4,6 +4,7 @@ import base64
 import functools
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import quote
@@ -161,17 +162,22 @@ def promote_generated_playbook(
         "head_commit_id": str(head_commit.get("sha") or "").strip(),
         "merge_message_field": title or f"Merge AI-generated playbook for incident {_incident_key(incident_id)}",
     }
-    _request_json(
+    response = _request_raw(
         "POST",
         f"/repos/{generated_playbook_repo_owner()}/{generated_playbook_repo_name()}/pulls/{pull_request_number}/merge",
-        expected_status=(200, 201),
+        expected_status=(200, 201, 405, 409),
         json=merge_payload,
     )
-    merged = _request_json(
-        "GET",
-        f"/repos/{generated_playbook_repo_owner()}/{generated_playbook_repo_name()}/pulls/{pull_request_number}",
-        expected_status=(200,),
-    )
+    if response.status_code in {405, 409}:
+        merged = _wait_for_pull_request_merge(pull_request_number)
+        if merged is None:
+            message = response.text[:400] if response.text else ""
+            raise GiteaAutomationError(
+                f"Gitea merge for pull request {pull_request_number} did not reach a merged state after the API returned "
+                f"{response.status_code}. {message}".strip()
+            )
+    else:
+        merged = _get_pull_request(pull_request_number)
     if not isinstance(merged, dict):
         raise GiteaAutomationError("Gitea returned an unexpected pull request response after merging the AI playbook.")
     return _promotion_summary(
@@ -331,6 +337,31 @@ def _find_matching_pull_request(head_branch: str, base_branch: str) -> Dict[str,
         base = item.get("base") if isinstance(item.get("base"), dict) else {}
         if str(head.get("ref") or "").strip() == head_branch and str(base.get("ref") or "").strip() == base_branch:
             return item
+    return None
+
+
+def _get_pull_request(pull_request_number: int) -> Dict[str, Any]:
+    payload = _request_json(
+        "GET",
+        f"/repos/{generated_playbook_repo_owner()}/{generated_playbook_repo_name()}/pulls/{pull_request_number}",
+        expected_status=(200,),
+    )
+    if not isinstance(payload, dict):
+        raise GiteaAutomationError(f"Gitea returned an unexpected pull request payload for #{pull_request_number}.")
+    return payload
+
+
+def _wait_for_pull_request_merge(pull_request_number: int) -> Dict[str, Any] | None:
+    deadline = time.time() + float(os.getenv("AI_PLAYBOOK_GITEA_MERGE_WAIT_SECONDS", "20"))
+    poll_interval = max(float(os.getenv("AI_PLAYBOOK_GITEA_MERGE_POLL_SECONDS", "1")), 0.5)
+    latest: Dict[str, Any] | None = None
+    while time.time() < deadline:
+        latest = _get_pull_request(pull_request_number)
+        if _pull_request_merged(latest):
+            return latest
+        time.sleep(poll_interval)
+    if latest and _pull_request_merged(latest):
+        return latest
     return None
 
 

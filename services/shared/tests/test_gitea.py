@@ -115,6 +115,63 @@ class GiteaHelperTests(unittest.TestCase):
         self.assertEqual(result["main_branch"], "main")
         self.assertEqual(result["merge_commit_sha"], "merge789")
 
+    def test_promote_generated_playbook_tolerates_transient_405_and_polls_until_merged(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def _fake_request(method: str, url: str, **kwargs: object) -> _FakeResponse:
+            calls.append((method, url))
+            if url.endswith("/api/v1/repos/gitadmin/ani-ai-generated-playbooks") and method == "GET":
+                return _FakeResponse({"name": "ani-ai-generated-playbooks", "default_branch": "main"})
+            if url.endswith("/api/v1/repos/gitadmin/ani-ai-generated-playbooks/branches/draft%2Finc-promote-405") and method == "GET":
+                return _FakeResponse({"name": "draft/inc-promote-405"})
+            if url.endswith("/api/v1/repos/gitadmin/ani-ai-generated-playbooks/pulls") and method == "GET":
+                return _FakeResponse([
+                    {
+                        "number": 22,
+                        "state": "open",
+                        "merged": False,
+                        "head": {"ref": "draft/inc-promote-405", "sha": "draftsha405"},
+                        "base": {"ref": "main"},
+                    }
+                ])
+            if url.endswith("/api/v1/repos/gitadmin/ani-ai-generated-playbooks/pulls/22/merge") and method == "POST":
+                return _FakeResponse({"message": "Please try again later"}, status_code=405)
+            if url.endswith("/api/v1/repos/gitadmin/ani-ai-generated-playbooks/pulls/22") and method == "GET":
+                poll_count = sum(1 for item in calls if item == ("GET", url))
+                if poll_count < 2:
+                    return _FakeResponse(
+                        {
+                            "number": 22,
+                            "state": "open",
+                            "merged": False,
+                            "head": {"ref": "draft/inc-promote-405", "sha": "draftsha405"},
+                            "base": {"ref": "main"},
+                        }
+                    )
+                return _FakeResponse(
+                    {
+                        "number": 22,
+                        "state": "closed",
+                        "merged": True,
+                        "merge_commit_sha": "merge405",
+                        "head": {"ref": "draft/inc-promote-405", "sha": "draftsha405"},
+                        "base": {"ref": "main"},
+                    }
+                )
+            raise AssertionError(f"Unexpected request: {method} {url}")
+
+        with (
+            mock.patch.object(gitea.requests, "request", side_effect=_fake_request),
+            mock.patch.object(gitea, "_gitea_username", return_value="gitadmin"),
+            mock.patch.object(gitea, "_gitea_password", return_value="secret"),
+            mock.patch.object(gitea.time, "sleep", return_value=None),
+        ):
+            result = gitea.promote_generated_playbook("inc-promote-405")
+
+        self.assertEqual(result["status"], "merged")
+        self.assertEqual(result["pr_number"], 22)
+        self.assertEqual(result["merge_commit_sha"], "merge405")
+
 
 if __name__ == "__main__":
     unittest.main()
