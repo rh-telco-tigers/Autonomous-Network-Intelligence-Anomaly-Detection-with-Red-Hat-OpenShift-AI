@@ -27,12 +27,10 @@ spec:
     - name: kserve-container
       image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
       command:
-        - python
-      args:
-        - -m
-        - mlserver
-        - start
-        - /mnt/models
+        - /bin/sh
+        - -lc
+        - exec /usr/local/bin/mlserver start /mnt/models
+      args: []
       env:
         - name: HOME
           value: /tmp
