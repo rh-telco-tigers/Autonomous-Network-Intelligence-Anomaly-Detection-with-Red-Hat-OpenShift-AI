@@ -129,3 +129,7 @@ Expected result after the approved action runs: the deployment reports `2` desir
 - the control-plane status endpoint returns JSON without errors
 - after AAP license import, `aap` and `eda` report `live_configured=true`
 - the `Scale the S-CSCF path` incident action finishes through AAP and `ims-scscf` stays at `2` replicas
+
+## Next Step
+
+After the base platform is validated, continue with [Installation 04: Data Generation And Model Training](./04-data-generation-and-model-training.md).

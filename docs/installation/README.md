@@ -7,13 +7,15 @@ Use this guide when you want to deploy the platform on a fresh cluster, validate
 1. [Platform overview](./01-platform-overview.md)
 2. [Installation](./02-installation.md)
 3. [Validation](./03-validation.md)
-4. [Troubleshooting](./04-troubleshooting.md)
+4. [Data generation and model training](./04-data-generation-and-model-training.md)
+5. [Troubleshooting](./troubleshooting.md)
 
 ## What This Guide Covers
 
 - the GitOps bootstrap path
 - the first image build needed for runtime workloads
 - the main routes and demo credentials
+- the incident-data, feature-bundle, and model-training workflow
 - optional Plane and AAP/EDA onboarding
 - common recovery commands when the first install does not converge
 

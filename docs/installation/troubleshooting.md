@@ -1,4 +1,4 @@
-# Installation 04: Troubleshooting
+# Troubleshooting
 
 ## Argo CD Is Tracking The Wrong Branch
 
