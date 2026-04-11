@@ -182,9 +182,8 @@ def train_automl(
 
 
 @dsl.container_component
-def evaluate_models(
+def evaluate_candidate(
     training_manifest: str,
-    baseline_manifest: str,
     candidate_manifest: str,
     output_manifest: dsl.OutputPath(str),
 ):
@@ -193,11 +192,9 @@ def evaluate_models(
         command=["python", "ai/training/featurestore_train.py"],
         args=[
             "--step",
-            "evaluate",
+            "evaluate-candidate",
             "--training-manifest",
             training_manifest,
-            "--baseline-manifest",
-            baseline_manifest,
             "--candidate-manifest",
             candidate_manifest,
             "--output",
@@ -207,7 +204,7 @@ def evaluate_models(
 
 
 @dsl.container_component
-def select_best(
+def select_candidate(
     evaluation_manifest: str,
     output_manifest: dsl.OutputPath(str),
 ):
@@ -216,7 +213,7 @@ def select_best(
         command=["python", "ai/training/featurestore_train.py"],
         args=[
             "--step",
-            "select-best",
+            "select-candidate",
             "--evaluation-manifest",
             evaluation_manifest,
             "--output",
@@ -232,9 +229,9 @@ def export_serving_artifact(
     output_manifest: dsl.OutputPath(str),
     artifact_dir: str = ARTIFACT_DIR,
     serving_model_name: str = "ani-predictive-fs",
-    serving_runtime_name: str = "nvidia-triton-runtime",
-    serving_model_format_name: str = "triton",
-    serving_model_format_version: str = "2",
+    serving_runtime_name: str = "ani-autogluon-mlserver-runtime",
+    serving_model_format_name: str = "autogluon",
+    serving_model_format_version: str = "1",
     serving_protocol_version: str = "v2",
     serving_prefix: str = "predictive-featurestore",
     serving_alias: str = "current",
@@ -402,25 +399,17 @@ def _configure_featurestore_task(
 def ani_featurestore_pipeline(
     bundle_version: str = "ani-feature-bundle-v1",
     feature_service_name: str = "ani_anomaly_scoring_v1",
-    baseline_version: str = "baseline-fs-v1",
     candidate_version: str = "candidate-fs-v1",
     automl_engine: str = "autogluon",
     model_name: str = "ani-anomaly-featurestore",
     model_version_name: str = "ani-anomaly-featurestore-v1",
     serving_model_name: str = "ani-predictive-fs",
-    serving_runtime_name: str = "nvidia-triton-runtime",
-    serving_model_format_name: str = "triton",
-    serving_model_format_version: str = "2",
+    serving_runtime_name: str = "ani-autogluon-mlserver-runtime",
+    serving_model_format_name: str = "autogluon",
+    serving_model_format_version: str = "1",
     serving_protocol_version: str = "v2",
     serving_prefix: str = "predictive-featurestore",
     serving_alias: str = "current",
-    mlserver_serving_model_name: str = "ani-predictive-fs-mlserver",
-    mlserver_serving_runtime_name: str = "mlserver-sklearn-runtime",
-    mlserver_serving_model_format_name: str = "sklearn",
-    mlserver_serving_model_format_version: str = "1",
-    mlserver_serving_protocol_version: str = "v2",
-    mlserver_serving_prefix: str = "predictive-featurestore-mlserver",
-    mlserver_serving_alias: str = "current",
     control_plane_url: str = CONTROL_PLANE_URL,
     control_plane_api_key: str = CONTROL_PLANE_API_KEY,
     dataset_store_mode: str = DATASET_STORE_MODE,
@@ -478,21 +467,16 @@ def ani_featurestore_pipeline(
         _configure_featurestore_task(task, **featurestore_config)
     training_data.after(validated, synced)
 
-    baseline = train_baseline(
-        training_manifest=training_data.outputs["output_manifest"],
-        baseline_version=baseline_version,
-    )
     automl = train_automl(
         training_manifest=training_data.outputs["output_manifest"],
         candidate_version=candidate_version,
         automl_engine=automl_engine,
     )
-    evaluated = evaluate_models(
+    evaluated = evaluate_candidate(
         training_manifest=training_data.outputs["output_manifest"],
-        baseline_manifest=baseline.outputs["output_manifest"],
         candidate_manifest=automl.outputs["output_manifest"],
     )
-    selected = select_best(
+    selected = select_candidate(
         evaluation_manifest=evaluated.outputs["output_manifest"],
     )
     exported = export_serving_artifact(
@@ -506,17 +490,6 @@ def ani_featurestore_pipeline(
         serving_prefix=serving_prefix,
         serving_alias=serving_alias,
     )
-    mlserver_exported = export_serving_artifact(
-        training_manifest=training_data.outputs["output_manifest"],
-        selection_manifest=selected.outputs["output_manifest"],
-        serving_model_name=mlserver_serving_model_name,
-        serving_runtime_name=mlserver_serving_runtime_name,
-        serving_model_format_name=mlserver_serving_model_format_name,
-        serving_model_format_version=mlserver_serving_model_format_version,
-        serving_protocol_version=mlserver_serving_protocol_version,
-        serving_prefix=mlserver_serving_prefix,
-        serving_alias=mlserver_serving_alias,
-    )
     registered = register_model_version(
         export_manifest=exported.outputs["output_manifest"],
         feature_service_name=feature_service_name,
@@ -528,11 +501,6 @@ def ani_featurestore_pipeline(
         export_manifest=exported.outputs["output_manifest"],
         model_registry_manifest=registered.outputs["output_manifest"],
     )
-    published_mlserver = publish_deployment_manifest(
-        export_manifest=mlserver_exported.outputs["output_manifest"],
-        model_registry_manifest=registered.outputs["output_manifest"],
-    )
-
-    for task in (baseline, automl, evaluated, selected, exported, mlserver_exported, registered, published, published_mlserver):
+    for task in (automl, evaluated, selected, exported, registered, published):
         _configure_featurestore_task(task, **featurestore_config)
     registered.set_env_variable("RHOAI_MODEL_REGISTRY_REQUIRED", "false")

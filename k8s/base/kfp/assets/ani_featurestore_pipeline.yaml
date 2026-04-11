@@ -2,7 +2,6 @@
 # Name: ani-featurestore-train-and-register
 # Inputs:
 #    automl_engine: str [Default: 'autogluon']
-#    baseline_version: str [Default: 'baseline-fs-v1']
 #    bundle_version: str [Default: 'ani-feature-bundle-v1']
 #    candidate_version: str [Default: 'candidate-fs-v1']
 #    control_plane_api_key: str [Default: 'demo-token']
@@ -24,30 +23,21 @@
 #    featurestore_project: str [Default: 'ani_anomaly_featurestore']
 #    featurestore_registry_path: str [Default: 'feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443']
 #    featurestore_s3_endpoint_url: str [Default: 'http://model-storage-minio.ani-data.svc.cluster.local:9000']
-#    mlserver_serving_alias: str [Default: 'current']
-#    mlserver_serving_model_format_name: str [Default: 'sklearn']
-#    mlserver_serving_model_format_version: str [Default: '1']
-#    mlserver_serving_model_name: str [Default: 'ani-predictive-fs-mlserver']
-#    mlserver_serving_prefix: str [Default: 'predictive-featurestore-mlserver']
-#    mlserver_serving_protocol_version: str [Default: 'v2']
-#    mlserver_serving_runtime_name: str [Default: 'mlserver-sklearn-runtime']
 #    model_name: str [Default: 'ani-anomaly-featurestore']
 #    model_registry_endpoint: str [Default: 'https://model-catalog.rhoai-model-registries.svc.cluster.local:8443']
 #    model_version_name: str [Default: 'ani-anomaly-featurestore-v1']
 #    serving_alias: str [Default: 'current']
-#    serving_model_format_name: str [Default: 'triton']
-#    serving_model_format_version: str [Default: '2']
+#    serving_model_format_name: str [Default: 'autogluon']
+#    serving_model_format_version: str [Default: '1']
 #    serving_model_name: str [Default: 'ani-predictive-fs']
 #    serving_prefix: str [Default: 'predictive-featurestore']
 #    serving_protocol_version: str [Default: 'v2']
-#    serving_runtime_name: str [Default: 'nvidia-triton-runtime']
+#    serving_runtime_name: str [Default: 'ani-autogluon-mlserver-runtime']
 components:
-  comp-evaluate-models:
-    executorLabel: exec-evaluate-models
+  comp-evaluate-candidate:
+    executorLabel: exec-evaluate-candidate
     inputDefinitions:
       parameters:
-        baseline_manifest:
-          parameterType: STRING
         candidate_manifest:
           parameterType: STRING
         training_manifest:
@@ -71,11 +61,11 @@ components:
           isOptional: true
           parameterType: STRING
         serving_model_format_name:
-          defaultValue: triton
+          defaultValue: autogluon
           isOptional: true
           parameterType: STRING
         serving_model_format_version:
-          defaultValue: '2'
+          defaultValue: '1'
           isOptional: true
           parameterType: STRING
         serving_model_name:
@@ -91,51 +81,7 @@ components:
           isOptional: true
           parameterType: STRING
         serving_runtime_name:
-          defaultValue: nvidia-triton-runtime
-          isOptional: true
-          parameterType: STRING
-        training_manifest:
-          parameterType: STRING
-    outputDefinitions:
-      parameters:
-        output_manifest:
-          parameterType: STRING
-  comp-export-serving-artifact-2:
-    executorLabel: exec-export-serving-artifact-2
-    inputDefinitions:
-      parameters:
-        artifact_dir:
-          defaultValue: /tmp/ani-featurestore/models/artifacts
-          isOptional: true
-          parameterType: STRING
-        selection_manifest:
-          parameterType: STRING
-        serving_alias:
-          defaultValue: current
-          isOptional: true
-          parameterType: STRING
-        serving_model_format_name:
-          defaultValue: triton
-          isOptional: true
-          parameterType: STRING
-        serving_model_format_version:
-          defaultValue: '2'
-          isOptional: true
-          parameterType: STRING
-        serving_model_name:
-          defaultValue: ani-predictive-fs
-          isOptional: true
-          parameterType: STRING
-        serving_prefix:
-          defaultValue: predictive-featurestore
-          isOptional: true
-          parameterType: STRING
-        serving_protocol_version:
-          defaultValue: v2
-          isOptional: true
-          parameterType: STRING
-        serving_runtime_name:
-          defaultValue: nvidia-triton-runtime
+          defaultValue: ani-autogluon-mlserver-runtime
           isOptional: true
           parameterType: STRING
         training_manifest:
@@ -146,22 +92,6 @@ components:
           parameterType: STRING
   comp-publish-deployment-manifest:
     executorLabel: exec-publish-deployment-manifest
-    inputDefinitions:
-      parameters:
-        export_manifest:
-          parameterType: STRING
-        model_registry_manifest:
-          parameterType: STRING
-        service_account_name:
-          defaultValue: model-storage-sa
-          isOptional: true
-          parameterType: STRING
-    outputDefinitions:
-      parameters:
-        output_manifest:
-          parameterType: STRING
-  comp-publish-deployment-manifest-2:
-    executorLabel: exec-publish-deployment-manifest-2
     inputDefinitions:
       parameters:
         export_manifest:
@@ -234,8 +164,8 @@ components:
       parameters:
         output_manifest:
           parameterType: STRING
-  comp-select-best:
-    executorLabel: exec-select-best
+  comp-select-candidate:
+    executorLabel: exec-select-candidate
     inputDefinitions:
       parameters:
         evaluation_manifest:
@@ -286,22 +216,6 @@ components:
       parameters:
         output_manifest:
           parameterType: STRING
-  comp-train-baseline:
-    executorLabel: exec-train-baseline
-    inputDefinitions:
-      parameters:
-        artifact_dir:
-          defaultValue: /tmp/ani-featurestore/models/artifacts
-          isOptional: true
-          parameterType: STRING
-        baseline_version:
-          parameterType: STRING
-        training_manifest:
-          parameterType: STRING
-    outputDefinitions:
-      parameters:
-        output_manifest:
-          parameterType: STRING
   comp-validate-bundle:
     executorLabel: exec-validate-bundle
     inputDefinitions:
@@ -318,15 +232,13 @@ components:
           parameterType: STRING
 deploymentSpec:
   executors:
-    exec-evaluate-models:
+    exec-evaluate-candidate:
       container:
         args:
         - --step
-        - evaluate
+        - evaluate-candidate
         - --training-manifest
         - '{{$.inputs.parameters[''training_manifest'']}}'
-        - --baseline-manifest
-        - '{{$.inputs.parameters[''baseline_manifest'']}}'
         - --candidate-manifest
         - '{{$.inputs.parameters[''candidate_manifest'']}}'
         - --output
@@ -464,153 +376,7 @@ deploymentSpec:
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
-    exec-export-serving-artifact-2:
-      container:
-        args:
-        - --step
-        - export-serving-artifact
-        - --training-manifest
-        - '{{$.inputs.parameters[''training_manifest'']}}'
-        - --selection-manifest
-        - '{{$.inputs.parameters[''selection_manifest'']}}'
-        - --artifact-dir
-        - '{{$.inputs.parameters[''artifact_dir'']}}'
-        - --serving-model-name
-        - '{{$.inputs.parameters[''serving_model_name'']}}'
-        - --serving-runtime-name
-        - '{{$.inputs.parameters[''serving_runtime_name'']}}'
-        - --serving-model-format-name
-        - '{{$.inputs.parameters[''serving_model_format_name'']}}'
-        - --serving-model-format-version
-        - '{{$.inputs.parameters[''serving_model_format_version'']}}'
-        - --serving-protocol-version
-        - '{{$.inputs.parameters[''serving_protocol_version'']}}'
-        - --serving-prefix
-        - '{{$.inputs.parameters[''serving_prefix'']}}'
-        - --serving-alias
-        - '{{$.inputs.parameters[''serving_alias'']}}'
-        - --output
-        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
-        command:
-        - python
-        - ai/training/featurestore_train.py
-        env:
-        - name: HOME
-          value: /tmp
-        - name: MPLCONFIGDIR
-          value: /tmp/matplotlib
-        - name: DATASET_STORE_MODE
-          value: s3
-        - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        - name: DATASET_STORE_BUCKET
-          value: ani-models
-        - name: DATASET_STORE_PREFIX
-          value: pipelines/ani-datascience/datasets
-        - name: DATASET_STORE_ACCESS_KEY
-          value: minioadmin
-        - name: DATASET_STORE_SECRET_KEY
-          value: minioadmin
-        - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        - name: MINIO_BUCKET
-          value: ani-models
-        - name: MINIO_ACCESS_KEY
-          value: minioadmin
-        - name: MINIO_SECRET_KEY
-          value: minioadmin
-        - name: AWS_DEFAULT_REGION
-          value: us-east-1
-        - name: AWS_REGION
-          value: us-east-1
-        - name: AWS_ACCESS_KEY_ID
-          value: minioadmin
-        - name: AWS_SECRET_ACCESS_KEY
-          value: minioadmin
-        - name: IMS_FEATURESTORE_MODE
-          value: remote
-        - name: IMS_FEATURESTORE_PROJECT
-          value: ani_anomaly_featurestore
-        - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
-        - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
-        - name: IMS_FEATURESTORE_CA_CERT_PATH
-          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
-        - name: IMS_FEATURESTORE_AUTH_TYPE
-          value: no_auth
-        - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-publish-deployment-manifest:
-      container:
-        args:
-        - --step
-        - publish-deployment-manifest
-        - --export-manifest
-        - '{{$.inputs.parameters[''export_manifest'']}}'
-        - --model-registry-manifest
-        - '{{$.inputs.parameters[''model_registry_manifest'']}}'
-        - --service-account-name
-        - '{{$.inputs.parameters[''service_account_name'']}}'
-        - --output
-        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
-        command:
-        - python
-        - ai/training/featurestore_train.py
-        env:
-        - name: HOME
-          value: /tmp
-        - name: MPLCONFIGDIR
-          value: /tmp/matplotlib
-        - name: DATASET_STORE_MODE
-          value: s3
-        - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        - name: DATASET_STORE_BUCKET
-          value: ani-models
-        - name: DATASET_STORE_PREFIX
-          value: pipelines/ani-datascience/datasets
-        - name: DATASET_STORE_ACCESS_KEY
-          value: minioadmin
-        - name: DATASET_STORE_SECRET_KEY
-          value: minioadmin
-        - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        - name: MINIO_BUCKET
-          value: ani-models
-        - name: MINIO_ACCESS_KEY
-          value: minioadmin
-        - name: MINIO_SECRET_KEY
-          value: minioadmin
-        - name: AWS_DEFAULT_REGION
-          value: us-east-1
-        - name: AWS_REGION
-          value: us-east-1
-        - name: AWS_ACCESS_KEY_ID
-          value: minioadmin
-        - name: AWS_SECRET_ACCESS_KEY
-          value: minioadmin
-        - name: IMS_FEATURESTORE_MODE
-          value: remote
-        - name: IMS_FEATURESTORE_PROJECT
-          value: ani_anomaly_featurestore
-        - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
-        - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
-        - name: IMS_FEATURESTORE_CA_CERT_PATH
-          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
-        - name: IMS_FEATURESTORE_AUTH_TYPE
-          value: no_auth
-        - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
-    exec-publish-deployment-manifest-2:
       container:
         args:
         - --step
@@ -882,11 +648,11 @@ deploymentSpec:
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
-    exec-select-best:
+    exec-select-candidate:
       container:
         args:
         - --step
-        - select-best
+        - select-candidate
         - --evaluation-manifest
         - '{{$.inputs.parameters[''evaluation_manifest'']}}'
         - --output
@@ -1080,72 +846,6 @@ deploymentSpec:
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
-    exec-train-baseline:
-      container:
-        args:
-        - --step
-        - train-baseline
-        - --training-manifest
-        - '{{$.inputs.parameters[''training_manifest'']}}'
-        - --baseline-version
-        - '{{$.inputs.parameters[''baseline_version'']}}'
-        - --artifact-dir
-        - '{{$.inputs.parameters[''artifact_dir'']}}'
-        - --output
-        - '{{$.outputs.parameters[''output_manifest''].output_file}}'
-        command:
-        - python
-        - ai/training/featurestore_train.py
-        env:
-        - name: HOME
-          value: /tmp
-        - name: MPLCONFIGDIR
-          value: /tmp/matplotlib
-        - name: DATASET_STORE_MODE
-          value: s3
-        - name: DATASET_STORE_ENDPOINT
-          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        - name: DATASET_STORE_BUCKET
-          value: ani-models
-        - name: DATASET_STORE_PREFIX
-          value: pipelines/ani-datascience/datasets
-        - name: DATASET_STORE_ACCESS_KEY
-          value: minioadmin
-        - name: DATASET_STORE_SECRET_KEY
-          value: minioadmin
-        - name: MINIO_ENDPOINT
-          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        - name: MINIO_BUCKET
-          value: ani-models
-        - name: MINIO_ACCESS_KEY
-          value: minioadmin
-        - name: MINIO_SECRET_KEY
-          value: minioadmin
-        - name: AWS_DEFAULT_REGION
-          value: us-east-1
-        - name: AWS_REGION
-          value: us-east-1
-        - name: AWS_ACCESS_KEY_ID
-          value: minioadmin
-        - name: AWS_SECRET_ACCESS_KEY
-          value: minioadmin
-        - name: IMS_FEATURESTORE_MODE
-          value: remote
-        - name: IMS_FEATURESTORE_PROJECT
-          value: ani_anomaly_featurestore
-        - name: IMS_FEATURESTORE_REGISTRY_PATH
-          value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
-        - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
-          value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
-        - name: IMS_FEATURESTORE_CA_CERT_PATH
-          value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
-        - name: IMS_FEATURESTORE_AUTH_TYPE
-          value: no_auth
-        - name: FEAST_S3_ENDPOINT_URL
-          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        - name: AWS_S3_ENDPOINT
-          value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
     exec-validate-bundle:
       container:
         args:
@@ -1215,21 +915,16 @@ pipelineInfo:
 root:
   dag:
     tasks:
-      evaluate-models:
+      evaluate-candidate:
         cachingOptions:
           enableCache: true
         componentRef:
-          name: comp-evaluate-models
+          name: comp-evaluate-candidate
         dependentTasks:
         - retrieve-training-dataset
         - train-automl
-        - train-baseline
         inputs:
           parameters:
-            baseline_manifest:
-              taskOutputParameter:
-                outputParameterKey: output_manifest
-                producerTask: train-baseline
             candidate_manifest:
               taskOutputParameter:
                 outputParameterKey: output_manifest
@@ -1239,7 +934,7 @@ root:
                 outputParameterKey: output_manifest
                 producerTask: retrieve-training-dataset
         taskInfo:
-          name: evaluate-models
+          name: evaluate-candidate
       export-serving-artifact:
         cachingOptions:
           enableCache: true
@@ -1247,13 +942,13 @@ root:
           name: comp-export-serving-artifact
         dependentTasks:
         - retrieve-training-dataset
-        - select-best
+        - select-candidate
         inputs:
           parameters:
             selection_manifest:
               taskOutputParameter:
                 outputParameterKey: output_manifest
-                producerTask: select-best
+                producerTask: select-candidate
             serving_alias:
               componentInputParameter: serving_alias
             serving_model_format_name:
@@ -1274,40 +969,6 @@ root:
                 producerTask: retrieve-training-dataset
         taskInfo:
           name: export-serving-artifact
-      export-serving-artifact-2:
-        cachingOptions:
-          enableCache: true
-        componentRef:
-          name: comp-export-serving-artifact-2
-        dependentTasks:
-        - retrieve-training-dataset
-        - select-best
-        inputs:
-          parameters:
-            selection_manifest:
-              taskOutputParameter:
-                outputParameterKey: output_manifest
-                producerTask: select-best
-            serving_alias:
-              componentInputParameter: mlserver_serving_alias
-            serving_model_format_name:
-              componentInputParameter: mlserver_serving_model_format_name
-            serving_model_format_version:
-              componentInputParameter: mlserver_serving_model_format_version
-            serving_model_name:
-              componentInputParameter: mlserver_serving_model_name
-            serving_prefix:
-              componentInputParameter: mlserver_serving_prefix
-            serving_protocol_version:
-              componentInputParameter: mlserver_serving_protocol_version
-            serving_runtime_name:
-              componentInputParameter: mlserver_serving_runtime_name
-            training_manifest:
-              taskOutputParameter:
-                outputParameterKey: output_manifest
-                producerTask: retrieve-training-dataset
-        taskInfo:
-          name: export-serving-artifact-2
       publish-deployment-manifest:
         cachingOptions:
           enableCache: true
@@ -1328,26 +989,6 @@ root:
                 producerTask: register-model-version
         taskInfo:
           name: publish-deployment-manifest
-      publish-deployment-manifest-2:
-        cachingOptions:
-          enableCache: true
-        componentRef:
-          name: comp-publish-deployment-manifest-2
-        dependentTasks:
-        - export-serving-artifact-2
-        - register-model-version
-        inputs:
-          parameters:
-            export_manifest:
-              taskOutputParameter:
-                outputParameterKey: output_manifest
-                producerTask: export-serving-artifact-2
-            model_registry_manifest:
-              taskOutputParameter:
-                outputParameterKey: output_manifest
-                producerTask: register-model-version
-        taskInfo:
-          name: publish-deployment-manifest-2
       register-model-version:
         cachingOptions:
           enableCache: true
@@ -1401,21 +1042,21 @@ root:
               componentInputParameter: feature_service_name
         taskInfo:
           name: retrieve-training-dataset
-      select-best:
+      select-candidate:
         cachingOptions:
           enableCache: true
         componentRef:
-          name: comp-select-best
+          name: comp-select-candidate
         dependentTasks:
-        - evaluate-models
+        - evaluate-candidate
         inputs:
           parameters:
             evaluation_manifest:
               taskOutputParameter:
                 outputParameterKey: output_manifest
-                producerTask: evaluate-models
+                producerTask: evaluate-candidate
         taskInfo:
-          name: select-best
+          name: select-candidate
       sync-feature-store-definitions:
         cachingOptions:
           enableCache: true
@@ -1450,23 +1091,6 @@ root:
                 producerTask: retrieve-training-dataset
         taskInfo:
           name: train-automl
-      train-baseline:
-        cachingOptions:
-          enableCache: true
-        componentRef:
-          name: comp-train-baseline
-        dependentTasks:
-        - retrieve-training-dataset
-        inputs:
-          parameters:
-            baseline_version:
-              componentInputParameter: baseline_version
-            training_manifest:
-              taskOutputParameter:
-                outputParameterKey: output_manifest
-                producerTask: retrieve-training-dataset
-        taskInfo:
-          name: train-baseline
       validate-bundle:
         cachingOptions:
           enableCache: true
@@ -1486,10 +1110,6 @@ root:
     parameters:
       automl_engine:
         defaultValue: autogluon
-        isOptional: true
-        parameterType: STRING
-      baseline_version:
-        defaultValue: baseline-fs-v1
         isOptional: true
         parameterType: STRING
       bundle_version:
@@ -1576,34 +1196,6 @@ root:
         defaultValue: http://model-storage-minio.ani-data.svc.cluster.local:9000
         isOptional: true
         parameterType: STRING
-      mlserver_serving_alias:
-        defaultValue: current
-        isOptional: true
-        parameterType: STRING
-      mlserver_serving_model_format_name:
-        defaultValue: sklearn
-        isOptional: true
-        parameterType: STRING
-      mlserver_serving_model_format_version:
-        defaultValue: '1'
-        isOptional: true
-        parameterType: STRING
-      mlserver_serving_model_name:
-        defaultValue: ani-predictive-fs-mlserver
-        isOptional: true
-        parameterType: STRING
-      mlserver_serving_prefix:
-        defaultValue: predictive-featurestore-mlserver
-        isOptional: true
-        parameterType: STRING
-      mlserver_serving_protocol_version:
-        defaultValue: v2
-        isOptional: true
-        parameterType: STRING
-      mlserver_serving_runtime_name:
-        defaultValue: mlserver-sklearn-runtime
-        isOptional: true
-        parameterType: STRING
       model_name:
         defaultValue: ani-anomaly-featurestore
         isOptional: true
@@ -1621,11 +1213,11 @@ root:
         isOptional: true
         parameterType: STRING
       serving_model_format_name:
-        defaultValue: triton
+        defaultValue: autogluon
         isOptional: true
         parameterType: STRING
       serving_model_format_version:
-        defaultValue: '2'
+        defaultValue: '1'
         isOptional: true
         parameterType: STRING
       serving_model_name:
@@ -1641,7 +1233,7 @@ root:
         isOptional: true
         parameterType: STRING
       serving_runtime_name:
-        defaultValue: nvidia-triton-runtime
+        defaultValue: ani-autogluon-mlserver-runtime
         isOptional: true
         parameterType: STRING
 schemaVersion: 2.1.0

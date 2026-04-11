@@ -28,25 +28,17 @@ DEFAULT_KUBERNETES_CA_CERT = "/var/run/secrets/kubernetes.io/serviceaccount/ca.c
 DEFAULT_PIPELINE_PARAMETERS = {
     "bundle_version": "ani-feature-bundle-v1",
     "feature_service_name": "ani_anomaly_scoring_v1",
-    "baseline_version": "baseline-fs-v1",
     "candidate_version": "candidate-fs-v1",
     "automl_engine": "autogluon",
     "model_name": "ani-anomaly-featurestore",
     "model_version_name": "ani-anomaly-featurestore-v1",
     "serving_model_name": "ani-predictive-fs",
-    "serving_runtime_name": "nvidia-triton-runtime",
-    "serving_model_format_name": "triton",
-    "serving_model_format_version": "2",
+    "serving_runtime_name": "ani-autogluon-mlserver-runtime",
+    "serving_model_format_name": "autogluon",
+    "serving_model_format_version": "1",
     "serving_protocol_version": "v2",
     "serving_prefix": "predictive-featurestore",
     "serving_alias": "current",
-    "mlserver_serving_model_name": "ani-predictive-fs-mlserver",
-    "mlserver_serving_runtime_name": "mlserver-sklearn-runtime",
-    "mlserver_serving_model_format_name": "sklearn",
-    "mlserver_serving_model_format_version": "1",
-    "mlserver_serving_protocol_version": "v2",
-    "mlserver_serving_prefix": "predictive-featurestore-mlserver",
-    "mlserver_serving_alias": "current",
 }
 
 

@@ -78,7 +78,7 @@ def current_model_status() -> Dict[str, object]:
         "predictive_model_name": _predictive_model_name() if endpoint else None,
         "predictive_endpoint": endpoint or None,
         "artifact_present": bool(artifact_path and artifact_path.exists()),
-        "scoring_modes": ["remote-kserve-triton", "local-artifact"] if endpoint else ["local-artifact"],
+        "scoring_modes": ["remote-kserve-v2", "local-artifact"] if endpoint else ["local-artifact"],
     }
 
 

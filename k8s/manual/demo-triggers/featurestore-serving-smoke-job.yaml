@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  generateName: ani-featurestore-mlserver-smoke-
+  generateName: ani-featurestore-serving-smoke-
   namespace: ani-datascience
 spec:
   backoffLimit: 1
@@ -9,7 +9,7 @@ spec:
   template:
     metadata:
       labels:
-        app: ani-featurestore-mlserver-smoke
+        app: ani-featurestore-serving-smoke
     spec:
       restartPolicy: Never
       containers:

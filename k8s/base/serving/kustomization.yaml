@@ -3,8 +3,8 @@ kind: Kustomization
 resources:
   - aws-connection-minio.yaml
   - serving.yaml
+  - autogluon-mlserver-runtime.yaml
   - llm-serving.yaml
   - featurestore-serving.yaml
   - triton-template-rbac.yaml
   - triton-runtime-template.yaml
-

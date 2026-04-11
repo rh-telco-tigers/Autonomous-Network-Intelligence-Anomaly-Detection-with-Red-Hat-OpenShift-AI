@@ -19,11 +19,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ani-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-sipp.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -46,11 +46,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
               value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ani-demo-lab/datasets
+              value: pipelines/ani-datascience/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -99,11 +99,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ani-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-sipp.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -126,11 +126,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
               value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ani-demo-lab/datasets
+              value: pipelines/ani-datascience/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -179,11 +179,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ani-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-sipp.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -206,11 +206,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
               value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ani-demo-lab/datasets
+              value: pipelines/ani-datascience/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -259,11 +259,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ani-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-sipp.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -286,11 +286,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
               value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ani-demo-lab/datasets
+              value: pipelines/ani-datascience/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -339,11 +339,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ani-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-sipp.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -366,11 +366,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
               value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ani-demo-lab/datasets
+              value: pipelines/ani-datascience/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -419,11 +419,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ani-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-sipp.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -446,11 +446,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
               value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ani-demo-lab/datasets
+              value: pipelines/ani-datascience/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -499,11 +499,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ani-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-sipp.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -526,11 +526,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
               value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ani-demo-lab/datasets
+              value: pipelines/ani-datascience/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -579,11 +579,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ani-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-sipp.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -606,11 +606,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
               value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ani-demo-lab/datasets
+              value: pipelines/ani-datascience/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -659,11 +659,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ani-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-sipp.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -686,11 +686,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
               value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ani-demo-lab/datasets
+              value: pipelines/ani-datascience/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -739,11 +739,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ani-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-sipp.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -766,11 +766,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
               value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ani-demo-lab/datasets
+              value: pipelines/ani-datascience/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -819,11 +819,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ani-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-sipp.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -846,11 +846,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
               value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ani-demo-lab/datasets
+              value: pipelines/ani-datascience/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -899,11 +899,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: sipp
-          image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner:latest
+          image: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner:latest
           imagePullPolicy: Always
           args:
             - --target-host
-            - ims-pcscf.ani-demo-lab.svc.cluster.local
+            - ims-pcscf.ani-sipp.svc.cluster.local
             - --target-port
             - "5060"
             - --scenario-file
@@ -926,11 +926,11 @@ spec:
             - "25"
           env:
             - name: DATASET_STORE_ENDPOINT
-              value: http://model-storage-minio.ani-demo-lab.svc.cluster.local:9000
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
             - name: DATASET_STORE_BUCKET
               value: ani-models
             - name: DATASET_STORE_PREFIX
-              value: pipelines/ani-demo-lab/datasets
+              value: pipelines/ani-datascience/datasets
             - name: DATASET_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:

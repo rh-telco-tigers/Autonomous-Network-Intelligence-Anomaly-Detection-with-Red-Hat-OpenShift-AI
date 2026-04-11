@@ -18,9 +18,9 @@ spec:
     minReplicas: 1
     maxReplicas: 1
     model:
-      runtime: nvidia-triton-runtime
+      runtime: ani-autogluon-mlserver-runtime
       modelFormat:
-        name: triton
+        name: autogluon
       protocolVersion: v2
       storageUri: s3://ani-models/predictive-featurestore/ani-predictive-fs/current/
       resources:
@@ -49,5 +49,5 @@ spec:
       serving.kserve.io/inferenceservice: ani-predictive-fs
   podMetricsEndpoints:
     - path: /metrics
-      targetPort: 8002
+      targetPort: 8082
       interval: 30s

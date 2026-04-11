@@ -46,7 +46,7 @@ def export_control_plane_history(
     approval_limit: int,
     audit_limit: int,
 ) -> dict[str, list[dict[str, Any]]]:
-    incidents = control_plane_get("/incidents", {"project": project})
+    incidents = control_plane_get("/incidents", {"project": project, "include_details": "true"})
     incident_ids = {str(item.get("id")) for item in incidents if isinstance(item, dict)}
 
     approvals_raw = control_plane_get("/approvals", {"limit": approval_limit})

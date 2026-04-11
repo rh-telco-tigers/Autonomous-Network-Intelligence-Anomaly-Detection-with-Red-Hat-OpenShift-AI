@@ -16,6 +16,9 @@ from typing import Any, Dict, List
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+SERVICES_ROOT = REPO_ROOT / "services"
+if str(SERVICES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICES_ROOT))
 
 import boto3
 from botocore.config import Config
@@ -36,6 +39,7 @@ from ai.training.train_and_register import (
     FEATURE_SCHEMA_VERSION,
     TRITON_CONFIG_TEMPLATE,
     TRITON_MODEL_TEMPLATE,
+    _download_directory_reference,
     _download_file_reference,
     _json_dump,
     _json_load,
@@ -63,16 +67,17 @@ DEFAULT_FEATURE_REPO_PATH = "/workspace/ai/featurestore/feature_repo"
 DEFAULT_FEATURE_SERVICE_NAME = "ani_anomaly_scoring_v1"
 DEFAULT_MODEL_NAME = "ani-anomaly-featurestore"
 DEFAULT_SERVING_MODEL_NAME = "ani-predictive-fs"
-DEFAULT_SERVING_RUNTIME_NAME = "nvidia-triton-runtime"
+DEFAULT_SERVING_RUNTIME_NAME = "ani-autogluon-mlserver-runtime"
 DEFAULT_SERVING_SERVICE_ACCOUNT = "model-storage-sa"
 DEFAULT_SERVING_PREFIX = "predictive-featurestore"
 DEFAULT_SERVING_ALIAS = "current"
 DEFAULT_PIPELINE_NAME = "ani-featurestore-train-and-register"
-DEFAULT_MODEL_FORMAT_NAME = "triton"
-DEFAULT_MODEL_FORMAT_VERSION = "2"
+DEFAULT_MODEL_FORMAT_NAME = "autogluon"
+DEFAULT_MODEL_FORMAT_VERSION = "1"
 DEFAULT_PROTOCOL_VERSION = "v2"
 DEFAULT_BOOTSTRAP_SIZE_PER_CLASS = 120
 DEFAULT_MLSERVER_IMPLEMENTATION = "mlserver_sklearn.SKLearnModel"
+DEFAULT_AUTOGLUON_MLSERVER_IMPLEMENTATION = "ai.featurestore.autogluon_mlserver.AutoGluonModel"
 DEFAULT_FEATURESTORE_MODE = "local"
 DEFAULT_MANAGED_FEATURESTORE_PROJECT = "ani_anomaly_featurestore"
 DEFAULT_MANAGED_FEATURESTORE_REGISTRY_PATH = "feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443"
@@ -224,6 +229,8 @@ def _parse_source_dataset_versions(raw_value: str) -> list[str]:
 
 def _serving_backend(model_format_name: str) -> str:
     normalized = (model_format_name or DEFAULT_MODEL_FORMAT_NAME).strip().lower()
+    if normalized in {"autogluon", "mlserver-autogluon"}:
+        return "mlserver-autogluon"
     if normalized == "triton":
         return "triton"
     if normalized == "sklearn":
@@ -525,6 +532,56 @@ def _evaluate_step(training_manifest_path: str, baseline_manifest_path: str, can
     }
 
 
+def _evaluate_candidate_step(training_manifest_path: str, candidate_manifest_path: str) -> Dict[str, Any]:
+    training_manifest = _load_training_manifest(training_manifest_path)
+    eval_records = _training_records(training_manifest, "eval_records", "eval_path")
+    candidate_manifest = _json_load(candidate_manifest_path)
+    candidate_artifact = _load_artifact_document(candidate_manifest["artifact_path"])
+    candidate_metrics = evaluate(eval_records, candidate_artifact, scorer_for_artifact(candidate_artifact))
+    return {
+        "dataset_version": training_manifest["bundle_version"],
+        "bundle_version": training_manifest["bundle_version"],
+        "feature_service_name": training_manifest["feature_service_name"],
+        "training_manifest": training_manifest_path,
+        "label_manifest": training_manifest_path,
+        "feature_schema_version": FEATURE_SCHEMA_VERSION,
+        "promotion_gate": {**gate_metrics(candidate_metrics)["gate"]},
+        "candidate": {
+            "version": candidate_manifest["version"],
+            "artifact_path": candidate_manifest["artifact_path"],
+            "metrics": candidate_metrics,
+            "model_type": candidate_manifest["model_type"],
+        },
+        "created_at": _now(),
+    }
+
+
+def _select_candidate_step(evaluation_manifest: Dict[str, Any]) -> Dict[str, Any]:
+    candidate = evaluation_manifest["candidate"]
+    candidate_gate = gate_metrics(candidate["metrics"], evaluation_manifest.get("promotion_gate"))
+    if candidate_gate["status"] != "passed":
+        raise ValueError(
+            "AutoGluon candidate failed the promotion gate and will not be deployed: "
+            f"{candidate_gate}"
+        )
+
+    return {
+        "dataset_version": evaluation_manifest["dataset_version"],
+        "feature_schema_version": evaluation_manifest["feature_schema_version"],
+        "label_manifest": evaluation_manifest["label_manifest"],
+        "label_taxonomy_version": "ani_incident_taxonomy_v2",
+        "promotion_gate": evaluation_manifest["promotion_gate"],
+        "candidate_gate_result": candidate_gate,
+        "candidate": candidate,
+        "selected_model_version": candidate["version"],
+        "selected_model_type": candidate["model_type"],
+        "selected_artifact_path": candidate["artifact_path"],
+        "selection_reason": "candidate satisfied the AutoGluon promotion gate",
+        "selected_training_mode": "autogluon_multiclass_supervised",
+        "candidate_deployment_ready": True,
+    }
+
+
 def _export_triton_repository(
     serving_root: Path,
     serving_model_name: str,
@@ -596,6 +653,62 @@ def _export_mlserver_bundle(
     return {
         "repository_root": serving_root,
         "model_artifact_path": model_path,
+        "model_settings_path": model_settings_path,
+    }
+
+
+def _load_artifact_document(reference: str | Path) -> Dict[str, Any]:
+    reference_text = str(reference)
+    artifact_path = Path(reference_text)
+    if reference_text.startswith("s3://"):
+        artifact_path = _download_file_reference(
+            reference_text,
+            Path(tempfile.mkdtemp(prefix="ani-featurestore-artifact-")) / Path(reference_text).name,
+        )
+    return _json_load(artifact_path)
+
+
+def _export_autogluon_mlserver_bundle(
+    serving_root: Path,
+    serving_model_name: str,
+    artifact: Dict[str, Any],
+    source_model_version: str,
+) -> Dict[str, Path]:
+    if serving_root.exists():
+        shutil.rmtree(serving_root)
+    repository_root = serving_root / serving_model_name
+    repository_root.mkdir(parents=True, exist_ok=True)
+
+    predictor_source = str(artifact.get("predictor_uri") or artifact.get("predictor_path") or "").strip()
+    if not predictor_source:
+        raise ValueError("AutoGluon artifact is missing predictor_uri or predictor_path")
+
+    predictor_root = repository_root / "predictor"
+    _download_directory_reference(predictor_source, predictor_root)
+
+    model_settings_path = repository_root / "model-settings.json"
+    model_settings_path.write_text(
+        json.dumps(
+            {
+                "name": serving_model_name,
+                "implementation": DEFAULT_AUTOGLUON_MLSERVER_IMPLEMENTATION,
+                "parameters": {
+                    "uri": "./predictor",
+                    "version": source_model_version,
+                    "extra": {
+                        "feature_names": FEATURES,
+                        "class_labels": artifact.get("class_labels") or CANONICAL_LABELS,
+                        "normal_class_label": artifact.get("normal_class_label", "normal_operation"),
+                    },
+                },
+            },
+            indent=2,
+        )
+    )
+
+    return {
+        "repository_root": repository_root,
+        "predictor_root": predictor_root,
         "model_settings_path": model_settings_path,
     }
 
@@ -675,19 +788,27 @@ def _export_serving_artifact_step(
 ) -> Dict[str, Any]:
     training_manifest = _load_training_manifest(training_manifest_path)
     selection_manifest = _json_load(selection_manifest_path)
-    train_records = _training_records(training_manifest, "train_records", "train_path")
     eval_records = _training_records(training_manifest, "eval_records", "eval_path")
     selected_version = selection_manifest["selected_model_version"]
     selected_artifact_path = selection_manifest["selected_artifact_path"]
-
-    serving_model = train_serving_model(train_records)
-    serving_metrics = evaluate_serving_model(eval_records, serving_model)
+    selected_artifact = _load_artifact_document(selected_artifact_path)
+    serving_metrics = evaluate(eval_records, selected_artifact, scorer_for_artifact(selected_artifact))
 
     artifact_dir_path = Path(artifact_dir)
     artifact_dir_path.mkdir(parents=True, exist_ok=True)
     serving_root = artifact_dir_path.parent / "serving" / serving_model_name
     serving_backend = _serving_backend(serving_model_format_name)
-    if serving_backend == "triton":
+    if serving_backend == "mlserver-autogluon":
+        serving_export = _export_autogluon_mlserver_bundle(
+            serving_root=serving_root,
+            serving_model_name=serving_model_name,
+            artifact=selected_artifact,
+            source_model_version=selected_version,
+        )
+    elif serving_backend == "triton":
+        train_records = _training_records(training_manifest, "train_records", "train_path")
+        serving_model = train_serving_model(train_records)
+        serving_metrics = evaluate_serving_model(eval_records, serving_model)
         serving_export = _export_triton_repository(
             serving_root=serving_root,
             serving_model_name=serving_model_name,
@@ -695,6 +816,9 @@ def _export_serving_artifact_step(
             source_model_version=selected_version,
         )
     else:
+        train_records = _training_records(training_manifest, "train_records", "train_path")
+        serving_model = train_serving_model(train_records)
+        serving_metrics = evaluate_serving_model(eval_records, serving_model)
         serving_export = _export_mlserver_bundle(
             serving_root=serving_root,
             serving_model_name=serving_model_name,
@@ -714,8 +838,8 @@ def _export_serving_artifact_step(
         "serving_model_format_version": serving_model_format_version,
         "serving_protocol_version": protocol_version,
         "serving_backend": serving_backend,
-        "class_labels": _linear_artifact_from_model(serving_model, "serving_multiclass_logistic_regression")["class_labels"],
-        "normal_class_label": "normal_operation",
+        "class_labels": selected_artifact.get("class_labels") or CANONICAL_LABELS,
+        "normal_class_label": selected_artifact.get("normal_class_label", "normal_operation"),
         "serving_metrics": serving_metrics,
         "created_at": _now(),
     }
@@ -750,14 +874,25 @@ def _export_serving_artifact_step(
                 "serving_alias_weights_uri": upload["alias_weights_uri"],
             }
             if serving_backend == "triton"
-            else {
-                "serving_model_artifact_path": str(serving_export["model_artifact_path"]),
-                "serving_model_settings_path": str(serving_export["model_settings_path"]),
-                "serving_model_artifact_uri": f"{upload['storage_uri']}model.joblib",
-                "serving_model_settings_uri": f"{upload['storage_uri']}model-settings.json",
-                "serving_alias_model_artifact_uri": f"{upload['alias_storage_uri']}model.joblib",
-                "serving_alias_model_settings_uri": f"{upload['alias_storage_uri']}model-settings.json",
-            }
+            else (
+                {
+                    "serving_predictor_path": str(serving_export["predictor_root"]),
+                    "serving_model_settings_path": str(serving_export["model_settings_path"]),
+                    "serving_predictor_uri": f"{upload['storage_uri']}{serving_model_name}/predictor/",
+                    "serving_model_settings_uri": f"{upload['storage_uri']}{serving_model_name}/model-settings.json",
+                    "serving_alias_predictor_uri": f"{upload['alias_storage_uri']}{serving_model_name}/predictor/",
+                    "serving_alias_model_settings_uri": f"{upload['alias_storage_uri']}{serving_model_name}/model-settings.json",
+                }
+                if serving_backend == "mlserver-autogluon"
+                else {
+                    "serving_model_artifact_path": str(serving_export["model_artifact_path"]),
+                    "serving_model_settings_path": str(serving_export["model_settings_path"]),
+                    "serving_model_artifact_uri": f"{upload['storage_uri']}model.joblib",
+                    "serving_model_settings_uri": f"{upload['storage_uri']}model-settings.json",
+                    "serving_alias_model_artifact_uri": f"{upload['alias_storage_uri']}model.joblib",
+                    "serving_alias_model_settings_uri": f"{upload['alias_storage_uri']}model-settings.json",
+                }
+            )
         ),
     }
 
@@ -1010,10 +1145,18 @@ def main() -> None:
         if not all([args.training_manifest, args.baseline_manifest, args.candidate_manifest]):
             raise ValueError("--training-manifest, --baseline-manifest, and --candidate-manifest are required")
         manifest = _evaluate_step(args.training_manifest, args.baseline_manifest, args.candidate_manifest)
+    elif args.step == "evaluate-candidate":
+        if not all([args.training_manifest, args.candidate_manifest]):
+            raise ValueError("--training-manifest and --candidate-manifest are required")
+        manifest = _evaluate_candidate_step(args.training_manifest, args.candidate_manifest)
     elif args.step == "select-best":
         if not args.evaluation_manifest:
             raise ValueError("--evaluation-manifest is required")
         manifest = select_best_model(_json_load(args.evaluation_manifest))
+    elif args.step == "select-candidate":
+        if not args.evaluation_manifest:
+            raise ValueError("--evaluation-manifest is required")
+        manifest = _select_candidate_step(_json_load(args.evaluation_manifest))
     elif args.step == "export-serving-artifact":
         if not all([args.training_manifest, args.selection_manifest]):
             raise ValueError("--training-manifest and --selection-manifest are required")

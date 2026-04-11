@@ -9,3 +9,4 @@ kubeflow[hub]==0.4.0
 autogluon.tabular>=1.1,<1.3
 s3fs
 grpcio
+mlserver==1.7.1
