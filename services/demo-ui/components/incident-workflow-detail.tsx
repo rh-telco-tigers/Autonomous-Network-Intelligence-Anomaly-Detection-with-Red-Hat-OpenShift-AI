@@ -1682,10 +1682,22 @@ function RemediationActionCard({
     activity.attemptCount > 0 ? `${activity.attemptCount} ${activity.attemptCount === 1 ? "attempt" : "attempts"}` : "Ready";
   const playbookId = `remediation-playbook-${remediation.id}`;
   const isEditableAiPlaybook = isAiGeneratedRemediation(remediation);
+  const metadata = (remediation.metadata ?? {}) as Record<string, unknown>;
   const serverPlaybookYaml = asStringValue(remediation.playbook_yaml);
   const [playbookExpanded, setPlaybookExpanded] = React.useState(false);
   const [playbookValue, setPlaybookValue] = React.useState(serverPlaybookYaml);
   const [playbookCustomized, setPlaybookCustomized] = React.useState(false);
+  const giteaRepoOwner = asStringValue(metadata.gitea_repo_owner);
+  const giteaRepoName = asStringValue(metadata.gitea_repo_name);
+  const giteaRepoLabel = [giteaRepoOwner, giteaRepoName].filter(Boolean).join("/");
+  const giteaDraftBranch = asStringValue(metadata.gitea_draft_branch);
+  const giteaMainBranch = asStringValue(metadata.gitea_main_branch);
+  const giteaPlaybookPath = asStringValue(metadata.gitea_playbook_path);
+  const giteaPrNumber = asStringValue(metadata.gitea_pr_number);
+  const giteaPromotionStatus =
+    asStringValue(metadata.gitea_promotion_status) ||
+    (asStringValue(metadata.gitea_merge_commit_sha) ? "merged" : asStringValue(metadata.gitea_sync_status));
+  const showGiteaStatus = Boolean(giteaRepoLabel || giteaDraftBranch || giteaPlaybookPath || giteaPrNumber);
 
   React.useEffect(() => {
     setPlaybookExpanded(false);
@@ -1742,6 +1754,24 @@ function RemediationActionCard({
         <SummaryItem label="Automation" value={titleize(remediation.automation_level ?? "pending")} />
         <SummaryItem label="Revision scope" value={`Revision ${remediation.based_on_revision ?? "current"}`} />
       </div>
+
+      {isEditableAiPlaybook && showGiteaStatus ? (
+        <div className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
+          <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Version control</div>
+          <div className="mt-3 grid gap-4 md:grid-cols-4">
+            <SummaryItem label="Repository" value={giteaRepoLabel || "Provisioning"} />
+            <SummaryItem label="Draft branch" value={giteaDraftBranch || "Pending"} />
+            <SummaryItem label="Production branch" value={giteaMainBranch || "main"} />
+            <SummaryItem label="Promotion" value={titleize((giteaPromotionStatus || "drafted").replace(/_/g, " "))} />
+          </div>
+          {giteaPlaybookPath || giteaPrNumber ? (
+            <div className="mt-3 text-xs leading-6 text-[var(--text-secondary)]">
+              {giteaPlaybookPath ? <div>Path: {giteaPlaybookPath}</div> : null}
+              {giteaPrNumber ? <div>Approval PR: #{giteaPrNumber}</div> : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {decisionLocked ? (
         <div className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
@@ -1812,13 +1842,15 @@ function RemediationActionCard({
                     setPlaybookCustomized(true);
                     setPlaybookValue(event.target.value);
                   }}
-                  disabled={pending}
+                  disabled={pending || decisionLocked}
                   className="mt-2 min-h-[260px] font-mono text-xs leading-6"
                 />
                 <div className="mt-2 text-xs text-[var(--text-muted)]">
-                  {playbookDirty
-                    ? "This edit will be persisted when you approve or execute the remediation."
-                    : "This YAML came from the external callback and is ready for review, approval, and execution."}
+                  {decisionLocked
+                    ? "This YAML is locked because the remediation has already been approved or executed."
+                    : playbookDirty
+                      ? "This edit will be persisted to the incident draft branch when you approve or execute the remediation."
+                      : "This YAML came from the external callback and is ready for review, approval, and execution."}
                 </div>
               </div>
             ) : (
@@ -2859,7 +2891,17 @@ function buildRemediationPreview(remediation: RemediationRecord) {
     return `${AI_PLAYBOOK_REQUEST_DESCRIPTION} The platform publishes a plain-text generation instruction to Kafka and waits for the external generator to POST the generated playbook back.`;
   }
   if (isAiGeneratedRemediation(remediation)) {
-    return `${remediation.description} This AI-generated playbook maps to ${remediation.playbook_ref} and stays tied to workflow revision ${remediation.based_on_revision}.`;
+    const metadata = (remediation.metadata ?? {}) as Record<string, unknown>;
+    const draftBranch = asStringValue(metadata.gitea_draft_branch);
+    const playbookPath = asStringValue(metadata.gitea_playbook_path);
+    const repoOwner = asStringValue(metadata.gitea_repo_owner);
+    const repoName = asStringValue(metadata.gitea_repo_name);
+    const repoLabel = [repoOwner, repoName].filter(Boolean).join("/");
+    const repoSummary =
+      draftBranch || playbookPath || repoLabel
+        ? ` The editable draft lives in ${repoLabel || "the generated-playbook repo"} on ${draftBranch || "the draft branch"} at ${playbookPath || "the incident playbook path"}.`
+        : "";
+    return `${remediation.description} This AI-generated playbook maps to ${remediation.playbook_ref} and stays tied to workflow revision ${remediation.based_on_revision}.${repoSummary}`;
   }
   if (remediation.playbook_ref) {
     return `${remediation.description} This path maps to ${remediation.playbook_ref} and should be tied to workflow revision ${remediation.based_on_revision}.`;

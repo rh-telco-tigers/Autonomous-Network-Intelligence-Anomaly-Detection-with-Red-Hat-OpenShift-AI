@@ -9,6 +9,13 @@ from typing import Any, Dict, List
 
 import requests
 
+from shared.gitea import (
+    generated_playbook_draft_branch,
+    generated_playbook_main_branch,
+    generated_playbook_path,
+    generated_playbook_repo_scm_url,
+)
+
 
 class AAPAutomationError(RuntimeError):
     pass
@@ -156,6 +163,53 @@ def launch_action(action: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]:
         "job_template_id": template_id,
         "job_template_name": _job_template_name(action),
         "action": action,
+        "status": str(payload.get("status") or "pending"),
+        "job_api_url": _absolute_url(f"/api/v2/jobs/{job_id}/"),
+        "job_stdout_url": _absolute_url(f"/api/v2/jobs/{job_id}/stdout/?format=txt_download"),
+        "controller_app_url": _controller_app_url(),
+    }
+
+
+def launch_repo_playbook(incident_id: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]:
+    normalized_incident_id = str(incident_id or "").strip()
+    if not normalized_incident_id:
+        raise AAPAutomationError("incident_id is required to launch an AI-generated playbook through AAP.")
+
+    organization = _require_object_id("/api/v2/organizations/", _organization_name(), "organization")
+    inventory_id = _ensure_inventory(organization)
+    project_id = _ensure_ai_playbook_project(organization)
+    _sync_project(project_id, project_name=_ai_playbook_project_name())
+    kubernetes_credential_id = _ensure_kubernetes_credential(organization)
+    playbook_path = generated_playbook_path(normalized_incident_id)
+    scm_branch = generated_playbook_draft_branch(normalized_incident_id)
+    template_id = _ensure_job_template(
+        organization_id=organization,
+        inventory_id=inventory_id,
+        project_id=project_id,
+        credential_id=kubernetes_credential_id,
+        action=f"ai_generated_{normalized_incident_id}",
+        playbook=playbook_path,
+        description=f"Run the AI-generated playbook for incident {normalized_incident_id} from the draft branch.",
+        template_name=_ai_playbook_job_template_name(normalized_incident_id),
+        ask_scm_branch_on_launch=True,
+    )
+    payload = _request(
+        "POST",
+        f"/api/v2/job_templates/{template_id}/launch/",
+        expected_status=(200, 201, 202),
+        json={"extra_vars": extra_vars, "scm_branch": scm_branch},
+    )
+    job_id = int(payload.get("job") or payload.get("id") or 0)
+    if job_id <= 0:
+        raise AAPAutomationError(f"AAP did not return a job id for AI-generated playbook incident '{normalized_incident_id}'.")
+    return {
+        "job_id": job_id,
+        "job_template_id": template_id,
+        "job_template_name": _ai_playbook_job_template_name(normalized_incident_id),
+        "project_id": project_id,
+        "project_name": _ai_playbook_project_name(),
+        "playbook": playbook_path,
+        "scm_branch": scm_branch,
         "status": str(payload.get("status") or "pending"),
         "job_api_url": _absolute_url(f"/api/v2/jobs/{job_id}/"),
         "job_stdout_url": _absolute_url(f"/api/v2/jobs/{job_id}/stdout/?format=txt_download"),
@@ -489,6 +543,27 @@ def _project_branch() -> str:
     return os.getenv("AAP_PROJECT_BRANCH", "main").strip() or "main"
 
 
+def _ai_playbook_project_name() -> str:
+    return os.getenv("AAP_AI_PLAYBOOK_PROJECT_NAME", "ANI AI Generated Playbooks").strip() or "ANI AI Generated Playbooks"
+
+
+def _ai_playbook_project_scm_url() -> str:
+    return os.getenv("AAP_AI_PLAYBOOK_PROJECT_SCM_URL", "").strip() or generated_playbook_repo_scm_url()
+
+
+def _ai_playbook_project_branch() -> str:
+    return os.getenv("AAP_AI_PLAYBOOK_PROJECT_BRANCH", "").strip() or generated_playbook_main_branch()
+
+
+def _ai_playbook_job_template_prefix() -> str:
+    return os.getenv("AAP_AI_PLAYBOOK_TEMPLATE_PREFIX", "ANI AI Generated Playbook").strip() or "ANI AI Generated Playbook"
+
+
+def _ai_playbook_job_template_name(incident_id: str) -> str:
+    normalized_incident_id = str(incident_id or "").strip()
+    return f"{_ai_playbook_job_template_prefix()} {normalized_incident_id}".strip()
+
+
 def _kubernetes_credential_name() -> str:
     return (
         os.getenv("AAP_KUBERNETES_CREDENTIAL_NAME", "").strip()
@@ -625,19 +700,26 @@ def _ensure_inventory_host(inventory_id: int) -> None:
     )
 
 
-def _ensure_project(organization_id: int) -> int:
-    name = _project_name()
+def _ensure_git_project(
+    organization_id: int,
+    *,
+    name: str,
+    description: str,
+    scm_url: str,
+    scm_branch: str,
+    allow_override: bool,
+) -> int:
     payload = _request("GET", "/api/v2/projects/", params={"name": name, "page_size": 200})
     project = next((item for item in payload.get("results", []) if str(item.get("name") or "") == name), None)
     desired = {
         "name": name,
         "organization": organization_id,
-        "description": "ANI incident remediation automation sourced from the cluster Git repository.",
+        "description": description,
         "scm_type": "git",
-        "scm_url": _project_scm_url(),
-        "scm_branch": _project_branch(),
+        "scm_url": scm_url,
+        "scm_branch": scm_branch,
         "scm_update_on_launch": True,
-        "allow_override": False,
+        "allow_override": allow_override,
     }
     if project is None:
         project = _request("POST", "/api/v2/projects/", expected_status=(200, 201), json=desired)
@@ -651,7 +733,30 @@ def _ensure_project(organization_id: int) -> int:
     return int(project["id"])
 
 
-def _sync_project(project_id: int) -> None:
+def _ensure_project(organization_id: int) -> int:
+    return _ensure_git_project(
+        organization_id,
+        name=_project_name(),
+        description="ANI incident remediation automation sourced from the cluster Git repository.",
+        scm_url=_project_scm_url(),
+        scm_branch=_project_branch(),
+        allow_override=False,
+    )
+
+
+def _ensure_ai_playbook_project(organization_id: int) -> int:
+    return _ensure_git_project(
+        organization_id,
+        name=_ai_playbook_project_name(),
+        description="AI-generated incident playbooks sourced from the cluster Gitea repository.",
+        scm_url=_ai_playbook_project_scm_url(),
+        scm_branch=_ai_playbook_project_branch(),
+        allow_override=True,
+    )
+
+
+def _sync_project(project_id: int, *, project_name: str | None = None) -> None:
+    display_name = project_name or _project_name()
     payload = _request(
         "POST",
         f"/api/v2/projects/{project_id}/update/",
@@ -670,10 +775,10 @@ def _sync_project(project_id: int) -> None:
             return
         if status in {"failed", "error", "canceled"}:
             raise AAPAutomationError(
-                f"AAP project sync failed for '{_project_name()}': {update.get('result_traceback') or status}"
+                f"AAP project sync failed for '{display_name}': {update.get('result_traceback') or status}"
             )
         time.sleep(4)
-    raise AAPAutomationError(f"AAP project sync timed out for '{_project_name()}'.")
+    raise AAPAutomationError(f"AAP project sync timed out for '{display_name}'.")
 
 
 def _kubernetes_credential_type_id() -> int:
@@ -761,8 +866,11 @@ def _ensure_job_template(
     action: str,
     playbook: str,
     description: str,
+    *,
+    template_name: str | None = None,
+    ask_scm_branch_on_launch: bool = False,
 ) -> int:
-    name = _job_template_name(action)
+    name = str(template_name or _job_template_name(action)).strip() or _job_template_name(action)
     payload = _request("GET", "/api/v2/job_templates/", params={"name": name, "page_size": 200})
     template = next((item for item in payload.get("results", []) if str(item.get("name") or "") == name), None)
     desired = {
@@ -774,6 +882,7 @@ def _ensure_job_template(
         "organization": organization_id,
         "playbook": playbook,
         "ask_variables_on_launch": True,
+        "ask_scm_branch_on_launch": ask_scm_branch_on_launch,
         "verbosity": 1,
     }
     if template is None:
@@ -782,7 +891,16 @@ def _ensure_job_template(
         _ensure_job_template_credential(template_id, credential_id)
         return template_id
     patch: Dict[str, Any] = {}
-    for field in ("description", "inventory", "project", "organization", "playbook", "ask_variables_on_launch", "verbosity"):
+    for field in (
+        "description",
+        "inventory",
+        "project",
+        "organization",
+        "playbook",
+        "ask_variables_on_launch",
+        "ask_scm_branch_on_launch",
+        "verbosity",
+    ):
         if template.get(field) != desired[field]:
             patch[field] = desired[field]
     if patch:

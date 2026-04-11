@@ -23,7 +23,7 @@ from shared.aap import (
     action_supported as aap_action_supported,
     bootstrap_resources as aap_bootstrap_resources,
     launch_action as aap_launch_action,
-    launch_dynamic_playbook as aap_launch_dynamic_playbook,
+    launch_repo_playbook as aap_launch_repo_playbook,
     launch_runner_job as aap_launch_runner_job,
     wait_for_job as aap_wait_for_job,
     wait_for_runner_job as aap_wait_for_runner_job,
@@ -42,6 +42,11 @@ from shared.eda import (
     EDAAutomationError,
     bootstrap_resources as eda_bootstrap_resources,
     publish_event as eda_publish_event,
+)
+from shared.gitea import (
+    GiteaAutomationError,
+    promote_generated_playbook,
+    sync_generated_playbook_to_draft,
 )
 from shared.db import (
     attach_rca,
@@ -830,6 +835,13 @@ def _apply_ai_playbook_generation_callback(
 
     action_ref = str(payload.action_ref or "").strip() or _generated_playbook_action_ref(payload.correlation_id)
     playbook_ref = str(payload.playbook_ref or "").strip() or action_ref
+    gitea_metadata = _sync_ai_generated_playbook_to_gitea(
+        incident_id,
+        remediation,
+        playbook_yaml,
+        actor=provider_name,
+        reason="Draft AI playbook callback",
+    )
     updated = update_incident_remediation(
         incident_id,
         int(remediation.get("id") or 0),
@@ -851,14 +863,18 @@ def _apply_ai_playbook_generation_callback(
         preconditions=_string_list(payload.preconditions) or _string_list(remediation.get("preconditions")),
         expected_outcome=str(payload.expected_outcome or remediation.get("expected_outcome") or "").strip(),
         status="available",
-        metadata=metadata
-        | {
-            "generation_kind": "generated",
-            "generation_status": "generated",
-            "generation_error": "",
-            "generated_action_ref": action_ref,
-            "generated_playbook_ref": playbook_ref,
-        },
+        metadata=(
+            metadata
+            | {
+                "generation_kind": "generated",
+                "generation_status": "generated",
+                "generation_error": "",
+                "generated_action_ref": action_ref,
+                "generated_playbook_ref": playbook_ref,
+                "generation_payload_metadata": payload.metadata,
+            }
+            | gitea_metadata
+        ),
         playbook_yaml=playbook_yaml,
     )
     if not updated:
@@ -1072,6 +1088,114 @@ def _generated_playbook_yaml(remediation: Dict[str, object] | None) -> str:
     return str(metadata.get("playbook_yaml") or "").strip()
 
 
+def _gitea_sync_metadata(sync_result: Dict[str, Any]) -> Dict[str, object]:
+    return {
+        "gitea_repo_owner": str(sync_result.get("repo_owner") or "").strip(),
+        "gitea_repo_name": str(sync_result.get("repo_name") or "").strip(),
+        "gitea_repo_scm_url": str(sync_result.get("scm_url") or "").strip(),
+        "gitea_main_branch": str(sync_result.get("main_branch") or "").strip(),
+        "gitea_draft_branch": str(sync_result.get("draft_branch") or "").strip(),
+        "gitea_playbook_path": str(sync_result.get("playbook_path") or "").strip(),
+        "gitea_draft_commit_sha": str(sync_result.get("draft_commit_sha") or "").strip(),
+        "gitea_sync_status": str(sync_result.get("status") or "drafted").strip(),
+        "gitea_sync_updated_at": _now_iso(),
+    }
+
+
+def _gitea_promotion_metadata(promotion_result: Dict[str, Any], approved_by: str) -> Dict[str, object]:
+    metadata = _gitea_sync_metadata(promotion_result)
+    metadata.update(
+        {
+            "gitea_pr_number": int(promotion_result.get("pr_number") or 0),
+            "gitea_pr_url": str(promotion_result.get("pr_url") or "").strip(),
+            "gitea_merge_commit_sha": str(promotion_result.get("merge_commit_sha") or "").strip(),
+            "gitea_promotion_status": str(promotion_result.get("status") or "merged").strip(),
+            "gitea_promoted_at": _now_iso(),
+            "gitea_promoted_by": approved_by,
+        }
+    )
+    return metadata
+
+
+def _sync_ai_generated_playbook_to_gitea(
+    incident_id: str,
+    remediation: Dict[str, object],
+    playbook_yaml: str,
+    *,
+    actor: str,
+    reason: str,
+) -> Dict[str, object]:
+    title = str(remediation.get("title") or "AI generated Ansible playbook").strip() or "AI generated Ansible playbook"
+    try:
+        sync_result = sync_generated_playbook_to_draft(
+            incident_id,
+            playbook_yaml,
+            commit_message=f"{reason}: {title} ({incident_id})",
+        )
+    except GiteaAutomationError as exc:
+        logger.warning("Gitea draft sync failed for incident %s remediation %s: %s", incident_id, remediation.get("id"), exc)
+        raise HTTPException(status_code=502, detail=f"Failed to sync the AI-generated playbook draft to Gitea: {exc}") from exc
+    record_audit(
+        "ai_playbook_draft_synced",
+        actor,
+        {
+            "remediation_id": remediation.get("id"),
+            "draft_branch": sync_result.get("draft_branch"),
+            "playbook_path": sync_result.get("playbook_path"),
+            "commit_sha": sync_result.get("draft_commit_sha"),
+            "status": sync_result.get("status"),
+        },
+        incident_id=incident_id,
+    )
+    return _gitea_sync_metadata(sync_result)
+
+
+def _promote_ai_generated_playbook_remediation(
+    incident_id: str,
+    remediation: Dict[str, object],
+    *,
+    approved_by: str,
+) -> Dict[str, object]:
+    title = str(remediation.get("title") or "AI generated Ansible playbook").strip() or "AI generated Ansible playbook"
+    try:
+        promotion_result = promote_generated_playbook(
+            incident_id,
+            title=f"Promote AI-generated playbook for incident {incident_id}",
+            body=(
+                f"Approve the incident-scoped AI-generated playbook `{title}`.\n\n"
+                f"- incident_id: `{incident_id}`\n"
+                f"- remediation_id: `{int(remediation.get('id') or 0)}`\n"
+                f"- playbook_ref: `{str(remediation.get('playbook_ref') or remediation.get('action_ref') or '')}`"
+            ),
+        )
+    except GiteaAutomationError as exc:
+        logger.warning("Gitea promotion failed for incident %s remediation %s: %s", incident_id, remediation.get("id"), exc)
+        raise HTTPException(status_code=502, detail=f"Failed to promote the AI-generated playbook to main: {exc}") from exc
+    metadata = _gitea_promotion_metadata(promotion_result, approved_by)
+    updated = update_incident_remediation(
+        incident_id,
+        int(remediation.get("id") or 0),
+        based_on_revision=int(remediation.get("based_on_revision") or 1),
+        metadata=_merge_remediation_metadata(remediation, metadata),
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to persist AI-generated playbook promotion metadata")
+    record_audit(
+        "ai_playbook_promoted",
+        approved_by,
+        {
+            "remediation_id": updated.get("id"),
+            "draft_branch": promotion_result.get("draft_branch"),
+            "main_branch": promotion_result.get("main_branch"),
+            "playbook_path": promotion_result.get("playbook_path"),
+            "pr_number": promotion_result.get("pr_number"),
+            "merge_commit_sha": promotion_result.get("merge_commit_sha"),
+        },
+        incident_id=incident_id,
+    )
+    return updated
+
+
 def _persist_ai_generated_playbook_yaml(
     incident_id: str,
     remediation: Dict[str, object],
@@ -1083,6 +1207,13 @@ def _persist_ai_generated_playbook_yaml(
         raise HTTPException(status_code=400, detail="playbook_yaml cannot be empty for an AI-generated playbook")
     if not _is_ai_generated_playbook_remediation(remediation):
         raise HTTPException(status_code=400, detail="playbook_yaml edits are supported only for AI-generated playbooks")
+    gitea_metadata = _sync_ai_generated_playbook_to_gitea(
+        incident_id,
+        remediation,
+        normalized_playbook,
+        actor=updated_by,
+        reason="Update AI playbook draft",
+    )
 
     updated = update_incident_remediation(
         incident_id,
@@ -1094,7 +1225,8 @@ def _persist_ai_generated_playbook_yaml(
                 "playbook_yaml_updated_at": _now_iso(),
                 "playbook_yaml_updated_by": updated_by,
             },
-        ),
+        )
+        | gitea_metadata,
         playbook_yaml=normalized_playbook,
     )
     if not updated:
@@ -1813,21 +1945,31 @@ def _launch_aap_dynamic_playbook(
     notes: str,
 ) -> Dict[str, object]:
     playbook_ref = str((remediation or {}).get("playbook_ref") or action_ref or "ai-generated-playbook").strip() or "ai-generated-playbook"
+    metadata = _remediation_metadata(remediation)
     extra_vars = _aap_extra_vars_for_action(action_ref, incident, remediation, approved_by, notes) | {
         "action_ref": action_ref,
         "playbook_ref": playbook_ref,
         "ai_generated": True,
     }
-    launch = aap_launch_dynamic_playbook(playbook_yaml, playbook_ref, extra_vars)
+    launch = aap_launch_repo_playbook(str(incident.get("id") or ""), extra_vars)
     return {
-        "backend": "aap-runner-job",
-        "job_name": launch["job_name"],
-        "job_namespace": launch["job_namespace"],
+        "backend": "aap-controller",
+        "job_id": launch["job_id"],
+        "job_template_id": launch["job_template_id"],
+        "job_template_name": launch["job_template_name"],
+        "job_api_url": launch["job_api_url"],
+        "job_stdout_url": launch["job_stdout_url"],
         "controller_app_url": launch.get("controller_app_url"),
-        "playbook": playbook_ref,
-        "playbook_label": launch.get("playbook_label") or playbook_ref,
+        "project_id": launch.get("project_id"),
+        "project_name": launch.get("project_name"),
+        "playbook": launch.get("playbook") or playbook_ref,
+        "playbook_label": playbook_ref,
+        "scm_branch": launch.get("scm_branch") or str(metadata.get("gitea_draft_branch") or ""),
         "requested_vars": extra_vars,
-        "launch_summary": f"Launched AAP runner job {launch['job_name']} for AI-generated playbook {playbook_ref}.",
+        "launch_summary": (
+            f"Launched AAP job {launch['job_id']} for AI-generated playbook {playbook_ref} "
+            f"from branch {launch.get('scm_branch') or str(metadata.get('gitea_draft_branch') or 'draft')}."
+        ),
     }
 
 
@@ -3388,6 +3530,16 @@ def _execute_incident_action(
         )
 
     actor = auth.subject if auth else payload.approved_by
+    current_state = normalize_workflow_state(str(incident.get("status") or NEW))
+    remediation_status = str((remediation or {}).get("status") or "").strip().lower()
+    reuse_existing_approval = current_state == APPROVED and payload.execute and remediation_status == "approved"
+    submitted_playbook_yaml = str(payload.playbook_yaml or "").strip()
+    if remediation and submitted_playbook_yaml and _is_ai_generated_playbook_remediation(remediation):
+        if reuse_existing_approval and submitted_playbook_yaml != _generated_playbook_yaml(remediation):
+            raise HTTPException(
+                status_code=409,
+                detail="The AI-generated playbook changed after approval. Re-approve it before execution so the merged version matches the executed draft.",
+            )
     if remediation and str(payload.playbook_yaml or "").strip():
         remediation = _persist_ai_generated_playbook_yaml(incident_id, remediation, payload.playbook_yaml, actor)
 
@@ -3404,9 +3556,6 @@ def _execute_incident_action(
     started_at = _now_iso() if payload.execute else None
     finished_at = None
     action_result_json: Dict[str, object] = {"execute": payload.execute, "action_ref": action_ref}
-    current_state = normalize_workflow_state(str(incident.get("status") or NEW))
-    remediation_status = str((remediation or {}).get("status") or "").strip().lower()
-    reuse_existing_approval = current_state == APPROVED and payload.execute and remediation_status == "approved"
 
     if current_state in {EXECUTED, EXECUTION_FAILED, VERIFICATION_FAILED} or (
         current_state == APPROVED and not reuse_existing_approval
@@ -3435,6 +3584,24 @@ def _execute_incident_action(
             actor,
             "Operator opened remediation workflow.",
         )
+
+    if remediation and _is_ai_generated_playbook_remediation(remediation) and not reuse_existing_approval:
+        remediation = _promote_ai_generated_playbook_remediation(
+            incident_id,
+            remediation,
+            approved_by=actor,
+        )
+        promotion_metadata = _remediation_metadata(remediation)
+        action_result_json |= {
+            "gitea_repo_owner": str(promotion_metadata.get("gitea_repo_owner") or ""),
+            "gitea_repo_name": str(promotion_metadata.get("gitea_repo_name") or ""),
+            "gitea_playbook_path": str(promotion_metadata.get("gitea_playbook_path") or ""),
+            "gitea_draft_branch": str(promotion_metadata.get("gitea_draft_branch") or ""),
+            "gitea_main_branch": str(promotion_metadata.get("gitea_main_branch") or ""),
+            "gitea_pr_number": promotion_metadata.get("gitea_pr_number"),
+            "gitea_pr_url": str(promotion_metadata.get("gitea_pr_url") or ""),
+            "gitea_merge_commit_sha": str(promotion_metadata.get("gitea_merge_commit_sha") or ""),
+        }
 
     if not reuse_existing_approval:
         incident = _transition_incident_with_audit(
@@ -3476,7 +3643,7 @@ def _execute_incident_action(
                     execution_status = "failed"
                     finished_at = _now_iso()
                     output = str(exc)
-                    action_result_json |= {"backend": "aap-runner-job", "raw_status": "launch_failed", "error": str(exc), "ai_generated": True}
+                    action_result_json |= {"backend": "aap-controller", "raw_status": "launch_failed", "error": str(exc), "ai_generated": True}
                     incident = _transition_incident_with_audit(
                         get_incident(incident_id) or incident,
                         EXECUTION_FAILED,

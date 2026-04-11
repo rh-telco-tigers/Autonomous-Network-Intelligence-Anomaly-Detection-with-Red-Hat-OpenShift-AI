@@ -52,6 +52,35 @@ class AAPHelperTests(unittest.TestCase):
             {"Authorization": "Bearer token", "Accept": "*/*"},
         )
 
+    def test_launch_repo_playbook_launches_controller_job_from_draft_branch(self) -> None:
+        calls: list[tuple[str, str, dict[str, object]]] = []
+
+        def _fake_request(method: str, path: str, **kwargs: object):
+            calls.append((method, path, dict(kwargs)))
+            if method == "POST" and path == "/api/v2/job_templates/73/launch/":
+                return {"job": 812, "status": "pending"}
+            return {}
+
+        with (
+            mock.patch.object(aap, "_require_object_id", return_value=1),
+            mock.patch.object(aap, "_ensure_inventory", return_value=2),
+            mock.patch.object(aap, "_ensure_ai_playbook_project", return_value=8),
+            mock.patch.object(aap, "_sync_project"),
+            mock.patch.object(aap, "_ensure_kubernetes_credential", return_value=5),
+            mock.patch.object(aap, "_ensure_job_template", return_value=73) as ensure_template,
+            mock.patch.object(aap, "_request", side_effect=_fake_request),
+        ):
+            launch = aap.launch_repo_playbook("inc-aap-1", {"incident_id": "inc-aap-1", "approved_by": "demo-operator"})
+
+        ensure_template.assert_called_once()
+        self.assertEqual(ensure_template.call_args.kwargs["playbook"], "playbooks/inc-aap-1/playbook.yaml")
+        self.assertTrue(ensure_template.call_args.kwargs["ask_scm_branch_on_launch"])
+        launch_call = next(item for item in calls if item[1] == "/api/v2/job_templates/73/launch/")
+        self.assertEqual(launch_call[2]["json"]["scm_branch"], "draft/inc-aap-1")
+        self.assertEqual(launch["job_id"], 812)
+        self.assertEqual(launch["project_id"], 8)
+        self.assertEqual(launch["scm_branch"], "draft/inc-aap-1")
+
 
 if __name__ == "__main__":
     unittest.main()

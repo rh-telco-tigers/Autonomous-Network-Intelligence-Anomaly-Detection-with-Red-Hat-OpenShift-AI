@@ -9,8 +9,9 @@ Use this file when you need to know:
 - how the UI publishes the generation request
 - what is sent to Kafka
 - how to test the callback endpoint with `curl`
+- how the generated playbook is stored in Gitea
 - how the generated playbook appears in the UI
-- how the generated playbook is approved, edited, and executed on our side
+- how the generated playbook is approved, promoted, and executed on our side
 
 ## Implemented Platform Behavior
 
@@ -22,13 +23,32 @@ This flow is implemented on the platform side:
 4. An external generator consumes that instruction and calls the control-plane callback endpoint with either:
    - `status=generated` and one YAML playbook
    - `status=failed` and an error
-5. The control-plane converts the pending request remediation into a normal `ansible_playbook` remediation.
+5. On a successful callback, the control-plane converts the pending request remediation into a normal `ansible_playbook` remediation.
 6. The UI shows a new AI-generated remediation card with:
    - the same approval and execution controls as other remediations
    - a collapsed playbook editor by default
    - editable YAML before approval or execution
-7. When the operator approves or executes that remediation, any edited YAML is persisted on our side.
-8. When the operator executes the generated remediation, the platform launches it through the AAP runner path and continues through the normal approval, execution, verification, audit, and ticket-sync workflow.
+7. The generated YAML is synced into a dedicated in-cluster Gitea repository on an incident-scoped draft branch.
+8. When the operator approves or executes that remediation, any edited YAML is re-synced to the same incident draft branch before approval is recorded.
+9. Approval creates or reuses the incident pull request from `draft/{incident_id}` to `main` and merges it.
+10. Execution launches the playbook through the AAP controller path from the incident draft branch, so the run appears in the AAP dashboard and continues through the normal approval, execution, verification, audit, and ticket-sync workflow.
+
+## Generated Playbook Git Workflow
+
+AI-generated playbooks use one shared Gitea repository:
+
+- owner: `gitadmin`
+- repo: `ani-ai-generated-playbooks`
+- main branch: `main`
+- draft branch pattern: `draft/{incident_id}`
+- playbook path: `playbooks/{incident_id}/playbook.yaml`
+
+Repository behavior:
+
+- if the repository does not exist, the control-plane creates it automatically
+- each callback writes only the current incident playbook path
+- each incident gets its own draft branch, so incidents do not overwrite each other
+- approval promotes only that incident branch to `main`
 
 ## End-To-End Flow
 
@@ -42,13 +62,16 @@ This flow is implemented on the platform side:
    - `suggestion_type` becomes `ansible_playbook`
    - `generation_kind` becomes `generated`
    - returned YAML is stored in `playbook_yaml`
-8. The UI refresh shows the generated remediation card with an `AI generated` badge.
+   - the same YAML is committed to `playbooks/{incident_id}/playbook.yaml` on `draft/{incident_id}`
+8. The UI refresh shows the generated remediation card with an `AI generated` badge and draft Git metadata.
 9. The operator can expand the YAML, review it, optionally edit it, and then approve or approve-and-execute it.
-10. Execution enters the standard workflow path:
+10. Approval syncs the latest YAML to Gitea again, creates or reuses the incident PR, and merges `draft/{incident_id}` to `main`.
+11. Execution enters the standard workflow path:
     - `APPROVED`
     - `EXECUTING`
     - `EXECUTED` or `EXECUTION_FAILED`
     - verification and closure as normal
+12. The AAP job is visible in the controller dashboard because the controller launches the incident-scoped playbook from the draft branch.
 
 ## Kafka Topic
 
@@ -208,6 +231,7 @@ After the curl request succeeds:
 1. The AI request remediation remains attached to the incident, but now represents a generated playbook.
 2. The remediation card shows:
    - `AI generated`
+   - draft/main Git status for the incident playbook
    - the normal remediation action buttons:
      - `Approve & execute`
      - `Escalate`
@@ -215,15 +239,19 @@ After the curl request succeeds:
      - `Reject`
 3. The playbook section is collapsed by default.
 4. Expanding the card shows the returned YAML in an editable text area.
-5. If the operator edits the YAML and then approves or executes it, the edited YAML is persisted on our side before launch.
+5. If the operator edits the YAML and then approves or executes it, the edited YAML is persisted on our side and re-synced to the incident draft branch before launch.
+6. Once a remediation is already approved or executed, the YAML becomes read-only in the UI so the reviewed version and executed version cannot drift.
 
 ## Execution Behavior On Our Side
 
 For AI-generated playbooks:
 
 - the callback stores the YAML directly in the remediation record
+- the callback also commits the YAML to `draft/{incident_id}` in the generated-playbook Gitea repository
 - the generated remediation stays tied to the current workflow revision
-- execution uses the AAP runner path rather than the local built-in static playbook list
+- approval merges the incident-scoped draft branch into `main`
+- execution launches through an AAP controller job template tied to `playbooks/{incident_id}/playbook.yaml`
+- the controller job is launched with `scm_branch=draft/{incident_id}`, so the exact reviewed draft is what AAP runs
 - the incident still follows the normal platform workflow:
   - approval is recorded
   - execution history is recorded
@@ -231,7 +259,7 @@ For AI-generated playbooks:
   - ticket sync still works
   - verification still uses the same incident verification flow
 
-This means the generated playbook is not just displayed in the UI. It is executable through the same operator workflow as the rest of the remediation system.
+This means the generated playbook is not just displayed in the UI. It is versioned in Git, promoted on approval, and executed through the same AAP controller workflow as the rest of the remediation system.
 
 ## Failure Callback Example
 

@@ -485,6 +485,19 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         with (
             mock.patch.object(control_plane_app, "get_incident", return_value=incident),
             mock.patch.object(control_plane_app, "_find_ai_playbook_generation_remediation", return_value=remediation),
+            mock.patch.object(
+                control_plane_app,
+                "_sync_ai_generated_playbook_to_gitea",
+                return_value={
+                    "gitea_repo_owner": "gitadmin",
+                    "gitea_repo_name": "ani-ai-generated-playbooks",
+                    "gitea_draft_branch": "draft/inc-ai-1",
+                    "gitea_main_branch": "main",
+                    "gitea_playbook_path": "playbooks/inc-ai-1/playbook.yaml",
+                    "gitea_draft_commit_sha": "abc123",
+                    "gitea_sync_status": "drafted",
+                },
+            ),
             mock.patch.object(control_plane_app, "update_incident_remediation", side_effect=update_remediation),
             mock.patch.object(control_plane_app, "record_audit") as record_audit,
         ):
@@ -497,10 +510,11 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         self.assertEqual(captured["playbook_ref"], "ai_generated_playbook_corr-123")
         self.assertTrue(captured["requires_approval"])
         self.assertEqual(captured["playbook_yaml"], payload.playbook_yaml.strip())
+        self.assertEqual(captured["metadata"]["gitea_draft_branch"], "draft/inc-ai-1")
         self.assertEqual(updated["generation_status"], "generated")
         record_audit.assert_called_once()
 
-    def test_execute_generated_playbook_launches_aap_runner_job_and_persists_yaml_override(self) -> None:
+    def test_execute_generated_playbook_promotes_repo_and_launches_aap_controller_job(self) -> None:
         incident_state = {
             "incident": {
                 "id": "inc-ai-2",
@@ -587,13 +601,35 @@ class AiPlaybookGenerationTests(unittest.TestCase):
             mock.patch.object(control_plane_app, "_workflow_payload", return_value={"incident": incident_state["incident"]}),
             mock.patch.object(
                 control_plane_app,
+                "_promote_ai_generated_playbook_remediation",
+                side_effect=lambda incident_id, current, approved_by: dict(current)
+                | {
+                    "metadata": {
+                        **(current.get("metadata") if isinstance(current.get("metadata"), dict) else {}),
+                        "gitea_repo_owner": "gitadmin",
+                        "gitea_repo_name": "ani-ai-generated-playbooks",
+                        "gitea_draft_branch": "draft/inc-ai-2",
+                        "gitea_main_branch": "main",
+                        "gitea_playbook_path": "playbooks/inc-ai-2/playbook.yaml",
+                        "gitea_pr_number": 17,
+                        "gitea_pr_url": "https://gitea.example/pulls/17",
+                        "gitea_merge_commit_sha": "merge123",
+                    }
+                },
+            ) as promote_playbook,
+            mock.patch.object(
+                control_plane_app,
                 "_launch_aap_dynamic_playbook",
                 return_value={
-                    "backend": "aap-runner-job",
-                    "job_name": "ani-ai-playbook-1234",
-                    "job_namespace": "aap",
+                    "backend": "aap-controller",
+                    "job_id": 812,
+                    "job_template_id": 73,
+                    "job_template_name": "ANI AI Generated Playbook inc-ai-2",
+                    "job_api_url": "https://aap.example/api/v2/jobs/812/",
+                    "job_stdout_url": "https://aap.example/api/v2/jobs/812/stdout/",
                     "playbook": "ai_generated_playbook_corr123",
-                    "launch_summary": "Launched AAP runner job ani-ai-playbook-1234 for AI-generated playbook ai_generated_playbook_corr123.",
+                    "scm_branch": "draft/inc-ai-2",
+                    "launch_summary": "Launched AAP job 812 for AI-generated playbook ai_generated_playbook_corr123 from branch draft/inc-ai-2.",
                 },
             ) as launch_dynamic_playbook,
         ):
@@ -603,11 +639,50 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         self.assertEqual(captured["action_mode"], "ansible")
         self.assertEqual(incident_state["incident"]["status"], control_plane_app.EXECUTING)
         self.assertEqual(captured["persisted_playbook_yaml"], payload.playbook_yaml.strip())
-        self.assertEqual(captured["result_json"]["backend"], "aap-runner-job")
+        self.assertEqual(captured["result_json"]["backend"], "aap-controller")
+        self.assertEqual(captured["result_json"]["gitea_pr_number"], 17)
+        self.assertEqual(captured["result_json"]["scm_branch"], "draft/inc-ai-2")
+        promote_playbook.assert_called_once()
         launch_dynamic_playbook.assert_called_once()
         self.assertEqual(launch_dynamic_playbook.call_args.args[1], payload.playbook_yaml.strip())
         self.assertEqual(len(background_tasks.tasks), 1)
         self.assertIs(background_tasks.tasks[0][0], control_plane_app._finalize_aap_automation)
+
+    def test_execute_generated_playbook_rejects_yaml_changes_after_approval(self) -> None:
+        incident = {
+            "id": "inc-ai-3",
+            "project": "ani-demo",
+            "status": control_plane_app.APPROVED,
+            "workflow_revision": 4,
+        }
+        remediation = {
+            "id": 33,
+            "action_ref": "ai_generated_playbook_corr789",
+            "playbook_ref": "ai_generated_playbook_corr789",
+            "playbook_yaml": "---\n- hosts: localhost\n  gather_facts: false\n  tasks: []\n",
+            "title": "AI-generated safe rollback",
+            "status": "approved",
+            "metadata": {"ai_generated": True, "generation_kind": "generated", "generation_status": "generated"},
+        }
+        auth = SimpleNamespace(subject="demo-operator")
+        payload = control_plane_app.RemediationActionRequest(
+            remediation_id=33,
+            approved_by="demo-operator",
+            notes="Execute the already approved version.",
+            execute=True,
+            playbook_yaml="---\n- hosts: localhost\n  gather_facts: false\n  tasks:\n    - debug:\n        msg: changed after approval\n",
+        )
+
+        with (
+            mock.patch.object(control_plane_app, "ensure_role"),
+            mock.patch.object(control_plane_app, "ensure_project_access"),
+            mock.patch.object(control_plane_app, "get_incident", return_value=incident),
+            mock.patch.object(control_plane_app, "get_incident_remediation", return_value=remediation),
+        ):
+            with self.assertRaises(control_plane_app.HTTPException) as raised:
+                control_plane_app._execute_incident_action("inc-ai-3", payload, auth=auth, background_tasks=_TaskRecorder())
+
+        self.assertEqual(raised.exception.status_code, 409)
 
 
 if __name__ == "__main__":
