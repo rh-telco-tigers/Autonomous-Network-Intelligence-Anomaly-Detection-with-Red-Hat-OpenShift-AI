@@ -7,9 +7,11 @@ Generate incident-linked data, publish the feature bundle, train and deploy the 
 ## Before You Start
 
 - Finish [Installation](./02-installation.md) and [Validation](./03-validation.md).
-- Confirm `ani-runtime` and `ani-datascience` are `Synced` / `Healthy`.
+- Confirm `ani-runtime` is `Synced` / `Healthy` and the predictive `InferenceService` resources in `ani-datascience` are `READY=True`.
 - Run the initial image build at least once with `make trigger-build-pipeline`.
 - Use the feature-store path in this guide. The preferred serving endpoint is `ani-predictive-fs`.
+
+If `ani-datascience` is degraded only because `llama-32-3b-instruct` is pending on missing GPU capacity, you can still continue with this predictive-model workflow.
 
 ## 1. Generate One Live Incident
 

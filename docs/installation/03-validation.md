@@ -12,17 +12,20 @@ oc get deploy -n ani-runtime
 oc get deploy -n ani-sipp
 oc get dsc -n redhat-ods-operator
 oc get dspa,featurestore,inferenceservice -n ani-datascience
+oc get wf -n ani-datascience
 ```
+
+If `ani-predictive` or `ani-predictive-fs` is still `READY=False`, wait for the bootstrap workflows in `ani-datascience` to finish with `Succeeded` and then recheck the `InferenceService` resources.
 
 ## 2. Collect The Main Routes
 
 ```sh
-DEMO_UI_HOST="$(oc get route demo-ui -n ani-runtime -o jsonpath='{.spec.host}')"
-CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.spec.host}')"
-OPENIMSS_HOST="$(oc get route openimss-webui -n ani-sipp -o jsonpath='{.spec.host}')"
-PLANE_HOST="$(oc get route plane-web -n plane -o jsonpath='{.spec.host}')"
-ATTU_HOST="$(oc get route milvus-attu -n ani-data -o jsonpath='{.spec.host}')"
-MINIO_HOST="$(oc get route model-storage-minio-console -n ani-data -o jsonpath='{.spec.host}')"
+DEMO_UI_HOST="$(oc get route demo-ui -n ani-runtime -o jsonpath='{.status.ingress[0].host}')"
+CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.status.ingress[0].host}')"
+OPENIMSS_HOST="$(oc get route openimss-webui -n ani-sipp -o jsonpath='{.status.ingress[0].host}')"
+PLANE_HOST="$(oc get route plane-web -n plane -o jsonpath='{.status.ingress[0].host}')"
+ATTU_HOST="$(oc get route milvus-attu -n ani-data -o jsonpath='{.status.ingress[0].host}')"
+MINIO_HOST="$(oc get route model-storage-minio-console -n ani-data -o jsonpath='{.status.ingress[0].host}')"
 
 echo "Demo UI:        https://${DEMO_UI_HOST}"
 echo "Control plane:  https://${CONTROL_PLANE_HOST}"
@@ -124,11 +127,14 @@ Expected result after the approved action runs: the deployment reports `2` desir
 - `default-dsc` is `Ready=True`
 - `dspa` exists
 - `ani-featurestore` is `Ready`
+- the bootstrap workflows in `ani-datascience` finish with `Succeeded`
 - the predictive `InferenceService` resources are `READY=True`
 - the manual SIPp jobs finish and print `window_uri`
 - the control-plane status endpoint returns JSON without errors
 - after AAP license import, `aap` and `eda` report `live_configured=true`
 - the `Scale the S-CSCF path` incident action finishes through AAP and `ims-scscf` stays at `2` replicas
+
+If the only remaining degraded item is `llama-32-3b-instruct` with `Insufficient nvidia.com/gpu`, the predictive incident workflow can still work, but the generative RCA path is not available until the cluster exposes allocatable GPU capacity.
 
 ## Next Step
 

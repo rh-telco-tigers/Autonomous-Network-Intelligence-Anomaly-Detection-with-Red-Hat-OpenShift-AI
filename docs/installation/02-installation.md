@@ -10,14 +10,16 @@ Deploy the platform on a fresh cluster through the GitOps path and bring it to a
 - Check out the git branch you want Argo CD to follow.
 - **GPU workers:** GitOps installs the NVIDIA GPU Operator, Node Feature Discovery, and OpenShift AI model serving that targets GPU runtimes (including vLLM). Use a cluster or machine pool with **GPU-capable worker nodes** and enough capacity for the operator DaemonSets; without that, the `ani-datascience` slice and inference validation in this guide typically will not converge.
 
-If the cluster does not already expose a GPU worker, add one before continuing:
+If the cluster does not already expose allocatable GPU capacity, add one before continuing:
 
 ```sh
-oc get nodes -l node-role.kubernetes.io/gpu
+oc get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\\.com/gpu
 make add-gpu-node-pool
 oc get machineset -n openshift-machine-api | rg 'gpu'
-oc get nodes -l node-role.kubernetes.io/gpu
+oc get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\\.com/gpu
 ```
+
+Continue only when at least one node reports a non-empty `GPU` value such as `1`. A GPU label by itself is not enough for the vLLM workload.
 
 ```sh
 git branch --show-current
@@ -53,6 +55,8 @@ oc get applications.argoproj.io -n openshift-gitops -o jsonpath='{range .items[*
 
 Continue when the child applications exist and the `targetRevision` is the branch you pushed.
 
+On a fresh cluster this can take several minutes. It is normal for `ani-tekton` to retry once while the Tekton CRDs are still being installed.
+
 ## 5. Trigger The First Image Build
 
 The first Git push seeds GitOps state, but it does not populate all runtime images. Run the build pipeline once:
@@ -72,6 +76,7 @@ oc get deploy -n ani-runtime
 oc get deploy -n ani-sipp
 oc get dsc -n redhat-ods-operator
 oc get dspa,featurestore,inferenceservice -n ani-datascience
+oc get wf -n ani-datascience
 ```
 
 Continue when:
@@ -81,7 +86,10 @@ Continue when:
 - `default-dsc` is `Ready=True`
 - `dspa` exists
 - `ani-featurestore` is `Ready`
+- the bootstrap workflows in `ani-datascience` have finished with `Succeeded`
 - the predictive `InferenceService` resources are `READY=True`
+
+If `ani-predictive` or `ani-predictive-fs` starts as `READY=False`, wait for the bootstrap workflows to publish the model artifacts and let KServe retry automatically. If `llama-32-3b-instruct` stays `Pending` with `Insufficient nvidia.com/gpu`, use [Troubleshooting](./troubleshooting.md).
 
 ## 7. List The Main Routes
 

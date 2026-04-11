@@ -40,6 +40,23 @@ oc rollout restart deployment -n ani-sipp
 oc get pods -n ani-sipp
 ```
 
+## `ani-tekton` Fails Early With Missing Tekton CRDs
+
+On a fresh cluster, `ani-tekton` can fail its first sync before the Tekton CRDs exist. The Argo application usually recovers on its own once the Pipelines operator finishes installing the CRDs.
+
+Check:
+
+```sh
+oc get applications.argoproj.io ani-tekton -n openshift-gitops -o yaml | sed -n '1,220p'
+oc get crd tasks.tekton.dev pipelines.tekton.dev eventlisteners.triggers.tekton.dev triggerbindings.triggers.tekton.dev triggertemplates.triggers.tekton.dev
+```
+
+If the app message mentions `no matches for kind "Task" in version "tekton.dev/v1"` or similar, wait for the CRDs to appear and then recheck `ani-tekton`. When the app reaches `Synced` / `Healthy`, rerun:
+
+```sh
+make trigger-build-pipeline
+```
+
 ## OpenShift AI Or DSPA Is Not Ready
 
 ```sh
@@ -49,6 +66,45 @@ oc get dspa,featurestore,inferenceservice -n ani-datascience
 ```
 
 If `default-dsc` is not `Ready=True`, wait for the `redhat-ods-applications` controllers to come up before retrying the `ani-datascience` validation.
+
+## `ani-datascience` Is Degraded Because The Predictors Start Before Models Exist
+
+On a fresh install, the predictive `InferenceService` resources can start before the bootstrap training workflows publish the initial models into object storage. In that case the storage initializer logs `No model found` and KServe keeps retrying until the artifacts land.
+
+Check:
+
+```sh
+oc get wf -n ani-datascience
+oc get inferenceservice -n ani-datascience
+oc get pods -n ani-datascience | rg 'ani-predictive'
+```
+
+Wait for these workflows to finish with `Succeeded`:
+
+- `ani-anomaly-platform-train-and-register-*`
+- `ani-feature-bundle-publish-*`
+- `ani-featurestore-train-and-register-*`
+
+Then recheck:
+
+```sh
+oc get inferenceservice -n ani-datascience
+```
+
+The predictive services should recover automatically once the model artifacts exist.
+
+## `llama-32-3b-instruct` Stays `Pending` With `Insufficient nvidia.com/gpu`
+
+The cluster needs allocatable GPU capacity, not just a GPU node label.
+
+Check:
+
+```sh
+oc get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\\.com/gpu
+oc describe pod -n ani-datascience "$(oc get pod -n ani-datascience -o name | rg 'llama-32-3b-instruct' | head -n1 | cut -d/ -f2)"
+```
+
+If every node shows an empty `GPU` column, the vLLM pod cannot schedule. The rest of the predictive incident workflow can still work, but RCA generation falls back away from the live LLM path until the cluster exposes at least one allocatable GPU.
 
 ## Plane Route Loads But Login Loops
 
@@ -63,6 +119,16 @@ oc get route -n plane
 ```
 
 If the cluster is on an older revision, sync to the latest branch state and let the new Plane bootstrap job run again.
+
+## Plane Host Lookup Returns An Empty String
+
+The Plane routes use `spec.subdomain`, so `spec.host` can be empty on fresh clusters even though the route is admitted.
+
+Use:
+
+```sh
+oc get route plane-web -n plane -o jsonpath='{.status.ingress[0].host}{"\n"}'
+```
 
 ## AAP Or EDA Is Installed But No Job Templates Exist
 
