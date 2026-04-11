@@ -9,12 +9,9 @@ export function LogoMark({ className }: { className?: string }) {
         className,
       )}
     >
-      <svg viewBox="0 0 48 48" className="h-7 w-7" fill="none">
-        <path d="M7 36 16.5 12h4L11 36H7Z" fill="currentColor" opacity="0.92" />
-        <path d="M15.5 28h12.5l-1.7 4H13.8l1.7-4Z" fill="currentColor" />
-        <path d="M22 36 31.5 12h4L26 36h-4Z" fill="currentColor" opacity="0.92" />
-        <path d="M31 12h4.2L41 25.8V12h3v24h-3.6L34 22.3V36h-3V12Z" fill="currentColor" />
-      </svg>
+      <span className="select-none pl-[0.22em] text-[0.95rem] font-black uppercase leading-none tracking-[0.22em]">
+        ANI
+      </span>
     </div>
   );
 }
