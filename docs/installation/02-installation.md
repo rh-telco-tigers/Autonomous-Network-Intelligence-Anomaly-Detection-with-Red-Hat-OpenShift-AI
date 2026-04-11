@@ -117,10 +117,17 @@ oc extract -n aap secret/aap-eda-admin-password --to=- --keys=password
 
 3. Wait for the control-plane bootstrap worker to finish creating the controller-side inventory, project, Kubernetes credential, job templates, callback templates, EDA project, decision environment, and activations. The GitOps runtime config now enables AAP and EDA by default and the control-plane retries bootstrap automatically until the AAP APIs accept writes.
 
-4. Verify the integration state:
+4. If AAP was already running without a license and you only imported the license later, force an immediate retry instead of waiting for the next background attempt:
 
 ```sh
-CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.spec.host}')"
+oc rollout restart deployment/control-plane -n ani-runtime
+oc rollout status deployment/control-plane -n ani-runtime --timeout=5m
+```
+
+5. Verify the integration state:
+
+```sh
+CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.status.ingress[0].host}')"
 curl -k "https://${CONTROL_PLANE_HOST}/integrations/status" \
   -H "x-api-key: demo-token" | python3 -m json.tool
 ```
@@ -130,6 +137,12 @@ Expected result after the AAP license is imported:
 - `aap.configured=true`
 - `aap.live_configured=true`
 - `aap.bootstrapped=true`
+- `aap.project_exists=true`
+- `aap.kubernetes_credential_exists=true`
+- all AAP `template_exists=true`
 - `eda.configured=true`
 - `eda.live_configured=true`
 - `eda.bootstrapped=true`
+- all EDA activations show `status=running`
+
+The AAP Rule Audit view can keep older failed rows from activations that were created before the license was imported. Treat the newest rows that reference the live activation names, not `DELETED`, as the current health signal.

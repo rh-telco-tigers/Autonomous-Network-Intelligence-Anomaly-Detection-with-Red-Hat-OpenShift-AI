@@ -356,6 +356,53 @@ def _controller_token_name() -> str:
     return os.getenv("EDA_CONTROLLER_TOKEN_NAME", "ANI EDA Controller Token").strip() or "ANI EDA Controller Token"
 
 
+def _activation_extra_vars(policy_key: str) -> Dict[str, str]:
+    definition = POLICY_DEFINITIONS[policy_key]
+    return {
+        "approved_by": _automation_actor(),
+        "control_plane_api_key": _control_plane_api_key(),
+        "control_plane_url": _control_plane_url(),
+        "controller_job_template_name": controller_callback_template_name(
+            str(definition.get("controller_template_key") or "")
+        ),
+        "controller_organization_name": _controller_organization_name(),
+        "policy_key": policy_key,
+        "policy_name": str(definition["name"]),
+        "source_url": _event_source_url(policy_key),
+    }
+
+
+def _render_extra_var(extra_vars: Dict[str, Any]) -> str:
+    return "".join(f"{key}: {value}\n" for key, value in extra_vars.items())
+
+
+def _normalized_extra_var(value: Any) -> Dict[str, str]:
+    if isinstance(value, dict):
+        return {str(key): "" if item is None else str(item) for key, item in value.items()}
+
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return {}
+
+    try:
+        parsed = json.loads(raw_value)
+    except json.JSONDecodeError:
+        parsed = None
+    if isinstance(parsed, dict):
+        return _normalized_extra_var(parsed)
+
+    normalized: Dict[str, str] = {}
+    for raw_line in raw_value.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            return {"__raw__": raw_value}
+        key, item = line.split(":", 1)
+        normalized[key.strip()] = item.strip().strip("'").strip('"')
+    return normalized or {"__raw__": raw_value}
+
+
 def _project_payload(organization_id: int) -> Dict[str, Any]:
     return {
         "name": _project_name(),
@@ -465,6 +512,7 @@ def _ensure_activation(
     controller_template_key = str(definition.get("controller_template_key") or "").strip()
     if not controller_template_key:
         raise EDAAutomationError(f"EDA policy '{policy_key}' does not declare a controller callback template.")
+    extra_vars = _activation_extra_vars(policy_key)
     desired = {
         "name": definition["name"],
         "description": definition["description"],
@@ -475,18 +523,7 @@ def _ensure_activation(
         "restart_policy": "always",
         "log_level": "info",
         "awx_token_id": awx_token_id,
-        "extra_var": json.dumps(
-            {
-                "control_plane_url": _control_plane_url(),
-                "control_plane_api_key": _control_plane_api_key(),
-                "approved_by": _automation_actor(),
-                "source_url": _event_source_url(policy_key),
-                "policy_key": policy_key,
-                "policy_name": definition["name"],
-                "controller_job_template_name": controller_callback_template_name(controller_template_key),
-                "controller_organization_name": _controller_organization_name(),
-            }
-        ),
+        "extra_var": _render_extra_var(extra_vars),
     }
     existing = _find_named_item("/api/eda/v1/activations/", definition["name"])
     if existing is None:
@@ -507,6 +544,10 @@ def _ensure_activation(
         "extra_var": existing.get("extra_var"),
     }
     for field, current in comparisons.items():
+        if field == "extra_var":
+            if _normalized_extra_var(current) != _normalized_extra_var(desired[field]):
+                patch[field] = desired[field]
+            continue
         if current != desired[field]:
             patch[field] = desired[field]
     if patch:

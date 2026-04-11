@@ -159,12 +159,6 @@ CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.s
 echo "https://${CONTROL_PLANE_HOST}"
 ```
 
-Example:
-
-```text
-https://control-plane-ani-runtime.apps.ocp.5gbjx.sandbox3534.opentlc.com
-```
-
 ## Callback Contract
 
 ### Supported statuses
@@ -189,7 +183,7 @@ All success-like statuses are normalized to a generated playbook.
 
 Use this exact pattern to simulate the external generator callback.
 
-Only set these two variables:
+Set these variables:
 
 ```bash
 CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.status.ingress[0].host}')"

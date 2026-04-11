@@ -140,19 +140,98 @@ Check:
 oc get route -n aap
 oc get configmap aap-automation-config -n ani-runtime -o yaml
 oc get deploy control-plane -n ani-runtime
+CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.status.ingress[0].host}')"
+curl -k "https://${CONTROL_PLANE_HOST}/integrations/status" \
+  -H "x-api-key: demo-token" | python3 -m json.tool
 ```
 
 Then:
 
 1. Import the AAP license and finish any first-login prompts in the AAP UI.
 2. Confirm `AAP_AUTOMATION_ENABLED`, `EDA_AUTOMATION_ENABLED`, and `AUTOMATION_BOOTSTRAP_ON_STARTUP` are all `"true"` in `aap-automation-config`.
-3. Wait for the control-plane bootstrap retries to reconcile the templates and activations.
-4. If this cluster was already running before the enabled-by-default config landed, restart `deployment/control-plane` in `ani-runtime` once so it picks up the new config values.
+3. If the license was imported after the platform was already running, restart `deployment/control-plane` in `ani-runtime` once so it immediately retries bootstrap against the now-licensed AAP APIs.
+4. Wait for the control-plane bootstrap retries to reconcile the templates and activations.
+5. Recheck `integrations/status` until:
+   - `aap.bootstrapped=true`
+   - `aap.project_exists=true`
+   - `aap.kubernetes_credential_exists=true`
+   - every AAP action and callback template shows `template_exists=true`
+   - `eda.bootstrapped=true`
+   - every EDA policy activation shows `status=running`
 
 ```sh
 oc rollout restart deployment/control-plane -n ani-runtime
 oc rollout status deployment/control-plane -n ani-runtime
 ```
+
+## AAP Rule Audit Still Shows Failed `DELETED` Rows
+
+Older Rule Audit entries are historical. If AAP or EDA failed before the license import completed, those failed rows stay visible even after the current activations are healthy.
+
+Check the current health first:
+
+```sh
+CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.status.ingress[0].host}')"
+EDA_HOST="$(oc get route aap-eda -n aap -o jsonpath='{.status.ingress[0].host}')"
+EDA_PASS="$(oc extract -n aap secret/aap-eda-admin-password --to=- --keys=password 2>/dev/null | tail -n 1)"
+
+curl -k "https://${CONTROL_PLANE_HOST}/integrations/status" \
+  -H "x-api-key: demo-token" | python3 -m json.tool
+
+curl -ksu "admin:${EDA_PASS}" "https://${EDA_HOST}/api/eda/v1/activations/?page_size=20" \
+  | python3 -m json.tool
+```
+
+Expected result:
+
+- `eda.bootstrapped=true`
+- both ANI activations show `status=running`
+- the activation ids are non-zero
+
+If you want a fresh Rule Audit proof point, create one synthetic critical incident:
+
+```sh
+INCIDENT_ID="eda-health-$(date +%s)"
+CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.status.ingress[0].host}')"
+
+curl -ksS -X POST "https://${CONTROL_PLANE_HOST}/incidents" \
+  -H 'Content-Type: application/json' \
+  -H 'x-api-key: demo-token' \
+  --data-binary @- <<JSON
+{
+  "incident_id": "${INCIDENT_ID}",
+  "project": "ani-demo",
+  "anomaly_score": 0.98,
+  "anomaly_type": "network_degradation",
+  "predicted_confidence": 0.98,
+  "class_probabilities": {"network_degradation": 0.98, "normal_operation": 0.02},
+  "top_classes": [{"label": "network_degradation", "probability": 0.98}],
+  "is_anomaly": true,
+  "model_version": "ani-predictive-fs",
+  "feature_window_id": "eda-health-${INCIDENT_ID}",
+  "feature_snapshot": {"scenario_name": "network_degradation", "source": "manual-health-check"},
+  "severity": "Critical",
+  "source_system": "manual-health-check",
+  "auto_generate_rca": true
+}
+JSON
+```
+
+Wait about 30 seconds, then recheck Rule Audit:
+
+```sh
+EDA_HOST="$(oc get route aap-eda -n aap -o jsonpath='{.status.ingress[0].host}')"
+EDA_PASS="$(oc extract -n aap secret/aap-eda-admin-password --to=- --keys=password 2>/dev/null | tail -n 1)"
+
+curl -ksu "admin:${EDA_PASS}" "https://${EDA_HOST}/api/eda/v1/audit-rules/?page_size=20" \
+  | python3 -m json.tool
+```
+
+Expected result:
+
+- the newest `Escalate critical incidents for coordination` row is `successful`
+- the newest `Execute the low-risk signaling guardrail` row is `successful`
+- the newest rows reference live activation names, not `DELETED`
 
 ## AAP Job Succeeds But Argo CD Reverts The Change
 
