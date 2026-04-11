@@ -23,6 +23,7 @@ from shared.aap import (
     action_supported as aap_action_supported,
     bootstrap_resources as aap_bootstrap_resources,
     launch_action as aap_launch_action,
+    launch_dynamic_playbook as aap_launch_dynamic_playbook,
     launch_runner_job as aap_launch_runner_job,
     wait_for_job as aap_wait_for_job,
     wait_for_runner_job as aap_wait_for_runner_job,
@@ -268,6 +269,7 @@ class RemediationActionRequest(BaseModel):
     execute: bool = False
     source_of_action: str = "platform_ui"
     source_url: str = ""
+    playbook_yaml: str = ""
 
 
 class VerificationRequest(BaseModel):
@@ -302,6 +304,7 @@ class RemediationDecisionRequest(BaseModel):
     approved_by: str
     notes: str = ""
     source_url: str = ""
+    playbook_yaml: str = ""
 
 
 class PlaybookGenerationRequest(BaseModel):
@@ -1052,6 +1055,13 @@ def _is_ai_playbook_generation_request(remediation: Dict[str, object] | None) ->
     )
 
 
+def _is_ai_generated_playbook_remediation(remediation: Dict[str, object] | None) -> bool:
+    if not remediation or _is_ai_playbook_generation_request(remediation):
+        return False
+    metadata = _remediation_metadata(remediation)
+    return bool(remediation.get("playbook_ref")) and bool(metadata.get("ai_generated")) and str(metadata.get("generation_kind") or "") == "generated"
+
+
 def _generated_playbook_yaml(remediation: Dict[str, object] | None) -> str:
     if not remediation:
         return ""
@@ -1060,6 +1070,46 @@ def _generated_playbook_yaml(remediation: Dict[str, object] | None) -> str:
         return direct_yaml
     metadata = _remediation_metadata(remediation)
     return str(metadata.get("playbook_yaml") or "").strip()
+
+
+def _persist_ai_generated_playbook_yaml(
+    incident_id: str,
+    remediation: Dict[str, object],
+    playbook_yaml: str,
+    updated_by: str,
+) -> Dict[str, object]:
+    normalized_playbook = str(playbook_yaml or "").strip()
+    if not normalized_playbook:
+        raise HTTPException(status_code=400, detail="playbook_yaml cannot be empty for an AI-generated playbook")
+    if not _is_ai_generated_playbook_remediation(remediation):
+        raise HTTPException(status_code=400, detail="playbook_yaml edits are supported only for AI-generated playbooks")
+
+    updated = update_incident_remediation(
+        incident_id,
+        int(remediation.get("id") or 0),
+        based_on_revision=int(remediation.get("based_on_revision") or 1),
+        metadata=_merge_remediation_metadata(
+            remediation,
+            {
+                "playbook_yaml_updated_at": _now_iso(),
+                "playbook_yaml_updated_by": updated_by,
+            },
+        ),
+        playbook_yaml=normalized_playbook,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to persist edited AI-generated playbook")
+    record_audit(
+        "ai_playbook_yaml_updated",
+        updated_by,
+        {
+            "remediation_id": updated.get("id"),
+            "action_ref": updated.get("action_ref"),
+            "playbook_ref": updated.get("playbook_ref"),
+        },
+        incident_id=incident_id,
+    )
+    return updated
 
 
 def _candidate_remediation_titles(incident_id: str, ignored_id: int | None = None) -> List[str]:
@@ -1752,6 +1802,33 @@ def _launch_aap_automation(
             "requested_vars": extra_vars,
             "launch_summary": launch_summary,
         }
+
+
+def _launch_aap_dynamic_playbook(
+    action_ref: str,
+    playbook_yaml: str,
+    incident: Dict[str, object],
+    remediation: Dict[str, object] | None,
+    approved_by: str,
+    notes: str,
+) -> Dict[str, object]:
+    playbook_ref = str((remediation or {}).get("playbook_ref") or action_ref or "ai-generated-playbook").strip() or "ai-generated-playbook"
+    extra_vars = _aap_extra_vars_for_action(action_ref, incident, remediation, approved_by, notes) | {
+        "action_ref": action_ref,
+        "playbook_ref": playbook_ref,
+        "ai_generated": True,
+    }
+    launch = aap_launch_dynamic_playbook(playbook_yaml, playbook_ref, extra_vars)
+    return {
+        "backend": "aap-runner-job",
+        "job_name": launch["job_name"],
+        "job_namespace": launch["job_namespace"],
+        "controller_app_url": launch.get("controller_app_url"),
+        "playbook": playbook_ref,
+        "playbook_label": launch.get("playbook_label") or playbook_ref,
+        "requested_vars": extra_vars,
+        "launch_summary": f"Launched AAP runner job {launch['job_name']} for AI-generated playbook {playbook_ref}.",
+    }
 
 
 def _eda_event_payload(
@@ -3310,6 +3387,10 @@ def _execute_incident_action(
             detail="Use the AI playbook generation endpoint for this remediation before approving or executing it",
         )
 
+    actor = auth.subject if auth else payload.approved_by
+    if remediation and str(payload.playbook_yaml or "").strip():
+        remediation = _persist_ai_generated_playbook_yaml(incident_id, remediation, payload.playbook_yaml, actor)
+
     action_ref = str(
         payload.action
         or (remediation or {}).get("action_ref")
@@ -3320,7 +3401,6 @@ def _execute_incident_action(
         raise HTTPException(status_code=400, detail="Action reference is required")
     dynamic_playbook_yaml = _generated_playbook_yaml(remediation)
 
-    actor = auth.subject if auth else payload.approved_by
     started_at = _now_iso() if payload.execute else None
     finished_at = None
     action_result_json: Dict[str, object] = {"execute": payload.execute, "action_ref": action_ref}
@@ -3379,42 +3459,67 @@ def _execute_incident_action(
             f"Executing automation for {action_ref}.",
         )
         if dynamic_playbook_yaml:
-            output, raw_status = _execute_playbook(
-                action_ref,
-                playbook_content=dynamic_playbook_yaml,
-                playbook_label=str((remediation or {}).get("playbook_ref") or action_ref),
-            )
-            finished_at = _now_iso()
-            action_result_json |= {
-                "backend": "dynamic-playbook",
-                "playbook": str((remediation or {}).get("playbook_ref") or action_ref),
-                "raw_status": raw_status,
-                "ai_generated": True,
-            }
-            if raw_status in {"executed", "simulated"}:
-                execution_status = "executed"
-                incident = _transition_incident_with_audit(
-                    get_incident(incident_id) or incident,
-                    EXECUTED,
-                    actor,
-                    f"Automation completed for {action_ref}.",
-                )
-            elif raw_status in {"failed", "rejected"}:
-                execution_status = "failed"
-                incident = _transition_incident_with_audit(
-                    get_incident(incident_id) or incident,
-                    EXECUTION_FAILED,
-                    actor,
-                    f"Automation failed for {action_ref}.",
-                )
+            if _aap_automation_enabled():
+                try:
+                    launch = _launch_aap_dynamic_playbook(
+                        action_ref,
+                        dynamic_playbook_yaml,
+                        incident,
+                        remediation,
+                        payload.approved_by,
+                        payload.notes,
+                    )
+                    execution_status = "executing"
+                    output = str(launch.get("launch_summary") or f"Launched AAP automation for {action_ref}.")
+                    action_result_json |= launch | {"raw_status": "launched", "ai_generated": True}
+                except AAPAutomationError as exc:
+                    execution_status = "failed"
+                    finished_at = _now_iso()
+                    output = str(exc)
+                    action_result_json |= {"backend": "aap-runner-job", "raw_status": "launch_failed", "error": str(exc), "ai_generated": True}
+                    incident = _transition_incident_with_audit(
+                        get_incident(incident_id) or incident,
+                        EXECUTION_FAILED,
+                        actor,
+                        f"AAP automation failed to launch for {action_ref}.",
+                    )
             else:
-                execution_status = "approved"
-                incident = _transition_incident_with_audit(
-                    get_incident(incident_id) or incident,
-                    APPROVED,
-                    actor,
-                    f"Automation for {action_ref} was gated before execution.",
+                output, raw_status = _execute_playbook(
+                    action_ref,
+                    playbook_content=dynamic_playbook_yaml,
+                    playbook_label=str((remediation or {}).get("playbook_ref") or action_ref),
                 )
+                finished_at = _now_iso()
+                action_result_json |= {
+                    "backend": "dynamic-playbook",
+                    "playbook": str((remediation or {}).get("playbook_ref") or action_ref),
+                    "raw_status": raw_status,
+                    "ai_generated": True,
+                }
+                if raw_status in {"executed", "simulated"}:
+                    execution_status = "executed"
+                    incident = _transition_incident_with_audit(
+                        get_incident(incident_id) or incident,
+                        EXECUTED,
+                        actor,
+                        f"Automation completed for {action_ref}.",
+                    )
+                elif raw_status in {"failed", "rejected"}:
+                    execution_status = "failed"
+                    incident = _transition_incident_with_audit(
+                        get_incident(incident_id) or incident,
+                        EXECUTION_FAILED,
+                        actor,
+                        f"Automation failed for {action_ref}.",
+                    )
+                else:
+                    execution_status = "approved"
+                    incident = _transition_incident_with_audit(
+                        get_incident(incident_id) or incident,
+                        APPROVED,
+                        actor,
+                        f"Automation for {action_ref} was gated before execution.",
+                    )
         elif aap_action_supported(action_ref):
             try:
                 launch = _launch_aap_automation(action_ref, incident, remediation, payload.approved_by, payload.notes)
@@ -3639,6 +3744,7 @@ def approve_remediation(
             notes=payload.notes,
             execute=False,
             source_url=payload.source_url,
+            playbook_yaml=payload.playbook_yaml,
         ),
         auth,
     )
@@ -3660,6 +3766,7 @@ def execute_remediation(
             notes=payload.notes,
             execute=True,
             source_url=payload.source_url,
+            playbook_yaml=payload.playbook_yaml,
         ),
         auth,
         background_tasks,
@@ -4459,6 +4566,10 @@ def _automation_mode() -> str:
     if os.getenv("ENABLE_AUTOMATION", "false").lower() == "true":
         return "execute"
     return "simulate"
+
+
+def _aap_automation_enabled() -> bool:
+    return os.getenv("AAP_AUTOMATION_ENABLED", "true").strip().lower() == "true"
 
 
 def _execute_playbook(

@@ -255,6 +255,93 @@ def launch_runner_job(action: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]
     }
 
 
+def launch_dynamic_playbook(playbook_yaml: str, playbook_label: str, extra_vars: Dict[str, Any]) -> Dict[str, Any]:
+    normalized_playbook = str(playbook_yaml or "").strip()
+    if not normalized_playbook:
+        raise AAPAutomationError("AAP runner fallback requires non-empty dynamic playbook content.")
+
+    incident_id = str(extra_vars.get("incident_id") or "incident")
+    suffix = incident_id.replace("-", "")[:8] or "demo"
+    timestamp = str(int(time.time()))[-8:]
+    job_name = f"ani-ai-playbook-{suffix}-{timestamp}"[:63].rstrip("-")
+    namespace = _runner_namespace()
+    filename = Path(str(playbook_label or "ai-generated-playbook.yml")).name or "ai-generated-playbook.yml"
+    if not filename.endswith((".yml", ".yaml")):
+        filename = f"{filename}.yml"
+
+    payload = {
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {
+            "name": job_name,
+            "namespace": namespace,
+            "labels": {
+                "app.kubernetes.io/name": "ani-remediation-runner",
+                "ani.demo/action": "ai-generated-playbook",
+                "ani.demo/incident-id": incident_id,
+            },
+        },
+        "spec": {
+            "backoffLimit": 0,
+            "ttlSecondsAfterFinished": 1800,
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "job-name": job_name,
+                        "ani.demo/action": "ai-generated-playbook",
+                    }
+                },
+                "spec": {
+                    "serviceAccountName": _runner_service_account(),
+                    "restartPolicy": "Never",
+                    "containers": [
+                        {
+                            "name": "ansible-runner",
+                            "image": _runner_image(),
+                            "imagePullPolicy": "IfNotPresent",
+                            "env": [
+                                {"name": "AAP_GIT_URL", "value": _project_scm_url()},
+                                {"name": "AAP_GIT_BRANCH", "value": _project_branch()},
+                                {
+                                    "name": "AAP_DYNAMIC_PLAYBOOK_B64",
+                                    "value": base64.b64encode(normalized_playbook.encode("utf-8")).decode("ascii"),
+                                },
+                                {"name": "AAP_DYNAMIC_PLAYBOOK_FILENAME", "value": filename},
+                                {"name": "EXTRA_VARS_JSON", "value": json.dumps(extra_vars)},
+                            ],
+                            "command": ["/bin/bash", "-lc"],
+                            "args": [
+                                "set -euo pipefail\n"
+                                "workdir=/tmp/ani-remediation\n"
+                                "rm -rf \"$workdir\"\n"
+                                "git clone --depth 1 --branch \"$AAP_GIT_BRANCH\" \"$AAP_GIT_URL\" \"$workdir\"\n"
+                                "cd \"$workdir\"\n"
+                                "playbook_path=\"$workdir/${AAP_DYNAMIC_PLAYBOOK_FILENAME}\"\n"
+                                "printf '%s' \"$AAP_DYNAMIC_PLAYBOOK_B64\" | base64 -d > \"$playbook_path\"\n"
+                                "printf '%s' \"$EXTRA_VARS_JSON\" >/tmp/extra-vars.json\n"
+                                "ansible-playbook \"$playbook_path\" -i localhost, -c local -e @/tmp/extra-vars.json\n"
+                            ],
+                        }
+                    ],
+                },
+            },
+        },
+    }
+    _kubernetes_request(
+        "POST",
+        f"/apis/batch/v1/namespaces/{namespace}/jobs",
+        expected_status=(200, 201),
+        json=payload,
+    )
+    return {
+        "job_name": job_name,
+        "job_namespace": namespace,
+        "status": "created",
+        "controller_app_url": _controller_app_url(),
+        "playbook_label": filename,
+    }
+
+
 def wait_for_runner_job(job_name: str, namespace: str, timeout_seconds: int = 300, poll_interval_seconds: int = 5) -> Dict[str, Any]:
     deadline = time.time() + max(timeout_seconds, 1)
     interval = max(poll_interval_seconds, 1)
