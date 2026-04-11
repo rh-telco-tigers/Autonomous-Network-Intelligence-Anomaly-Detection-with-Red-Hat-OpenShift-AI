@@ -30,7 +30,7 @@ spec:
       command:
         - /bin/sh
         - -lc
-        - exec /usr/local/bin/mlserver start /mnt/models
+        - mkdir -p /tmp/.metrics /tmp/.envs && exec /usr/local/bin/mlserver start /mnt/models
       args: []
       env:
         - name: HOME
@@ -50,7 +50,7 @@ spec:
         - name: MLSERVER_METRICS_DIR
           value: /tmp/.metrics
         - name: PROMETHEUS_MULTIPROC_DIR
-          value: ""
+          value: /tmp/.metrics
         - name: MODELS_DIR
           value: /mnt/models
       ports:
