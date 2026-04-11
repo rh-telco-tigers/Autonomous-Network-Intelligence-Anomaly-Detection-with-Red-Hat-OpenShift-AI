@@ -27,10 +27,11 @@ spec:
   containers:
     - name: kserve-container
       image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+      workingDir: /tmp/.metrics
       command:
         - /bin/sh
         - -lc
-        - export PATH="/usr/local/bin:${PATH}" && mkdir -p /tmp/.metrics /tmp/.envs && cd /tmp/.metrics && exec mlserver start /mnt/models
+        - mkdir -p /tmp/.metrics /tmp/.envs && exec /usr/local/bin/mlserver start /mnt/models
       args: []
       env:
         - name: HOME
