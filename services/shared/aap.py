@@ -852,7 +852,7 @@ def _runner_job_logs(namespace: str, job_name: str) -> str:
     ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
     response = requests.get(
         f"{_kubernetes_api_url()}/api/v1/namespaces/{namespace}/pods/{pod_name}/log",
-        headers={"Authorization": f"Bearer {token}", "Accept": "text/plain"},
+        headers={"Authorization": f"Bearer {token}", "Accept": "*/*"},
         verify=ca_path,
         timeout=float(os.getenv("AAP_KUBERNETES_TIMEOUT_SECONDS", "15")),
     )

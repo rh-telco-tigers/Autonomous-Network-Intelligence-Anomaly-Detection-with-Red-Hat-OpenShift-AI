@@ -158,15 +158,16 @@ curl -ksS \
 {
   "correlation_id": "${CORRELATION_ID}",
   "status": "generated",
-  "title": "Apply AI-generated SIP registration storm guardrail",
-  "description": "Apply a guarded ConfigMap-based registration control so operators can slow the retry storm without changing unrelated traffic paths.",
+  "title": "Apply AI-generated busy-destination guardrail",
+  "description": "Create a reversible smoke-marker ConfigMap so operators can verify callback, review, editing, and AAP execution without touching the static demo playbooks.",
   "summary": "Generated from RCA, feature signals, and current ranked remediations.",
-  "expected_outcome": "Registration retries slow down, the incident stays reviewable, and downstream control-plane services recover without a full namespace-wide rollback.",
+  "expected_outcome": "The incident receives a reviewable Ansible remediation, and approving or executing it creates or updates a dedicated smoke-marker ConfigMap in ani-sipp.",
   "preconditions": [
     "Confirm the incident is still in remediation review or approval scope",
-    "Verify namespace ani-demo-lab is the intended target",
-    "Confirm the target ConfigMap ani-remediation-state exists or may be created safely",
-    "Review rollback ownership before execution"
+    "Verify namespace ani-sipp is the intended smoke-test target",
+    "Confirm creating or updating ai-generated-playbook-smoke is acceptable in this demo cluster",
+    "Review rollback ownership before execution",
+    "Use this sample only for callback and execution validation"
   ],
   "playbook_ref": "ai_generated_playbook_${CORRELATION_ID}",
   "action_ref": "ai_generated_playbook_${CORRELATION_ID}",
@@ -177,7 +178,7 @@ curl -ksS \
     "generator_version": "2026-04-10",
     "prompt_profile": "ims-remediation-v1"
   },
-  "playbook_yaml": "---\n- name: AI-generated SIP registration storm guardrail\n  hosts: localhost\n  gather_facts: false\n  vars:\n    target_namespace: ani-demo-lab\n    target_configmap: ani-remediation-state\n    rate_limit_key: ai_generated_rate_limit\n    rate_limit_value: reviewed-approved\n  tasks:\n    - name: Validate required inputs\n      ansible.builtin.assert:\n        that:\n          - target_namespace | length > 0\n          - target_configmap | length > 0\n          - rate_limit_key | length > 0\n          - rate_limit_value | length > 0\n    - name: Read current remediation state\n      kubernetes.core.k8s_info:\n        api_version: v1\n        kind: ConfigMap\n        name: \"{{ target_configmap }}\"\n        namespace: \"{{ target_namespace }}\"\n      register: remediation_state\n    - name: Capture previous rate limit marker\n      ansible.builtin.set_fact:\n        previous_rate_limit: \"{{ (remediation_state.resources | first).data[rate_limit_key] | default('unset') if remediation_state.resources else 'unset' }}\"\n    - name: Apply guarded rate-limit marker\n      kubernetes.core.k8s:\n        state: present\n        definition:\n          apiVersion: v1\n          kind: ConfigMap\n          metadata:\n            name: \"{{ target_configmap }}\"\n            namespace: \"{{ target_namespace }}\"\n          data:\n            \"{{ rate_limit_key }}\": \"{{ rate_limit_value }}\"\n    - name: Emit operator audit message\n      ansible.builtin.debug:\n        msg: \"Updated {{ target_namespace }}/{{ target_configmap }} from {{ previous_rate_limit }} to {{ rate_limit_value }}\"\n    - name: Re-read final remediation state\n      kubernetes.core.k8s_info:\n        api_version: v1\n        kind: ConfigMap\n        name: \"{{ target_configmap }}\"\n        namespace: \"{{ target_namespace }}\"\n      register: final_state\n    - name: Verify final marker exists\n      ansible.builtin.assert:\n        that:\n          - final_state.resources | length > 0\n          - (final_state.resources | first).data[rate_limit_key] == rate_limit_value\n"
+  "playbook_yaml": "---\n- name: AI-generated busy-destination guardrail\n  hosts: localhost\n  gather_facts: false\n  vars:\n    target_namespace: ani-sipp\n    target_configmap: ai-generated-playbook-smoke\n    control_value: reviewed-approved-executed\n  tasks:\n    - name: Validate required inputs\n      ansible.builtin.assert:\n        that:\n          - target_namespace | length > 0\n          - target_configmap | length > 0\n          - control_value | length > 0\n    - name: Read current smoke marker state\n      kubernetes.core.k8s_info:\n        api_version: v1\n        kind: ConfigMap\n        name: \"{{ target_configmap }}\"\n        namespace: \"{{ target_namespace }}\"\n      register: smoke_state\n    - name: Capture previous control marker\n      ansible.builtin.set_fact:\n        previous_marker: \"{{ (smoke_state.resources | first).data.control_marker | default('unset') if smoke_state.resources else 'unset' }}\"\n    - name: Create or update smoke marker ConfigMap\n      kubernetes.core.k8s:\n        state: present\n        definition:\n          apiVersion: v1\n          kind: ConfigMap\n          metadata:\n            name: \"{{ target_configmap }}\"\n            namespace: \"{{ target_namespace }}\"\n          data:\n            control_marker: \"{{ control_value }}\"\n            execution_mode: ai-generated-playbook\n            incident_ref: \"{{ incident_id }}\"\n    - name: Emit operator audit message\n      ansible.builtin.debug:\n        msg: \"Updated {{ target_namespace }}/{{ target_configmap }} from {{ previous_marker }} to {{ control_value }}\"\n    - name: Re-read final smoke marker state\n      kubernetes.core.k8s_info:\n        api_version: v1\n        kind: ConfigMap\n        name: \"{{ target_configmap }}\"\n        namespace: \"{{ target_namespace }}\"\n      register: final_state\n    - name: Verify final marker exists\n      ansible.builtin.assert:\n        that:\n          - final_state.resources | length > 0\n          - (final_state.resources | first).data.control_marker == control_value\n"
 }
 JSON
 ```
@@ -189,6 +190,7 @@ This example intentionally hardcodes:
 - provider identity
 - metadata
 - a larger sample playbook with 7 tasks
+- a cluster-valid smoke marker that executed successfully in `ani-sipp`
 
 Only `INCIDENT_ID` and `CORRELATION_ID` need to change.
 
