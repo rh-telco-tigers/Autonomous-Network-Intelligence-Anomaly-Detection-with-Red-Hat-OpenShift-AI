@@ -12,7 +12,7 @@ data:
   AAP_INVENTORY_HOST: localhost
   AAP_PROJECT_NAME: ANI Incident Automation
   AAP_PROJECT_SCM_URL: ""
-  AAP_PROJECT_BRANCH: release/namespace-argo-split
+  AAP_PROJECT_BRANCH: main
   AAP_JOB_TEMPLATE_SCALE_SCSCF: ANI Scale S-CSCF Path
   AAP_JOB_TEMPLATE_RATE_LIMIT_PCSCF: ANI Rate Limit P-CSCF Ingress
   AAP_JOB_TEMPLATE_QUARANTINE_IMSI: ANI Quarantine Subscriber or Source
@@ -42,7 +42,7 @@ data:
   EDA_ORGANIZATION: Default
   EDA_PROJECT_NAME: ANI Incident Event Policies
   EDA_PROJECT_URL: ""
-  EDA_PROJECT_BRANCH: release/namespace-argo-split
+  EDA_PROJECT_BRANCH: main
   EDA_DECISION_ENVIRONMENT_NAME: ANI Incident Decisions
   EDA_DECISION_ENVIRONMENT_IMAGE: registry.redhat.io/ansible-automation-platform-26/de-minimal-rhel9:latest
   EDA_CONTROL_PLANE_URL: ""
