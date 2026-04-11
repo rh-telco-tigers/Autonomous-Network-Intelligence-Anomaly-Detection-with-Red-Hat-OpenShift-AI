@@ -4,6 +4,7 @@ metadata:
   name: ani-autogluon-mlserver-runtime
   namespace: ani-demo-lab
   annotations:
+    argocd.argoproj.io/sync-options: Replace=true
     opendatahub.io/apiProtocol: REST
     opendatahub.io/runtime-version: autogluon-v1
     opendatahub.io/serving-runtime-scope: global
