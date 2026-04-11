@@ -143,7 +143,7 @@ def _managed_feature_store_yaml() -> str:
     return "\n".join(lines) + "\n"
 
 
-def _prepare_feature_repo(feature_repo_path: str, workspace_root: str) -> Path:
+def _prepare_feature_repo(feature_repo_path: str, workspace_root: str, *, managed: bool | None = None) -> Path:
     source_path = _feature_repo_path(feature_repo_path)
     if not source_path.exists():
         raise FileNotFoundError(f"Feature repo path {source_path} does not exist")
@@ -152,19 +152,20 @@ def _prepare_feature_repo(feature_repo_path: str, workspace_root: str) -> Path:
         shutil.rmtree(workspace_feature_repo)
     workspace_feature_repo.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source_path, workspace_feature_repo)
-    if _use_managed_feature_store():
+    use_managed_feature_store = _use_managed_feature_store() if managed is None else managed
+    if use_managed_feature_store:
         (workspace_feature_repo / "feature_store.yaml").write_text(_managed_feature_store_yaml())
     return workspace_feature_repo
 
 
-def _feature_store_artifacts(localized_manifest: Dict[str, Any]) -> Dict[str, Any]:
-    if _use_managed_feature_store():
+def _feature_store_artifacts(localized_manifest: Dict[str, Any], *, use_localized_artifacts: bool = False) -> Dict[str, Any]:
+    if _use_managed_feature_store() and not use_localized_artifacts:
         return localized_manifest["artifacts"]
     return localized_manifest["localized_artifacts"]
 
 
-def _feature_store_env(localized_manifest: Dict[str, Any]) -> Dict[str, str]:
-    artifacts = _feature_store_artifacts(localized_manifest)
+def _feature_store_env(localized_manifest: Dict[str, Any], *, use_localized_artifacts: bool = False) -> Dict[str, str]:
+    artifacts = _feature_store_artifacts(localized_manifest, use_localized_artifacts=use_localized_artifacts)
     env = {
         "IMS_FEATURESTORE_OFFLINE_SOURCE_PATH": artifacts["feature_store"]["offline_source_parquet"],
         "IMS_FEATURESTORE_LABEL_SOURCE_PATH": artifacts["tables"]["window_labels_parquet"],
@@ -379,10 +380,11 @@ def _retrieve_training_dataset(
 ) -> Dict[str, Any]:
     localized_manifest = localize_bundle_manifest(bundle_manifest_path, workspace_root)
     _normalize_localized_bundle(localized_manifest)
-    env = _feature_store_env(localized_manifest)
-    repo_path = _prepare_feature_repo(feature_repo_path, workspace_root)
-    if not _use_managed_feature_store():
-        _run_feast_apply(repo_path, env)
+    # Training should always read the localized bundle directly so the workflow
+    # is self-contained and does not depend on remote S3 filesystem adapters.
+    env = _feature_store_env(localized_manifest, use_localized_artifacts=True)
+    repo_path = _prepare_feature_repo(feature_repo_path, workspace_root, managed=False)
+    _run_feast_apply(repo_path, env)
     store = _load_feature_store(repo_path, env)
 
     entity_rows = pd.read_parquet(localized_manifest["localized_artifacts"]["feature_store"]["entity_rows_parquet"])

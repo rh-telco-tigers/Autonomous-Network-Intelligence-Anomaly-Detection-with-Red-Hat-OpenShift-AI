@@ -27,11 +27,15 @@ spec:
     - name: kserve-container
       image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
       command:
-        - mlserver
+        - python
       args:
+        - -m
+        - mlserver
         - start
         - /mnt/models
       env:
+        - name: HOME
+          value: /tmp
         - name: PYTHONPATH
           value: /workspace:/workspace/services
         - name: MLSERVER_HTTP_PORT
@@ -40,6 +44,10 @@ spec:
           value: "9000"
         - name: MLSERVER_METRICS_PORT
           value: "8082"
+        - name: MLSERVER_METRICS_DIR
+          value: /tmp/.metrics
+        - name: PROMETHEUS_MULTIPROC_DIR
+          value: /tmp/.metrics
         - name: MODELS_DIR
           value: /mnt/models
       ports:
