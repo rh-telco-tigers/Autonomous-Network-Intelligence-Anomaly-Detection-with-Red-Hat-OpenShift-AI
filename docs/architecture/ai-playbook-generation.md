@@ -115,11 +115,31 @@ The external generator should treat:
 
 ## Callback Endpoint
 
-The external generator must `POST` the result to:
+The external generator must `POST` the result to the control-plane service, not to AAP Controller:
 
 ```text
 /incidents/{incident_id}/playbook-generation/callback
 ```
+
+Do not post this payload to:
+
+```text
+https://aap-controller-.../incidents/{incident_id}/playbook-generation/callback
+```
+
+That host belongs to AWX / AAP Controller and does not implement the incident workflow API. If you hit the wrong host, AWX returns its HTML `Not Found` page.
+
+## API Endpoints
+
+These AI playbook endpoints are implemented by `services/control-plane/app.py`:
+
+| Purpose | Method | Path | Used by |
+| --- | --- | --- | --- |
+| Generate the Kafka request | `POST` | `/incidents/{incident_id}/remediation/{remediation_id}/generate-playbook` | Demo UI or direct API caller |
+| Preview the Kafka instruction | `POST` | `/incidents/{incident_id}/remediation/{remediation_id}/playbook-instruction-preview` | Demo UI or operator debugging |
+| Return the generated playbook | `POST` | `/incidents/{incident_id}/playbook-generation/callback` | External playbook generator |
+
+All three endpoints live on the control-plane base URL.
 
 Authentication:
 
@@ -132,10 +152,17 @@ The callback base URL is resolved from:
 - otherwise `CONTROL_PLANE_PUBLIC_URL`
 - otherwise `CONTROL_PLANE_URL`
 
-For the current runtime cluster, the public callback base URL is:
+Resolve the live control-plane public host like this:
+
+```bash
+CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.status.ingress[0].host}')"
+echo "https://${CONTROL_PLANE_HOST}"
+```
+
+Example:
 
 ```text
-https://control-plane-ani-runtime.apps.ocp.54gmt.sandbox5226.opentlc.com
+https://control-plane-ani-runtime.apps.ocp.5gbjx.sandbox3534.opentlc.com
 ```
 
 ## Callback Contract
@@ -165,6 +192,7 @@ Use this exact pattern to simulate the external generator callback.
 Only set these two variables:
 
 ```bash
+CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.status.ingress[0].host}')"
 INCIDENT_ID="replace-with-incident-id"
 CORRELATION_ID="replace-with-correlation-id-from-ui"
 ```
@@ -174,7 +202,7 @@ Then run:
 ```bash
 curl -ksS \
   -X POST \
-  "https://control-plane-ani-runtime.apps.ocp.54gmt.sandbox5226.opentlc.com/incidents/${INCIDENT_ID}/playbook-generation/callback" \
+  "https://${CONTROL_PLANE_HOST}/incidents/${INCIDENT_ID}/playbook-generation/callback" \
   -H 'Content-Type: application/json' \
   -H 'x-api-key: demo-token' \
   --data-binary @- <<JSON
@@ -208,14 +236,13 @@ JSON
 
 This example intentionally hardcodes:
 
-- callback base URL
 - `demo-token`
 - provider identity
 - metadata
 - a larger sample playbook with 7 tasks
 - a cluster-valid smoke marker that executed successfully in `ani-sipp`
 
-Only `INCIDENT_ID` and `CORRELATION_ID` need to change.
+Only `CONTROL_PLANE_HOST`, `INCIDENT_ID`, and `CORRELATION_ID` should vary per cluster.
 
 ## How To Find The Correlation Id
 
@@ -266,9 +293,10 @@ This means the generated playbook is not just displayed in the UI. It is version
 Use this when the external generator cannot safely produce a playbook:
 
 ```bash
+CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.status.ingress[0].host}')"
 curl -ksS \
   -X POST \
-  "https://control-plane-ani-runtime.apps.ocp.54gmt.sandbox5226.opentlc.com/incidents/${INCIDENT_ID}/playbook-generation/callback" \
+  "https://${CONTROL_PLANE_HOST}/incidents/${INCIDENT_ID}/playbook-generation/callback" \
   -H 'Content-Type: application/json' \
   -H 'x-api-key: demo-token' \
   --data-binary @- <<JSON
@@ -295,3 +323,18 @@ On failure:
 - return exactly one safe YAML playbook on success
 - call the callback endpoint with `x-api-key: demo-token`
 - return `failed` with an explicit `error` when no safe playbook can be produced
+
+## Wrong Endpoint Symptom
+
+If your callback returns HTML like:
+
+```text
+<!DOCTYPE html>
+<title>Not Found · AWX</title>
+```
+
+you posted to the AAP Controller route instead of the control-plane route. Switch the base URL to:
+
+```bash
+CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.status.ingress[0].host}')"
+```
