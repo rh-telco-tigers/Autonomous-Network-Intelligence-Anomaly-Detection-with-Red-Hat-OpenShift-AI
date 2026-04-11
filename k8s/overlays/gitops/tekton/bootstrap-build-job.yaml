@@ -32,6 +32,23 @@ spec:
               namespace="${POD_NAMESPACE}"
               run_name="ani-platform-bootstrap-build"
 
+              wait_for_resource() {
+                local resource="$1"
+                for _ in $(seq 1 60); do
+                  if oc_cmd get "${resource}" -n "${namespace}" >/dev/null 2>&1; then
+                    return 0
+                  fi
+                  sleep 5
+                done
+                echo "timed out waiting for ${resource} in ${namespace}"
+                return 1
+              }
+
+              wait_for_resource "pipeline/ani-platform-container-build"
+              wait_for_resource "task/git-clone-lite"
+              wait_for_resource "task/buildah-lite"
+              wait_for_resource "task/buildah-heavy"
+
               if oc_cmd get pipelinerun "${run_name}" -n "${namespace}" >/dev/null 2>&1; then
                 status="$(oc_cmd get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].status}')"
                 if [ "${status}" = "True" ]; then

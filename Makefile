@@ -98,6 +98,24 @@ add-gpu-node-pool: ## Render and manually apply a GPU MachineSet to the current 
 
 trigger-build-pipeline: ## Start the demo Tekton image build
 	@branch="$$(git rev-parse --abbrev-ref HEAD)"; \
+	printf "Waiting for Tekton pipeline assets in %s before triggering the build\n" "$(TEKTON_NAMESPACE)"; \
+	for resource in \
+	  "pipeline/ani-platform-container-build" \
+	  "task/git-clone-lite" \
+	  "task/buildah-lite" \
+	  "task/buildah-heavy"; do \
+	  for attempt in $$(seq 1 60); do \
+	    if oc get "$$resource" -n "$(TEKTON_NAMESPACE)" >/dev/null 2>&1; then \
+	      break; \
+	    fi; \
+	    if [ "$$attempt" -eq 60 ]; then \
+	      echo "Tekton asset $$resource is still missing in $(TEKTON_NAMESPACE)."; \
+	      echo "Wait for ani-tekton to finish syncing, then rerun make trigger-build-pipeline."; \
+	      exit 1; \
+	    fi; \
+	    sleep 5; \
+	  done; \
+	done; \
 	printf "Creating demo build PipelineRun for branch %s in %s\n" "$$branch" "$(TEKTON_NAMESPACE)"; \
 	GIT_BRANCH="$$branch" python3 -c 'from pathlib import Path; import os; manifest = Path("$(DEMO_TRIGGER_DIR)/tekton-build-pipelinerun.yaml").read_text(); print(manifest.replace("__GIT_REVISION__", os.environ["GIT_BRANCH"]), end="")' | oc create -f -
 
