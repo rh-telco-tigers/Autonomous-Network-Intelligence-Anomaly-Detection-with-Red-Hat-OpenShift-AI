@@ -71,6 +71,8 @@ spec:
                   value: "true"
                 - name: CONTROL_PLANE_INCIDENT_REQUIRED
                   value: "true"
+                - name: SIPP_FALLBACK_TO_SCENARIO_LABELER
+                  value: "true"
               resources:
                 requests:
                   cpu: 50m
@@ -158,6 +160,8 @@ spec:
                 - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
                   value: "true"
                 - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
+                - name: SIPP_FALLBACK_TO_SCENARIO_LABELER
                   value: "true"
               resources:
                 requests:
@@ -247,6 +251,8 @@ spec:
                   value: "true"
                 - name: CONTROL_PLANE_INCIDENT_REQUIRED
                   value: "true"
+                - name: SIPP_FALLBACK_TO_SCENARIO_LABELER
+                  value: "true"
               resources:
                 requests:
                   cpu: 50m
@@ -334,6 +340,8 @@ spec:
                 - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
                   value: "true"
                 - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
+                - name: SIPP_FALLBACK_TO_SCENARIO_LABELER
                   value: "true"
               resources:
                 requests:
@@ -423,6 +431,8 @@ spec:
                   value: "true"
                 - name: CONTROL_PLANE_INCIDENT_REQUIRED
                   value: "true"
+                - name: SIPP_FALLBACK_TO_SCENARIO_LABELER
+                  value: "true"
               resources:
                 requests:
                   cpu: 50m
@@ -510,6 +520,8 @@ spec:
                 - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
                   value: "true"
                 - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
+                - name: SIPP_FALLBACK_TO_SCENARIO_LABELER
                   value: "true"
               resources:
                 requests:
@@ -599,6 +611,8 @@ spec:
                   value: "true"
                 - name: CONTROL_PLANE_INCIDENT_REQUIRED
                   value: "true"
+                - name: SIPP_FALLBACK_TO_SCENARIO_LABELER
+                  value: "true"
               resources:
                 requests:
                   cpu: 50m
@@ -686,6 +700,8 @@ spec:
                 - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
                   value: "true"
                 - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
+                - name: SIPP_FALLBACK_TO_SCENARIO_LABELER
                   value: "true"
               resources:
                 requests:

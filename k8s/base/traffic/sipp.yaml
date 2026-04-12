@@ -145,6 +145,8 @@ spec:
                   value: "true"
                 - name: CONTROL_PLANE_INCIDENT_REQUIRED
                   value: "true"
+                - name: SIPP_FALLBACK_TO_SCENARIO_LABELER
+                  value: "true"
               resources:
                 requests:
                   cpu: 50m
@@ -223,6 +225,10 @@ spec:
                 - name: CONTROL_PLANE_INCIDENT_MODEL_VERSION
                   value: sipp-scenario-labeler-v1
                 - name: SIPP_EMIT_CONTROL_PLANE_INCIDENT
+                  value: "true"
+                - name: CONTROL_PLANE_INCIDENT_REQUIRED
+                  value: "true"
+                - name: SIPP_FALLBACK_TO_SCENARIO_LABELER
                   value: "true"
               resources:
                 requests:
