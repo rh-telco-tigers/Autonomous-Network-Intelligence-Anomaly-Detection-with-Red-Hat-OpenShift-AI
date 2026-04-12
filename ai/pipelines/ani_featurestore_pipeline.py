@@ -403,6 +403,23 @@ def _configure_automl_task_resources(task) -> None:
     task.set_memory_limit("8Gi")
 
 
+def _configure_featurestore_support_task_resources(task) -> None:
+    # Metadata, validation, and registry tasks need more headroom than the namespace defaults.
+    task.set_cpu_request("250m")
+    task.set_cpu_limit("1")
+    task.set_memory_request("1Gi")
+    task.set_memory_limit("2Gi")
+
+
+def _configure_featurestore_data_task_resources(task) -> None:
+    # Syncing definitions, retrieving datasets, and exporting serving artifacts can materialize
+    # large manifests and parquet-backed metadata for the backfill path.
+    task.set_cpu_request("500m")
+    task.set_cpu_limit("2")
+    task.set_memory_request("2Gi")
+    task.set_memory_limit("8Gi")
+
+
 @dsl.pipeline(name="ani-featurestore-train-and-register")
 def ani_featurestore_pipeline(
     bundle_version: str = "ani-feature-bundle-v1",
@@ -464,6 +481,7 @@ def ani_featurestore_pipeline(
     }
     resolved = resolve_bundle(bundle_version=bundle_version)
     _configure_featurestore_task(resolved, **featurestore_config)
+    _configure_featurestore_support_task_resources(resolved)
 
     validated = validate_bundle(bundle_manifest_path=resolved.outputs["output_manifest"])
     synced = sync_feature_store_definitions(bundle_manifest_path=resolved.outputs["output_manifest"])
@@ -473,6 +491,9 @@ def ani_featurestore_pipeline(
     )
     for task in (validated, synced, training_data):
         _configure_featurestore_task(task, **featurestore_config)
+    _configure_featurestore_support_task_resources(validated)
+    for task in (synced, training_data):
+        _configure_featurestore_data_task_resources(task)
     training_data.after(validated, synced)
 
     automl = train_automl(
@@ -511,5 +532,8 @@ def ani_featurestore_pipeline(
     )
     for task in (automl, evaluated, selected, exported, registered, published):
         _configure_featurestore_task(task, **featurestore_config)
+    for task in (evaluated, selected, registered, published):
+        _configure_featurestore_support_task_resources(task)
+    _configure_featurestore_data_task_resources(exported)
     _configure_automl_task_resources(automl)
     registered.set_env_variable("RHOAI_MODEL_REGISTRY_REQUIRED", "false")

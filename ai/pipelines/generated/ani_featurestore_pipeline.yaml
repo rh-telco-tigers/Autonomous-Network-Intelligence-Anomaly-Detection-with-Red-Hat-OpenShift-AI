@@ -296,6 +296,11 @@ deploymentSpec:
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        resources:
+          cpuLimit: 1.0
+          cpuRequest: 0.25
+          memoryLimit: 2.147483648
+          memoryRequest: 1.073741824
     exec-export-serving-artifact:
       container:
         args:
@@ -376,6 +381,11 @@ deploymentSpec:
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        resources:
+          cpuLimit: 2.0
+          cpuRequest: 0.5
+          memoryLimit: 8.589934592
+          memoryRequest: 2.147483648
     exec-publish-deployment-manifest:
       container:
         args:
@@ -442,6 +452,11 @@ deploymentSpec:
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        resources:
+          cpuLimit: 1.0
+          cpuRequest: 0.25
+          memoryLimit: 2.147483648
+          memoryRequest: 1.073741824
     exec-register-model-version:
       container:
         args:
@@ -516,6 +531,11 @@ deploymentSpec:
         - name: RHOAI_MODEL_REGISTRY_REQUIRED
           value: 'false'
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        resources:
+          cpuLimit: 1.0
+          cpuRequest: 0.25
+          memoryLimit: 2.147483648
+          memoryRequest: 1.073741824
     exec-resolve-bundle:
       container:
         args:
@@ -580,6 +600,11 @@ deploymentSpec:
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        resources:
+          cpuLimit: 1.0
+          cpuRequest: 0.25
+          memoryLimit: 2.147483648
+          memoryRequest: 1.073741824
     exec-retrieve-training-dataset:
       container:
         args:
@@ -648,6 +673,11 @@ deploymentSpec:
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        resources:
+          cpuLimit: 2.0
+          cpuRequest: 0.5
+          memoryLimit: 8.589934592
+          memoryRequest: 2.147483648
     exec-select-candidate:
       container:
         args:
@@ -710,6 +740,11 @@ deploymentSpec:
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        resources:
+          cpuLimit: 1.0
+          cpuRequest: 0.25
+          memoryLimit: 2.147483648
+          memoryRequest: 1.073741824
     exec-sync-feature-store-definitions:
       container:
         args:
@@ -776,6 +811,11 @@ deploymentSpec:
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        resources:
+          cpuLimit: 2.0
+          cpuRequest: 0.5
+          memoryLimit: 8.589934592
+          memoryRequest: 2.147483648
     exec-train-automl:
       container:
         args:
@@ -915,6 +955,11 @@ deploymentSpec:
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        resources:
+          cpuLimit: 1.0
+          cpuRequest: 0.25
+          memoryLimit: 2.147483648
+          memoryRequest: 1.073741824
 pipelineInfo:
   name: ani-featurestore-train-and-register
 root:
