@@ -98,6 +98,11 @@ deploymentSpec:
         - name: MINIO_SECRET_KEY
           value: minioadmin
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        resources:
+          cpuLimit: 2.0
+          cpuRequest: 0.5
+          memoryLimit: 8.589934592
+          memoryRequest: 2.147483648
     exec-validate-bundle:
       container:
         args:
@@ -140,6 +145,11 @@ deploymentSpec:
         - name: MINIO_SECRET_KEY
           value: minioadmin
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        resources:
+          cpuLimit: 1.0
+          cpuRequest: 0.25
+          memoryLimit: 2.147483648
+          memoryRequest: 1.073741824
 pipelineInfo:
   name: ani-feature-bundle-publish
 root:

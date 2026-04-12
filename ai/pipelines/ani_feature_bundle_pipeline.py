@@ -95,6 +95,22 @@ def _configure_bundle_task(
     task.set_env_variable("MINIO_SECRET_KEY", DATASET_STORE_SECRET_KEY)
 
 
+def _configure_build_bundle_task_resources(task) -> None:
+    # Backfill bundle construction materializes large parquet/csv artifacts and
+    # exceeds the KFP namespace default 512Mi limit.
+    task.set_cpu_request("500m")
+    task.set_cpu_limit("2")
+    task.set_memory_request("2Gi")
+    task.set_memory_limit("8Gi")
+
+
+def _configure_validate_bundle_task_resources(task) -> None:
+    task.set_cpu_request("250m")
+    task.set_cpu_limit("1")
+    task.set_memory_request("1Gi")
+    task.set_memory_limit("2Gi")
+
+
 @dsl.pipeline(name="ani-feature-bundle-publish")
 def ani_feature_bundle_pipeline(
     bundle_version: str = "ani-feature-bundle-v1",
@@ -129,3 +145,5 @@ def ani_feature_bundle_pipeline(
     }
     _configure_bundle_task(published, **config)
     _configure_bundle_task(validated, **config)
+    _configure_build_bundle_task_resources(published)
+    _configure_validate_bundle_task_resources(validated)
