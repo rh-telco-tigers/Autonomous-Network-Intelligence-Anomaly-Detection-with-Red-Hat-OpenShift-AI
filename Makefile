@@ -100,10 +100,10 @@ trigger-build-pipeline: ## Start the demo Tekton image build
 	@branch="$$(git rev-parse --abbrev-ref HEAD)"; \
 	printf "Waiting for Tekton pipeline assets in %s before triggering the build\n" "$(TEKTON_NAMESPACE)"; \
 	for resource in \
-	  "pipeline/ani-platform-container-build" \
-	  "task/git-clone-lite" \
-	  "task/buildah-lite" \
-	  "task/buildah-heavy"; do \
+	  "pipelines.tekton.dev/ani-platform-container-build" \
+	  "tasks.tekton.dev/git-clone-lite" \
+	  "tasks.tekton.dev/buildah-lite" \
+	  "tasks.tekton.dev/buildah-heavy"; do \
 	  for attempt in $$(seq 1 60); do \
 	    if oc get "$$resource" -n "$(TEKTON_NAMESPACE)" >/dev/null 2>&1; then \
 	      break; \
