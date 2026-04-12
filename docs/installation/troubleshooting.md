@@ -249,14 +249,16 @@ oc get application.argoproj.io ani-sipp-core -n openshift-gitops -o jsonpath='{.
 
 ## The Demo UI Opens But No New Incidents Appear
 
-Check the generators first:
+First check whether the traffic generators are still firing:
 
 ```sh
 oc get cronjob -n ani-runtime | rg 'demo-incident-pulse'
 oc get cronjob -n ani-sipp | rg 'sipp-'
 ```
 
-Then run one anomaly job manually:
+If the `ani-sipp` CronJobs are unsuspended and recent Jobs are still being created, the usual failure mode is no longer the scheduler. The more common problem is that the live predictive model returned `is_anomaly=false` for a scenario CronJob, so the SIPp runner finished with `incident: null` and nothing new showed up in the UI.
+
+Run one anomaly job manually:
 
 ```sh
 STORM_JOB="sipp-storm-check-$(date +%s)"
@@ -265,10 +267,43 @@ oc wait --for=condition=complete "job/${STORM_JOB}" -n ani-sipp --timeout=5m
 oc logs "job/${STORM_JOB}" -n ani-sipp
 ```
 
-If that works but the UI still stays empty, check the control-plane status:
+Interpret the job output:
+
+- If the log contains a populated `incident` object, the control-plane path is still working.
+- If the log ends with `"incident": null`, the feature window was uploaded but no incident was created.
+
+If you hit the `incident: null` case, confirm the anomaly CronJobs have scenario-label fallback enabled:
 
 ```sh
-CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.spec.host}')"
-curl -k "https://${CONTROL_PLANE_HOST}/platform/status" \
-  -H "x-api-key: demo-operator-token" | python3 -m json.tool
+oc get cronjob sipp-registration-storm -n ani-sipp \
+  -o jsonpath='{range .spec.jobTemplate.spec.template.spec.containers[0].env[*]}{.name}={.value}{"\n"}{end}'
+oc get cronjob sipp-malformed-invite -n ani-sipp \
+  -o jsonpath='{range .spec.jobTemplate.spec.template.spec.containers[0].env[*]}{.name}={.value}{"\n"}{end}'
 ```
+
+Expected for anomaly CronJobs:
+
+- `SIPP_EMIT_CONTROL_PLANE_INCIDENT=true`
+- `CONTROL_PLANE_INCIDENT_REQUIRED=true`
+- `SIPP_FALLBACK_TO_SCENARIO_LABELER=true`
+
+Expected for `sipp-normal-traffic`:
+
+- no `SIPP_FALLBACK_TO_SCENARIO_LABELER` override
+
+Then check the latest incident list directly:
+
+```sh
+CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.status.ingress[0].host}')"
+curl -ksS "https://${CONTROL_PLANE_HOST}/incidents?limit=5" \
+  -H "x-api-key: demo-token" | python3 -m json.tool
+```
+
+Recovery:
+
+1. Sync the cluster to a revision where the anomaly CronJobs include `SIPP_FALLBACK_TO_SCENARIO_LABELER=true`.
+2. Re-run one anomaly job manually.
+3. Confirm the job log now shows a non-null `incident`.
+4. Confirm the new incident appears in `/incidents`.
+
+On the current `main` branch, this is fixed for the anomaly traffic CronJobs in `ani-sipp`.
