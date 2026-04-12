@@ -871,6 +871,18 @@ def train_autogluon_candidate(
 
 def score_autogluon(sample: Dict[str, float], artifact: Dict[str, Any]) -> Dict[str, Any]:
     import pandas as pd
+
+    predictor = _load_autogluon_predictor(artifact)
+    frame = pd.DataFrame([{feature: float(sample[feature]) for feature in FEATURES}])
+    probabilities = predictor.predict_proba(frame, as_multiclass=True)
+    probability_map = {
+        canonical_anomaly_type(str(label)): float(probabilities.iloc[0][label])
+        for label in probabilities.columns
+    }
+    return _prediction_payload(probability_map)
+
+
+def _load_autogluon_predictor(artifact: Dict[str, Any]):
     from autogluon.tabular import TabularPredictor
 
     predictor_uri = str(artifact.get("predictor_uri") or "").strip()
@@ -889,39 +901,20 @@ def score_autogluon(sample: Dict[str, float], artifact: Dict[str, Any]) -> Dict[
             predictor_dir = Path(predictor_source)
         predictor = TabularPredictor.load(str(predictor_dir))
         _AUTOGLUON_PREDICTOR_CACHE[predictor_source] = predictor
-    frame = pd.DataFrame([{feature: float(sample[feature]) for feature in FEATURES}])
-    probabilities = predictor.predict_proba(frame, as_multiclass=True)
-    probability_map = {
-        canonical_anomaly_type(str(label)): float(probabilities.iloc[0][label])
-        for label in probabilities.columns
-    }
-    return _prediction_payload(probability_map)
+    return predictor
 
 
-def evaluate(
-    records: List[Dict[str, Any]],
-    artifact: Dict[str, Any],
-    scorer: Callable[[Dict[str, float], Dict[str, Any]], Dict[str, Any]],
+def _summarize_metrics(
+    *,
+    labels: List[str],
+    y_true: List[str],
+    y_pred: List[str],
+    probability_vectors: List[List[float]],
+    confidences: List[float],
+    latency_samples_ms: List[float],
 ) -> Dict[str, Any]:
-    labels = list(artifact.get("class_labels") or CANONICAL_LABELS)
-    y_true: List[str] = []
-    y_pred: List[str] = []
-    probability_vectors: List[List[float]] = []
-    confidences: List[float] = []
-    latency_samples_ms: List[float] = []
-
-    for record in records:
-        started = time.perf_counter()
-        prediction = scorer(record["features"], artifact)
-        latency_samples_ms.append((time.perf_counter() - started) * 1000.0)
-        actual = canonical_anomaly_type(record["anomaly_type"])
-        predicted = canonical_anomaly_type(prediction["predicted_anomaly_type"])
-        vector = [float(prediction["class_probabilities"].get(label, 0.0)) for label in labels]
-        total_probability = sum(vector) or 1.0
-        y_true.append(actual)
-        y_pred.append(predicted)
-        probability_vectors.append([value / total_probability for value in vector])
-        confidences.append(float(prediction.get("predicted_confidence", 0.0)))
+    if not y_true:
+        raise ValueError("No evaluation records were provided")
 
     macro_precision, macro_recall, macro_f1, _ = precision_recall_fscore_support(
         y_true,
@@ -983,6 +976,89 @@ def evaluate(
         "latency_p95_ms": round(float(_percentile(latency_samples_ms, 0.95)), 4),
         "stability_score": round(float(stability_score), 4),
     }
+
+
+def _evaluate_autogluon_batch(records: List[Dict[str, Any]], artifact: Dict[str, Any], labels: List[str]) -> Dict[str, Any]:
+    import pandas as pd
+
+    predictor = _load_autogluon_predictor(artifact)
+    batch_size = max(1, int(os.getenv("IMS_AUTOGLUON_EVAL_BATCH_SIZE", "512")))
+    y_true: List[str] = []
+    y_pred: List[str] = []
+    probability_vectors: List[List[float]] = []
+    confidences: List[float] = []
+    latency_samples_ms: List[float] = []
+
+    for start in range(0, len(records), batch_size):
+        batch = records[start : start + batch_size]
+        frame = pd.DataFrame(
+            [{feature: float(record["features"][feature]) for feature in FEATURES} for record in batch]
+        )
+        started = time.perf_counter()
+        probabilities = predictor.predict_proba(frame, as_multiclass=True)
+        batch_latency_ms = (time.perf_counter() - started) * 1000.0
+        per_row_latency_ms = batch_latency_ms / max(len(batch), 1)
+        probability_rows = probabilities.to_dict("records")
+
+        for record, probability_row in zip(batch, probability_rows):
+            probability_map = {
+                canonical_anomaly_type(str(label)): float(value)
+                for label, value in probability_row.items()
+            }
+            prediction = _prediction_payload(probability_map)
+            vector = [float(prediction["class_probabilities"].get(label, 0.0)) for label in labels]
+            total_probability = sum(vector) or 1.0
+            y_true.append(canonical_anomaly_type(record["anomaly_type"]))
+            y_pred.append(canonical_anomaly_type(prediction["predicted_anomaly_type"]))
+            probability_vectors.append([value / total_probability for value in vector])
+            confidences.append(float(prediction.get("predicted_confidence", 0.0)))
+            latency_samples_ms.append(per_row_latency_ms)
+
+    return _summarize_metrics(
+        labels=labels,
+        y_true=y_true,
+        y_pred=y_pred,
+        probability_vectors=probability_vectors,
+        confidences=confidences,
+        latency_samples_ms=latency_samples_ms,
+    )
+
+
+def evaluate(
+    records: List[Dict[str, Any]],
+    artifact: Dict[str, Any],
+    scorer: Callable[[Dict[str, float], Dict[str, Any]], Dict[str, Any]],
+) -> Dict[str, Any]:
+    labels = list(artifact.get("class_labels") or CANONICAL_LABELS)
+    if artifact.get("model_type") == "autogluon_tabular_multiclass":
+        return _evaluate_autogluon_batch(records, artifact, labels)
+
+    y_true: List[str] = []
+    y_pred: List[str] = []
+    probability_vectors: List[List[float]] = []
+    confidences: List[float] = []
+    latency_samples_ms: List[float] = []
+
+    for record in records:
+        started = time.perf_counter()
+        prediction = scorer(record["features"], artifact)
+        latency_samples_ms.append((time.perf_counter() - started) * 1000.0)
+        actual = canonical_anomaly_type(record["anomaly_type"])
+        predicted = canonical_anomaly_type(prediction["predicted_anomaly_type"])
+        vector = [float(prediction["class_probabilities"].get(label, 0.0)) for label in labels]
+        total_probability = sum(vector) or 1.0
+        y_true.append(actual)
+        y_pred.append(predicted)
+        probability_vectors.append([value / total_probability for value in vector])
+        confidences.append(float(prediction.get("predicted_confidence", 0.0)))
+    return _summarize_metrics(
+        labels=labels,
+        y_true=y_true,
+        y_pred=y_pred,
+        probability_vectors=probability_vectors,
+        confidences=confidences,
+        latency_samples_ms=latency_samples_ms,
+    )
 
 
 def gate_metrics(metrics: Dict[str, Any], gate: Dict[str, Any] | None = None) -> Dict[str, Any]:

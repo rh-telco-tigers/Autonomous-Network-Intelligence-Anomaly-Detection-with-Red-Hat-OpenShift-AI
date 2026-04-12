@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from ai.training import featurestore_train as ft
+from ai.training import train_and_register as tr
 
 
 def _make_records(labels, per_class=1):
@@ -231,6 +232,46 @@ def test_export_serving_artifact_uses_autogluon_bundle(tmp_path, monkeypatch):
     assert model_settings["implementation"] == ft.DEFAULT_AUTOGLUON_MLSERVER_IMPLEMENTATION
     assert model_settings["parameters"]["uri"] == "./predictor"
     assert predictor_copy.exists()
+
+
+def test_evaluate_batches_autogluon_predictions(monkeypatch):
+    records = _make_records(ft.CANONICAL_LABELS[:5], per_class=2)
+    expected_labels = [record["anomaly_type"] for record in records]
+
+    class FakePredictor:
+        def __init__(self):
+            self.calls = []
+            self.offset = 0
+
+        def predict_proba(self, frame, as_multiclass=True):
+            assert as_multiclass is True
+            batch_labels = expected_labels[self.offset : self.offset + len(frame)]
+            self.offset += len(frame)
+            self.calls.append(len(frame))
+            rows = []
+            for label in batch_labels:
+                row = {candidate: 0.0 for candidate in ft.CANONICAL_LABELS}
+                row[label] = 1.0
+                rows.append(row)
+            return pd.DataFrame(rows, columns=ft.CANONICAL_LABELS)
+
+    predictor = FakePredictor()
+    monkeypatch.setenv("IMS_AUTOGLUON_EVAL_BATCH_SIZE", "4")
+    monkeypatch.setattr(tr, "_load_autogluon_predictor", lambda artifact: predictor)
+
+    metrics = tr.evaluate(
+        records,
+        {
+            "model_type": "autogluon_tabular_multiclass",
+            "class_labels": ft.CANONICAL_LABELS,
+            "predictor_path": "/tmp/fake-predictor",
+        },
+        tr.score_autogluon,
+    )
+
+    assert predictor.calls == [4, 4, 2]
+    for label in ft.CANONICAL_LABELS[:5]:
+        assert metrics["per_class_recall"][label] == 1.0
 
 
 def test_retrieve_training_dataset_uses_localized_bundle_in_remote_mode(tmp_path, monkeypatch):
