@@ -3,12 +3,23 @@
   hosts: localhost
   gather_facts: false
   tasks:
+    - name: Set default Lightspeed system prompt
+      ansible.builtin.set_fact:
+        default_lightspeed_system_prompt: >-
+          You generate only YAML for Ansible automation.
+          Return exactly one fenced yaml block and no prose outside it.
+          The fenced yaml block must contain a YAML mapping with these top-level keys:
+          title, summary, preconditions, expected_outcome, playbook_ref, action_ref,
+          provider_name, provider_run_id, status, callback_url, correlation_id, playbook_yaml.
+          Use playbook_yaml: | and make that value valid YAML for a list of Ansible plays beginning with ---.
+          Do not append any extra top-level keys after playbook_yaml.
+
     - name: Build request payload
       ansible.builtin.set_fact:
         request_payload:
           no_tools: true
           query: "{{ lightspeed_prompt | default('') }}"
-          system_prompt: "{{ lightspeed_system_prompt | default('You are an Ansible Code generator assistant') }}"
+          system_prompt: "{{ lightspeed_system_prompt | default(default_lightspeed_system_prompt) }}"
 
     - name: Include Lightspeed model override when provided
       ansible.builtin.set_fact:
@@ -79,6 +90,84 @@
     - name: Load parsed callback payload
       ansible.builtin.set_fact:
         parsed_callback_payload: "{{ parsed_lightspeed_callback.stdout | from_json }}"
+
+    - name: Attempt a single repair pass when Lightspeed output is not parseable
+      when: (parsed_callback_payload.error | default('') | trim) != ''
+      block:
+        - name: Build repair request payload
+          ansible.builtin.set_fact:
+            repair_request_payload:
+              no_tools: true
+              query: |
+                The previous YAML response was invalid for our callback pipeline.
+                Repair it and return exactly one fenced yaml block with no prose outside it.
+
+                Output requirements:
+                - top-level YAML mapping keys: title, summary, preconditions, expected_outcome, playbook_ref, action_ref, provider_name, provider_run_id, status, callback_url, correlation_id, playbook_yaml
+                - use playbook_yaml: |
+                - the playbook_yaml value must be valid YAML for a list of Ansible plays beginning with ---
+                - keep the original remediation intent, callback_url, and correlation_id
+                - remove any invalid trailing metadata or malformed structures
+
+                Validation error:
+                {{ parsed_callback_payload.error }}
+
+                Original response:
+                {{ raw_response }}
+              system_prompt: "{{ lightspeed_repair_system_prompt | default(default_lightspeed_system_prompt) }}"
+
+        - name: Include Lightspeed model override when provided for repair
+          ansible.builtin.set_fact:
+            repair_request_payload: "{{ repair_request_payload | combine({'model': lightspeed_model | trim}) }}"
+          when: (lightspeed_model | default('') | trim) != ''
+
+        - name: Include Lightspeed provider override when provided for repair
+          ansible.builtin.set_fact:
+            repair_request_payload: "{{ repair_request_payload | combine({'provider': lightspeed_provider | trim}) }}"
+          when: (lightspeed_provider | default('') | trim) != ''
+
+        - name: Serialize repair request body
+          ansible.builtin.set_fact:
+            repair_request_body: "{{ repair_request_payload | to_json }}"
+
+        - name: Send repair request to AI API
+          ansible.builtin.uri:
+            url: "{{ input_lightspeed_url | default('https://aap-lightspeed-chatbot-api.aap.svc.cluster.local:8443/v1/query') }}"
+            method: POST
+            headers:
+              Content-Type: "application/json"
+              Authorization: "Bearer {{ lightspeed_token | default(lightspeed_wca_token | default('', true), true) }}"
+            body: "{{ repair_request_body }}"
+            timeout: 300
+            status_code: 200
+            validate_certs: "{{ lightspeed_validate_certs | default(false) | bool }}"
+          register: repair_response
+
+        - name: Display repair API response
+          ansible.builtin.debug:
+            msg: "{{ repair_response.json }}"
+
+        - name: Replace raw response with repaired content
+          ansible.builtin.set_fact:
+            lightspeed_playbook_raw: "{{ repair_response.json.response }}"
+            raw_response: "{{ repair_response.json.response }}"
+
+        - name: Parse repaired callback payload from prompt and Lightspeed response
+          ansible.builtin.command:
+            argv:
+              - python3
+              - "{{ playbook_dir | dirname }}/parse_lightspeed_response.py"
+          environment:
+            LIGHTSPEED_PROMPT: "{{ lightspeed_prompt | default('') }}"
+            LIGHTSPEED_RESPONSE: "{{ raw_response }}"
+            LIGHTSPEED_PROVIDER_NAME: "{{ lightspeed_provider_name | default('Ansible Lightspeed') }}"
+            LIGHTSPEED_PROVIDER_RUN_ID: "{{ repair_response.json.conversation_id | default(response.json.conversation_id | default('')) }}"
+          changed_when: false
+          register: parsed_lightspeed_callback_repair
+
+        - name: Load repaired callback payload
+          ansible.builtin.set_fact:
+            parsed_callback_payload: "{{ parsed_lightspeed_callback_repair.stdout | from_json }}"
 
     - name: Set stat on parsed playbook YAML when available
       ansible.builtin.set_stats:
