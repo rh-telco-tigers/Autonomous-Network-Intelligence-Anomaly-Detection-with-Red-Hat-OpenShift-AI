@@ -1363,7 +1363,14 @@ def _render_supported_ai_playbook(action_ref: str) -> str:
         return ""
     candidate_paths = [Path(playbook_path)]
     if playbook_path.startswith("/app/"):
-        candidate_paths.append(Path(__file__).resolve().parents[2] / playbook_path.removeprefix("/app/"))
+        current_file = Path(__file__).resolve()
+        repo_relative = playbook_path.removeprefix("/app/")
+        candidate_paths.append(Path("/app") / repo_relative)
+        candidate_paths.extend(
+            parent / repo_relative
+            for parent in current_file.parents
+            if parent != Path("/")
+        )
     content = ""
     for candidate in candidate_paths:
         try:
