@@ -52,6 +52,18 @@ def _ensure_yaml_document(playbook_text: str) -> str:
     return normalized
 
 
+def _load_metadata_mapping(metadata_text: str) -> dict[str, Any]:
+    try:
+        parsed_documents = [document for document in yaml.safe_load_all(metadata_text) if document is not None]
+    except yaml.YAMLError as exc:
+        raise ParseError(f"Failed to parse the Lightspeed metadata block: {exc}") from exc
+    if not parsed_documents:
+        return {}
+    if len(parsed_documents) != 1 or not isinstance(parsed_documents[0], dict):
+        raise ParseError("The Lightspeed metadata block was not a single YAML mapping.")
+    return parsed_documents[0]
+
+
 def _extract_metadata_and_playbook(yaml_body: str) -> tuple[dict[str, Any], str]:
     cleaned = str(yaml_body or "").strip()
     if not cleaned:
@@ -86,13 +98,7 @@ def _extract_metadata_and_playbook(yaml_body: str) -> tuple[dict[str, Any], str]
 
     metadata: dict[str, Any] = {}
     if metadata_text:
-        try:
-            parsed_metadata = yaml.safe_load(metadata_text) or {}
-        except yaml.YAMLError as exc:
-            raise ParseError(f"Failed to parse the Lightspeed metadata block: {exc}") from exc
-        if not isinstance(parsed_metadata, dict):
-            raise ParseError("The Lightspeed metadata block was not a YAML mapping.")
-        metadata = parsed_metadata
+        metadata = _load_metadata_mapping(metadata_text)
 
     playbook_yaml = _ensure_yaml_document(playbook_text)
     _validate_playbook_yaml(playbook_yaml)

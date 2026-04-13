@@ -26,6 +26,7 @@ def test_build_callback_payload_splits_metadata_from_fenced_playbook_response() 
           - "Review the current incident context."
         expected_outcome: "Registration pressure is reduced."
 
+        ---
         - name: "Mitigate IMS Registration Storm"
           hosts: localhost
           gather_facts: false
