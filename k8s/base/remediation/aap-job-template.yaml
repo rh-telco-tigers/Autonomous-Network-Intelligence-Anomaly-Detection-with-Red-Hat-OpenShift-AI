@@ -4,7 +4,7 @@ metadata:
   name: ani-remediation
   namespace: aap
   annotations:
-    argocd.argoproj.io/sync-wave: "84"
+    argocd.argoproj.io/sync-wave: "85"
 spec:
   connection_secret: aap-controller-connection
   name: "IMS Remediation - Lightspeed Playbook Generator"
@@ -17,4 +17,4 @@ spec:
   inventory: IMS Remediation Inventory
   playbook: automation/ansible/playbooks/ani-remediation.yaml
   ask_variables_on_launch: true
-  extra_vars: '{"input_lightspeed_url": "http://aap-lightspeed-api.aap.svc.cluster.local:8000/api/v1/ai/chat/","lightspeed_model": "" , "lightspeed_token": "redhat", "lightspeed_prompt": ""}'
+  extra_vars: '{"input_lightspeed_url": "https://aap-lightspeed-chatbot-api.aap.svc.cluster.local:8443/v1/query", "lightspeed_model": "", "lightspeed_provider": "", "lightspeed_token": "", "lightspeed_prompt": "", "lightspeed_validate_certs": false}'

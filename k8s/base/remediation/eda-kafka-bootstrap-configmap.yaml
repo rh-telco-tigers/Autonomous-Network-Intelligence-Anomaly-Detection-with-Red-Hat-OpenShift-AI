@@ -4,7 +4,7 @@ metadata:
   name: eda-kafka-bootstrap-script
   namespace: aap
   annotations:
-    argocd.argoproj.io/sync-wave: "84"
+    argocd.argoproj.io/sync-wave: "88"
 data:
   eda_kafka.py: |
     from __future__ import annotations

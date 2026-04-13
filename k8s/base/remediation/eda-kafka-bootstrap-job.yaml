@@ -4,7 +4,7 @@ metadata:
   name: eda-kafka-bootstrap
   namespace: aap
   annotations:
-    argocd.argoproj.io/sync-wave: "85"
+    argocd.argoproj.io/sync-wave: "89"
 spec:
   ttlSecondsAfterFinished: 300
   backoffLimit: 4
