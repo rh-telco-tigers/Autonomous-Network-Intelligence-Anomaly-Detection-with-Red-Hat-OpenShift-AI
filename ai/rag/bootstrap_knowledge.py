@@ -14,6 +14,7 @@ try:
         LOCAL_COLLECTION_DIRS,
         build_local_seed_records,
         ensure_milvus_collection,
+        ensure_milvus_collection_ready,
         milvus_client,
     )
 except ModuleNotFoundError:
@@ -23,6 +24,7 @@ except ModuleNotFoundError:
         LOCAL_COLLECTION_DIRS,
         build_local_seed_records,
         ensure_milvus_collection,
+        ensure_milvus_collection_ready,
         milvus_client,
     )
 
@@ -56,6 +58,8 @@ def main():
             raise SystemExit(f"Failed to ensure Milvus collection {collection_name}")
         if docs:
             client.insert(collection_name=collection_name, data=docs)
+        if not ensure_milvus_collection_ready(client, collection_name, load=True, force=True):
+            raise SystemExit(f"Failed to load Milvus collection {collection_name}")
         bootstrap_summary[collection_name] = len(docs)
 
     print(

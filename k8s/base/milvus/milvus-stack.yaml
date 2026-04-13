@@ -64,6 +64,8 @@ metadata:
   namespace: ani-demo-lab
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: milvus-etcd
@@ -121,6 +123,8 @@ metadata:
   namespace: ani-demo-lab
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: milvus-minio
@@ -188,6 +192,8 @@ metadata:
   namespace: ani-demo-lab
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: milvus

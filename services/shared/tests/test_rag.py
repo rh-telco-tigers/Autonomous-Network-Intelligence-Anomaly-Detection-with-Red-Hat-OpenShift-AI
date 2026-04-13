@@ -18,6 +18,79 @@ rag = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(rag)
 
 
+class _FakeLoadState:
+    def __init__(self, label: str) -> None:
+        self.label = label
+
+    def __str__(self) -> str:
+        return self.label
+
+
+class _FakeMilvusClient:
+    def __init__(self) -> None:
+        self.collections: dict[str, list[dict[str, object]]] = {}
+        self.loaded: set[str] = set()
+
+    def has_collection(self, *, collection_name: str) -> bool:
+        return collection_name in self.collections
+
+    def create_collection(self, *, collection_name: str, **_: object) -> None:
+        self.collections.setdefault(collection_name, [])
+
+    def get_collection_stats(self, *, collection_name: str) -> dict[str, int]:
+        return {"row_count": len(self.collections.get(collection_name, []))}
+
+    def upsert(self, *, collection_name: str, data: list[dict[str, object]]) -> None:
+        existing = {int(item["id"]): dict(item) for item in self.collections.get(collection_name, []) if "id" in item}
+        for item in data:
+            existing[int(item["id"])] = dict(item)
+        self.collections[collection_name] = list(existing.values())
+
+    def load_collection(self, *, collection_name: str) -> None:
+        if collection_name not in self.collections:
+            raise KeyError(collection_name)
+        self.loaded.add(collection_name)
+
+    def get_load_state(self, *, collection_name: str) -> dict[str, object]:
+        state = "Loaded" if collection_name in self.loaded else "NotLoad"
+        return {"state": _FakeLoadState(state)}
+
+    def search(
+        self,
+        *,
+        collection_name: str,
+        data: list[list[float]],
+        output_fields: list[str],
+        limit: int,
+        filter: str | None = None,
+    ) -> list[list[dict[str, dict[str, object]]]]:
+        del data, output_fields
+        if collection_name not in self.loaded:
+            raise RuntimeError(f"collection not loaded: {collection_name}")
+        rows = [dict(item) for item in self.collections.get(collection_name, [])]
+        if filter:
+            key, _, value = filter.partition("==")
+            field = key.strip()
+            expected = value.strip().strip('"')
+            rows = [item for item in rows if str(item.get(field) or "") == expected]
+        return [[{"entity": item} for item in rows[:limit]]]
+
+    def query(
+        self,
+        *,
+        collection_name: str,
+        filter: str,
+        output_fields: list[str],
+    ) -> list[dict[str, object]]:
+        del output_fields
+        if collection_name not in self.loaded:
+            raise RuntimeError(f"collection not loaded: {collection_name}")
+        key, _, value = filter.partition("==")
+        field = key.strip()
+        expected = value.strip().strip('"')
+        return [dict(item) for item in self.collections.get(collection_name, []) if str(item.get(field) or "") == expected]
+
+
 class KnowledgeBundleTests(unittest.TestCase):
     def _write_bundle(self, root: Path, filename: str, payload: dict) -> Path:
         runbooks_dir = root / "runbooks"
@@ -202,6 +275,82 @@ class KnowledgeBundleTests(unittest.TestCase):
         self.assertIn("Write the explanation as the incident diagnosis itself", prompt)
         self.assertIn("the RCA should", prompt)
         self.assertIn("cite retrieved document titles or collections", prompt)
+
+
+class MilvusRecoveryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        rag._MILVUS_REPAIR_ATTEMPTS.clear()
+
+    def _write_runbook_bundle(self, root: Path) -> None:
+        runbooks_dir = root / "runbooks"
+        runbooks_dir.mkdir(parents=True, exist_ok=True)
+        (runbooks_dir / "auth.json").write_text(
+            json.dumps(
+                {
+                    "category": "auth",
+                    "articles": [
+                        {
+                            "slug": "validate-hss-vectors",
+                            "title": "Validate HSS vectors",
+                            "summary": "Fix auth loops.",
+                            "anomaly_types": ["authentication_failure"],
+                            "content": ["401 loops point to stale vectors.", "Verify HSS responses."],
+                        }
+                    ],
+                },
+                indent=2,
+            )
+        )
+
+    def test_ensure_milvus_collection_ready_creates_seeds_and_loads_missing_collection(self) -> None:
+        client = _FakeMilvusClient()
+
+        def fake_ensure(client_obj: _FakeMilvusClient, collection_name: str) -> bool:
+            client_obj.create_collection(collection_name=collection_name)
+            return True
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_runbook_bundle(root)
+            with patch.dict(rag.os.environ, {"RAG_ROOT_DIR": str(root)}, clear=False):
+                with patch.object(rag, "ensure_milvus_collection", side_effect=fake_ensure):
+                    ready = rag.ensure_milvus_collection_ready(
+                        client,
+                        rag.RUNBOOK_COLLECTION,
+                        seed_if_empty=True,
+                        load=True,
+                        force=True,
+                    )
+
+        self.assertTrue(ready)
+        self.assertIn(rag.RUNBOOK_COLLECTION, client.collections)
+        self.assertEqual(len(client.collections[rag.RUNBOOK_COLLECTION]), 1)
+        self.assertIn(rag.RUNBOOK_COLLECTION, client.loaded)
+
+    def test_milvus_retrieve_repairs_and_queries_missing_seeded_collection(self) -> None:
+        client = _FakeMilvusClient()
+
+        def fake_ensure(client_obj: _FakeMilvusClient, collection_name: str) -> bool:
+            client_obj.create_collection(collection_name=collection_name)
+            return True
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_runbook_bundle(root)
+            with patch.dict(rag.os.environ, {"RAG_ROOT_DIR": str(root)}, clear=False):
+                with patch.object(rag, "milvus_client", return_value=client):
+                    with patch.object(rag, "ensure_milvus_collection", side_effect=fake_ensure):
+                        results = rag.milvus_retrieve(
+                            "auth loops and stale vectors",
+                            limit=3,
+                            collections=[rag.RUNBOOK_COLLECTION],
+                            category="auth",
+                            anomaly_type="authentication_failure",
+                        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["reference"], "knowledge/auth/validate-hss-vectors.json")
+        self.assertIn(rag.RUNBOOK_COLLECTION, client.loaded)
 
 
 if __name__ == "__main__":

@@ -3,6 +3,8 @@ import json
 import math
 import os
 import re
+import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Sequence, Tuple
 
@@ -27,6 +29,9 @@ MAX_RETRIEVAL_CANDIDATES = 24
 RUNBOOK_COLLECTION = "ani_runbooks"
 KNOWLEDGE_ARTICLE_DOC_TYPE = "knowledge_article"
 RUNBOOK_SCHEMA_VERSION = "2026-04-06"
+MILVUS_REPAIR_COOLDOWN_SECONDS = 30.0
+MILVUS_LOAD_TIMEOUT_SECONDS = 20.0
+MILVUS_LOAD_POLL_SECONDS = 0.5
 TOKEN_PATTERN = re.compile(r"[a-z0-9_]{2,}")
 STOP_WORDS = {
     "a",
@@ -79,6 +84,8 @@ MILVUS_OUTPUT_FIELDS = [
     "category",
     "knowledge_weight",
 ]
+_MILVUS_REPAIR_LOCK = threading.Lock()
+_MILVUS_REPAIR_ATTEMPTS: Dict[str, float] = {}
 
 
 def _rag_root_dir() -> Path:
@@ -570,7 +577,13 @@ def publish_semantic_record(
     client = milvus_client()
     if client is None:
         return False
-    if not ensure_milvus_collection(client, collection_name):
+    if not ensure_milvus_collection_ready(
+        client,
+        collection_name,
+        seed_if_empty=False,
+        load=False,
+        force=True,
+    ):
         return False
 
     payload = build_semantic_record(
@@ -791,6 +804,118 @@ def build_local_seed_record(path: Path, collection_name: str) -> Dict[str, objec
     return build_local_seed_records(path, collection_name)[0]
 
 
+def _local_seed_documents(collection_name: str) -> List[Dict[str, object]]:
+    directory = LOCAL_COLLECTION_DIRS.get(collection_name)
+    if not directory:
+        return []
+    source_dir = _rag_root_dir() / directory
+    if not source_dir.exists():
+        return []
+
+    docs: List[Dict[str, object]] = []
+    for path in sorted(source_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        docs.extend(build_local_seed_records(path, collection_name))
+    return docs
+
+
+def _collection_row_count(client, collection_name: str) -> int | None:
+    try:
+        stats = client.get_collection_stats(collection_name=collection_name)
+    except Exception:
+        return None
+    if not isinstance(stats, dict):
+        return None
+    for key in ("row_count", "num_rows"):
+        value = stats.get(key)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _load_state_label(value: object) -> str:
+    text = str(value or "").strip().lower()
+    if "notload" in text or "not load" in text:
+        return "notload"
+    if "loading" in text:
+        return "loading"
+    if "loaded" in text:
+        return "loaded"
+    return text
+
+
+def _collection_load_state(client, collection_name: str) -> str:
+    try:
+        state = client.get_load_state(collection_name=collection_name) or {}
+    except Exception:
+        return ""
+    if isinstance(state, dict):
+        return _load_state_label(state.get("state"))
+    return _load_state_label(state)
+
+
+def _ensure_collection_loaded(client, collection_name: str) -> bool:
+    state = _collection_load_state(client, collection_name)
+    if state == "loaded":
+        return True
+    try:
+        client.load_collection(collection_name=collection_name)
+    except Exception:
+        return False
+
+    deadline = time.monotonic() + MILVUS_LOAD_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        state = _collection_load_state(client, collection_name)
+        if state == "loaded":
+            return True
+        if state not in {"", "loading"}:
+            return False
+        time.sleep(MILVUS_LOAD_POLL_SECONDS)
+    return _collection_load_state(client, collection_name) == "loaded"
+
+
+def ensure_milvus_collection_ready(
+    client,
+    collection_name: str,
+    *,
+    seed_if_empty: bool = False,
+    load: bool = True,
+    force: bool = False,
+) -> bool:
+    now = time.monotonic()
+    if not force:
+        with _MILVUS_REPAIR_LOCK:
+            last_attempt = _MILVUS_REPAIR_ATTEMPTS.get(collection_name, 0.0)
+            if now - last_attempt < MILVUS_REPAIR_COOLDOWN_SECONDS:
+                return True
+            _MILVUS_REPAIR_ATTEMPTS[collection_name] = now
+
+    try:
+        exists = client.has_collection(collection_name=collection_name)
+    except Exception:
+        return False
+
+    if not exists and not ensure_milvus_collection(client, collection_name):
+        return False
+
+    if seed_if_empty:
+        row_count = _collection_row_count(client, collection_name)
+        if row_count == 0:
+            docs = _local_seed_documents(collection_name)
+            if docs:
+                try:
+                    client.upsert(collection_name=collection_name, data=docs)
+                except Exception:
+                    return False
+
+    if not load:
+        return True
+    return _ensure_collection_loaded(client, collection_name)
+
+
 def _iter_local_documents() -> Iterator[Tuple[str, Dict[str, object]]]:
     root = _rag_root_dir()
     for collection, directory in LOCAL_COLLECTION_DIRS.items():
@@ -872,6 +997,13 @@ def milvus_retrieve(
     required_category = _normalize_category(category)
     candidate_limit = min(MAX_RETRIEVAL_CANDIDATES, max(limit * 8, limit))
     for collection in selected_collections:
+        results: List[List[Dict[str, object]]] | List[Dict[str, object]] = []
+        ensure_milvus_collection_ready(
+            client,
+            collection,
+            seed_if_empty=True,
+            load=True,
+        )
         search_kwargs: Dict[str, object] = {
             "collection_name": collection,
             "data": [hash_embedding(query)],
@@ -883,14 +1015,38 @@ def milvus_retrieve(
         try:
             results = client.search(**search_kwargs)
         except Exception:
-            if "filter" not in search_kwargs:
+            repaired = ensure_milvus_collection_ready(
+                client,
+                collection,
+                seed_if_empty=True,
+                load=True,
+                force=True,
+            )
+            if repaired:
+                try:
+                    results = client.search(**search_kwargs)
+                except Exception:
+                    if "filter" not in search_kwargs:
+                        continue
+                    try:
+                        fallback_kwargs = dict(search_kwargs)
+                        fallback_kwargs.pop("filter", None)
+                        results = client.search(**fallback_kwargs)
+                    except Exception:
+                        continue
+                else:
+                    pass
+            elif "filter" not in search_kwargs:
                 continue
-            try:
-                fallback_kwargs = dict(search_kwargs)
-                fallback_kwargs.pop("filter", None)
-                results = client.search(**fallback_kwargs)
-            except Exception:
-                continue
+            else:
+                try:
+                    fallback_kwargs = dict(search_kwargs)
+                    fallback_kwargs.pop("filter", None)
+                    results = client.search(**fallback_kwargs)
+                except Exception:
+                    continue
+        if not results:
+            continue
         for hit in results[0]:
             entity = hit["entity"]
             if required_category and _normalize_category(entity.get("category")) != required_category:
@@ -944,6 +1100,12 @@ def milvus_document_by_reference(reference: str, collection_name: str | None = N
     selected_collections = [collection_name] if collection_name else _milvus_collections()
     filter_expression = f'reference == "{_milvus_filter_literal(reference)}"'
     for collection in selected_collections:
+        ensure_milvus_collection_ready(
+            client,
+            collection,
+            seed_if_empty=True,
+            load=True,
+        )
         try:
             results = client.query(
                 collection_name=collection,
@@ -951,7 +1113,23 @@ def milvus_document_by_reference(reference: str, collection_name: str | None = N
                 output_fields=list(MILVUS_OUTPUT_FIELDS),
             )
         except Exception:
-            continue
+            repaired = ensure_milvus_collection_ready(
+                client,
+                collection,
+                seed_if_empty=True,
+                load=True,
+                force=True,
+            )
+            if not repaired:
+                continue
+            try:
+                results = client.query(
+                    collection_name=collection,
+                    filter=filter_expression,
+                    output_fields=list(MILVUS_OUTPUT_FIELDS),
+                )
+            except Exception:
+                continue
         if not results:
             continue
         entity = results[0]
