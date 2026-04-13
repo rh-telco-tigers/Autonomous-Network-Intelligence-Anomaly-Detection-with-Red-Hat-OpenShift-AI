@@ -12,6 +12,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
@@ -903,8 +904,10 @@ def _apply_ai_playbook_generation_callback(
     if not playbook_yaml:
         raise HTTPException(status_code=400, detail="playbook_yaml is required when status=generated")
 
-    action_ref = str(payload.action_ref or "").strip() or _generated_playbook_action_ref(payload.correlation_id)
-    playbook_ref = str(payload.playbook_ref or "").strip() or action_ref
+    normalized_playbook = _normalize_ai_generated_playbook_for_environment(incident, remediation, payload)
+    action_ref = str(normalized_playbook["action_ref"] or "").strip()
+    playbook_ref = str(normalized_playbook["playbook_ref"] or "").strip()
+    playbook_yaml = str(normalized_playbook["playbook_yaml"] or "").strip()
     gitea_metadata = _sync_ai_generated_playbook_to_gitea(
         incident_id,
         remediation,
@@ -943,6 +946,7 @@ def _apply_ai_playbook_generation_callback(
                 "generated_playbook_ref": playbook_ref,
                 "generation_payload_metadata": payload.metadata,
             }
+            | (normalized_playbook["metadata"] if isinstance(normalized_playbook["metadata"], dict) else {})
             | gitea_metadata
         ),
         playbook_yaml=playbook_yaml,
@@ -1327,6 +1331,185 @@ def _candidate_remediation_titles(incident_id: str, ignored_id: int | None = Non
     return items[:5]
 
 
+def _supported_ai_action_catalog() -> Dict[str, Dict[str, object]]:
+    return {
+        "rate_limit_pcscf": {
+            "playbook_path": PLAYBOOKS.get("rate_limit_pcscf", ""),
+            "namespace": _string_from_env("AAP_RATE_LIMIT_PCSCF_NAMESPACE", "ani-demo-lab"),
+            "deployment": _string_from_env("AAP_RATE_LIMIT_PCSCF_DEPLOYMENT", "ims-pcscf"),
+            "annotation_key": _string_from_env("AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY", "ani.demo/rate-limit-review"),
+            "annotation_value": _string_from_env("AAP_RATE_LIMIT_PCSCF_ANNOTATION_VALUE", "approved"),
+        },
+        "scale_scscf": {
+            "playbook_path": PLAYBOOKS.get("scale_scscf", ""),
+            "namespace": _string_from_env("AAP_SCALE_SCSCF_NAMESPACE", "ani-demo-lab"),
+            "deployment": _string_from_env("AAP_SCALE_SCSCF_DEPLOYMENT", "ims-scscf"),
+            "replicas": _positive_int_from_env("AAP_SCALE_SCSCF_REPLICAS", 2),
+        },
+        "quarantine_imsi": {
+            "playbook_path": PLAYBOOKS.get("quarantine_imsi", ""),
+            "namespace": _string_from_env("AAP_QUARANTINE_NAMESPACE", "ani-demo-lab"),
+            "configmap": _string_from_env("AAP_QUARANTINE_CONFIGMAP", "ani-remediation-state"),
+            "quarantine_key": _string_from_env("AAP_QUARANTINE_KEY", "quarantined_imsi"),
+            "imsi": _string_from_env("AAP_QUARANTINE_DEFAULT_IMSI", "001010000000001"),
+        },
+    }
+
+
+def _render_supported_ai_playbook(action_ref: str) -> str:
+    catalog = _supported_ai_action_catalog().get(action_ref) or {}
+    playbook_path = str(catalog.get("playbook_path") or "").strip()
+    if not playbook_path:
+        return ""
+    candidate_paths = [Path(playbook_path)]
+    if playbook_path.startswith("/app/"):
+        candidate_paths.append(Path(__file__).resolve().parents[2] / playbook_path.removeprefix("/app/"))
+    content = ""
+    for candidate in candidate_paths:
+        try:
+            if candidate.exists():
+                content = candidate.read_text(encoding="utf-8").strip()
+                break
+        except OSError:
+            continue
+    if not content:
+        return ""
+
+    replacements: Dict[str, str] = {}
+    if action_ref == "rate_limit_pcscf":
+        replacements = {
+            "default('ani-demo-lab')": f"default('{catalog['namespace']}')",
+            "default('ims-pcscf')": f"default('{catalog['deployment']}')",
+            "default('ani.demo/rate-limit-review')": f"default('{catalog['annotation_key']}')",
+            "default('approved')": f"default('{catalog['annotation_value']}')",
+        }
+    elif action_ref == "scale_scscf":
+        replacements = {
+            "default('ani-demo-lab')": f"default('{catalog['namespace']}')",
+            "default('ims-scscf')": f"default('{catalog['deployment']}')",
+            "default(2)": f"default({int(catalog['replicas'])})",
+        }
+    elif action_ref == "quarantine_imsi":
+        replacements = {
+            "default('ani-demo-lab')": f"default('{catalog['namespace']}')",
+            "default('ani-remediation-state')": f"default('{catalog['configmap']}')",
+            "default('quarantined_imsi')": f"default('{catalog['quarantine_key']}')",
+            "default('001010000000001')": f"default('{catalog['imsi']}')",
+        }
+
+    for old, new in replacements.items():
+        content = content.replace(old, new)
+    if not content.endswith("\n"):
+        content = f"{content}\n"
+    return content
+
+
+def _supported_ai_action_ref(
+    incident: Dict[str, object],
+    remediation: Dict[str, object],
+    payload: PlaybookGenerationCallbackRequest,
+) -> str:
+    rca_payload = incident.get("rca_payload") if isinstance(incident.get("rca_payload"), dict) else {}
+    haystack = " ".join(
+        [
+            str(payload.title or ""),
+            str(payload.description or ""),
+            str(payload.summary or ""),
+            str(payload.playbook_ref or ""),
+            str(payload.action_ref or ""),
+            str(payload.playbook_yaml or ""),
+            canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
+            str(incident.get("recommendation") or ""),
+            str(rca_payload.get("recommendation") or ""),
+            str(rca_payload.get("root_cause") or ""),
+        ]
+    ).lower()
+
+    if (("p-cscf" in haystack) or ("pcscf" in haystack)) and any(
+        marker in haystack for marker in ("rate limit", "guardrail", "ingress", "retry amplification")
+    ):
+        return "rate_limit_pcscf"
+    if (("s-cscf" in haystack) or ("scscf" in haystack)) and any(
+        marker in haystack for marker in ("scale", "replica", "capacity")
+    ):
+        return "scale_scscf"
+    if "quarantine" in haystack or "imsi" in haystack:
+        return "quarantine_imsi"
+
+    try:
+        candidate_titles = [
+            title.lower()
+            for title in _candidate_remediation_titles(
+                str(incident.get("id") or ""),
+                ignored_id=int(remediation.get("id") or 0),
+            )
+        ]
+    except Exception:
+        candidate_titles = []
+    anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE))
+    if anomaly_type in {"registration_storm", "registration_failure", "retransmission_spike"} and any(
+        "rate limit" in title and "pcscf" in title.replace("-", "") for title in candidate_titles
+    ):
+        return "rate_limit_pcscf"
+    if any("scale" in title and "scscf" in title.replace("-", "") for title in candidate_titles):
+        return "scale_scscf"
+    if any("quarantine" in title or "imsi" in title for title in candidate_titles):
+        return "quarantine_imsi"
+    return ""
+
+
+def _normalize_ai_generated_playbook_for_environment(
+    incident: Dict[str, object],
+    remediation: Dict[str, object],
+    payload: PlaybookGenerationCallbackRequest,
+) -> Dict[str, object]:
+    action_ref = str(payload.action_ref or "").strip() or _generated_playbook_action_ref(payload.correlation_id)
+    playbook_ref = str(payload.playbook_ref or "").strip() or action_ref
+    playbook_yaml = str(payload.playbook_yaml or "").strip()
+    normalized_metadata: Dict[str, object] = {}
+
+    supported_action_ref = _supported_ai_action_ref(incident, remediation, payload)
+    if supported_action_ref:
+        normalized_metadata["supported_action_ref"] = supported_action_ref
+        supported_playbook = _render_supported_ai_playbook(supported_action_ref).strip()
+        if supported_playbook:
+            playbook_yaml = supported_playbook
+            normalized_metadata |= {
+                "environment_normalized": True,
+                "environment_normalization_reason": (
+                    f"Replaced the AI draft body with the supported '{supported_action_ref}' remediation template "
+                    "so the generated playbook matches the namespaces, deployments, and Ansible patterns available in this cluster."
+                ),
+            }
+
+    return {
+        "action_ref": action_ref,
+        "playbook_ref": playbook_ref,
+        "playbook_yaml": playbook_yaml,
+        "metadata": normalized_metadata,
+    }
+
+
+def _operational_generation_constraints() -> List[str]:
+    catalog = _supported_ai_action_catalog()
+    rate_limit = catalog["rate_limit_pcscf"]
+    scale_scscf = catalog["scale_scscf"]
+    quarantine_imsi = catalog["quarantine_imsi"]
+    return [
+        "Operational environment constraints:",
+        f"- the supported IMS workload namespace for this cluster is {rate_limit['namespace']}",
+        f"- the supported P-CSCF deployment is {rate_limit['deployment']}",
+        f"- the supported S-CSCF deployment is {scale_scscf['deployment']}",
+        f"- for P-CSCF ingress mitigation, patch annotation {rate_limit['annotation_key']} on deployment {rate_limit['deployment']}",
+        f"- for S-CSCF scaling, patch the /scale subresource on deployment {scale_scscf['deployment']}",
+        f"- for quarantine actions, update ConfigMap {quarantine_imsi['configmap']} in namespace {quarantine_imsi['namespace']}",
+        "- use the same Kubernetes API pattern as the platform playbooks: ansible.builtin.uri with the service-account-backed token and CA bundle",
+        "- do not invent namespaces, deployment names, ingress objects, or placeholder REST APIs",
+        "- do not use k8s or kubernetes.core.k8s modules for generated playbooks in this environment",
+        "- if a safe playbook cannot be grounded to these supported primitives, return a failed callback instead of unsupported YAML",
+    ]
+
+
 def _build_playbook_generation_instruction(
     incident: Dict[str, object],
     remediation: Dict[str, object],
@@ -1381,6 +1564,7 @@ def _build_playbook_generation_instruction(
         lines.extend(["", "Operator note:", f"- {notes.strip()}"])
     if source_url.strip():
         lines.extend(["", "Operator context link:", f"- {source_url.strip()}"])
+    lines.extend([""] + _operational_generation_constraints())
     lines.extend(
         [
             "",
@@ -2028,7 +2212,8 @@ def _launch_aap_dynamic_playbook(
 ) -> Dict[str, object]:
     playbook_ref = str((remediation or {}).get("playbook_ref") or action_ref or "ai-generated-playbook").strip() or "ai-generated-playbook"
     metadata = _remediation_metadata(remediation)
-    extra_vars = _aap_extra_vars_for_action(action_ref, incident, remediation, approved_by, notes) | {
+    base_action_ref = str(metadata.get("supported_action_ref") or action_ref or "").strip() or action_ref
+    extra_vars = _aap_extra_vars_for_action(base_action_ref, incident, remediation, approved_by, notes) | {
         "action_ref": action_ref,
         "playbook_ref": playbook_ref,
         "ai_generated": True,

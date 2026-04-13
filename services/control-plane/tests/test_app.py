@@ -514,6 +514,168 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         self.assertEqual(updated["generation_status"], "generated")
         record_audit.assert_called_once()
 
+    def test_callback_normalizes_generated_playbook_to_supported_rate_limit_template(self) -> None:
+        incident = {
+            "id": "inc-ai-ops-1",
+            "project": "ani-demo",
+            "status": control_plane_app.REMEDIATION_SUGGESTED,
+            "workflow_revision": 6,
+            "anomaly_type": "registration_storm",
+            "recommendation": "Rate limit the P-CSCF ingress path",
+        }
+        remediation = {
+            "id": 18,
+            "action_ref": control_plane_app.AI_PLAYBOOK_GENERATION_ACTION,
+            "title": "Generate AI Ansible playbook",
+            "description": "Ask the external generator to draft a playbook.",
+            "status": "available",
+            "risk_level": "low",
+            "confidence": 0.42,
+            "expected_outcome": "A reviewable AI-generated playbook is attached.",
+            "preconditions": ["RCA is attached"],
+            "based_on_revision": 6,
+            "metadata": {
+                "ai_generated": True,
+                "generation_kind": "request",
+                "generation_status": "requested",
+                "generation_correlation_id": "corr-rate-limit",
+            },
+        }
+        captured: dict[str, object] = {}
+
+        def update_remediation(incident_id: str, remediation_id: int, **kwargs: object) -> dict[str, object]:
+            captured["incident_id"] = incident_id
+            captured["remediation_id"] = remediation_id
+            captured.update(kwargs)
+            return remediation | {
+                "title": kwargs["title"],
+                "suggestion_type": kwargs["suggestion_type"],
+                "action_ref": kwargs["action_ref"],
+                "playbook_ref": kwargs["playbook_ref"],
+                "playbook_yaml": kwargs["playbook_yaml"],
+                "metadata": kwargs["metadata"],
+                "generation_status": str((kwargs["metadata"] or {}).get("generation_status") or ""),
+            }
+
+        payload = control_plane_app.PlaybookGenerationCallbackRequest(
+            correlation_id="corr-rate-limit",
+            status="generated",
+            title="Rate limit P-CSCF ingress path",
+            description="Apply a safe P-CSCF ingress guardrail for retry amplification.",
+            action_ref="RateLimitP-CSCFIngress",
+            playbook_ref="IMS-Retry-Amplification-Mitigation",
+            playbook_yaml=(
+                "---\n"
+                "- name: invalid generic guardrail\n"
+                "  hosts: localhost\n"
+                "  gather_facts: false\n"
+                "  tasks:\n"
+                "    - name: unsupported generic patch\n"
+                "      k8s:\n"
+                "        state: present\n"
+            ),
+        )
+
+        with (
+            mock.patch.dict(
+                control_plane_app.os.environ,
+                {
+                    "AAP_RATE_LIMIT_PCSCF_NAMESPACE": "ani-sipp",
+                    "AAP_RATE_LIMIT_PCSCF_DEPLOYMENT": "ims-pcscf",
+                    "AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY": "ani.demo/rate-limit-review",
+                    "AAP_RATE_LIMIT_PCSCF_ANNOTATION_VALUE": "eda-guardrail",
+                },
+                clear=False,
+            ),
+            mock.patch.object(control_plane_app, "get_incident", return_value=incident),
+            mock.patch.object(control_plane_app, "_find_ai_playbook_generation_remediation", return_value=remediation),
+            mock.patch.object(
+                control_plane_app,
+                "_sync_ai_generated_playbook_to_gitea",
+                return_value={
+                    "gitea_repo_owner": "gitadmin",
+                    "gitea_repo_name": "ani-ai-generated-playbooks",
+                    "gitea_draft_branch": "draft/inc-ai-ops-1",
+                    "gitea_main_branch": "main",
+                    "gitea_playbook_path": "playbooks/inc-ai-ops-1/playbook.yaml",
+                    "gitea_draft_commit_sha": "rate123",
+                    "gitea_sync_status": "drafted",
+                },
+            ),
+            mock.patch.object(control_plane_app, "update_incident_remediation", side_effect=update_remediation),
+            mock.patch.object(control_plane_app, "record_audit"),
+        ):
+            updated = control_plane_app._apply_ai_playbook_generation_callback("inc-ai-ops-1", payload)
+
+        normalized_yaml = str(captured["playbook_yaml"])
+        self.assertEqual(captured["action_ref"], "RateLimitP-CSCFIngress")
+        self.assertEqual(captured["playbook_ref"], "IMS-Retry-Amplification-Mitigation")
+        self.assertIn("ansible.builtin.uri:", normalized_yaml)
+        self.assertIn("target_namespace | default('ani-sipp')", normalized_yaml)
+        self.assertIn("target_deployment | default('ims-pcscf')", normalized_yaml)
+        self.assertIn("ani.demo/rate-limit-review", normalized_yaml)
+        self.assertNotIn("\n      k8s:\n", normalized_yaml)
+        self.assertEqual(captured["metadata"]["supported_action_ref"], "rate_limit_pcscf")
+        self.assertTrue(captured["metadata"]["environment_normalized"])
+        self.assertEqual(updated["generation_status"], "generated")
+
+    def test_launch_dynamic_playbook_uses_supported_action_ref_for_environment_vars(self) -> None:
+        incident = {"id": "inc-ai-ops-2", "project": "ani-demo", "workflow_revision": 1}
+        remediation = {
+            "id": 22,
+            "action_ref": "RateLimitP-CSCFIngress",
+            "playbook_ref": "IMS-Retry-Amplification-Mitigation",
+            "metadata": {
+                "ai_generated": True,
+                "generation_kind": "generated",
+                "generation_status": "generated",
+                "supported_action_ref": "rate_limit_pcscf",
+                "gitea_draft_branch": "draft/inc-ai-ops-2",
+            },
+        }
+
+        with (
+            mock.patch.dict(
+                control_plane_app.os.environ,
+                {
+                    "AAP_RATE_LIMIT_PCSCF_NAMESPACE": "ani-sipp",
+                    "AAP_RATE_LIMIT_PCSCF_DEPLOYMENT": "ims-pcscf",
+                    "AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY": "ani.demo/rate-limit-review",
+                    "AAP_RATE_LIMIT_PCSCF_ANNOTATION_VALUE": "eda-guardrail",
+                },
+                clear=False,
+            ),
+            mock.patch.object(
+                control_plane_app,
+                "aap_launch_repo_playbook",
+                return_value={
+                    "job_id": 812,
+                    "job_template_id": 73,
+                    "job_template_name": "ANI AI Generated Playbook inc-ai-ops-2",
+                    "job_api_url": "https://aap.example/api/v2/jobs/812/",
+                    "job_stdout_url": "https://aap.example/api/v2/jobs/812/stdout/",
+                    "playbook": "IMS-Retry-Amplification-Mitigation",
+                    "scm_branch": "draft/inc-ai-ops-2",
+                },
+            ) as launch_repo_playbook,
+        ):
+            result = control_plane_app._launch_aap_dynamic_playbook(
+                "RateLimitP-CSCFIngress",
+                "---\n- hosts: localhost\n  gather_facts: false\n  tasks: []\n",
+                incident,
+                remediation,
+                "demo-operator",
+                "Review the generated draft.",
+            )
+
+        extra_vars = launch_repo_playbook.call_args.args[1]
+        self.assertEqual(extra_vars["target_namespace"], "ani-sipp")
+        self.assertEqual(extra_vars["target_deployment"], "ims-pcscf")
+        self.assertEqual(extra_vars["annotation_key"], "ani.demo/rate-limit-review")
+        self.assertEqual(extra_vars["annotation_value"], "eda-guardrail")
+        self.assertEqual(extra_vars["action_ref"], "RateLimitP-CSCFIngress")
+        self.assertEqual(result["scm_branch"], "draft/inc-ai-ops-2")
+
     def test_execute_generated_playbook_promotes_repo_and_launches_aap_controller_job(self) -> None:
         incident_state = {
             "incident": {
