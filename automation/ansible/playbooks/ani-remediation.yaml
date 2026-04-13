@@ -50,11 +50,6 @@
       ansible.builtin.set_fact:
         lightspeed_playbook_raw: "{{ response.json.response }}"
 
-    - name: Set stat on raw playbook YAML
-      ansible.builtin.set_stats:
-        data:
-          lightspeed_playbook: "{{ lightspeed_playbook_raw }}"
-
     - name: Display Ansible Playbook in JSON
       ansible.builtin.debug:
         msg: "{{ lightspeed_playbook_raw }}"
@@ -68,93 +63,85 @@
       ansible.builtin.set_fact:
         raw_response: "{{ response.json.response }}"
 
-    - name: Strip markdown code fences
-      ansible.builtin.set_fact:
-        clean_yaml_str: >-
-          {{
-            raw_response
-            | regex_replace('```yaml\n?', '')
-            | regex_replace('```\n?', '')
-            | trim
-          }}
+    - name: Parse callback payload from prompt and Lightspeed response
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir | dirname }}/parse_lightspeed_response.py"
+      environment:
+        LIGHTSPEED_PROMPT: "{{ lightspeed_prompt | default('') }}"
+        LIGHTSPEED_RESPONSE: "{{ raw_response }}"
+        LIGHTSPEED_PROVIDER_NAME: "{{ lightspeed_provider_name | default('Ansible Lightspeed') }}"
+        LIGHTSPEED_PROVIDER_RUN_ID: "{{ response.json.conversation_id | default('') }}"
+      changed_when: false
+      register: parsed_lightspeed_callback
 
-    - name: Split envelope from nested playbook_yaml
+    - name: Load parsed callback payload
       ansible.builtin.set_fact:
-        # Split on '---' that starts a new line after the first one
-        # Part 0 is empty or first ---, part 1 is envelope fields, part 2+ is the playbook
-        yaml_parts: "{{ clean_yaml_str.split('\n---\n') }}"
+        parsed_callback_payload: "{{ parsed_lightspeed_callback.stdout | from_json }}"
 
-    - name: Extract envelope YAML string
-      ansible.builtin.set_fact:
-        # The envelope is parts[0] (may start with ---), playbook is parts[1] onward
-        envelope_str: "{{ yaml_parts[0] | regex_replace('^---\\n?', '') }}"
-        playbook_str: "---\n{{ yaml_parts[1:] | join('\n---\n') }}"
+    - name: Set stat on parsed playbook YAML when available
+      ansible.builtin.set_stats:
+        data:
+          lightspeed_playbook: "{{ parsed_callback_payload.playbook_yaml | default('') }}"
 
-    - name: Parse envelope
-      ansible.builtin.set_fact:
-        parsed_envelope: "{{ envelope_str | from_yaml }}"
+    - name: Validate callback correlation data
+      ansible.builtin.assert:
+        that:
+          - (parsed_callback_payload.callback_url | default('') | trim) != ''
+          - (parsed_callback_payload.correlation_id | default('') | trim) != ''
+        fail_msg: "{{ parsed_callback_payload.error | default('Lightspeed callback metadata was not available.') }}"
 
-    - name: Set callback and playbook facts
-      ansible.builtin.set_fact:
-        callback_url: "{{ parsed_envelope.callback_url }}"
-        correlation_id: "{{ parsed_envelope.correlation_id }}"
-        extracted_playbook_yaml: "{{ playbook_str }}"
-
-    - name: Debug extracted values
+    - name: Debug parsed callback payload
       ansible.builtin.debug:
         msg:
-          callback_url: "{{ callback_url }}"
-          correlation_id: "{{ correlation_id }}"
-          playbook_yaml_preview: "{{ extracted_playbook_yaml | truncate(200) }}"
-
-    - name: Debug all envelope fields before building payload
-      ansible.builtin.debug:
-        msg:
-          correlation_id: "{{ correlation_id }}"
-          callback_url: "{{ callback_url }}"
-          status: "{{ parsed_envelope.status | default('NOT FOUND') }}"
-          title: "{{ parsed_envelope.title | default('NOT FOUND') }}"
-          description: "{{ parsed_envelope.description | default('NOT FOUND') }}"
-          summary: "{{ parsed_envelope.summary | default('NOT FOUND') }}"
-          expected_outcome: "{{ parsed_envelope.expected_outcome | default('NOT FOUND') }}"
-          preconditions: "{{ parsed_envelope.preconditions | default('NOT FOUND') }}"
-          playbook_ref: "{{ parsed_envelope.playbook_ref | default('NOT FOUND') }}"
-          action_ref: "{{ parsed_envelope.action_ref | default('NOT FOUND') }}"
-          provider_name: "{{ parsed_envelope.provider_name | default('NOT FOUND') }}"
-          provider_run_id: "{{ parsed_envelope.provider_run_id | default('NOT FOUND') }}"
-          playbook_yaml_preview: "{{ extracted_playbook_yaml[:300] }}"
+          callback_url: "{{ parsed_callback_payload.callback_url }}"
+          correlation_id: "{{ parsed_callback_payload.correlation_id }}"
+          status: "{{ parsed_callback_payload.status }}"
+          title: "{{ parsed_callback_payload.title }}"
+          summary: "{{ parsed_callback_payload.summary }}"
+          expected_outcome: "{{ parsed_callback_payload.expected_outcome }}"
+          error: "{{ parsed_callback_payload.error }}"
+          playbook_yaml_preview: "{{ parsed_callback_payload.playbook_yaml | default('') | truncate(300) }}"
 
     - name: Build callback payload
       ansible.builtin.set_fact:
-        callback_payload: >-
+        callback_payload:
           {{
             {
-              'correlation_id': correlation_id,
-              'status': parsed_envelope.status | default('generated'),
-              'title': parsed_envelope.title | default('NOT FOUND'),
-              'description': parsed_envelope.description | default('NOT FOUND'),
-              'summary': parsed_envelope.summary | default('NOT FOUND'),
-              'expected_outcome': parsed_envelope.expected_outcome | default('NOT FOUND'),
-              'preconditions': parsed_envelope.preconditions
-                if parsed_envelope.preconditions is sequence and parsed_envelope.preconditions is not string
-                else [parsed_envelope.preconditions | default('')],
-              'playbook_yaml': extracted_playbook_yaml,
-              'playbook_ref': parsed_envelope.playbook_ref | default(''),
-              'action_ref': parsed_envelope.action_ref | default(''),
-              'provider_name': parsed_envelope.provider_name | default('Ansible Lightspeed'),
-              'provider_run_id': parsed_envelope.provider_run_id | default(''),
-              'error': '',
-              'metadata': {}
-            } | to_json
+              'correlation_id': parsed_callback_payload.correlation_id,
+              'status': parsed_callback_payload.status | default('generated'),
+              'title': parsed_callback_payload.title | default(''),
+              'description': parsed_callback_payload.description | default(parsed_callback_payload.summary | default('')),
+              'summary': parsed_callback_payload.summary | default(''),
+              'expected_outcome': parsed_callback_payload.expected_outcome | default(''),
+              'preconditions': parsed_callback_payload.preconditions | default([]),
+              'playbook_yaml': parsed_callback_payload.playbook_yaml | default(''),
+              'playbook_ref': parsed_callback_payload.playbook_ref | default(''),
+              'action_ref': parsed_callback_payload.action_ref | default(''),
+              'provider_name': parsed_callback_payload.provider_name | default('Ansible Lightspeed'),
+              'provider_run_id': parsed_callback_payload.provider_run_id | default(''),
+              'error': parsed_callback_payload.error | default(''),
+              'metadata': (
+                parsed_callback_payload.metadata | default({})
+              ) | combine(
+                {
+                  'conversation_id': response.json.conversation_id | default(''),
+                  'input_tokens': response.json.input_tokens | default(0),
+                  'output_tokens': response.json.output_tokens | default(0)
+                },
+                recursive=True
+              )
+            }
           }}
     
-    - name: POST generated playbook to callback URL
+    - name: POST playbook generation result to callback URL
       ansible.builtin.uri:
-        url: "{{ callback_url }}"
+        url: "{{ parsed_callback_payload.callback_url }}"
         method: POST
         headers:
           Content-Type: "application/json"
-          Authorization: "Bearer {{ control_plane_api_key | default('demo-token') }}"
+          x-api-key: "{{ control_plane_api_key | default('demo-token') }}"
         body: "{{ callback_payload }}"
         body_format: json
         timeout: 60
@@ -166,3 +153,8 @@
         msg:
           status: "{{ callback_response.status }}"
           response: "{{ callback_response.json | default(callback_response.content | default('no body')) }}"
+
+    - name: Fail the controller job when Lightspeed output was not parseable
+      ansible.builtin.fail:
+        msg: "{{ parsed_callback_payload.error }}"
+      when: (parsed_callback_payload.error | default('') | trim) != ''
