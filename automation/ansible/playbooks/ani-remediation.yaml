@@ -1,0 +1,158 @@
+---
+- name: Interact with Ansible Lightspeed API and Generate Ansible Playbook
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Build request body
+      ansible.builtin.set_fact:
+        request_body: >-
+          {{
+            {
+              'no_tools': true,
+              'query': lightspeed_prompt | default(''),
+              'model': lightspeed_model | default('qwen3-14b'),
+              'system_prompt': lightspeed_system_prompt | default('You are an Ansible Code generator assistant')
+            } | to_json
+          }}
+
+    - name: Debug serialized body (compare this to your curl -d payload)
+      ansible.builtin.debug:
+        msg: "{{ request_body }}"
+
+    - name: Send request to AI API
+      ansible.builtin.uri:
+        url: "{{ input_lightspeed_url | default('http://aap-lightspeed-api.aap.svc.cluster.local/api/v1/ai/chat/') }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ lightspeed_token | default('redhat') }}"
+        body: "{{ request_body }}"
+        timeout: 300
+        status_code: 200
+      register: response
+
+
+    - name: Display API response
+      ansible.builtin.debug:
+        msg: "{{ response.json }}"
+
+    - name: Preserve raw YAML playbook (string)
+      ansible.builtin.set_fact:
+        lightspeed_playbook_raw: "{{ response.json.response }}"
+
+    - name: Set stat on raw playbook YAML
+      ansible.builtin.set_stats:
+        data:
+          lightspeed_playbook: "{{ lightspeed_playbook_raw }}"
+
+    - name: Display Ansible Playbook in JSON
+      ansible.builtin.debug:
+        msg: "{{ lightspeed_playbook_raw }}"
+
+    - name: Display Ansible Playbook in YAML
+      ansible.builtin.debug:
+        msg: "{{ lightspeed_playbook_raw | to_nice_yaml(sort_keys=False) }}"
+
+
+    - name: Extract raw response string
+      ansible.builtin.set_fact:
+        raw_response: "{{ response.json.response }}"
+
+    - name: Strip markdown code fences
+      ansible.builtin.set_fact:
+        clean_yaml_str: >-
+          {{
+            raw_response
+            | regex_replace('```yaml\n?', '')
+            | regex_replace('```\n?', '')
+            | trim
+          }}
+
+    - name: Split envelope from nested playbook_yaml
+      ansible.builtin.set_fact:
+        # Split on '---' that starts a new line after the first one
+        # Part 0 is empty or first ---, part 1 is envelope fields, part 2+ is the playbook
+        yaml_parts: "{{ clean_yaml_str.split('\n---\n') }}"
+
+    - name: Extract envelope YAML string
+      ansible.builtin.set_fact:
+        # The envelope is parts[0] (may start with ---), playbook is parts[1] onward
+        envelope_str: "{{ yaml_parts[0] | regex_replace('^---\\n?', '') }}"
+        playbook_str: "---\n{{ yaml_parts[1:] | join('\n---\n') }}"
+
+    - name: Parse envelope
+      ansible.builtin.set_fact:
+        parsed_envelope: "{{ envelope_str | from_yaml }}"
+
+    - name: Set callback and playbook facts
+      ansible.builtin.set_fact:
+        callback_url: "{{ parsed_envelope.callback_url }}"
+        correlation_id: "{{ parsed_envelope.correlation_id }}"
+        extracted_playbook_yaml: "{{ playbook_str }}"
+
+    - name: Debug extracted values
+      ansible.builtin.debug:
+        msg:
+          callback_url: "{{ callback_url }}"
+          correlation_id: "{{ correlation_id }}"
+          playbook_yaml_preview: "{{ extracted_playbook_yaml | truncate(200) }}"
+
+    - name: Debug all envelope fields before building payload
+      ansible.builtin.debug:
+        msg:
+          correlation_id: "{{ correlation_id }}"
+          callback_url: "{{ callback_url }}"
+          status: "{{ parsed_envelope.status | default('NOT FOUND') }}"
+          title: "{{ parsed_envelope.title | default('NOT FOUND') }}"
+          description: "{{ parsed_envelope.description | default('NOT FOUND') }}"
+          summary: "{{ parsed_envelope.summary | default('NOT FOUND') }}"
+          expected_outcome: "{{ parsed_envelope.expected_outcome | default('NOT FOUND') }}"
+          preconditions: "{{ parsed_envelope.preconditions | default('NOT FOUND') }}"
+          playbook_ref: "{{ parsed_envelope.playbook_ref | default('NOT FOUND') }}"
+          action_ref: "{{ parsed_envelope.action_ref | default('NOT FOUND') }}"
+          provider_name: "{{ parsed_envelope.provider_name | default('NOT FOUND') }}"
+          provider_run_id: "{{ parsed_envelope.provider_run_id | default('NOT FOUND') }}"
+          playbook_yaml_preview: "{{ extracted_playbook_yaml[:300] }}"
+
+    - name: Build callback payload
+      ansible.builtin.set_fact:
+        callback_payload: >-
+          {{
+            {
+              'correlation_id': correlation_id,
+              'status': parsed_envelope.status | default('generated'),
+              'title': parsed_envelope.title | default('NOT FOUND'),
+              'description': parsed_envelope.description | default('NOT FOUND'),
+              'summary': parsed_envelope.summary | default('NOT FOUND'),
+              'expected_outcome': parsed_envelope.expected_outcome | default('NOT FOUND'),
+              'preconditions': parsed_envelope.preconditions
+                if parsed_envelope.preconditions is sequence and parsed_envelope.preconditions is not string
+                else [parsed_envelope.preconditions | default('')],
+              'playbook_yaml': extracted_playbook_yaml,
+              'playbook_ref': parsed_envelope.playbook_ref | default(''),
+              'action_ref': parsed_envelope.action_ref | default(''),
+              'provider_name': parsed_envelope.provider_name | default('Ansible Lightspeed'),
+              'provider_run_id': parsed_envelope.provider_run_id | default(''),
+              'error': '',
+              'metadata': {}
+            } | to_json
+          }}
+    
+    - name: POST generated playbook to callback URL
+      ansible.builtin.uri:
+        url: "{{ callback_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ control_plane_api_key | default('demo-token') }}"
+        body: "{{ callback_payload }}"
+        body_format: json
+        timeout: 60
+        status_code: [200, 201, 202, 204]
+      register: callback_response
+
+    - name: Debug callback response
+      ansible.builtin.debug:
+        msg:
+          status: "{{ callback_response.status }}"
+          response: "{{ callback_response.json | default(callback_response.content | default('no body')) }}"
