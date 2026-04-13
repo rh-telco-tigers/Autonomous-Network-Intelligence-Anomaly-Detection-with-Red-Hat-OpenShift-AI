@@ -52,6 +52,36 @@ def _ensure_yaml_document(playbook_text: str) -> str:
     return normalized
 
 
+def _quote_problematic_template_scalars(playbook_yaml: str) -> str:
+    repaired_lines: list[str] = []
+    changed = False
+
+    for line in str(playbook_yaml or "").splitlines():
+        match = re.match(r"^(\s*(?:-\s+)?[^:#]+:\s+)(.+)$", line)
+        if not match:
+            repaired_lines.append(line)
+            continue
+
+        prefix, value = match.groups()
+        stripped = value.strip()
+        if (
+            stripped
+            and "{{" in stripped
+            and ": " in stripped
+            and stripped[0] not in "\"'|>[{!&*"
+        ):
+            escaped = stripped.replace("\\", "\\\\").replace('"', '\\"')
+            repaired_lines.append(f'{prefix}"{escaped}"')
+            changed = True
+            continue
+
+        repaired_lines.append(line)
+
+    if not changed:
+        return playbook_yaml
+    return "\n".join(repaired_lines) + ("\n" if str(playbook_yaml or "").endswith("\n") else "")
+
+
 def _load_metadata_mapping(metadata_text: str) -> dict[str, Any]:
     try:
         parsed_documents = [document for document in yaml.safe_load_all(metadata_text) if document is not None]
@@ -108,7 +138,7 @@ def _extract_metadata_and_playbook(yaml_body: str) -> tuple[dict[str, Any], str]
     if isinstance(parsed_document, dict) and "playbook_yaml" in parsed_document:
         metadata = dict(parsed_document)
         playbook_yaml = _ensure_yaml_document(metadata.pop("playbook_yaml", ""))
-        _validate_playbook_yaml(playbook_yaml)
+        playbook_yaml = _validate_playbook_yaml(playbook_yaml)
         return metadata, playbook_yaml
 
     envelope_match = re.search(r"(?m)^playbook_yaml:\s*$", cleaned)
@@ -117,7 +147,7 @@ def _extract_metadata_and_playbook(yaml_body: str) -> tuple[dict[str, Any], str]
         playbook_text = _trim_playbook_body(cleaned[envelope_match.end() :])
         metadata = _load_metadata_mapping(metadata_text) if metadata_text else {}
         playbook_yaml = _ensure_yaml_document(playbook_text)
-        _validate_playbook_yaml(playbook_yaml)
+        playbook_yaml = _validate_playbook_yaml(playbook_yaml)
         return metadata, playbook_yaml
 
     lines = cleaned.splitlines()
@@ -138,17 +168,26 @@ def _extract_metadata_and_playbook(yaml_body: str) -> tuple[dict[str, Any], str]
         metadata = _load_metadata_mapping(metadata_text)
 
     playbook_yaml = _ensure_yaml_document(_trim_playbook_body(playbook_text))
-    _validate_playbook_yaml(playbook_yaml)
+    playbook_yaml = _validate_playbook_yaml(playbook_yaml)
     return metadata, playbook_yaml
 
 
-def _validate_playbook_yaml(playbook_yaml: str) -> None:
+def _validate_playbook_yaml(playbook_yaml: str) -> str:
     try:
         parsed = yaml.safe_load(playbook_yaml)
     except yaml.YAMLError as exc:
-        raise ParseError(f"Failed to parse generated playbook YAML: {exc}") from exc
+        repaired = _quote_problematic_template_scalars(playbook_yaml)
+        if repaired != playbook_yaml:
+            try:
+                parsed = yaml.safe_load(repaired)
+            except yaml.YAMLError:
+                raise ParseError(f"Failed to parse generated playbook YAML: {exc}") from exc
+            playbook_yaml = repaired
+        else:
+            raise ParseError(f"Failed to parse generated playbook YAML: {exc}") from exc
     if not isinstance(parsed, list):
         raise ParseError("Generated playbook YAML must be a YAML list of plays.")
+    return playbook_yaml
 
 
 def build_callback_payload(

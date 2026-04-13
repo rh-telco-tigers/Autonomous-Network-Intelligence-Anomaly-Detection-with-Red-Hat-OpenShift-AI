@@ -13,6 +13,8 @@
           provider_name, provider_run_id, status, callback_url, correlation_id, playbook_yaml.
           Use playbook_yaml: | and make that value valid YAML for a list of Ansible plays beginning with ---.
           Do not append any extra top-level keys after playbook_yaml.
+          Quote any YAML scalar inside playbook_yaml that contains ': ' or Jinja like {{ ... }}.
+          For human-readable messages, prefer msg: >- or a double-quoted string.
 
     - name: Build request payload
       ansible.builtin.set_fact:
@@ -106,6 +108,7 @@
                 - top-level YAML mapping keys: title, summary, preconditions, expected_outcome, playbook_ref, action_ref, provider_name, provider_run_id, status, callback_url, correlation_id, playbook_yaml
                 - use playbook_yaml: |
                 - the playbook_yaml value must be valid YAML for a list of Ansible plays beginning with ---
+                - quote any YAML scalar inside playbook_yaml that contains ': ' or Jinja like {{ ... }}
                 - keep the original remediation intent, callback_url, and correlation_id
                 - remove any invalid trailing metadata or malformed structures
 

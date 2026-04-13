@@ -167,3 +167,39 @@ def test_build_callback_payload_reports_parse_failure_without_losing_correlation
     assert payload["correlation_id"] == "corr-789"
     assert payload["playbook_yaml"] == ""
     assert "No top-level Ansible play entry" in payload["error"]
+
+
+def test_build_callback_payload_repairs_unquoted_template_scalar_with_colon() -> None:
+    prompt = dedent(
+        """
+        Callback contract:
+        - callback_url: http://control-plane.ani-runtime.svc.cluster.local:8080/incidents/inc-5/playbook-generation/callback
+        - correlation_id: corr-1000
+        """
+    ).strip()
+    raw_response = dedent(
+        """
+        ```yaml
+        title: "Scale S-CSCF safely"
+        summary: "Raise capacity with verification."
+        playbook_yaml: |
+          ---
+          - name: Verify scaling result
+            hosts: localhost
+            gather_facts: false
+            tasks:
+              - name: Fail when scaling did not settle
+                ansible.builtin.fail:
+                  msg: Scaling failed. Current replicas: {{ check_result.json.status.replicas | default('unknown') }}
+        ```
+        """
+    ).strip()
+
+    payload = build_callback_payload(prompt=prompt, raw_response=raw_response)
+
+    assert payload["status"] == "generated"
+    assert payload["error"] == ""
+    assert (
+        'msg: "Scaling failed. Current replicas: {{ check_result.json.status.replicas | default(\'unknown\') }}"'
+        in payload["playbook_yaml"]
+    )
