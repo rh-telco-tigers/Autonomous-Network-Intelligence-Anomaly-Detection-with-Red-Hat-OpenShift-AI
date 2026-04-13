@@ -1,0 +1,27 @@
+---
+- name: IMS Remediation - Kafka-triggered Ansible Lightspeed playbook generation
+  hosts: localhost
+  match_multiple_rules: true
+  sources:
+    - ansible.eda.kafka:
+        host: ani-release-kafka-kafka-bootstrap.ani-data.svc.cluster.local
+        port: 9092
+        topic: aiops-ansible-playbook-generate-instruction
+  rules:
+    - name: Debug - print all Kafka events
+      condition: event.body is defined
+      action:
+        debug:
+          msg: "{{ event }}"
+              
+    - name: Trigger playbook generation on anomaly incident
+      condition: event.body is search("Generate a reviewable Ansible playbook", ignorecase=true)
+      action:
+        run_job_template:
+          name: "IMS Remediation - Lightspeed Playbook Generator"
+          organization: "Default"
+          job_args:
+            extra_vars:
+              lightspeed_prompt: "{{ event.body }}"
+              input_lightspeed_url: "{{ input_lightspeed_url | default('http://aap-lightspeed-api.aap.svc.cluster.local:8000/api/v1/ai/chat/') }}"
+

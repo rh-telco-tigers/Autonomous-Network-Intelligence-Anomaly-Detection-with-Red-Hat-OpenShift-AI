@@ -1,0 +1,16 @@
+apiVersion: tower.ansible.com/v1alpha1
+kind: AnsibleProject
+metadata:
+  name: ani-remediation
+  namespace: aap
+  annotations:
+    argocd.argoproj.io/sync-wave: "83"
+spec:
+  connection_secret: aap-controller-connection
+  name: IMS Remediation
+  description: "IMS Remediation automation — Ansible Lightspeed playbook generator"
+  scm_type: git
+  repo: 'http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git'
+  scm_branch: main
+  organization: Default
+  update_on_launch: true

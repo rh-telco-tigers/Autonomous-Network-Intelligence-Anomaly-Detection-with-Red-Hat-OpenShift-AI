@@ -4,3 +4,4 @@ namespace: aap
 resources:
   - hub-s3-minio-secret.yaml
   - ansible-automation-platform.yaml
+  - ansible-lightspeed-secret.yaml
