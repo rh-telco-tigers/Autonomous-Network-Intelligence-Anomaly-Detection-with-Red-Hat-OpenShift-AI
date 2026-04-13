@@ -106,34 +106,29 @@
 
     - name: Build callback payload
       ansible.builtin.set_fact:
-        callback_payload:
-          {{
+        callback_payload: "{{ {
+          'correlation_id': parsed_callback_payload.correlation_id,
+          'status': parsed_callback_payload.status | default('generated'),
+          'title': parsed_callback_payload.title | default(''),
+          'description': parsed_callback_payload.description | default(parsed_callback_payload.summary | default('')),
+          'summary': parsed_callback_payload.summary | default(''),
+          'expected_outcome': parsed_callback_payload.expected_outcome | default(''),
+          'preconditions': parsed_callback_payload.preconditions | default([], true),
+          'playbook_yaml': parsed_callback_payload.playbook_yaml | default(''),
+          'playbook_ref': parsed_callback_payload.playbook_ref | default(''),
+          'action_ref': parsed_callback_payload.action_ref | default(''),
+          'provider_name': parsed_callback_payload.provider_name | default('Ansible Lightspeed'),
+          'provider_run_id': parsed_callback_payload.provider_run_id | default(''),
+          'error': parsed_callback_payload.error | default(''),
+          'metadata': (parsed_callback_payload.metadata | default({}, true)) | combine(
             {
-              'correlation_id': parsed_callback_payload.correlation_id,
-              'status': parsed_callback_payload.status | default('generated'),
-              'title': parsed_callback_payload.title | default(''),
-              'description': parsed_callback_payload.description | default(parsed_callback_payload.summary | default('')),
-              'summary': parsed_callback_payload.summary | default(''),
-              'expected_outcome': parsed_callback_payload.expected_outcome | default(''),
-              'preconditions': parsed_callback_payload.preconditions | default([]),
-              'playbook_yaml': parsed_callback_payload.playbook_yaml | default(''),
-              'playbook_ref': parsed_callback_payload.playbook_ref | default(''),
-              'action_ref': parsed_callback_payload.action_ref | default(''),
-              'provider_name': parsed_callback_payload.provider_name | default('Ansible Lightspeed'),
-              'provider_run_id': parsed_callback_payload.provider_run_id | default(''),
-              'error': parsed_callback_payload.error | default(''),
-              'metadata': (
-                parsed_callback_payload.metadata | default({})
-              ) | combine(
-                {
-                  'conversation_id': response.json.conversation_id | default(''),
-                  'input_tokens': response.json.input_tokens | default(0),
-                  'output_tokens': response.json.output_tokens | default(0)
-                },
-                recursive=True
-              )
-            }
-          }}
+              'conversation_id': response.json.conversation_id | default(''),
+              'input_tokens': response.json.input_tokens | default(0),
+              'output_tokens': response.json.output_tokens | default(0)
+            },
+            recursive=True
+          )
+        } }}"
     
     - name: POST playbook generation result to callback URL
       ansible.builtin.uri:
