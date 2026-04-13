@@ -64,6 +64,34 @@ def _load_metadata_mapping(metadata_text: str) -> dict[str, Any]:
     return parsed_documents[0]
 
 
+def _trim_playbook_body(playbook_text: str) -> str:
+    lines = str(playbook_text or "").strip().splitlines()
+    if not lines:
+        return ""
+
+    trimmed: list[str] = []
+    seen_play = False
+    for line in lines:
+        stripped = line.strip()
+        if not seen_play:
+            if not stripped:
+                continue
+            if stripped == "---":
+                trimmed.append(line)
+                continue
+            if re.match(r"^-\s+(?:name|hosts)\s*:", line):
+                seen_play = True
+                trimmed.append(line)
+                continue
+            continue
+
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*:\s*(?:.+)?$", line):
+            break
+        trimmed.append(line)
+
+    return "\n".join(trimmed).strip()
+
+
 def _extract_metadata_and_playbook(yaml_body: str) -> tuple[dict[str, Any], str]:
     cleaned = str(yaml_body or "").strip()
     if not cleaned:
@@ -80,6 +108,15 @@ def _extract_metadata_and_playbook(yaml_body: str) -> tuple[dict[str, Any], str]
     if isinstance(parsed_document, dict) and "playbook_yaml" in parsed_document:
         metadata = dict(parsed_document)
         playbook_yaml = _ensure_yaml_document(metadata.pop("playbook_yaml", ""))
+        _validate_playbook_yaml(playbook_yaml)
+        return metadata, playbook_yaml
+
+    envelope_match = re.search(r"(?m)^playbook_yaml:\s*$", cleaned)
+    if envelope_match:
+        metadata_text = cleaned[: envelope_match.start()].strip()
+        playbook_text = _trim_playbook_body(cleaned[envelope_match.end() :])
+        metadata = _load_metadata_mapping(metadata_text) if metadata_text else {}
+        playbook_yaml = _ensure_yaml_document(playbook_text)
         _validate_playbook_yaml(playbook_yaml)
         return metadata, playbook_yaml
 
@@ -100,7 +137,7 @@ def _extract_metadata_and_playbook(yaml_body: str) -> tuple[dict[str, Any], str]
     if metadata_text:
         metadata = _load_metadata_mapping(metadata_text)
 
-    playbook_yaml = _ensure_yaml_document(playbook_text)
+    playbook_yaml = _ensure_yaml_document(_trim_playbook_body(playbook_text))
     _validate_playbook_yaml(playbook_yaml)
     return metadata, playbook_yaml
 
@@ -162,15 +199,36 @@ def build_callback_payload(
     summary = str(metadata.get("summary") or metadata.get("description") or "").strip()
     description = str(metadata.get("description") or summary or title).strip()
     expected_outcome = str(metadata.get("expected_outcome") or "").strip()
+    known_metadata_fields = {
+        "title",
+        "description",
+        "summary",
+        "expected_outcome",
+        "preconditions",
+        "playbook_ref",
+        "action_ref",
+        "provider_name",
+        "provider_run_id",
+        "status",
+        "callback_url",
+        "correlation_id",
+        "playbook_yaml",
+    }
 
     payload.update(
         {
+            "status": str(metadata.get("status") or "generated").strip() or "generated",
             "title": title,
             "description": description,
             "summary": summary,
             "expected_outcome": expected_outcome,
             "preconditions": _normalize_preconditions(metadata.get("preconditions")),
             "playbook_yaml": playbook_yaml,
+            "playbook_ref": str(metadata.get("playbook_ref") or "").strip(),
+            "action_ref": str(metadata.get("action_ref") or "").strip(),
+            "provider_name": str(metadata.get("provider_name") or provider_name).strip() or provider_name,
+            "provider_run_id": str(metadata.get("provider_run_id") or provider_run_id).strip(),
+            "metadata": {key: value for key, value in metadata.items() if key not in known_metadata_fields},
         }
     )
     return payload

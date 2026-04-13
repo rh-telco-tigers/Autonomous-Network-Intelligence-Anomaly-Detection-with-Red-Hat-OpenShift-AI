@@ -94,6 +94,63 @@ def test_build_callback_payload_accepts_envelope_with_playbook_yaml() -> None:
     assert payload["error"] == ""
 
 
+def test_build_callback_payload_handles_malformed_envelope_playbook_yaml_section() -> None:
+    prompt = dedent(
+        """
+        Callback contract:
+        - callback_url: http://control-plane.ani-runtime.svc.cluster.local:8080/incidents/inc-4/playbook-generation/callback
+        - correlation_id: corr-999
+        """
+    ).strip()
+    raw_response = dedent(
+        """
+        ```yaml
+        ---
+        title: "Apply retry guardrail"
+        summary: "Reduce registration retry pressure."
+        playbook_ref: "ani-demo-registration-storm-remediation"
+        action_ref: "IMS-registration-storm-retry-amplification"
+        provider_name: "Ansible Code Generator"
+        provider_run_id: "corr-999"
+        status: "generated"
+        callback_url: "http://control-plane.ani-runtime.svc.cluster.local:8080/incidents/inc-4/playbook-generation/callback"
+        correlation_id: "corr-999"
+        playbook_yaml:
+        ---
+        - name: "Apply retry guardrail"
+          hosts: localhost
+          gather_facts: false
+          tasks:
+            - debug:
+                msg: guardrail
+
+        metadata:
+          creation_timestamp: "2022-03-15T12:00:00Z"
+        ```
+        """
+    ).strip()
+
+    payload = build_callback_payload(prompt=prompt, raw_response=raw_response)
+
+    assert payload["status"] == "generated"
+    assert payload["title"] == "Apply retry guardrail"
+    assert payload["summary"] == "Reduce registration retry pressure."
+    assert payload["playbook_ref"] == "ani-demo-registration-storm-remediation"
+    assert payload["action_ref"] == "IMS-registration-storm-retry-amplification"
+    assert payload["provider_name"] == "Ansible Code Generator"
+    assert payload["provider_run_id"] == "corr-999"
+    assert payload["playbook_yaml"] == (
+        "---\n"
+        "- name: \"Apply retry guardrail\"\n"
+        "  hosts: localhost\n"
+        "  gather_facts: false\n"
+        "  tasks:\n"
+        "    - debug:\n"
+        "        msg: guardrail\n"
+    )
+    assert payload["error"] == ""
+
+
 def test_build_callback_payload_reports_parse_failure_without_losing_correlation() -> None:
     prompt = dedent(
         """
