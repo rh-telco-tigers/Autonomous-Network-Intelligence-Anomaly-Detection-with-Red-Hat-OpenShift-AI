@@ -24,7 +24,7 @@
 #    featurestore_registry_path: str [Default: 'feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443']
 #    featurestore_s3_endpoint_url: str [Default: 'http://model-storage-minio.ani-data.svc.cluster.local:9000']
 #    model_name: str [Default: 'ani-anomaly-featurestore']
-#    model_registry_endpoint: str [Default: 'https://model-catalog.rhoai-model-registries.svc.cluster.local:8443']
+#    model_registry_endpoint: str [Default: 'http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080']
 #    model_version_name: str [Default: 'ani-anomaly-featurestore-v1']
 #    serving_alias: str [Default: 'current']
 #    serving_model_format_name: str [Default: 'autogluon']
@@ -117,7 +117,7 @@ components:
         model_name:
           parameterType: STRING
         model_registry_endpoint:
-          defaultValue: https://model-catalog.rhoai-model-registries.svc.cluster.local:8443
+          defaultValue: http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080
           isOptional: true
           parameterType: STRING
         model_version_name:
@@ -529,7 +529,7 @@ deploymentSpec:
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: RHOAI_MODEL_REGISTRY_REQUIRED
-          value: 'false'
+          value: 'true'
         image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
         resources:
           cpuLimit: 1.0
@@ -1251,7 +1251,7 @@ root:
         isOptional: true
         parameterType: STRING
       model_registry_endpoint:
-        defaultValue: https://model-catalog.rhoai-model-registries.svc.cluster.local:8443
+        defaultValue: http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080
         isOptional: true
         parameterType: STRING
       model_version_name:

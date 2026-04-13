@@ -8,15 +8,16 @@ import ssl
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
+from urllib.parse import quote
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-DEFAULT_MODEL_REGISTRY_ENDPOINT = "https://model-catalog.rhoai-model-registries.svc.cluster.local:8443"
+DEFAULT_MODEL_REGISTRY_ENDPOINT = "http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080"
 DEFAULT_MODEL_REGISTRY_CUSTOM_CA = "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
 DEFAULT_MODEL_REGISTRY_NAMESPACE = "rhoai-model-registries"
-DEFAULT_MODEL_REGISTRY_SERVICE = "model-catalog"
-DEFAULT_MODEL_REGISTRY_ROUTE_NAME = "model-catalog-https"
+DEFAULT_MODEL_REGISTRY_SERVICE = "default-modelregistry"
+DEFAULT_MODEL_REGISTRY_ROUTE_NAME = ""
 DEFAULT_KUBERNETES_CA_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 
 
@@ -131,6 +132,8 @@ def _discover_model_registry_route_endpoint() -> str | None:
         return f"https://{external_host}"
 
     route_name = os.getenv("MODEL_REGISTRY_ROUTE_NAME", DEFAULT_MODEL_REGISTRY_ROUTE_NAME).strip() or DEFAULT_MODEL_REGISTRY_ROUTE_NAME
+    if not route_name:
+        return None
     route_payload = _kubernetes_request(f"/apis/route.openshift.io/v1/namespaces/{namespace}/routes/{route_name}") or {}
     route_spec = (route_payload.get("spec") or {}) if isinstance(route_payload, dict) else {}
     route_host = str(route_spec.get("host") or "").strip()
@@ -178,6 +181,91 @@ def _metadata_value(value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return json.dumps(value, sort_keys=True)
+
+
+def _registry_api_url(endpoint: str, path: str) -> str:
+    return f"{endpoint.rstrip('/')}/api/model_registry/v1alpha3/{path.lstrip('/')}"
+
+
+def _registry_ssl_context(endpoint: str):
+    if not endpoint.startswith("https://"):
+        return None
+    custom_ca = _read_default_custom_ca(endpoint)
+    if custom_ca:
+        custom_ca_path = Path(custom_ca)
+        if custom_ca_path.exists():
+            return ssl.create_default_context(cafile=str(custom_ca_path))
+    return ssl.create_default_context()
+
+
+def _registry_request_json(endpoint: str, path: str) -> Dict[str, Any]:
+    headers: Dict[str, str] = {"Accept": "application/json"}
+    token = _read_default_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = Request(
+        _registry_api_url(endpoint, path),
+        headers=headers,
+    )
+    context = _registry_ssl_context(endpoint)
+    with urlopen(request, timeout=10, context=context) as response:
+        payload = response.read().decode()
+    return json.loads(payload) if payload else {}
+
+
+def resolve_registered_model_artifact_uri(
+    *,
+    model_name: str,
+    model_version_name: str,
+    registry_endpoint: str | None = None,
+) -> Dict[str, Any]:
+    endpoint = _resolve_registry_endpoint(
+        registry_endpoint or os.getenv("RHOAI_MODEL_REGISTRY_ENDPOINT", DEFAULT_MODEL_REGISTRY_ENDPOINT)
+    )
+    registered_models = _registry_request_json(endpoint, "registered_models").get("items", [])
+    registered_model = next((item for item in registered_models if str(item.get("name") or "") == model_name), None)
+    if not registered_model:
+        raise ValueError(f"Registered model {model_name!r} not found in model registry")
+
+    registered_model_id = str(registered_model.get("id") or "").strip()
+    if not registered_model_id:
+        raise ValueError(f"Registered model {model_name!r} is missing an ID")
+
+    versions_path = (
+        f"registered_models/{quote(registered_model_id, safe='')}/versions?name={quote(model_version_name, safe='')}"
+    )
+    versions = _registry_request_json(endpoint, versions_path).get("items", [])
+    model_version = next((item for item in versions if str(item.get("name") or "") == model_version_name), None)
+    if not model_version:
+        raise ValueError(f"Model version {model_version_name!r} not found for model {model_name!r}")
+
+    model_version_id = str(model_version.get("id") or "").strip()
+    if not model_version_id:
+        raise ValueError(f"Model version {model_version_name!r} is missing an ID")
+
+    artifacts_path = f"model_versions/{quote(model_version_id, safe='')}/artifacts?name={quote(model_name, safe='')}"
+    artifacts = _registry_request_json(endpoint, artifacts_path).get("items", [])
+    if not artifacts:
+        artifacts = _registry_request_json(endpoint, f"model_versions/{quote(model_version_id, safe='')}/artifacts").get(
+            "items", []
+        )
+    artifact = next((item for item in artifacts if str(item.get("uri") or "").strip()), None)
+    if not artifact:
+        raise ValueError(f"Model artifact URI not found for {model_name!r} version {model_version_name!r}")
+
+    artifact_uri = str(artifact.get("uri") or "").strip()
+    if not artifact_uri:
+        raise ValueError(f"Model artifact URI for {model_name!r} version {model_version_name!r} is empty")
+
+    return {
+        "model_name": model_name,
+        "model_version_name": model_version_name,
+        "artifact_uri": artifact_uri,
+        "registry_endpoint": endpoint,
+        "registered_model": registered_model,
+        "model_version": model_version,
+        "model_artifact": artifact,
+    }
 
 
 def _try_register_with_kubeflow_hub(payload: Dict[str, Any]) -> Dict[str, Any]:

@@ -22,8 +22,8 @@ DEFAULT_KFP_HOST_TEMPLATE = "https://ds-pipeline-{dspa}.{namespace}.svc.cluster.
 DEFAULT_SERVICE_CA_CERT = "/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
 DEFAULT_SA_TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 DEFAULT_MODEL_REGISTRY_NAMESPACE = "rhoai-model-registries"
-DEFAULT_MODEL_REGISTRY_SERVICE = "model-catalog"
-DEFAULT_MODEL_REGISTRY_ROUTE_NAME = "model-catalog-https"
+DEFAULT_MODEL_REGISTRY_SERVICE = "default-modelregistry"
+DEFAULT_MODEL_REGISTRY_ROUTE_NAME = ""
 DEFAULT_KUBERNETES_CA_CERT = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 DEFAULT_PIPELINE_PARAMETERS = {
     "bundle_version": "ani-feature-bundle-v1",
@@ -95,11 +95,12 @@ def discover_model_registry_endpoint() -> str | None:
         return f"https://{external_host}"
 
     route_name = os.getenv("MODEL_REGISTRY_ROUTE_NAME", DEFAULT_MODEL_REGISTRY_ROUTE_NAME).strip() or DEFAULT_MODEL_REGISTRY_ROUTE_NAME
-    route_payload = _kubernetes_request(f"/apis/route.openshift.io/v1/namespaces/{namespace}/routes/{route_name}") or {}
-    route_spec = (route_payload.get("spec") or {}) if isinstance(route_payload, dict) else {}
-    route_host = str(route_spec.get("host") or "").strip()
-    if route_host:
-        return f"https://{route_host}"
+    if route_name:
+        route_payload = _kubernetes_request(f"/apis/route.openshift.io/v1/namespaces/{namespace}/routes/{route_name}") or {}
+        route_spec = (route_payload.get("spec") or {}) if isinstance(route_payload, dict) else {}
+        route_host = str(route_spec.get("host") or "").strip()
+        if route_host:
+            return f"https://{route_host}"
     return explicit.rstrip("/") or None
 
 

@@ -15,7 +15,7 @@ DATASET_STORE_BUCKET = "ani-models"
 DATASET_STORE_PREFIX = "pipelines/ani-datascience/datasets"
 DATASET_STORE_ACCESS_KEY = "minioadmin"
 DATASET_STORE_SECRET_KEY = "minioadmin"
-MODEL_REGISTRY_ENDPOINT = "https://model-catalog.rhoai-model-registries.svc.cluster.local:8443"
+MODEL_REGISTRY_ENDPOINT = "http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080"
 FEATURESTORE_MODE = "remote"
 FEATURESTORE_PROJECT = "ani_anomaly_featurestore"
 FEATURESTORE_REGISTRY_PATH = "feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443"
@@ -536,4 +536,4 @@ def ani_featurestore_pipeline(
         _configure_featurestore_support_task_resources(task)
     _configure_featurestore_data_task_resources(exported)
     _configure_automl_task_resources(automl)
-    registered.set_env_variable("RHOAI_MODEL_REGISTRY_REQUIRED", "false")
+    registered.set_env_variable("RHOAI_MODEL_REGISTRY_REQUIRED", "true")

@@ -6,7 +6,8 @@ DATA_NAMESPACE ?= ani-data
 DATASCIENCE_NAMESPACE ?= ani-datascience
 TEKTON_NAMESPACE ?= ani-tekton
 MODEL_REGISTRY_NAMESPACE ?= rhoai-model-registries
-MODEL_REGISTRY_SERVICE ?= model-catalog
+MODEL_REGISTRY_SERVICE ?= default-modelregistry
+MODEL_REGISTRY_ENDPOINT ?= http://$(MODEL_REGISTRY_SERVICE).$(MODEL_REGISTRY_NAMESPACE).svc.cluster.local:8080
 INCIDENT_RELEASE_DATASET_VERSION ?=
 INCIDENT_RELEASE_SOURCE_DATASET_VERSION ?=
 INCIDENT_RELEASE_LINKED_DATASET_VERSION ?= live-sipp-v1
@@ -232,12 +233,27 @@ backfill-step-3-train-and-register-classifier: ## Backfill Step 3: Train the bes
 	BACKFILL_SERVING_MODEL_NAME="$(BACKFILL_SERVING_MODEL_NAME)" \
 	BACKFILL_SERVING_RUNTIME_NAME="$(BACKFILL_SERVING_RUNTIME_NAME)" \
 	BACKFILL_SERVING_PREFIX="$(BACKFILL_SERVING_PREFIX)" \
-	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/backfill-featurestore-run-job.yaml").read_text(); replacements = {"__BACKFILL_BUNDLE_VERSION__": os.environ["BACKFILL_BUNDLE_VERSION"], "__BACKFILL_FEATURE_SERVICE_NAME__": os.environ["BACKFILL_FEATURE_SERVICE_NAME"], "__BACKFILL_CANDIDATE_VERSION__": os.environ["BACKFILL_CANDIDATE_VERSION"], "__BACKFILL_MODEL_NAME__": os.environ["BACKFILL_MODEL_NAME"], "__BACKFILL_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODEL_VERSION_NAME"], "__BACKFILL_SERVING_MODEL_NAME__": os.environ["BACKFILL_SERVING_MODEL_NAME"], "__BACKFILL_SERVING_RUNTIME_NAME__": os.environ["BACKFILL_SERVING_RUNTIME_NAME"], "__BACKFILL_SERVING_PREFIX__": os.environ["BACKFILL_SERVING_PREFIX"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -
+	MODEL_REGISTRY_ENDPOINT="$(MODEL_REGISTRY_ENDPOINT)" \
+	MODEL_REGISTRY_NAMESPACE="$(MODEL_REGISTRY_NAMESPACE)" \
+	MODEL_REGISTRY_SERVICE="$(MODEL_REGISTRY_SERVICE)" \
+	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/backfill-featurestore-run-job.yaml").read_text(); replacements = {"__BACKFILL_BUNDLE_VERSION__": os.environ["BACKFILL_BUNDLE_VERSION"], "__BACKFILL_FEATURE_SERVICE_NAME__": os.environ["BACKFILL_FEATURE_SERVICE_NAME"], "__BACKFILL_CANDIDATE_VERSION__": os.environ["BACKFILL_CANDIDATE_VERSION"], "__BACKFILL_MODEL_NAME__": os.environ["BACKFILL_MODEL_NAME"], "__BACKFILL_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODEL_VERSION_NAME"], "__BACKFILL_SERVING_MODEL_NAME__": os.environ["BACKFILL_SERVING_MODEL_NAME"], "__BACKFILL_SERVING_RUNTIME_NAME__": os.environ["BACKFILL_SERVING_RUNTIME_NAME"], "__BACKFILL_SERVING_PREFIX__": os.environ["BACKFILL_SERVING_PREFIX"], "__MODEL_REGISTRY_ENDPOINT__": os.environ["MODEL_REGISTRY_ENDPOINT"], "__MODEL_REGISTRY_NAMESPACE__": os.environ["MODEL_REGISTRY_NAMESPACE"], "__MODEL_REGISTRY_SERVICE__": os.environ["MODEL_REGISTRY_SERVICE"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -
 
 backfill-step-4-activate-serving-endpoint: ## Backfill Step 4: Create or refresh the backfill serving runtime and inference endpoint so it can stay active beside the live model
 	@printf "Applying backfill serving resources in %s\n" "$(DATASCIENCE_NAMESPACE)"
-	oc apply -f "$(DEMO_TRIGGER_DIR)/backfill-serving-resources.yaml"
-	oc wait --for=condition=Ready inferenceservice/ani-predictive-backfill -n "$(DATASCIENCE_NAMESPACE)" --timeout=10m
+	MODEL_REGISTRY_ENDPOINT="$(MODEL_REGISTRY_ENDPOINT)" \
+	MODEL_REGISTRY_NAMESPACE="$(MODEL_REGISTRY_NAMESPACE)" \
+	MODEL_REGISTRY_SERVICE="$(MODEL_REGISTRY_SERVICE)" \
+	python3 "$(DEMO_TRIGGER_DIR)/render_backfill_serving_resources.py" \
+	  --namespace "$(DATASCIENCE_NAMESPACE)" \
+	  --model-name "$(BACKFILL_MODEL_NAME)" \
+	  --model-version-name "$(BACKFILL_MODEL_VERSION_NAME)" \
+	  --serving-model-name "$(BACKFILL_SERVING_MODEL_NAME)" \
+	  --serving-runtime-name "$(BACKFILL_SERVING_RUNTIME_NAME)" \
+	  --model-registry-endpoint "$(MODEL_REGISTRY_ENDPOINT)" \
+	  --model-registry-namespace "$(MODEL_REGISTRY_NAMESPACE)" \
+	  --model-registry-service "$(MODEL_REGISTRY_SERVICE)" \
+	  --template "$(DEMO_TRIGGER_DIR)/backfill-serving-resources.yaml" | oc apply -f -
+	oc wait --for=condition=Ready "inferenceservice/$(BACKFILL_SERVING_MODEL_NAME)" -n "$(DATASCIENCE_NAMESPACE)" --timeout=10m
 
 backfill-step-5-smoke-check-serving: ## Backfill Step 5: Smoke-check the backfill predictor endpoint before switching the UI classifier profile to backfill
 	@printf "Creating backfill serving smoke check job in %s\n" "$(DATASCIENCE_NAMESPACE)"

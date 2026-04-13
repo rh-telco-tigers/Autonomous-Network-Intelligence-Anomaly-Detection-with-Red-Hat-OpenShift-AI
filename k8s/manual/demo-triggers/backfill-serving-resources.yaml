@@ -1,27 +1,30 @@
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
-  name: ani-predictive-backfill
-  namespace: ani-datascience
+  name: __BACKFILL_SERVING_MODEL_NAME__
+  namespace: __DATASCIENCE_NAMESPACE__
   labels:
     opendatahub.io/dashboard: "true"
   annotations:
     opendatahub.io/model-type: predictive-featurestore-backfill
-    openshift.io/display-name: ani-predictive-backfill
+    openshift.io/display-name: "__BACKFILL_SERVING_MODEL_NAME__"
     serving.kserve.io/deploymentMode: RawDeployment
     serving.kserve.io/enable-prometheus-scraping: "true"
     ani.redhat.com/serving-alias: current
+    ani.redhat.com/model-registry-model: "__BACKFILL_MODEL_NAME__"
+    ani.redhat.com/model-registry-version: "__BACKFILL_MODEL_VERSION_NAME__"
+    ani.redhat.com/model-registry-endpoint: "__BACKFILL_MODEL_REGISTRY_ENDPOINT__"
 spec:
   predictor:
     serviceAccountName: model-storage-sa
     minReplicas: 1
     maxReplicas: 1
     model:
-      runtime: ani-autogluon-mlserver-runtime
+      runtime: __BACKFILL_SERVING_RUNTIME_NAME__
       modelFormat:
         name: autogluon
       protocolVersion: v2
-      storageUri: s3://ani-models/predictive-featurestore/ani-predictive-backfill/current/
+      storageUri: __BACKFILL_STORAGE_URI__
       resources:
         requests:
           cpu: 100m
@@ -33,17 +36,17 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: ani-predictive-backfill-metrics
-  namespace: ani-datascience
+  name: __BACKFILL_SERVING_MODEL_NAME__-metrics
+  namespace: __DATASCIENCE_NAMESPACE__
   labels:
     monitoring.opendatahub.io/scrape: "true"
 spec:
   namespaceSelector:
     matchNames:
-      - ani-datascience
+      - __DATASCIENCE_NAMESPACE__
   selector:
     matchLabels:
-      serving.kserve.io/inferenceservice: ani-predictive-backfill
+      serving.kserve.io/inferenceservice: __BACKFILL_SERVING_MODEL_NAME__
   podMetricsEndpoints:
     - path: /metrics
       targetPort: 8082

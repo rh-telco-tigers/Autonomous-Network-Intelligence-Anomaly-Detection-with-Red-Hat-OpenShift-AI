@@ -30,6 +30,7 @@ from ai.training.model_registry_client import (
     DEFAULT_MODEL_REGISTRY_ENDPOINT,
     build_model_registry_payload,
     publish_model_version,
+    resolve_registered_model_artifact_uri,
 )
 from ai.training.train_and_register import (
     CANONICAL_LABELS,
@@ -1011,6 +1012,18 @@ def _publish_deployment_manifest_step(
 ) -> Dict[str, Any]:
     export_manifest = _json_load(export_manifest_path)
     model_registry_manifest = _json_load(model_registry_manifest_path)
+    registration_result = model_registry_manifest.get("registration_result", {})
+    if registration_result.get("status") != "registered":
+        raise ValueError(
+            f"Model registry publication did not succeed for {model_registry_manifest.get('model_name', 'model')}:"
+            f"{model_registry_manifest.get('model_version_name', 'unknown')} "
+            f"({registration_result.get('reason', 'unknown error')})"
+        )
+    registry_artifact = resolve_registered_model_artifact_uri(
+        model_name=str(model_registry_manifest["model_name"]),
+        model_version_name=str(model_registry_manifest["model_version_name"]),
+        registry_endpoint=model_registry_manifest.get("model_registry_endpoint"),
+    )
     deployment_root = Path(DEFAULT_WORKSPACE_ROOT) / "deployment"
     deployment_root.mkdir(parents=True, exist_ok=True)
     deployment_path = deployment_root / f"{export_manifest['serving_model_name']}.yaml"
@@ -1019,7 +1032,7 @@ def _publish_deployment_manifest_step(
         serving_runtime_name=export_manifest["serving_runtime_name"],
         serving_model_format_name=export_manifest.get("serving_model_format_name", DEFAULT_MODEL_FORMAT_NAME),
         service_account_name=service_account_name,
-        storage_uri=export_manifest.get("serving_alias_storage_uri", export_manifest["serving_storage_uri"]),
+        storage_uri=registry_artifact["artifact_uri"],
         bundle_version=export_manifest["bundle_version"],
         feature_service_name=export_manifest["feature_service_name"],
         selected_model_version=export_manifest["selected_model_version"],
@@ -1040,8 +1053,9 @@ def _publish_deployment_manifest_step(
         "selected_model_version": export_manifest["selected_model_version"],
         "versioned_storage_uri": export_manifest["serving_storage_uri"],
         "stable_storage_uri": export_manifest.get("serving_alias_storage_uri", export_manifest["serving_storage_uri"]),
+        "registered_storage_uri": registry_artifact["artifact_uri"],
         "model_registry_endpoint": model_registry_manifest.get("model_registry_endpoint", DEFAULT_MODEL_REGISTRY_ENDPOINT),
-        "registration_result": model_registry_manifest["registration_result"],
+        "registration_result": registration_result,
         "created_at": _now(),
     }
     _json_dump(compatibility_manifest_path, compatibility_manifest)
@@ -1052,7 +1066,8 @@ def _publish_deployment_manifest_step(
         "compatibility_manifest_path": str(compatibility_manifest_path),
         "deployment_yaml": deployment_yaml,
         "registration_record_path": model_registry_manifest_path,
-        "registration_result": model_registry_manifest["registration_result"],
+        "registered_storage_uri": registry_artifact["artifact_uri"],
+        "registration_result": registration_result,
         "created_at": _now(),
     }
 

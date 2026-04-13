@@ -6,8 +6,8 @@ import os
 DEFAULT_IMS_NAMESPACE = "ani-demo-lab"
 DEFAULT_IMS_PROJECT = "ani-demo"
 DEFAULT_MODEL_REGISTRY_NAMESPACE = "rhoai-model-registries"
-DEFAULT_MODEL_REGISTRY_SERVICE = "model-catalog"
-DEFAULT_MODEL_REGISTRY_PORT = 8443
+DEFAULT_MODEL_REGISTRY_SERVICE = "default-modelregistry"
+DEFAULT_MODEL_REGISTRY_PORT = 8080
 DEFAULT_DATASET_STORE_BUCKET = "ani-models"
 DEFAULT_DATASET_STORE_PORT = 9000
 DEFAULT_SERVICE_PORT = 8080
@@ -110,6 +110,6 @@ def model_registry_endpoint() -> str:
             _clean(os.getenv("MODEL_REGISTRY_SERVICE")) or DEFAULT_MODEL_REGISTRY_SERVICE,
             namespace=_clean(os.getenv("MODEL_REGISTRY_NAMESPACE")) or DEFAULT_MODEL_REGISTRY_NAMESPACE,
             port=DEFAULT_MODEL_REGISTRY_PORT,
-            scheme="https",
+            scheme="http",
         )
     )

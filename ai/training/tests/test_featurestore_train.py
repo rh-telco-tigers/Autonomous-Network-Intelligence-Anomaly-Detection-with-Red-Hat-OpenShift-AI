@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -386,3 +387,96 @@ def test_retrieve_training_dataset_uses_localized_bundle_in_remote_mode(tmp_path
     assert captured["feature_service_name"] == "ani_anomaly_scoring_v1"
     assert manifest["source"] == "feast-historical-features"
     assert manifest["live_record_count"] == len(ft.CANONICAL_LABELS)
+
+
+def _write_deployment_manifests(tmp_path, registration_status="registered", registration_reason=""):
+    export_manifest_path = tmp_path / "export-manifest.json"
+    export_manifest_path.write_text(
+        json.dumps(
+            {
+                "serving_model_name": "ani-predictive-backfill",
+                "serving_runtime_name": "ani-autogluon-mlserver-runtime",
+                "serving_model_format_name": "autogluon",
+                "serving_model_format_version": "1",
+                "serving_protocol_version": "v2",
+                "bundle_version": "ani-backfill-feature-bundle-v1",
+                "feature_service_name": "ani_anomaly_scoring_v1",
+                "selected_model_version": "candidate-backfill-fs-v1",
+                "serving_storage_uri": "s3://ani-models/predictive-featurestore/ani-predictive-backfill/candidate-backfill-fs-v1/",
+                "serving_alias_storage_uri": "s3://ani-models/predictive-featurestore/ani-predictive-backfill/current/",
+                "label_taxonomy_version": "ani_incident_taxonomy_v2",
+                "class_labels": ft.CANONICAL_LABELS,
+                "normal_class_label": "normal_operation",
+            }
+        )
+    )
+    registry_manifest_path = tmp_path / "registry-manifest.json"
+    registry_manifest_path.write_text(
+        json.dumps(
+            {
+                "model_name": "ani-anomaly-featurestore-backfill",
+                "model_version_name": "ani-anomaly-featurestore-backfill-v1",
+                "model_registry_endpoint": "http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080",
+                "registration_result": {
+                    "status": registration_status,
+                    "reason": registration_reason,
+                },
+            }
+        )
+    )
+    return export_manifest_path, registry_manifest_path
+
+
+def test_publish_deployment_manifest_uses_registered_model_artifact(tmp_path, monkeypatch):
+    export_manifest_path, registry_manifest_path = _write_deployment_manifests(tmp_path)
+    monkeypatch.setattr(ft, "DEFAULT_WORKSPACE_ROOT", str(tmp_path / "workspace"))
+
+    captured = {}
+
+    def fake_resolve_registered_model_artifact_uri(**kwargs):
+        captured.update(kwargs)
+        return {
+            "artifact_uri": "s3://ani-models/predictive-featurestore/ani-predictive-backfill/registry-resolved/",
+        }
+
+    monkeypatch.setattr(ft, "resolve_registered_model_artifact_uri", fake_resolve_registered_model_artifact_uri)
+
+    manifest = ft._publish_deployment_manifest_step(
+        str(export_manifest_path),
+        str(registry_manifest_path),
+        "model-storage-sa",
+    )
+
+    deployment_yaml = Path(manifest["deployment_manifest_path"]).read_text()
+    compatibility_manifest = json.loads(Path(manifest["compatibility_manifest_path"]).read_text())
+
+    assert captured == {
+        "model_name": "ani-anomaly-featurestore-backfill",
+        "model_version_name": "ani-anomaly-featurestore-backfill-v1",
+        "registry_endpoint": "http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080",
+    }
+    assert "storageUri: s3://ani-models/predictive-featurestore/ani-predictive-backfill/registry-resolved/" in deployment_yaml
+    assert "storageUri: s3://ani-models/predictive-featurestore/ani-predictive-backfill/current/" not in deployment_yaml
+    assert compatibility_manifest["registered_storage_uri"] == "s3://ani-models/predictive-featurestore/ani-predictive-backfill/registry-resolved/"
+    assert compatibility_manifest["stable_storage_uri"] == "s3://ani-models/predictive-featurestore/ani-predictive-backfill/current/"
+
+
+def test_publish_deployment_manifest_requires_successful_registry_publish(tmp_path, monkeypatch):
+    export_manifest_path, registry_manifest_path = _write_deployment_manifests(
+        tmp_path,
+        registration_status="failed",
+        registration_reason="registry unavailable",
+    )
+    monkeypatch.setattr(ft, "DEFAULT_WORKSPACE_ROOT", str(tmp_path / "workspace"))
+    monkeypatch.setattr(
+        ft,
+        "resolve_registered_model_artifact_uri",
+        lambda **kwargs: pytest.fail("registry artifact lookup should not run when publication failed"),
+    )
+
+    with pytest.raises(ValueError, match="Model registry publication did not succeed"):
+        ft._publish_deployment_manifest_step(
+            str(export_manifest_path),
+            str(registry_manifest_path),
+            "model-storage-sa",
+        )

@@ -39,6 +39,12 @@ spec:
               value: __BACKFILL_SERVING_RUNTIME_NAME__
             - name: BACKFILL_SERVING_PREFIX
               value: __BACKFILL_SERVING_PREFIX__
+            - name: MODEL_REGISTRY_ENDPOINT
+              value: __MODEL_REGISTRY_ENDPOINT__
+            - name: MODEL_REGISTRY_NAMESPACE
+              value: __MODEL_REGISTRY_NAMESPACE__
+            - name: MODEL_REGISTRY_SERVICE
+              value: __MODEL_REGISTRY_SERVICE__
           command:
             - /bin/bash
             - -lc
@@ -106,7 +112,7 @@ spec:
                           "featurestore_aws_secret_access_key": os.getenv("DATASET_STORE_SECRET_KEY", "minioadmin"),
                           "model_registry_endpoint": os.getenv(
                               "MODEL_REGISTRY_ENDPOINT",
-                              "https://model-catalog.rhoai-model-registries.svc.cluster.local:8443",
+                              "http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080",
                           ),
                       }
                   )
