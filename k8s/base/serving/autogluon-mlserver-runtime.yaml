@@ -6,8 +6,11 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-options: Replace=true
     opendatahub.io/apiProtocol: REST
+    opendatahub.io/recommended-accelerators: '[]'
     opendatahub.io/runtime-version: autogluon-v1
     opendatahub.io/serving-runtime-scope: global
+    opendatahub.io/template-display-name: ANI AutoGluon MLServer Runtime
+    opendatahub.io/template-name: ani-autogluon-mlserver-runtime-template
     openshift.io/display-name: ANI AutoGluon MLServer Runtime
   labels:
     opendatahub.io/dashboard: "true"
