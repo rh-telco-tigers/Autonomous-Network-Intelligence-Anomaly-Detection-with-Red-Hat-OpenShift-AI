@@ -26,3 +26,6 @@ spec:
   mcp:
     disabled: false
     allow_write_operations: false
+  lightspeed: 
+    disabled: false
+    chatbot_config_secret_name: lightspeed-secret
