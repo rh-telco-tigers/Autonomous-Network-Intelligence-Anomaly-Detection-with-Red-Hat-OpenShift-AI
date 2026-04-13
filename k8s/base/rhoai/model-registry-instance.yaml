@@ -1,0 +1,14 @@
+apiVersion: modelregistry.opendatahub.io/v1beta1
+kind: ModelRegistry
+metadata:
+  name: default-modelregistry
+  namespace: rhoai-model-registries
+  annotations:
+    argocd.argoproj.io/sync-wave: "12"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  rest: {}
+  postgres:
+    generateDeployment: true
+    database: model_registry
+    username: modelregistry

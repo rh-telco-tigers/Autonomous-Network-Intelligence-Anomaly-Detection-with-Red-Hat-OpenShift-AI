@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - rhoai-crs.yaml
   - model-catalog-service.yaml
+  - model-registry-instance.yaml
