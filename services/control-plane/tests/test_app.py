@@ -87,6 +87,14 @@ class PlaneEscalationRemediationTests(unittest.TestCase):
             incident_state["incident"] = updated
             return updated
 
+        def workflow_payload(incident: dict[str, object]) -> dict[str, object]:
+            return {
+                "incident": incident,
+                "available_transitions": sorted(
+                    control_plane_app._available_transition_targets(str(incident.get("status") or control_plane_app.NEW))
+                ),
+            }
+
         def record_incident_action(**kwargs: object) -> dict[str, object]:
             return {
                 "id": 501,
@@ -157,6 +165,66 @@ class PlaneEscalationRemediationTests(unittest.TestCase):
             "https://demo-ui.example.com/incidents/inc-123",
         )
         sync_current_ticket.assert_not_called()
+
+
+class VerificationWorkflowTests(unittest.TestCase):
+    def test_verify_incident_allows_escalated_to_verification_failed(self) -> None:
+        incident_state = {
+            "incident": {
+                "id": "inc-verify-1",
+                "project": "ani-demo",
+                "status": control_plane_app.ESCALATED,
+                "workflow_revision": 4,
+            }
+        }
+
+        def get_incident(_: str) -> dict[str, object]:
+            return dict(incident_state["incident"])
+
+        def transition(incident: dict[str, object], target_state: str, _: str, __: str) -> dict[str, object]:
+            updated = dict(incident)
+            updated["status"] = target_state
+            updated["workflow_revision"] = int(updated.get("workflow_revision") or 1) + 1
+            incident_state["incident"] = updated
+            return updated
+
+        def workflow_payload(incident: dict[str, object]) -> dict[str, object]:
+            return {
+                "incident": incident,
+                "available_transitions": sorted(
+                    control_plane_app._available_transition_targets(str(incident.get("status") or control_plane_app.NEW))
+                ),
+            }
+
+        payload = control_plane_app.VerificationRequest(
+            verification_status="failed",
+            verified_by="demo-operator",
+            notes="Playbook run failed and needs follow-up.",
+        )
+
+        with (
+            mock.patch.object(control_plane_app, "ensure_role"),
+            mock.patch.object(control_plane_app, "ensure_project_access"),
+            mock.patch.object(control_plane_app, "get_incident", side_effect=get_incident),
+            mock.patch.object(control_plane_app, "record_verification", return_value={"id": 901, "verification_status": "failed"}),
+            mock.patch.object(control_plane_app, "_transition_incident_with_audit", side_effect=transition),
+            mock.patch.object(control_plane_app, "_maybe_create_resolution_extract", return_value=None),
+            mock.patch.object(control_plane_app, "record_audit"),
+            mock.patch.object(control_plane_app, "_sync_current_ticket_best_effort"),
+            mock.patch.object(control_plane_app, "_workflow_payload", side_effect=workflow_payload),
+            mock.patch.object(control_plane_app, "list_incident_tickets", return_value=[]),
+            mock.patch.object(control_plane_app, "set_active_incidents"),
+            mock.patch.object(control_plane_app, "list_incidents", return_value=[]),
+            mock.patch.object(control_plane_app, "record_verification_metric"),
+        ):
+            response = control_plane_app.verify_incident("inc-verify-1", payload, auth=None)
+
+        self.assertEqual(incident_state["incident"]["status"], control_plane_app.VERIFICATION_FAILED)
+        self.assertEqual(response["workflow"]["incident"]["status"], control_plane_app.VERIFICATION_FAILED)
+        self.assertIn(
+            control_plane_app.ESCALATED,
+            response["workflow"]["available_transitions"],
+        )
 
 
 class IncidentAutoRcaPolicyTests(unittest.TestCase):
