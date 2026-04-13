@@ -198,19 +198,100 @@ def _registry_ssl_context(endpoint: str):
     return ssl.create_default_context()
 
 
-def _registry_request_json(endpoint: str, path: str) -> Dict[str, Any]:
+def _registry_request_json(
+    endpoint: str,
+    path: str,
+    *,
+    method: str = "GET",
+    payload: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     headers: Dict[str, str] = {"Accept": "application/json"}
     token = _read_default_token()
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    data = None
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
+        data = json.dumps(payload).encode()
     request = Request(
         _registry_api_url(endpoint, path),
+        data=data,
         headers=headers,
+        method=method,
     )
     context = _registry_ssl_context(endpoint)
     with urlopen(request, timeout=10, context=context) as response:
         payload = response.read().decode()
     return json.loads(payload) if payload else {}
+
+
+def _metadata_property(value: Any) -> Dict[str, Any]:
+    normalized = _metadata_value(value)
+    if isinstance(normalized, bool):
+        return {
+            "bool_value": normalized,
+            "metadataType": "MetadataBoolValue",
+        }
+    if isinstance(normalized, int):
+        return {
+            "int_value": str(normalized),
+            "metadataType": "MetadataIntValue",
+        }
+    if isinstance(normalized, float):
+        return {
+            "double_value": normalized,
+            "metadataType": "MetadataDoubleValue",
+        }
+    return {
+        "string_value": str(normalized),
+        "metadataType": "MetadataStringValue",
+    }
+
+
+def _registry_metadata(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        key: _metadata_property(value)
+        for key, value in {
+            **payload["metadata"],
+            "bundle_version": payload["bundle_version"],
+            "feature_schema_version": payload["feature_schema_version"],
+            "feature_service_name": payload["feature_service_name"],
+            "pipeline_name": payload["pipeline_name"],
+            "pipeline_run_id": payload["pipeline_run_id"],
+            "deployment_readiness_status": payload["deployment_readiness_status"],
+            "metrics": payload["metrics"],
+        }.items()
+    }
+
+
+def _http_error_reason(exc: Exception) -> str:
+    if isinstance(exc, HTTPError):
+        body = exc.read().decode(errors="replace").strip()
+        return f"{exc.code} {exc.reason}: {body}" if body else f"{exc.code} {exc.reason}"
+    return str(exc)
+
+
+def _find_registered_model(endpoint: str, model_name: str) -> Dict[str, Any] | None:
+    registered_models = _registry_request_json(endpoint, "registered_models").get("items", [])
+    return next((item for item in registered_models if str(item.get("name") or "") == model_name), None)
+
+
+def _find_model_version(endpoint: str, registered_model_id: str, model_version_name: str) -> Dict[str, Any] | None:
+    versions_path = (
+        f"registered_models/{quote(registered_model_id, safe='')}/versions?name={quote(model_version_name, safe='')}"
+    )
+    versions = _registry_request_json(endpoint, versions_path).get("items", [])
+    return next((item for item in versions if str(item.get("name") or "") == model_version_name), None)
+
+
+def _find_model_artifact(endpoint: str, model_version_id: str, artifact_name: str) -> Dict[str, Any] | None:
+    artifacts_path = f"model_versions/{quote(model_version_id, safe='')}/artifacts?name={quote(artifact_name, safe='')}"
+    artifacts = _registry_request_json(endpoint, artifacts_path).get("items", [])
+    if not artifacts:
+        artifacts = _registry_request_json(endpoint, f"model_versions/{quote(model_version_id, safe='')}/artifacts").get(
+            "items", []
+        )
+    return next((item for item in artifacts if str(item.get("name") or "") == artifact_name), None)
 
 
 def resolve_registered_model_artifact_uri(
@@ -268,7 +349,7 @@ def resolve_registered_model_artifact_uri(
     }
 
 
-def _try_register_with_kubeflow_hub(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _try_register_with_model_registry_api(payload: Dict[str, Any]) -> Dict[str, Any]:
     endpoint = _resolve_registry_endpoint(
         payload.get("registry_endpoint") or os.getenv("RHOAI_MODEL_REGISTRY_ENDPOINT", DEFAULT_MODEL_REGISTRY_ENDPOINT)
     )
@@ -279,63 +360,109 @@ def _try_register_with_kubeflow_hub(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
     payload["registry_endpoint"] = endpoint
 
-    try:
-        from kubeflow.hub import ModelRegistryClient
-    except Exception as exc:  # noqa: BLE001
-        return {
-            "status": "failed",
-            "endpoint": endpoint,
-            "reason": f"kubeflow hub client unavailable: {exc}",
-        }
-
-    token = _read_default_token()
     author = os.getenv("RHOAI_MODEL_REGISTRY_AUTHOR", "featurestore-pipeline").strip() or "featurestore-pipeline"
-    custom_ca = _read_default_custom_ca(endpoint)
+    owner = os.getenv("RHOAI_MODEL_REGISTRY_OWNER", "ani-demo").strip() or "ani-demo"
+    registry_metadata = _registry_metadata(payload)
     try:
-        registry_metadata = {
-            key: _metadata_value(value)
-            for key, value in {
-                **payload["metadata"],
-                "bundle_version": payload["bundle_version"],
-                "feature_schema_version": payload["feature_schema_version"],
-                "feature_service_name": payload["feature_service_name"],
-                "pipeline_name": payload["pipeline_name"],
-                "pipeline_run_id": payload["pipeline_run_id"],
-                "deployment_readiness_status": payload["deployment_readiness_status"],
-                "metrics": payload["metrics"],
-            }.items()
+        registered_model = _find_registered_model(endpoint, str(payload["model_name"]))
+        registered_model_created = False
+        if not registered_model:
+            registered_model = _registry_request_json(
+                endpoint,
+                "registered_models",
+                method="POST",
+                payload={
+                    "name": payload["model_name"],
+                    "owner": owner,
+                    "state": "LIVE",
+                },
+            )
+            registered_model_created = True
+
+        registered_model_id = str(registered_model.get("id") or "").strip()
+        if not registered_model_id:
+            raise ValueError(f"Registered model {payload['model_name']!r} is missing an ID")
+
+        model_version = _find_model_version(endpoint, registered_model_id, str(payload["model_version_name"]))
+        model_version_created = False
+        if not model_version:
+            model_version = _registry_request_json(
+                endpoint,
+                f"registered_models/{quote(registered_model_id, safe='')}/versions",
+                method="POST",
+                payload={
+                    "name": payload["model_version_name"],
+                    "registeredModelId": registered_model_id,
+                    "author": author,
+                    "description": payload["metadata"].get("description", ""),
+                    "customProperties": registry_metadata,
+                    "state": "LIVE",
+                },
+            )
+            model_version_created = True
+
+        model_version_id = str(model_version.get("id") or "").strip()
+        if not model_version_id:
+            raise ValueError(f"Model version {payload['model_version_name']!r} is missing an ID")
+
+        model_artifact = _find_model_artifact(endpoint, model_version_id, str(payload["model_name"]))
+        artifact_action = "existing"
+        if not model_artifact:
+            model_artifact = _registry_request_json(
+                endpoint,
+                f"model_versions/{quote(model_version_id, safe='')}/artifacts",
+                method="POST",
+                payload={
+                    "name": payload["model_name"],
+                    "uri": payload["artifact_uri"],
+                    "artifactType": "model-artifact",
+                    "modelFormatName": payload["model_format_name"],
+                    "modelFormatVersion": payload["model_format_version"],
+                },
+            )
+            artifact_action = "created"
+        elif str(model_artifact.get("uri") or "").strip() != str(payload["artifact_uri"]).strip():
+            model_artifact_id = str(model_artifact.get("id") or "").strip()
+            if not model_artifact_id:
+                raise ValueError(
+                    f"Model artifact for {payload['model_name']!r} version {payload['model_version_name']!r} is missing an ID"
+                )
+            model_artifact = _registry_request_json(
+                endpoint,
+                f"model_artifacts/{quote(model_artifact_id, safe='')}",
+                method="PATCH",
+                payload={
+                    "uri": payload["artifact_uri"],
+                    "artifactType": "model-artifact",
+                    "modelFormatName": payload["model_format_name"],
+                    "modelFormatVersion": payload["model_format_version"],
+                },
+            )
+            artifact_action = "updated"
+
+        result = {
+            "registered_model": _coerce_result(registered_model),
+            "model_version": _coerce_result(model_version),
+            "model_artifact": _coerce_result(model_artifact),
         }
-        client = ModelRegistryClient(
-            base_url=endpoint,
-            author=author,
-            user_token=token,
-            custom_ca=custom_ca,
-        )
-        result = client.register_model(
-            name=payload["model_name"],
-            uri=payload["artifact_uri"],
-            version=payload["model_version_name"],
-            model_format_name=payload["model_format_name"],
-            model_format_version=payload["model_format_version"],
-            owner=os.getenv("RHOAI_MODEL_REGISTRY_OWNER", "ani-demo"),
-            version_description=payload["metadata"].get("description", ""),
-            metadata=registry_metadata,
-        )
         return {
             "status": "registered",
             "endpoint": endpoint,
-            "result": _coerce_result(result),
+            "registered_model_created": registered_model_created,
+            "model_version_created": model_version_created,
+            "model_artifact_action": artifact_action,
+            "result": result,
         }
     except Exception as exc:  # noqa: BLE001
         return {
             "status": "failed",
             "endpoint": endpoint,
-            "reason": str(exc),
+            "reason": _http_error_reason(exc),
         }
 
 
 def publish_model_version(payload: Dict[str, Any], output_path: str | Path) -> Dict[str, Any]:
-    registration_result = _try_register_with_kubeflow_hub(payload)
+    registration_result = _try_register_with_model_registry_api(payload)
     output = {
         "registration_payload": payload,
         "registration_result": registration_result,
