@@ -26,7 +26,7 @@ data:
   PREDICTIVE_ENDPOINT_BACKFILL: http://ani-predictive-backfill-predictor.ani-datascience.svc.cluster.local:8080
   PREDICTIVE_MODEL_NAME_BACKFILL: ani-predictive-backfill
   PREDICTIVE_MODEL_VERSION_LABEL_BACKFILL: ani-predictive-backfill
-  INCIDENT_AUTO_RCA_SAMPLE_RATE: "0.9"
+  INCIDENT_AUTO_RCA_SAMPLE_RATE: "1.0"
   AI_PLAYBOOK_GENERATION_ENABLED: "true"
   AI_PLAYBOOK_GENERATION_KAFKA_BOOTSTRAP_SERVERS: ani-release-kafka-kafka-bootstrap.ani-data.svc.cluster.local:9092
   AI_PLAYBOOK_GENERATION_KAFKA_TOPIC: aiops-ansible-playbook-generate-instruction
