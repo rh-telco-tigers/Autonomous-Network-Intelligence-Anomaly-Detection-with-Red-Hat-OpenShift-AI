@@ -1579,7 +1579,7 @@ def _build_playbook_generation_instruction(
             "- return one safe, idempotent Ansible playbook in YAML",
             "- prefer explicit OpenShift or Kubernetes object changes with clear guardrails",
             "- include concise title, summary, preconditions, and expected outcome",
-            "- quote any YAML scalar that contains ': ' or Jinja like {{ ... }}; for messages prefer msg: >- or a double-quoted string",
+            "- quote any YAML scalar that contains ': ' or a Jinja template expression written with double curly braces; for messages prefer msg: >- or a double-quoted string",
             "- avoid destructive, irreversible, or environment-wide changes",
             "",
             "Callback contract:",
