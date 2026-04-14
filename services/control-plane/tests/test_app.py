@@ -301,6 +301,135 @@ class IncidentAutoRcaPolicyTests(unittest.TestCase):
         self.assertFalse(any(call.args[0] == "rca_auto_generation_deferred" for call in record_audit.call_args_list))
 
 
+class ConsoleScenarioFallbackTests(unittest.TestCase):
+    def test_console_run_scenario_forces_incident_when_non_nominal_score_returns_no_incident(self) -> None:
+        payload = control_plane_app.ConsoleScenarioRequest(scenario="malformed_invite", project="ani-demo")
+        feature_window = {
+            "window_id": "win-1",
+            "scenario_name": "malformed_invite",
+            "feature_source": "sipp-window-template",
+            "source": "feature-gateway-console",
+            "anomaly_type": "malformed_sip",
+            "labels": {"anomaly_type": "malformed_sip"},
+            "features": {
+                "invite_rate": 1.0,
+                "payload_variance": 120.0,
+            },
+        }
+        score = {
+            "anomaly_score": 0.77,
+            "is_anomaly": False,
+            "incident_id": None,
+            "anomaly_type": control_plane_app.NORMAL_ANOMALY_TYPE,
+            "predicted_anomaly_type": control_plane_app.NORMAL_ANOMALY_TYPE,
+            "predicted_confidence": 0.22,
+            "class_probabilities": {"malformed_sip": 0.11, control_plane_app.NORMAL_ANOMALY_TYPE: 0.22},
+            "top_classes": [{"anomaly_type": control_plane_app.NORMAL_ANOMALY_TYPE, "probability": 0.22}],
+            "model_version": "ani-predictive-backfill",
+            "scoring_mode": "remote-kserve:backfill",
+        }
+        fallback_incident = {
+            "id": "inc-fallback-1",
+            "project": "ani-demo",
+            "status": control_plane_app.AWAITING_APPROVAL,
+            "workflow_state": control_plane_app.AWAITING_APPROVAL,
+            "rca_payload": {"root_cause": "Malformed payload"},
+        }
+        state = {"incidents": [fallback_incident]}
+
+        with (
+            mock.patch.object(control_plane_app, "ensure_project_access"),
+            mock.patch.object(control_plane_app, "_request_json", side_effect=[feature_window, score]),
+            mock.patch.object(control_plane_app, "_force_console_scenario_incident", return_value=fallback_incident) as force_incident,
+            mock.patch.object(control_plane_app, "_record_debug_trace_packets"),
+            mock.patch.object(control_plane_app, "record_audit"),
+            mock.patch.object(control_plane_app, "_wait_for_incident_rca", return_value=fallback_incident),
+            mock.patch.object(control_plane_app, "_build_console_state", return_value=state),
+        ):
+            response = control_plane_app.console_run_scenario(payload, auth=None)
+
+        self.assertEqual(response["incident"]["id"], "inc-fallback-1")
+        self.assertTrue(response["score"]["is_anomaly"])
+        self.assertEqual(response["score"]["anomaly_type"], "malformed_sip")
+        self.assertEqual(response["score"]["predicted_anomaly_type"], "malformed_sip")
+        force_incident.assert_called_once()
+
+
+class AIPlaybookGenerationRetryTests(unittest.TestCase):
+    def test_request_ai_playbook_generation_schedules_retry_publish(self) -> None:
+        incident = {
+            "id": "inc-retry-1",
+            "project": "ani-demo",
+            "rca_payload": {"root_cause": "worker saturation"},
+        }
+        remediation = {
+            "id": 17,
+            "action_ref": "generate_ai_ansible_playbook",
+            "metadata": {},
+        }
+        background_tasks = _TaskRecorder()
+
+        with (
+            mock.patch.object(control_plane_app, "_ai_playbook_generation_enabled", return_value=True),
+            mock.patch.object(control_plane_app, "_is_ai_playbook_generation_request", return_value=True),
+            mock.patch.object(control_plane_app, "_build_playbook_generation_instruction", return_value="instruction"),
+            mock.patch.object(
+                control_plane_app,
+                "_publish_playbook_generation_instruction",
+                return_value={"topic": "aiops-ansible-playbook-generate-instruction"},
+            ),
+            mock.patch.object(control_plane_app, "update_incident_remediation", return_value={"id": 17}),
+            mock.patch.object(control_plane_app, "record_audit"),
+        ):
+            control_plane_app._request_ai_playbook_generation(
+                incident,
+                remediation,
+                "demo-operator",
+                "retry if missing",
+                "",
+                background_tasks=background_tasks,
+            )
+
+        self.assertEqual(len(background_tasks.tasks), 1)
+        self.assertIs(background_tasks.tasks[0][0], control_plane_app._retry_ai_playbook_generation_publish)
+        task_args = background_tasks.tasks[0][1]
+        self.assertEqual(task_args[0], "inc-retry-1")
+        self.assertEqual(task_args[1], 17)
+        self.assertIsInstance(task_args[2], str)
+        self.assertTrue(task_args[2])
+        self.assertEqual(task_args[3], "instruction")
+
+    def test_retry_ai_playbook_generation_republishes_pending_request(self) -> None:
+        remediation = {
+            "id": 17,
+            "metadata": {
+                "generation_correlation_id": "corr-123",
+                "generation_status": "requested",
+            },
+        }
+
+        with (
+            mock.patch.object(control_plane_app.time, "sleep"),
+            mock.patch.object(control_plane_app, "get_incident_remediation", return_value=remediation),
+            mock.patch.object(
+                control_plane_app,
+                "_publish_playbook_generation_instruction",
+                return_value={"topic": "aiops-ansible-playbook-generate-instruction"},
+            ) as publish,
+            mock.patch.object(control_plane_app, "update_incident_remediation", return_value={"id": 17}) as update,
+            mock.patch.object(control_plane_app, "record_audit"),
+        ):
+            control_plane_app._retry_ai_playbook_generation_publish(
+                "inc-retry-1",
+                17,
+                "corr-123",
+                "instruction",
+            )
+
+        publish.assert_called_once_with("corr-123", "instruction")
+        update.assert_called_once()
+
+
 class IncidentEvidenceSourceTests(unittest.TestCase):
     def test_evidence_sources_tolerate_non_numeric_document_scores(self) -> None:
         incident = {

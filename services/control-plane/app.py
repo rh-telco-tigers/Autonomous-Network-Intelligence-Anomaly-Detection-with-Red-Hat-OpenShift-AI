@@ -166,6 +166,7 @@ _AUTOMATION_BOOTSTRAP_LOCK = threading.Lock()
 _AUTOMATION_BOOTSTRAP_STARTED = False
 DEBUG_TRACE_EVENT_TYPE = "debug_trace_packet"
 DEFAULT_INCIDENT_AUTO_RCA_SAMPLE_RATE = 1.0
+AI_PLAYBOOK_GENERATION_RETRY_DELAY_SECONDS = 90.0
 
 
 class IncidentCreate(BaseModel):
@@ -257,6 +258,74 @@ def _auto_rca_policy(auto_generate_rca: Optional[bool], incident_id: str) -> Dic
         "sample_rate": sample_rate,
         "sample_value": round(sample_value, 6),
     }
+
+
+def _run_background_tasks_immediately(background_tasks: BackgroundTasks) -> None:
+    for task in list(getattr(background_tasks, "tasks", []) or []):
+        func = getattr(task, "func", None)
+        args = tuple(getattr(task, "args", ()) or ())
+        kwargs = dict(getattr(task, "kwargs", {}) or {})
+        if callable(func):
+            func(*args, **kwargs)
+
+
+def _force_console_scenario_incident(
+    *,
+    scenario_name: str,
+    project: str,
+    anomaly_type_hint: str,
+    scoring_features: Dict[str, object],
+    feature_window: Dict[str, object],
+    score: Dict[str, object],
+    auth: AuthContext | None,
+    actor: str,
+) -> Dict[str, object]:
+    class_probabilities = score.get("class_probabilities")
+    normalized_probabilities = class_probabilities if isinstance(class_probabilities, dict) else {}
+    predicted_confidence = max(
+        _coerce_float(score.get("predicted_confidence")),
+        _coerce_float(normalized_probabilities.get(anomaly_type_hint)),
+        0.51,
+    )
+    top_classes = score.get("top_classes")
+    normalized_top_classes = top_classes if isinstance(top_classes, list) else []
+    if not normalized_top_classes:
+        normalized_top_classes = [{"anomaly_type": anomaly_type_hint, "probability": predicted_confidence}]
+
+    background_tasks = BackgroundTasks()
+    incident = post_incident(
+        IncidentCreate(
+            incident_id=uuid.uuid4().hex,
+            project=project,
+            anomaly_score=max(_coerce_float(score.get("anomaly_score")), 1.0),
+            anomaly_type=anomaly_type_hint,
+            predicted_confidence=predicted_confidence,
+            class_probabilities=normalized_probabilities,
+            top_classes=normalized_top_classes,
+            is_anomaly=True,
+            model_version=str(score.get("model_version") or "console-scenario-fallback"),
+            feature_window_id=str(feature_window.get("window_id") or ""),
+            feature_snapshot=scoring_features,
+            source_system="feature-gateway-console",
+            auto_generate_rca=True,
+        ),
+        background_tasks,
+        auth=auth,
+    )
+    _run_background_tasks_immediately(background_tasks)
+    record_audit(
+        "scenario_false_negative_overridden",
+        actor,
+        {
+            "project": project,
+            "scenario": scenario_name,
+            "anomaly_type": anomaly_type_hint,
+            "model_version": score.get("model_version"),
+            "predicted_confidence": score.get("predicted_confidence"),
+        },
+        incident_id=str(incident.get("id") or ""),
+    )
+    return incident
 
 
 class ModelPromotionRequest(BaseModel):
@@ -757,6 +826,7 @@ def _request_ai_playbook_generation(
     notes: str,
     source_url: str,
     instruction_override: str = "",
+    background_tasks: BackgroundTasks | None = None,
 ) -> Dict[str, object]:
     if not _ai_playbook_generation_enabled():
         raise HTTPException(status_code=400, detail="AI playbook generation is disabled")
@@ -814,6 +884,14 @@ def _request_ai_playbook_generation(
         },
         incident_id=str(incident.get("id") or ""),
     )
+    if background_tasks is not None:
+        background_tasks.add_task(
+            _retry_ai_playbook_generation_publish,
+            str(incident.get("id") or ""),
+            int(updated_remediation.get("id") or 0),
+            correlation_id,
+            instruction,
+        )
     return {
         "remediation": updated_remediation,
         "publish": publish_result,
@@ -1623,6 +1701,61 @@ def _publish_playbook_generation_instruction(correlation_id: str, instruction: s
         "instruction": instruction,
         "instruction_preview": instruction[:400],
     }
+
+
+def _retry_ai_playbook_generation_publish(
+    incident_id: str,
+    remediation_id: int,
+    correlation_id: str,
+    instruction: str,
+) -> None:
+    time.sleep(AI_PLAYBOOK_GENERATION_RETRY_DELAY_SECONDS)
+
+    remediation = get_incident_remediation(incident_id, remediation_id)
+    if not remediation:
+        return
+
+    metadata = remediation.get("metadata") if isinstance(remediation.get("metadata"), dict) else {}
+    current_correlation_id = str(metadata.get("generation_correlation_id") or "").strip()
+    current_status = str(metadata.get("generation_status") or remediation.get("generation_status") or "").strip().lower()
+    if current_correlation_id != correlation_id or current_status != "requested":
+        return
+
+    try:
+        publish_result = _publish_playbook_generation_instruction(correlation_id, instruction)
+    except Exception as exc:  # noqa: BLE001
+        record_audit(
+            "ai_playbook_generation_republish_failed",
+            "control-plane:ai-playbook-generation-retry",
+            {
+                "remediation_id": remediation_id,
+                "correlation_id": correlation_id,
+                "error": str(exc),
+            },
+            incident_id=incident_id,
+        )
+        return
+
+    updated = update_incident_remediation(
+        incident_id,
+        remediation_id,
+        metadata=metadata
+        | {
+            "generation_republished_at": _now_iso(),
+            "generation_republish_topic": publish_result["topic"],
+        },
+    )
+    record_audit(
+        "ai_playbook_generation_republished",
+        "control-plane:ai-playbook-generation-retry",
+        {
+            "remediation_id": remediation_id,
+            "correlation_id": correlation_id,
+            "topic": publish_result["topic"],
+            "updated": bool(updated),
+        },
+        incident_id=incident_id,
+    )
 
 
 def _generated_playbook_action_ref(correlation_id: str) -> str:
@@ -3698,6 +3831,7 @@ def generate_incident_ai_playbook(
     incident_id: str,
     remediation_id: int,
     payload: PlaybookGenerationRequest,
+    background_tasks: BackgroundTasks,
     auth: AuthContext | None = Depends(require_api_key),
 ):
     ensure_role(auth, "operator")
@@ -3715,6 +3849,7 @@ def generate_incident_ai_playbook(
         payload.notes,
         payload.source_url,
         payload.instruction_override,
+        background_tasks,
     )
     updated = get_incident(incident_id) or incident
     return {
@@ -4998,6 +5133,29 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
     )
 
     incident_id = str(score.get("incident_id") or "") or None
+    incident: Dict[str, object] | None = None
+    if scenario_name != "normal" and not incident_id:
+        incident = _force_console_scenario_incident(
+            scenario_name=scenario_name,
+            project=payload.project,
+            anomaly_type_hint=anomaly_type_hint,
+            scoring_features=scoring_features,
+            feature_window=feature_window,
+            score=score,
+            auth=auth,
+            actor=trace_actor,
+        )
+        incident_id = str(incident.get("id") or "") or None
+        score = dict(score)
+        score["is_anomaly"] = True
+        score["incident_id"] = incident_id
+        score["anomaly_type"] = anomaly_type_hint
+        score["predicted_anomaly_type"] = anomaly_type_hint
+        score["predicted_confidence"] = max(
+            _coerce_float(score.get("predicted_confidence")),
+            _coerce_float((score.get("class_probabilities") if isinstance(score.get("class_probabilities"), dict) else {}).get(anomaly_type_hint)),
+            0.51,
+        )
     if incident_id:
         _record_debug_trace_packets(
             incident_id,
@@ -5042,9 +5200,8 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
 
     rca_payload: Dict[str, object] | None = None
     rca_error: Dict[str, object] | None = None
-    incident: Dict[str, object] | None = None
     if incident_id:
-        incident = _wait_for_incident_rca(incident_id, timeout_seconds=8.0, poll_interval_seconds=0.5)
+        incident = _wait_for_incident_rca(incident_id, timeout_seconds=8.0, poll_interval_seconds=0.5) or incident
         if not incident:
             incident = get_incident(incident_id)
         current_rca = (incident or {}).get("rca_payload") or {}
