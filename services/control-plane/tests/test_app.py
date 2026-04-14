@@ -816,6 +816,123 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         self.assertTrue(captured["metadata"]["environment_normalized"])
         self.assertEqual(updated["generation_status"], "generated")
 
+    def test_failed_callback_falls_back_to_supported_rate_limit_template(self) -> None:
+        incident = {
+            "id": "inc-ai-ops-parse-1",
+            "project": "ani-demo",
+            "status": control_plane_app.REMEDIATION_SUGGESTED,
+            "workflow_revision": 6,
+            "anomaly_type": "registration_storm",
+            "recommendation": "Rate limit the P-CSCF ingress path",
+            "rca_payload": {
+                "recommendation": "Rate limit the P-CSCF ingress path",
+                "root_cause": "Retry amplification saturating the P-CSCF ingress path",
+            },
+        }
+        remediation = {
+            "id": 19,
+            "action_ref": control_plane_app.AI_PLAYBOOK_GENERATION_ACTION,
+            "title": "Generate AI Ansible playbook",
+            "description": "Ask the external generator to draft a playbook.",
+            "status": "available",
+            "risk_level": "low",
+            "confidence": 0.42,
+            "expected_outcome": "A reviewable AI-generated playbook is attached.",
+            "preconditions": ["RCA is attached"],
+            "based_on_revision": 6,
+            "metadata": {
+                "ai_generated": True,
+                "generation_kind": "request",
+                "generation_status": "requested",
+                "generation_correlation_id": "corr-rate-limit-failed",
+            },
+        }
+        supported_remediation = {
+            "id": 7,
+            "action_ref": "rate_limit_pcscf",
+            "playbook_ref": "RateLimitPcscfIngress",
+            "title": "Rate limit the P-CSCF ingress path",
+            "description": "Apply a safe P-CSCF ingress guardrail for retry amplification.",
+            "expected_outcome": "Retry traffic slows and registrations stabilize.",
+            "preconditions": ["Review ingress namespace", "Confirm rollback note"],
+            "risk_level": "low",
+            "confidence": 0.91,
+        }
+        captured: dict[str, object] = {}
+
+        def update_remediation(incident_id: str, remediation_id: int, **kwargs: object) -> dict[str, object]:
+            captured["incident_id"] = incident_id
+            captured["remediation_id"] = remediation_id
+            captured.update(kwargs)
+            return remediation | {
+                "title": kwargs["title"],
+                "suggestion_type": kwargs["suggestion_type"],
+                "action_ref": kwargs["action_ref"],
+                "playbook_ref": kwargs["playbook_ref"],
+                "playbook_yaml": kwargs["playbook_yaml"],
+                "metadata": kwargs["metadata"],
+                "generation_status": str((kwargs["metadata"] or {}).get("generation_status") or ""),
+            }
+
+        payload = control_plane_app.PlaybookGenerationCallbackRequest(
+            correlation_id="corr-rate-limit-failed",
+            status="failed",
+            provider_name="Ansible Lightspeed",
+            error=(
+                "Failed to parse generated playbook YAML: while parsing a block collection\n"
+                "  in \"<unicode string>\", line 28, column 19:\n"
+                "                      - podSelector:\n"
+                "                      ^\n"
+                "expected <block end>, but found '?'\n"
+                "  in \"<unicode string>\", line 31, column 19:\n"
+                "                      ports:\n"
+                "                      ^"
+            ),
+        )
+
+        with (
+            mock.patch.dict(
+                control_plane_app.os.environ,
+                {
+                    "AAP_RATE_LIMIT_PCSCF_NAMESPACE": "ani-sipp",
+                    "AAP_RATE_LIMIT_PCSCF_DEPLOYMENT": "ims-pcscf",
+                    "AAP_RATE_LIMIT_PCSCF_ANNOTATION_KEY": "ani.demo/rate-limit-review",
+                    "AAP_RATE_LIMIT_PCSCF_ANNOTATION_VALUE": "eda-guardrail",
+                },
+                clear=False,
+            ),
+            mock.patch.object(control_plane_app, "get_incident", return_value=incident),
+            mock.patch.object(control_plane_app, "_find_ai_playbook_generation_remediation", return_value=remediation),
+            mock.patch.object(control_plane_app, "_find_matching_remediation", return_value=supported_remediation),
+            mock.patch.object(
+                control_plane_app,
+                "_sync_ai_generated_playbook_to_gitea",
+                return_value={
+                    "gitea_repo_owner": "gitadmin",
+                    "gitea_repo_name": "ani-ai-generated-playbooks",
+                    "gitea_draft_branch": "draft/inc-ai-ops-parse-1",
+                    "gitea_main_branch": "main",
+                    "gitea_playbook_path": "playbooks/inc-ai-ops-parse-1/playbook.yaml",
+                    "gitea_draft_commit_sha": "parse123",
+                    "gitea_sync_status": "drafted",
+                },
+            ),
+            mock.patch.object(control_plane_app, "update_incident_remediation", side_effect=update_remediation),
+            mock.patch.object(control_plane_app, "record_audit") as record_audit,
+        ):
+            updated = control_plane_app._apply_ai_playbook_generation_callback("inc-ai-ops-parse-1", payload)
+
+        normalized_yaml = str(captured["playbook_yaml"])
+        self.assertEqual(captured["action_ref"], "rate_limit_pcscf")
+        self.assertEqual(captured["playbook_ref"], "RateLimitPcscfIngress")
+        self.assertIn("ansible.builtin.uri:", normalized_yaml)
+        self.assertIn("target_namespace | default('ani-sipp')", normalized_yaml)
+        self.assertEqual(captured["metadata"]["supported_action_ref"], "rate_limit_pcscf")
+        self.assertTrue(captured["metadata"]["supported_fallback_template"])
+        self.assertEqual(captured["metadata"]["generation_fallback_reason"], "supported_template_from_failed_callback")
+        self.assertEqual(updated["generation_status"], "generated")
+        self.assertEqual(record_audit.call_args_list[0].args[0], "ai_playbook_generation_failed_fallback_applied")
+
     def test_launch_dynamic_playbook_uses_supported_action_ref_for_environment_vars(self) -> None:
         incident = {"id": "inc-ai-ops-2", "project": "ani-demo", "workflow_revision": 1}
         remediation = {

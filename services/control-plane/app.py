@@ -948,6 +948,62 @@ def _apply_ai_playbook_generation_callback(
     )
 
     if normalized_status == "failed":
+        fallback = _supported_ai_playbook_failure_fallback(incident, remediation, payload)
+        if fallback:
+            gitea_metadata = _sync_ai_generated_playbook_to_gitea(
+                incident_id,
+                remediation,
+                str(fallback["playbook_yaml"] or ""),
+                actor=provider_name,
+                reason="Supported AI playbook fallback after parse failure",
+            )
+            updated = update_incident_remediation(
+                incident_id,
+                int(remediation.get("id") or 0),
+                based_on_revision=current_revision,
+                title=str(fallback["title"] or remediation.get("title") or "AI generated Ansible playbook").strip(),
+                suggestion_type="ansible_playbook",
+                description=str(
+                    fallback["description"]
+                    or remediation.get("description")
+                    or "Supported AI playbook synthesized after the external generator returned malformed YAML."
+                ).strip(),
+                risk_level=str(fallback["risk_level"] or remediation.get("risk_level") or "medium"),
+                confidence=max(float(fallback["confidence"] or 0.0), 0.55),
+                automation_level="human_approved",
+                requires_approval=True,
+                playbook_ref=str(fallback["playbook_ref"] or ""),
+                action_ref=str(fallback["action_ref"] or ""),
+                preconditions=_string_list(fallback["preconditions"]),
+                expected_outcome=str(fallback["expected_outcome"] or "").strip(),
+                status="available",
+                metadata=metadata
+                | {
+                    "generation_kind": "generated",
+                    "generation_status": "generated",
+                    "generation_error": "",
+                    "generated_action_ref": str(fallback["action_ref"] or ""),
+                    "generated_playbook_ref": str(fallback["playbook_ref"] or ""),
+                }
+                | (fallback["metadata"] if isinstance(fallback["metadata"], dict) else {})
+                | gitea_metadata,
+                playbook_yaml=str(fallback["playbook_yaml"] or ""),
+            )
+            record_audit(
+                "ai_playbook_generation_failed_fallback_applied",
+                provider_name,
+                {
+                    "remediation_id": remediation.get("id"),
+                    "correlation_id": payload.correlation_id,
+                    "supported_action_ref": (fallback["metadata"] or {}).get("supported_action_ref"),
+                    "fallback_reason": (fallback["metadata"] or {}).get("generation_fallback_reason"),
+                },
+                incident_id=incident_id,
+            )
+            if not updated:
+                raise HTTPException(status_code=500, detail="Failed to persist AI-generated fallback playbook")
+            return updated
+
         updated = update_incident_remediation(
             incident_id,
             int(remediation.get("id") or 0),
@@ -1572,6 +1628,84 @@ def _normalize_ai_generated_playbook_for_environment(
         "playbook_ref": playbook_ref,
         "playbook_yaml": playbook_yaml,
         "metadata": normalized_metadata,
+    }
+
+
+def _supported_ai_playbook_failure_fallback(
+    incident: Dict[str, object],
+    remediation: Dict[str, object],
+    payload: PlaybookGenerationCallbackRequest,
+) -> Dict[str, object] | None:
+    error_text = str(payload.error or "").strip()
+    if "failed to parse generated playbook yaml" not in error_text.lower():
+        return None
+
+    normalized_playbook = _normalize_ai_generated_playbook_for_environment(incident, remediation, payload)
+    playbook_yaml = str(normalized_playbook.get("playbook_yaml") or "").strip()
+    metadata = normalized_playbook.get("metadata") if isinstance(normalized_playbook.get("metadata"), dict) else {}
+    supported_action_ref = str(metadata.get("supported_action_ref") or "").strip()
+    if not playbook_yaml or not supported_action_ref:
+        return None
+
+    template_remediation = _find_matching_remediation(str(incident.get("id") or ""), supported_action_ref) or {}
+    action_ref = str(
+        payload.action_ref
+        or template_remediation.get("action_ref")
+        or normalized_playbook.get("action_ref")
+        or supported_action_ref
+    ).strip() or supported_action_ref
+    playbook_ref = str(
+        payload.playbook_ref
+        or template_remediation.get("playbook_ref")
+        or normalized_playbook.get("playbook_ref")
+        or action_ref
+    ).strip() or action_ref
+    title = str(
+        payload.title
+        or template_remediation.get("title")
+        or remediation.get("title")
+        or "AI generated Ansible playbook"
+    ).strip()
+    description = str(
+        payload.description
+        or payload.summary
+        or template_remediation.get("description")
+        or remediation.get("description")
+        or "Supported AI playbook synthesized after the generator returned malformed YAML."
+    ).strip()
+    expected_outcome = str(
+        payload.expected_outcome
+        or template_remediation.get("expected_outcome")
+        or remediation.get("expected_outcome")
+        or ""
+    ).strip()
+    preconditions = (
+        _string_list(payload.preconditions)
+        or _string_list(template_remediation.get("preconditions"))
+        or _string_list(remediation.get("preconditions"))
+    )
+    confidence = max(
+        float(template_remediation.get("confidence") or 0.0),
+        float(remediation.get("confidence") or 0.0),
+        0.55,
+    )
+
+    return {
+        "title": title,
+        "description": description,
+        "expected_outcome": expected_outcome,
+        "preconditions": preconditions,
+        "risk_level": str(template_remediation.get("risk_level") or remediation.get("risk_level") or "medium"),
+        "confidence": confidence,
+        "action_ref": action_ref,
+        "playbook_ref": playbook_ref,
+        "playbook_yaml": playbook_yaml,
+        "metadata": metadata
+        | {
+            "supported_fallback_template": True,
+            "generation_fallback_reason": "supported_template_from_failed_callback",
+            "generation_fallback_error": error_text,
+        },
     }
 
 
