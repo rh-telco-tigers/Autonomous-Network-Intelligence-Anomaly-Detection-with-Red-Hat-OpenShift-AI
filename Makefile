@@ -35,7 +35,7 @@ GPU_REPLICAS ?= 1
 GPU_SOURCE_MACHINESET ?=
 GPU_OUTPUT ?=
 
-.PHONY: help kustomize-gitops apply-demo-ai-extras check-demo-incident-generators check-fresh-cluster-gitops check-fresh-cluster-ai check-fresh-cluster-runtime check-fresh-cluster validate-python repo-tree render-gpu-node-pool add-gpu-node-pool trigger-build-pipeline live-step-1-generate-demo-incident live-step-2-build-incident-release live-step-3-publish-feature-bundle live-step-4-train-and-deploy-classifier live-step-5-smoke-check-serving backfill-step-1-generate-training-dataset backfill-step-2-build-feature-bundle backfill-step-3-train-and-register-classifier backfill-step-4-activate-serving-endpoint backfill-step-5-smoke-check-serving step-1-generate-demo-incident step-2-backfill-training-dataset step-3-build-incident-release step-4-publish-feature-bundle step-5-train-and-deploy-classifier legacy-train-and-deploy-classifier smoke-check-featurestore-serving stop-incident-release list-incident-release-datasets generate-demo-incident trigger-anomaly-platform-pipeline trigger-feature-bundle-pipeline trigger-featurestore-pipeline trigger-incident-release-pipeline trigger-incident-release backfill-step-4-smoke-check-serving
+.PHONY: help kustomize-gitops apply-demo-ai-extras check-demo-incident-generators check-fresh-cluster-gitops check-fresh-cluster-ai check-fresh-cluster-runtime check-fresh-cluster validate-python repo-tree render-gpu-node-pool add-gpu-node-pool trigger-build-pipeline live-step-1-generate-demo-incident live-step-2-build-incident-release live-step-3-publish-feature-bundle live-step-4-train-and-deploy-classifier live-step-5-smoke-check-serving live-step-6-validate-ai-playbook-generation backfill-step-1-generate-training-dataset backfill-step-2-build-feature-bundle backfill-step-3-train-and-register-classifier backfill-step-4-activate-serving-endpoint backfill-step-5-smoke-check-serving step-1-generate-demo-incident step-2-backfill-training-dataset step-3-build-incident-release step-4-publish-feature-bundle step-5-train-and-deploy-classifier legacy-train-and-deploy-classifier smoke-check-featurestore-serving validate-ai-playbook-generation stop-incident-release list-incident-release-datasets generate-demo-incident trigger-anomaly-platform-pipeline trigger-feature-bundle-pipeline trigger-featurestore-pipeline trigger-incident-release-pipeline trigger-incident-release backfill-step-4-smoke-check-serving
 
 help: ## Print available make targets
 	@printf "Available commands:\n"
@@ -191,6 +191,16 @@ live-step-5-smoke-check-serving: ## Live Step 5: Run a serving smoke check again
 	oc create -f "$(DEMO_TRIGGER_DIR)/featurestore-serving-smoke-job.yaml"
 
 smoke-check-featurestore-serving: live-step-5-smoke-check-serving
+
+live-step-6-validate-ai-playbook-generation: ## Live Step 6: Run the full 12-scenario AI playbook-generation validation matrix against the live control-plane
+	@control_plane_host="$$(oc get route control-plane -n "$(RUNTIME_NAMESPACE)" -o jsonpath='{.spec.host}')"; \
+	printf "Running live AI playbook-generation matrix through %s\n" "$$control_plane_host"; \
+	CONTROL_PLANE_HOST="https://$$control_plane_host" \
+	CONTROL_PLANE_API_TOKEN="$(CONTROL_PLANE_API_TOKEN)" \
+	DEMO_PROJECT="$(DEMO_PROJECT)" \
+	python3 automation/validate_playbook_generation_matrix.py
+
+validate-ai-playbook-generation: live-step-6-validate-ai-playbook-generation
 
 backfill-step-1-generate-training-dataset: ## Backfill Step 1: Generate the large shared backfill dataset used only for offline training and bundle publishing
 	@dataset_version="$(BACKFILL_DATASET_VERSION)"; \

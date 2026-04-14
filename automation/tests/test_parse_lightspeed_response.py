@@ -203,3 +203,77 @@ def test_build_callback_payload_repairs_unquoted_template_scalar_with_colon() ->
         'msg: "Scaling failed. Current replicas: {{ check_result.json.status.replicas | default(\'unknown\') }}"'
         in payload["playbook_yaml"]
     )
+
+
+def test_build_callback_payload_repairs_root_level_handlers_block() -> None:
+    prompt = dedent(
+        """
+        Callback contract:
+        - callback_url: http://control-plane.ani-runtime.svc.cluster.local:8080/incidents/inc-6/playbook-generation/callback
+        - correlation_id: corr-2000
+        """
+    ).strip()
+    raw_response = dedent(
+        """
+        ```yaml
+        title: "Validate auth vector freshness"
+        summary: "Check auth path state before broader changes."
+        playbook_yaml: |
+          ---
+          - name: Check auth vector freshness
+            hosts: localhost
+            gather_facts: false
+            tasks:
+              - name: Record current status
+                ansible.builtin.debug:
+                  msg: "checking auth state"
+          handlers:
+            - name: restart auth cache
+              ansible.builtin.debug:
+                msg: "restart requested"
+        ```
+        """
+    ).strip()
+
+    payload = build_callback_payload(prompt=prompt, raw_response=raw_response)
+
+    assert payload["status"] == "generated"
+    assert payload["error"] == ""
+    assert "\n  handlers:\n" in payload["playbook_yaml"]
+    assert "restart auth cache" in payload["playbook_yaml"]
+
+
+def test_build_callback_payload_accepts_block_scalar_playbook_yaml_envelope() -> None:
+    prompt = dedent(
+        """
+        Callback contract:
+        - callback_url: http://control-plane.ani-runtime.svc.cluster.local:8080/incidents/inc-7/playbook-generation/callback
+        - correlation_id: corr-3000
+        """
+    ).strip()
+    raw_response = dedent(
+        """
+        ```yaml
+        title: "Scale S-CSCF for worker saturation"
+        summary: "Use the supported scaling path."
+        playbook_ref: "ING-001"
+        action_ref: "ING-001"
+        playbook_yaml: |-
+          ---
+          - name: Scale the S-CSCF deployment
+            hosts: localhost
+            gather_facts: false
+            tasks:
+              - name: Record target
+                ansible.builtin.debug:
+                  msg: "scale ims-scscf"
+        ```
+        """
+    ).strip()
+
+    payload = build_callback_payload(prompt=prompt, raw_response=raw_response)
+
+    assert payload["status"] == "generated"
+    assert payload["error"] == ""
+    assert payload["title"] == "Scale S-CSCF for worker saturation"
+    assert payload["playbook_yaml"].startswith("---\n- name: Scale the S-CSCF deployment")

@@ -40,6 +40,7 @@
     - name: Debug serialized body (compare this to your curl -d payload)
       ansible.builtin.debug:
         msg: "{{ request_body }}"
+      when: lightspeed_debug | default(false) | bool
 
     - name: Send request to AI API
       ansible.builtin.uri:
@@ -58,6 +59,7 @@
     - name: Display API response
       ansible.builtin.debug:
         msg: "{{ response.json }}"
+      when: lightspeed_debug | default(false) | bool
 
     - name: Preserve raw YAML playbook (string)
       ansible.builtin.set_fact:
@@ -66,10 +68,12 @@
     - name: Display Ansible Playbook in JSON
       ansible.builtin.debug:
         msg: "{{ lightspeed_playbook_raw }}"
+      when: lightspeed_debug | default(false) | bool
 
     - name: Display Ansible Playbook in YAML
       ansible.builtin.debug:
         msg: "{{ lightspeed_playbook_raw | to_nice_yaml(sort_keys=False) }}"
+      when: lightspeed_debug | default(false) | bool
 
 
     - name: Extract raw response string
@@ -149,6 +153,7 @@
         - name: Display repair API response
           ansible.builtin.debug:
             msg: "{{ repair_response.json }}"
+          when: lightspeed_debug | default(false) | bool
 
         - name: Replace raw response with repaired content
           ansible.builtin.set_fact:
@@ -195,6 +200,7 @@
           expected_outcome: "{{ parsed_callback_payload.expected_outcome }}"
           error: "{{ parsed_callback_payload.error }}"
           playbook_yaml_preview: "{{ parsed_callback_payload.playbook_yaml | default('') | truncate(300) }}"
+      when: lightspeed_debug | default(false) | bool
 
     - name: Build callback payload
       ansible.builtin.set_fact:
@@ -240,6 +246,7 @@
         msg:
           status: "{{ callback_response.status }}"
           response: "{{ callback_response.json | default(callback_response.content | default('no body')) }}"
+      when: lightspeed_debug | default(false) | bool
 
     - name: Fail the controller job when Lightspeed output was not parseable
       ansible.builtin.fail:

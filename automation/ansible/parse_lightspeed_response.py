@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import textwrap
 from typing import Any
 
 import yaml
@@ -82,6 +83,71 @@ def _quote_problematic_template_scalars(playbook_yaml: str) -> str:
     return "\n".join(repaired_lines) + ("\n" if str(playbook_yaml or "").endswith("\n") else "")
 
 
+def _reindent_root_level_play_sections(playbook_yaml: str) -> str:
+    play_section_keys = {
+        "any_errors_fatal",
+        "become",
+        "become_user",
+        "collections",
+        "environment",
+        "force_handlers",
+        "gather_facts",
+        "handlers",
+        "hosts",
+        "max_fail_percentage",
+        "module_defaults",
+        "name",
+        "post_tasks",
+        "pre_tasks",
+        "roles",
+        "serial",
+        "strategy",
+        "tasks",
+        "vars",
+        "vars_files",
+    }
+    repaired_lines: list[str] = []
+    changed = False
+    seen_play = False
+    inside_reindented_block = False
+
+    for line in str(playbook_yaml or "").splitlines():
+        stripped = line.strip()
+        if not seen_play:
+            if re.match(r"^-\s+(?:name|hosts)\s*:", line):
+                seen_play = True
+            repaired_lines.append(line)
+            continue
+
+        if re.match(r"^-\s+(?:name|hosts)\s*:", line):
+            inside_reindented_block = False
+            repaired_lines.append(line)
+            continue
+
+        root_key_match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*):(?:\s+.*)?$", line)
+        if root_key_match and root_key_match.group(1) in play_section_keys:
+            repaired_lines.append(f"  {line}")
+            inside_reindented_block = True
+            changed = True
+            continue
+
+        if inside_reindented_block:
+            if not stripped:
+                repaired_lines.append(line)
+                continue
+            if line.startswith(" ") or line.startswith("\t"):
+                repaired_lines.append(f"  {line}")
+                changed = True
+                continue
+            inside_reindented_block = False
+
+        repaired_lines.append(line)
+
+    if not changed:
+        return playbook_yaml
+    return "\n".join(repaired_lines) + ("\n" if str(playbook_yaml or "").endswith("\n") else "")
+
+
 def _load_metadata_mapping(metadata_text: str) -> dict[str, Any]:
     try:
         parsed_documents = [document for document in yaml.safe_load_all(metadata_text) if document is not None]
@@ -141,10 +207,11 @@ def _extract_metadata_and_playbook(yaml_body: str) -> tuple[dict[str, Any], str]
         playbook_yaml = _validate_playbook_yaml(playbook_yaml)
         return metadata, playbook_yaml
 
-    envelope_match = re.search(r"(?m)^playbook_yaml:\s*$", cleaned)
+    envelope_match = re.search(r"(?m)^playbook_yaml:\s*(?:[>|][-+]?)?\s*$", cleaned)
     if envelope_match:
         metadata_text = cleaned[: envelope_match.start()].strip()
-        playbook_text = _trim_playbook_body(cleaned[envelope_match.end() :])
+        playbook_text = textwrap.dedent(cleaned[envelope_match.end() :])
+        playbook_text = _trim_playbook_body(playbook_text)
         metadata = _load_metadata_mapping(metadata_text) if metadata_text else {}
         playbook_yaml = _ensure_yaml_document(playbook_text)
         playbook_yaml = _validate_playbook_yaml(playbook_yaml)
@@ -176,7 +243,9 @@ def _validate_playbook_yaml(playbook_yaml: str) -> str:
     try:
         parsed = yaml.safe_load(playbook_yaml)
     except yaml.YAMLError as exc:
-        repaired = _quote_problematic_template_scalars(playbook_yaml)
+        repaired = playbook_yaml
+        for repair in (_quote_problematic_template_scalars, _reindent_root_level_play_sections):
+            repaired = repair(repaired)
         if repaired != playbook_yaml:
             try:
                 parsed = yaml.safe_load(repaired)
