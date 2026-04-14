@@ -7,6 +7,11 @@
         host: ani-release-kafka-kafka-bootstrap.ani-data.svc.cluster.local
         port: 9092
         topic: aiops-ansible-playbook-generate-instruction
+        # Use a stable Kafka consumer group so activation restarts resume from
+        # the last committed offset instead of skipping messages published
+        # during the restart window.
+        group_id: ani-remediation-playbook-generation
+        offset: latest
   rules:
     - name: Debug - print all Kafka events
       condition: event.body is defined
