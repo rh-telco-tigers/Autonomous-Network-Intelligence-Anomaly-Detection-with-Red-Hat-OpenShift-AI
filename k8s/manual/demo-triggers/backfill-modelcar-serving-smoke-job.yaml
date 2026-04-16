@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  generateName: ani-featurestore-serving-smoke-
+  generateName: ani-backfill-modelcar-serving-smoke-
   namespace: ani-datascience
 spec:
   backoffLimit: 1
@@ -9,7 +9,7 @@ spec:
   template:
     metadata:
       labels:
-        app: ani-featurestore-serving-smoke
+        app: ani-backfill-modelcar-serving-smoke
     spec:
       restartPolicy: Never
       containers:
@@ -18,6 +18,10 @@ spec:
           command:
             - python
             - ai/training/featurestore_runtime_smoke_check.py
+            - --endpoint
+            - http://ani-predictive-backfill-modelcar-predictor.ani-datascience.svc.cluster.local:8080
+            - --model-name
+            - ani-predictive-backfill-modelcar
           resources:
             requests:
               cpu: 100m

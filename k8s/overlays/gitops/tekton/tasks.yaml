@@ -168,3 +168,180 @@ spec:
           "docker://$(params.IMAGE)"
         printf '%s' "$(params.IMAGE)" | tee "$(results.IMAGE_URL.path)"
         cat /tmp/image-digest | tr -d '\n' | tee "$(results.IMAGE_DIGEST.path)"
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: prepare-modelcar-context
+  namespace: ani-tekton
+spec:
+  params:
+    - name: SOURCE_MODEL_NAME
+      type: string
+    - name: SOURCE_MODEL_VERSION_NAME
+      type: string
+    - name: MODELCAR_SERVING_MODEL_NAME
+      type: string
+    - name: MODELCAR_SERVING_RUNTIME_NAME
+      type: string
+      default: ani-autogluon-mlserver-runtime
+    - name: TARGET_IMAGE
+      type: string
+    - name: STABLE_IMAGE
+      type: string
+    - name: MODEL_REGISTRY_ENDPOINT
+      type: string
+      default: http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080
+  results:
+    - name: MODELCAR_MANIFEST_PATH
+      type: string
+  workspaces:
+    - name: source
+  steps:
+    - name: prepare
+      image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+      workingDir: /workspace
+      env:
+        - name: HOME
+          value: /tmp
+        - name: MPLCONFIGDIR
+          value: /tmp/matplotlib
+      computeResources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          cpu: "1"
+          memory: 2Gi
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        manifest_path="$(workspaces.source.path)/modelcar/modelcar-manifest.json"
+        python ai/training/featurestore_train.py \
+          --step prepare-modelcar-context \
+          --model-name "$(params.SOURCE_MODEL_NAME)" \
+          --model-version-name "$(params.SOURCE_MODEL_VERSION_NAME)" \
+          --model-registry-endpoint "$(params.MODEL_REGISTRY_ENDPOINT)" \
+          --serving-model-name "$(params.MODELCAR_SERVING_MODEL_NAME)" \
+          --serving-runtime-name "$(params.MODELCAR_SERVING_RUNTIME_NAME)" \
+          --serving-model-format-name autogluon \
+          --serving-model-format-version 1 \
+          --serving-protocol-version v2 \
+          --modelcar-build-root "$(workspaces.source.path)/modelcar" \
+          --modelcar-image "$(params.TARGET_IMAGE)" \
+          --modelcar-image-alias "$(params.STABLE_IMAGE)" \
+          --output "${manifest_path}"
+        printf '%s' "${manifest_path}" | tee "$(results.MODELCAR_MANIFEST_PATH.path)"
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: copy-image-lite
+  namespace: ani-tekton
+spec:
+  params:
+    - name: SOURCE_IMAGE
+      type: string
+    - name: DEST_IMAGE
+      type: string
+    - name: STORAGE_DRIVER
+      type: string
+      default: vfs
+    - name: TLS_VERIFY
+      type: string
+      default: "true"
+  results:
+    - name: IMAGE_URL
+      type: string
+    - name: IMAGE_DIGEST
+      type: string
+  steps:
+    - name: copy
+      image: registry.redhat.io/rhel9/buildah@sha256:4e604d18fc609d25b2fc99814281944acaac78e8cd5e47b8359709b8b505db86
+      securityContext:
+        capabilities:
+          add:
+            - SETFCAP
+      computeResources:
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        buildah --storage-driver="$(params.STORAGE_DRIVER)" \
+          pull \
+          --tls-verify="$(params.TLS_VERIFY)" \
+          "docker://$(params.SOURCE_IMAGE)"
+        buildah --storage-driver="$(params.STORAGE_DRIVER)" \
+          tag \
+          "$(params.SOURCE_IMAGE)" \
+          "$(params.DEST_IMAGE)"
+        buildah --storage-driver="$(params.STORAGE_DRIVER)" \
+          push \
+          --tls-verify="$(params.TLS_VERIFY)" \
+          --digestfile /tmp/image-digest \
+          "$(params.DEST_IMAGE)" \
+          "docker://$(params.DEST_IMAGE)"
+        printf '%s' "$(params.DEST_IMAGE)" | tee "$(results.IMAGE_URL.path)"
+        cat /tmp/image-digest | tr -d '\n' | tee "$(results.IMAGE_DIGEST.path)"
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: register-modelcar-version
+  namespace: ani-tekton
+spec:
+  params:
+    - name: TARGET_MODEL_NAME
+      type: string
+    - name: TARGET_MODEL_VERSION_NAME
+      type: string
+    - name: FEATURE_SERVICE_NAME
+      type: string
+      default: ani_anomaly_scoring_v1
+    - name: PIPELINE_NAME
+      type: string
+      default: ani-backfill-modelcar-publish
+    - name: MODEL_REGISTRY_ENDPOINT
+      type: string
+      default: http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080
+  results:
+    - name: REGISTRATION_MANIFEST_PATH
+      type: string
+  workspaces:
+    - name: source
+  steps:
+    - name: register
+      image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+      workingDir: /workspace
+      env:
+        - name: HOME
+          value: /tmp
+        - name: RHOAI_MODEL_REGISTRY_REQUIRED
+          value: "true"
+      computeResources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          cpu: "1"
+          memory: 2Gi
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        export_manifest="$(workspaces.source.path)/modelcar/modelcar-manifest.json"
+        registration_path="$(workspaces.source.path)/modelcar/modelcar-registration.json"
+        python ai/training/featurestore_train.py \
+          --step register-model-version \
+          --export-manifest "${export_manifest}" \
+          --model-name "$(params.TARGET_MODEL_NAME)" \
+          --model-version-name "$(params.TARGET_MODEL_VERSION_NAME)" \
+          --feature-service-name "$(params.FEATURE_SERVICE_NAME)" \
+          --pipeline-name "$(params.PIPELINE_NAME)" \
+          --model-registry-endpoint "$(params.MODEL_REGISTRY_ENDPOINT)" \
+          --output "${registration_path}"
+        printf '%s' "${registration_path}" | tee "$(results.REGISTRATION_MANIFEST_PATH.path)"

@@ -1,0 +1,40 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: ani-backfill-modelcar-
+  namespace: __TEKTON_NAMESPACE__
+spec:
+  pipelineRef:
+    name: ani-backfill-modelcar-publish
+  params:
+    - name: source-model-name
+      value: __BACKFILL_MODEL_NAME__
+    - name: source-model-version-name
+      value: __BACKFILL_MODEL_VERSION_NAME__
+    - name: target-model-name
+      value: __BACKFILL_MODELCAR_MODEL_NAME__
+    - name: target-model-version-name
+      value: __BACKFILL_MODELCAR_MODEL_VERSION_NAME__
+    - name: feature-service-name
+      value: __BACKFILL_FEATURE_SERVICE_NAME__
+    - name: image-repository
+      value: __BACKFILL_MODELCAR_IMAGE_REPOSITORY__
+    - name: modelcar-serving-model-name
+      value: __BACKFILL_MODELCAR_SERVING_MODEL_NAME__
+    - name: modelcar-serving-runtime-name
+      value: __BACKFILL_MODELCAR_SERVING_RUNTIME_NAME__
+    - name: model-registry-endpoint
+      value: __MODEL_REGISTRY_ENDPOINT__
+  taskRunTemplate:
+    serviceAccountName: pipeline
+  timeouts:
+    pipeline: 2h0m0s
+  workspaces:
+    - name: source
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi

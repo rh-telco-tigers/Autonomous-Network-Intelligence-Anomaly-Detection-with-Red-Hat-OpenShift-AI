@@ -27,6 +27,10 @@ data:
   PREDICTIVE_ENDPOINT_BACKFILL: http://ani-predictive-backfill-predictor.ani-demo-lab.svc.cluster.local:8080
   PREDICTIVE_MODEL_NAME_BACKFILL: ani-predictive-backfill
   PREDICTIVE_MODEL_VERSION_LABEL_BACKFILL: ani-predictive-backfill
+  PREDICTIVE_MODELCAR_SERVICE_URL: http://ani-predictive-backfill-modelcar-predictor.ani-demo-lab.svc.cluster.local:8080
+  PREDICTIVE_ENDPOINT_MODELCAR: http://ani-predictive-backfill-modelcar-predictor.ani-demo-lab.svc.cluster.local:8080
+  PREDICTIVE_MODEL_NAME_MODELCAR: ani-predictive-backfill-modelcar
+  PREDICTIVE_MODEL_VERSION_LABEL_MODELCAR: ani-predictive-backfill-modelcar
   INCIDENT_AUTO_RCA_SAMPLE_RATE: "1.0"
   AI_PLAYBOOK_GENERATION_ENABLED: "true"
   AI_PLAYBOOK_GENERATION_KAFKA_BOOTSTRAP_SERVERS: ani-release-kafka-kafka-bootstrap.ani-demo-lab.svc.cluster.local:9092

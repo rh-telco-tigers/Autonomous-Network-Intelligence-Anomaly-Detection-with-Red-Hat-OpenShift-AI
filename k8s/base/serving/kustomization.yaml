@@ -6,5 +6,6 @@ resources:
   - autogluon-mlserver-runtime.yaml
   - llm-serving.yaml
   - featurestore-serving.yaml
+  - featurestore-serving-backfill-modelcar.yaml
   - triton-template-rbac.yaml
   - triton-runtime-template.yaml

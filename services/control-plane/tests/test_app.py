@@ -1258,7 +1258,16 @@ class ClassifierProfileSelectionTests(unittest.TestCase):
                 return_value={
                     "requested_profile": "backfill",
                     "active_profile": "backfill",
-                    "profiles": [],
+                    "profiles": [
+                        {
+                            "key": "live",
+                            "configured": True,
+                        },
+                        {
+                            "key": "backfill",
+                            "configured": True,
+                        },
+                    ],
                     "updated_at": "2026-04-11T01:00:00+00:00",
                 },
             ),
@@ -1270,6 +1279,66 @@ class ClassifierProfileSelectionTests(unittest.TestCase):
         self.assertEqual(response["active_profile"], "backfill")
         self.assertEqual(set_app_setting.call_args.args[0], control_plane_app.CLASSIFIER_PROFILE_SETTING_KEY)
         self.assertEqual(set_app_setting.call_args.args[1]["profile"], "backfill")
+
+    def test_classifier_profile_status_uses_modelcar_when_requested_and_configured(self) -> None:
+        with (
+            mock.patch.object(
+                control_plane_app,
+                "classifier_profile_catalog",
+                return_value={
+                    "live": {
+                        "key": "live",
+                        "label": "Live model",
+                        "description": "Live path",
+                        "endpoint": "http://predictive-live.example.com",
+                        "model_name": "ani-predictive-fs",
+                        "model_version_label": "ani-predictive-fs",
+                        "configured": True,
+                    },
+                    "backfill": {
+                        "key": "backfill",
+                        "label": "Backfill model",
+                        "description": "Backfill path",
+                        "endpoint": "http://predictive-backfill.example.com",
+                        "model_name": "ani-predictive-backfill",
+                        "model_version_label": "ani-predictive-backfill",
+                        "configured": True,
+                    },
+                    "modelcar": {
+                        "key": "modelcar",
+                        "label": "Modelcar model",
+                        "description": "OCI path",
+                        "endpoint": "http://predictive-modelcar.example.com",
+                        "model_name": "ani-predictive-backfill-modelcar",
+                        "model_version_label": "ani-predictive-backfill-modelcar",
+                        "configured": True,
+                    },
+                },
+            ),
+            mock.patch.object(
+                control_plane_app,
+                "_probe_service",
+                side_effect=[
+                    {"ok": True, "status": "ready"},
+                    {"ok": True, "status": "ready"},
+                    {"ok": True, "status": "ready"},
+                ],
+            ),
+            mock.patch.object(
+                control_plane_app,
+                "get_app_setting_record",
+                return_value={
+                    "key": control_plane_app.CLASSIFIER_PROFILE_SETTING_KEY,
+                    "value": {"profile": "modelcar"},
+                    "updated_at": "2026-04-16T00:00:00+00:00",
+                },
+            ),
+        ):
+            status = control_plane_app._classifier_profile_status()
+
+        self.assertEqual(status["requested_profile"], "modelcar")
+        self.assertEqual(status["active_profile"], "modelcar")
+        self.assertTrue(next(item for item in status["profiles"] if item["key"] == "modelcar")["active"])
 
 
 if __name__ == "__main__":

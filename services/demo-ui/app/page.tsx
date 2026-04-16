@@ -117,7 +117,8 @@ export default function OverviewPage() {
           <CardHeader>
             <CardTitle>Classifier routing</CardTitle>
             <CardDescription>
-              Choose whether new classifications use the live incident-linked model or the backfill-trained model.
+              Choose whether new classifications use the live incident-linked model, the MinIO-backed backfill model,
+              or the OCI modelcar variant.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-[minmax(0,260px)_1fr]">
@@ -166,7 +167,15 @@ export default function OverviewPage() {
                       <div className="font-medium text-[var(--text-strong)]">{profile.label}</div>
                       <div className="mt-1 text-sm text-[var(--text-secondary)]">{profile.description}</div>
                     </div>
-                    <StatusBadge value={profile.active ? "ACTIVE" : profile.configured ? "READY" : "OFFLINE"} />
+                    <StatusBadge
+                      value={
+                        profile.active
+                          ? "ACTIVE"
+                          : (profile.reachable ?? profile.configured)
+                            ? "READY"
+                            : "OFFLINE"
+                      }
+                    />
                   </div>
                   <div className="mt-3 space-y-1 text-xs text-[var(--text-subtle)]">
                     <div>Model: {profile.model_version_label || profile.model_name || "Not configured"}</div>

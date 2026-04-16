@@ -235,6 +235,95 @@ def test_export_serving_artifact_uses_autogluon_bundle(tmp_path, monkeypatch):
     assert predictor_copy.exists()
 
 
+def test_prepare_modelcar_context_rewrites_mlserver_bundle(tmp_path, monkeypatch):
+    source_bundle_root = tmp_path / "source-bundle"
+    source_model_root = source_bundle_root / "ani-predictive-backfill"
+    predictor_root = source_model_root / "predictor"
+    predictor_root.mkdir(parents=True)
+    (predictor_root / "metadata.json").write_text(json.dumps({"kind": "autogluon"}))
+    (source_model_root / "model-settings.json").write_text(
+        json.dumps(
+            {
+                "name": "ani-predictive-backfill",
+                "implementation": ft.DEFAULT_AUTOGLUON_MLSERVER_IMPLEMENTATION,
+                "parameters": {
+                    "uri": "./predictor",
+                    "version": "candidate-backfill-fs-v1",
+                },
+            }
+        )
+    )
+    (source_bundle_root / "selected-model.json").write_text(json.dumps({"selected_model_version": "candidate-backfill-fs-v1"}))
+    (source_bundle_root / "serving-metadata.json").write_text(
+        json.dumps(
+            {
+                "bundle_version": "ani-backfill-feature-bundle-v1",
+                "feature_service_name": "ani_anomaly_scoring_v1",
+                "label_taxonomy_version": "ani_incident_taxonomy_v2",
+                "selected_model_version": "candidate-backfill-fs-v1",
+                "serving_model_name": "ani-predictive-backfill",
+                "serving_runtime_name": "ani-autogluon-mlserver-runtime",
+                "serving_model_format_name": "autogluon",
+                "serving_model_format_version": "1",
+                "serving_protocol_version": "v2",
+                "serving_backend": "mlserver-autogluon",
+                "class_labels": ft.CANONICAL_LABELS,
+                "normal_class_label": "normal_operation",
+                "serving_metrics": {
+                    "macro_f1": 0.9,
+                    "weighted_f1": 0.91,
+                    "balanced_accuracy": 0.9,
+                    "per_class_recall": {label: 0.85 for label in ft.CANONICAL_LABELS},
+                    "normal_false_alarm_rate": 0.05,
+                    "calibration": {"multiclass_log_loss": 0.2},
+                    "latency_p95_ms": 5.0,
+                    "stability_score": 0.96,
+                },
+            }
+        )
+    )
+    monkeypatch.setattr(
+        ft,
+        "resolve_registered_model_artifact_uri",
+        lambda **kwargs: {
+            "artifact_uri": str(source_bundle_root),
+            "registry_endpoint": "http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080",
+        },
+    )
+
+    manifest = ft._prepare_modelcar_context_step(
+        source_model_name="ani-anomaly-featurestore-backfill",
+        source_model_version_name="ani-anomaly-featurestore-backfill-v1",
+        model_registry_endpoint="http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080",
+        serving_model_name="ani-predictive-backfill-modelcar",
+        serving_runtime_name="ani-autogluon-mlserver-runtime",
+        serving_model_format_name="autogluon",
+        serving_model_format_version="1",
+        modelcar_build_root=str(tmp_path / "modelcar-build"),
+        modelcar_image="image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:ani-anomaly-featurestore-backfill-modelcar-v1",
+        modelcar_image_alias="image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:current",
+        protocol_version="v2",
+    )
+
+    rewritten_settings = json.loads(
+        (tmp_path / "modelcar-build" / "models" / "ani-predictive-backfill-modelcar" / "model-settings.json").read_text()
+    )
+    rewritten_metadata = json.loads((tmp_path / "modelcar-build" / "models" / "serving-metadata.json").read_text())
+
+    assert (tmp_path / "modelcar-build" / "models" / "ani-predictive-backfill-modelcar" / "predictor" / "metadata.json").exists()
+    assert rewritten_settings["name"] == "ani-predictive-backfill-modelcar"
+    assert rewritten_metadata["serving_model_name"] == "ani-predictive-backfill-modelcar"
+    assert manifest["serving_storage_backend"] == "oci-modelcar"
+    assert (
+        manifest["serving_storage_uri"]
+        == "oci://image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:ani-anomaly-featurestore-backfill-modelcar-v1"
+    )
+    assert (
+        manifest["serving_alias_storage_uri"]
+        == "oci://image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:current"
+    )
+
+
 def test_evaluate_batches_autogluon_predictions(monkeypatch):
     records = _make_records(ft.CANONICAL_LABELS[:5], per_class=2)
     expected_labels = [record["anomaly_type"] for record in records]
@@ -480,3 +569,79 @@ def test_publish_deployment_manifest_requires_successful_registry_publish(tmp_pa
             str(registry_manifest_path),
             "model-storage-sa",
         )
+
+
+def test_register_model_version_includes_modelcar_metadata(tmp_path, monkeypatch):
+    export_manifest_path = tmp_path / "modelcar-export.json"
+    export_manifest_path.write_text(
+        json.dumps(
+            {
+                "bundle_version": "ani-backfill-feature-bundle-v1",
+                "feature_service_name": "ani_anomaly_scoring_v1",
+                "label_taxonomy_version": "ani_incident_taxonomy_v2",
+                "selected_model_version": "candidate-backfill-fs-v1",
+                "serving_model_name": "ani-predictive-backfill-modelcar",
+                "serving_runtime_name": "ani-autogluon-mlserver-runtime",
+                "serving_model_format_name": "autogluon",
+                "serving_model_format_version": "1",
+                "serving_protocol_version": "v2",
+                "serving_backend": "mlserver-autogluon",
+                "serving_storage_backend": "oci-modelcar",
+                "serving_storage_uri": "oci://image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:ani-anomaly-featurestore-backfill-modelcar-v1",
+                "serving_alias_storage_uri": "oci://image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:current",
+                "serving_metrics": {
+                    "macro_f1": 0.9,
+                    "weighted_f1": 0.91,
+                    "balanced_accuracy": 0.9,
+                    "per_class_recall": {label: 0.85 for label in ft.CANONICAL_LABELS},
+                    "normal_false_alarm_rate": 0.05,
+                    "calibration": {"multiclass_log_loss": 0.2},
+                    "latency_p95_ms": 5.0,
+                    "stability_score": 0.96,
+                },
+                "class_labels": ft.CANONICAL_LABELS,
+                "normal_class_label": "normal_operation",
+                "source_model_name": "ani-anomaly-featurestore-backfill",
+                "source_model_version_name": "ani-anomaly-featurestore-backfill-v1",
+                "source_serving_model_name": "ani-predictive-backfill",
+                "source_artifact_uri": "s3://ani-models/predictive-featurestore/ani-predictive-backfill/ani-anomaly-featurestore-backfill-v1/",
+                "modelcar_image": "image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:ani-anomaly-featurestore-backfill-modelcar-v1",
+                "modelcar_image_alias": "image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:current",
+            }
+        )
+    )
+    monkeypatch.setattr(ft, "DEFAULT_WORKSPACE_ROOT", str(tmp_path / "workspace"))
+
+    captured: dict[str, object] = {}
+
+    def fake_build_model_registry_payload(**kwargs):
+        captured.update(kwargs)
+        return {
+            **kwargs,
+            "registry_endpoint": kwargs.get("registry_endpoint") or "http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080",
+        }
+
+    monkeypatch.setattr(ft, "build_model_registry_payload", fake_build_model_registry_payload)
+    monkeypatch.setattr(
+        ft,
+        "publish_model_version",
+        lambda payload, output_path: {"registration_result": {"status": "registered", "endpoint": payload["registry_endpoint"]}},
+    )
+
+    manifest = ft._register_model_version_step(
+        str(export_manifest_path),
+        "ani-anomaly-featurestore-backfill-modelcar",
+        "ani-anomaly-featurestore-backfill-modelcar-v1",
+        "ani_anomaly_scoring_v1",
+        "ani-backfill-modelcar-publish",
+        "http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080",
+    )
+
+    assert (
+        captured["artifact_uri"]
+        == "oci://image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:ani-anomaly-featurestore-backfill-modelcar-v1"
+    )
+    assert captured["metadata"]["serving_storage_backend"] == "oci-modelcar"
+    assert captured["metadata"]["source_model_name"] == "ani-anomaly-featurestore-backfill"
+    assert captured["metadata"]["modelcar_image_alias"].endswith(":current")
+    assert manifest["registration_result"]["status"] == "registered"

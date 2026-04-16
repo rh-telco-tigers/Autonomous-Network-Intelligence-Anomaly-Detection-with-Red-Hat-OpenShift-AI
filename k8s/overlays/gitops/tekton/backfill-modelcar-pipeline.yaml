@@ -1,0 +1,102 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: ani-backfill-modelcar-publish
+spec:
+  params:
+    - name: source-model-name
+      type: string
+      default: ani-anomaly-featurestore-backfill
+    - name: source-model-version-name
+      type: string
+      default: ani-anomaly-featurestore-backfill-v1
+    - name: target-model-name
+      type: string
+      default: ani-anomaly-featurestore-backfill-modelcar
+    - name: target-model-version-name
+      type: string
+      default: ani-anomaly-featurestore-backfill-modelcar-v1
+    - name: feature-service-name
+      type: string
+      default: ani_anomaly_scoring_v1
+    - name: image-repository
+      type: string
+      default: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar
+    - name: stable-image-tag
+      type: string
+      default: current
+    - name: modelcar-serving-model-name
+      type: string
+      default: ani-predictive-backfill-modelcar
+    - name: modelcar-serving-runtime-name
+      type: string
+      default: ani-autogluon-mlserver-runtime
+    - name: model-registry-endpoint
+      type: string
+      default: http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080
+  workspaces:
+    - name: source
+  tasks:
+    - name: prepare-modelcar-context
+      taskRef:
+        name: prepare-modelcar-context
+      params:
+        - name: SOURCE_MODEL_NAME
+          value: $(params.source-model-name)
+        - name: SOURCE_MODEL_VERSION_NAME
+          value: $(params.source-model-version-name)
+        - name: MODELCAR_SERVING_MODEL_NAME
+          value: $(params.modelcar-serving-model-name)
+        - name: MODELCAR_SERVING_RUNTIME_NAME
+          value: $(params.modelcar-serving-runtime-name)
+        - name: TARGET_IMAGE
+          value: $(params.image-repository):$(params.target-model-version-name)
+        - name: STABLE_IMAGE
+          value: $(params.image-repository):$(params.stable-image-tag)
+        - name: MODEL_REGISTRY_ENDPOINT
+          value: $(params.model-registry-endpoint)
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-modelcar-image
+      runAfter:
+        - prepare-modelcar-context
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: $(params.image-repository):$(params.target-model-version-name)
+        - name: CONTEXT
+          value: ./modelcar
+        - name: DOCKERFILE
+          value: ./modelcar/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: promote-modelcar-stable-tag
+      runAfter:
+        - build-modelcar-image
+      taskRef:
+        name: copy-image-lite
+      params:
+        - name: SOURCE_IMAGE
+          value: $(params.image-repository):$(params.target-model-version-name)
+        - name: DEST_IMAGE
+          value: $(params.image-repository):$(params.stable-image-tag)
+    - name: register-modelcar-version
+      runAfter:
+        - promote-modelcar-stable-tag
+      taskRef:
+        name: register-modelcar-version
+      params:
+        - name: TARGET_MODEL_NAME
+          value: $(params.target-model-name)
+        - name: TARGET_MODEL_VERSION_NAME
+          value: $(params.target-model-version-name)
+        - name: FEATURE_SERVICE_NAME
+          value: $(params.feature-service-name)
+        - name: MODEL_REGISTRY_ENDPOINT
+          value: $(params.model-registry-endpoint)
+      workspaces:
+        - name: source
+          workspace: source

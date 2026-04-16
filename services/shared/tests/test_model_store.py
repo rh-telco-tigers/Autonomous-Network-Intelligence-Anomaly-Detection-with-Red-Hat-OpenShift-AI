@@ -100,7 +100,7 @@ class ModelStoreTests(unittest.TestCase):
             result = model_store.score_features_detailed({"register_rate": 12.0}, anomaly_type_hint="registration_storm")
 
         self.assertEqual(result["predicted_anomaly_type"], "registration_storm")
-        self.assertEqual(result["scoring_mode"], "remote-kserve")
+        self.assertEqual(result["scoring_mode"], "remote-kserve:live")
         self.assertEqual(result["model_version"], "ani-predictive-fs")
         self.assertTrue(result["is_anomaly"])
 
@@ -203,6 +203,58 @@ class ModelStoreTests(unittest.TestCase):
 
         self.assertIn("classifier profile backfill", str(raised.exception))
         self.assertIn("http://predictive-backfill.example.com", str(raised.exception))
+
+    def test_control_plane_selected_modelcar_profile_uses_modelcar_endpoint(self) -> None:
+        response = _FakeResponse(
+            {
+                "outputs": [
+                    {
+                        "name": "class_probabilities",
+                        "datatype": "FP32",
+                        "shape": [1, len(CANONICAL_LABELS)],
+                        "data": [[0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.89, 0.01]],
+                    }
+                ]
+            }
+        )
+
+        with (
+            mock.patch.object(model_store, "load_registry", return_value=self._registry()),
+            mock.patch.object(
+                model_store.requests,
+                "get",
+                return_value=_FakeResponse(
+                    {
+                        "requested_profile": "modelcar",
+                        "active_profile": "modelcar",
+                        "profiles": [],
+                    }
+                ),
+            ),
+            mock.patch.object(model_store.requests, "post", return_value=response) as post_request,
+            mock.patch.dict(
+                model_store.os.environ,
+                {
+                    "CONTROL_PLANE_URL": "http://control-plane.example.com",
+                    "PREDICTIVE_ENDPOINT_LIVE": "http://predictive-live.example.com",
+                    "PREDICTIVE_MODEL_NAME_LIVE": "ani-predictive-fs",
+                    "PREDICTIVE_ENDPOINT_BACKFILL": "http://predictive-backfill.example.com",
+                    "PREDICTIVE_MODEL_NAME_BACKFILL": "ani-predictive-backfill",
+                    "PREDICTIVE_ENDPOINT_MODELCAR": "http://predictive-modelcar.example.com",
+                    "PREDICTIVE_MODEL_NAME_MODELCAR": "ani-predictive-backfill-modelcar",
+                    "PREDICTIVE_MODEL_VERSION_LABEL_MODELCAR": "ani-predictive-backfill-modelcar",
+                },
+                clear=False,
+            ),
+        ):
+            result = model_store.score_features_detailed({"register_rate": 0.1}, anomaly_type_hint="network_degradation")
+
+        self.assertEqual(result["classifier_profile"], "modelcar")
+        self.assertEqual(result["model_version"], "ani-predictive-backfill-modelcar")
+        self.assertEqual(
+            post_request.call_args.args[0],
+            "http://predictive-modelcar.example.com/v2/models/ani-predictive-backfill-modelcar/infer",
+        )
 
 
 if __name__ == "__main__":

@@ -671,19 +671,19 @@ Response:
 
 ##### Current Runtime Status In This Repo
 
-The checked-in implementation is now dual-runtime rather than Triton-only.
+The checked-in implementation is now MLServer-first for the feature-store path, with a separate OCI modelcar branch for backfill reuse.
 
-- `k8s/base/serving/featurestore-serving.yaml` binds `ani-predictive-fs` to `nvidia-triton-runtime` with `modelFormat.name: triton`
-- `k8s/base/serving/featurestore-serving-mlserver.yaml` defines `ani-predictive-fs-mlserver` for an MLServer sklearn runtime
-- `ai/training/featurestore_train.py` exports both a Triton repository (`config.pbtxt`, `model.py`, `weights.json`) and an MLServer bundle (`model.joblib`, `model-settings.json`)
-- the same training path generates deployment metadata for both runtime formats
+- `k8s/base/serving/featurestore-serving.yaml` binds `ani-predictive-fs` to `ani-autogluon-mlserver-runtime` with `modelFormat.name: autogluon`
+- `k8s/base/serving/featurestore-serving-backfill-modelcar.yaml` defines `ani-predictive-backfill-modelcar` as an MLServer endpoint backed by `storageUri: oci://...`
+- `ai/training/featurestore_train.py` exports MLServer bundles to MinIO and can now repackage the same trained backfill bundle into a modelcar build context under `/models`
+- the same training path generates deployment metadata for both the `s3://` and `oci://` artifact variants
 - `services/shared/model_store.py` calls the V2 endpoint at `/v2/models/{model_name}/infer`, accepts `class_probabilities` or `predict_proba`, and uses `anomaly_score` when the runtime provides it
 
-This means the current serving path is built around a shared KServe V2 contract with runtime-specific artifact layouts.
+This means the current serving path is built around a shared KServe V2 contract with storage-specific artifact layouts.
 
 ##### MLServer Parity Path
 
-MLServer is no longer only a design target. It is deployed side by side through `ani-predictive-fs-mlserver` and consumes the same 9-feature request contract as Triton. Triton remains the default runtime while MLServer is used for parity checks and rollout validation.
+MLServer is no longer only a design target. It is the checked-in runtime for the current feature-store path and now also supports a side-by-side modelcar variant for the backfill-trained model.
 
 ##### Can Triton Be Replaced In Place?
 
@@ -698,23 +698,23 @@ MLServer is no longer only a design target. It is deployed side by side through 
 
 Decision:
 
-- keep the existing Triton endpoints running
-- add MLServer as a side-by-side candidate runtime
-- only consider cutover after artifact parity, output parity, and smoke-test parity are demonstrated
+- keep the legacy Triton endpoint available where already deployed
+- use MLServer as the default runtime for the feature-store-backed paths
+- add a modelcar branch so a trained backfill model can be promoted once and reused on other demo clusters without regenerating the large dataset
 
 ##### Current Side-by-Side Serving Design
 
 ```mermaid
 flowchart TD
-  KFP["feature-store KFP pipeline"] --> ExportT["Triton export"]
-  KFP --> ExportM["MLServer sklearn export"]
-  ExportT --> TritonISVC["ani-predictive-fs<br/>Triton InferenceService"]
-  ExportM --> MLISVC["ani-predictive-fs-mlserver<br/>MLServer InferenceService"]
+  KFP["feature-store KFP pipeline"] --> ExportS3["MLServer bundle export"]
+  ExportS3 --> BackfillS3["ani-predictive-backfill<br/>S3-backed MLServer InferenceService"]
+  ExportS3 --> ModelcarPublish["Tekton modelcar publish"]
+  ModelcarPublish --> ModelcarISVC["ani-predictive-backfill-modelcar<br/>OCI-backed MLServer InferenceService"]
   Client["anomaly-service / control-plane"] --> Adapter["score adapter"]
-  Adapter --> TritonISVC
-  Adapter -. smoke tests / canary .-> MLISVC
-  TritonISVC --> Compare["score, latency, and error comparison"]
-  MLISVC --> Compare
+  Adapter --> BackfillS3
+  Adapter -. smoke tests / rollout checks .-> ModelcarISVC
+  BackfillS3 --> Compare["score, latency, and error comparison"]
+  ModelcarISVC --> Compare
 ```
 
 ##### MLServer Artifact Contract
@@ -722,10 +722,16 @@ flowchart TD
 Recommended storage layout:
 
 ```text
-s3://ani-models/predictive-featurestore-mlserver/ani-predictive-fs-mlserver/current/
-  model-settings.json
-  model.joblib
+s3://ani-models/predictive-featurestore/ani-predictive-backfill/current/
   serving-metadata.json
+  ani-predictive-backfill/
+    model-settings.json
+    predictor/
+
+oci://image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:current
+  /models/serving-metadata.json
+  /models/ani-predictive-backfill-modelcar/model-settings.json
+  /models/ani-predictive-backfill-modelcar/predictor/
 ```
 
 Minimal `model-settings.json`:
@@ -753,25 +759,24 @@ Required rules:
 Checked-in resources:
 
 - `k8s/base/serving/featurestore-serving.yaml`
-- `k8s/base/serving/mlserver-runtime-template.yaml`
-- `k8s/base/serving/featurestore-serving-mlserver.yaml`
+- `k8s/base/serving/featurestore-serving-backfill-modelcar.yaml`
+- `k8s/base/serving/autogluon-mlserver-runtime.yaml`
 
 Deployment notes:
 
-- `ani-predictive-fs` is the current default Triton-backed remote-scoring endpoint
-- `mlserver-sklearn-runtime` and `ani-predictive-fs-mlserver` form the live side-by-side parity path
-- the MLServer manifest is kept separate from the legacy default serving base so rollout and cutover stay explicit
+- `ani-predictive-fs` is the current default MLServer-backed remote-scoring endpoint
+- `ani-predictive-backfill` remains the MinIO-backed backfill path produced by the current backfill workflow
+- `ani-predictive-backfill-modelcar` is the OCI-packaged variant meant for reuse across demo clusters after one training run
 
 ##### Implemented Repo Changes And Remaining Hardening
 
 1. Training export
-   - `ai/training/featurestore_train.py` supports both `triton` and `mlserver` serving backends
-   - `_export_triton_repository()` remains the active Triton export path
-   - `_export_mlserver_bundle()` writes `model.joblib`, `model-settings.json`, and `serving-metadata.json`
-   - deployment metadata is generated for both runtime formats
+   - `ai/training/featurestore_train.py` supports the MLServer export path used by the feature-store workflow
+   - `_export_autogluon_mlserver_bundle()` writes `model-settings.json`, the predictor directory, and `serving-metadata.json`
+   - `_prepare_modelcar_context_step()` rewrites that exported bundle into a `/models` OCI layout for modelcar publication
 2. Registry and metadata
-   - registry payloads record `serving_runtime`, `serving_model_format`, and `serving_protocol`
-   - Triton and MLServer storage URIs are distinct and versioned
+   - registry payloads record `serving_runtime`, `serving_model_format`, `serving_protocol`, and `serving_storage_backend`
+   - the same logical backfill model can now register either an `s3://` or `oci://` artifact URI
 3. Scoring client
    - `services/shared/model_store.py` stays on the V2 `/infer` endpoint
    - the client validates `class_probabilities` or `predict_proba` output semantics

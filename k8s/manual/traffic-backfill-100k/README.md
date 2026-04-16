@@ -46,31 +46,43 @@ make backfill-step-4-activate-serving-endpoint
 make backfill-step-5-smoke-check-serving
 ```
 
-7. Discover active backfill dataset versions later if you need them for training analysis:
+7. Optional: publish the trained backfill model as an OCI modelcar image in the internal registry:
+
+```sh
+make backfill-modelcar-step-1-publish-image
+```
+
+8. Optional: smoke-check the modelcar predictor path:
+
+```sh
+make backfill-modelcar-step-2-smoke-check-serving
+```
+
+9. Discover active backfill dataset versions later if you need them for training analysis:
 
 ```sh
 make list-incident-release-datasets
 ```
 
-8. Compile the incident-release bundle from the incident-linked live dataset:
+10. Compile the incident-release bundle from the incident-linked live dataset:
 
 ```sh
 make live-step-2-build-incident-release
 ```
 
-9. Publish the feature-store-ready live bundle:
+11. Publish the feature-store-ready live bundle:
 
 ```sh
 make live-step-3-publish-feature-bundle
 ```
 
-10. Train, register, and deploy the classifier the app uses for live scoring:
+12. Train, register, and deploy the classifier the app uses for live scoring:
 
 ```sh
 make live-step-4-train-and-deploy-classifier
 ```
 
-The preferred live serving path is `ani-predictive-fs`. The separate backfill serving path is `ani-predictive-backfill`. Both endpoints stay active, and the demo UI can switch classification between them. The older `legacy-train-and-deploy-classifier` target exists only as a compatibility path.
+The preferred live serving path is `ani-predictive-fs`. The separate backfill serving path is `ani-predictive-backfill`. The OCI-packaged variant is `ani-predictive-backfill-modelcar`. All three endpoints can stay active at the same time, and the demo UI can switch classification between them. The older `legacy-train-and-deploy-classifier` target exists only as a compatibility path.
 
 ## What it does
 
@@ -86,6 +98,8 @@ make backfill-step-1-generate-training-dataset
 ```
 
 The target always writes into the shared dataset version `backfill-sipp-100k`. Custom backfill dataset versions are disabled. Continue with `make backfill-step-2-build-feature-bundle` when the Jobs complete.
+
+Once `make backfill-step-3-train-and-register-classifier` finishes, you can either keep using the MinIO-backed backfill serving path or publish the same trained model as a reusable OCI modelcar image with `make backfill-modelcar-step-1-publish-image`.
 
 To discover dataset versions later, list both active backfill runs and stored MinIO datasets:
 

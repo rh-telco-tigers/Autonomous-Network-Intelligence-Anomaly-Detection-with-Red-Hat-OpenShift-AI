@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 
 DEFAULT_ACTIVE_CLASSIFIER_PROFILE = "live"
+PREFERRED_CLASSIFIER_PROFILE_ORDER = ("live", "backfill", "modelcar")
 
 
 def normalize_classifier_profile(value: str | None) -> str:
@@ -38,6 +39,15 @@ def classifier_profile_catalog() -> Dict[str, Dict[str, Any]]:
         os.getenv("PREDICTIVE_MODEL_VERSION_LABEL_BACKFILL", "").strip()
         or backfill_model_name
     )
+    modelcar_endpoint = (
+        os.getenv("PREDICTIVE_ENDPOINT_MODELCAR", "").strip()
+        or os.getenv("PREDICTIVE_MODELCAR_SERVICE_URL", "").strip()
+    ).rstrip("/")
+    modelcar_model_name = os.getenv("PREDICTIVE_MODEL_NAME_MODELCAR", "").strip() or "ani-predictive-backfill-modelcar"
+    modelcar_version_label = (
+        os.getenv("PREDICTIVE_MODEL_VERSION_LABEL_MODELCAR", "").strip()
+        or modelcar_model_name
+    )
 
     return {
         "live": {
@@ -60,11 +70,21 @@ def classifier_profile_catalog() -> Dict[str, Dict[str, Any]]:
             "configured": bool(backfill_endpoint and backfill_model_name),
             "allow_local_fallback": False,
         },
+        "modelcar": {
+            "key": "modelcar",
+            "label": "Modelcar model",
+            "description": "OCI-packaged MLServer model promoted from the backfill training path.",
+            "endpoint": modelcar_endpoint,
+            "model_name": modelcar_model_name,
+            "model_version_label": modelcar_version_label,
+            "configured": bool(modelcar_endpoint and modelcar_model_name),
+            "allow_local_fallback": False,
+        },
     }
 
 
 def first_configured_classifier_profile(profiles: Dict[str, Dict[str, Any]]) -> str | None:
-    for key in ("live", "backfill"):
+    for key in PREFERRED_CLASSIFIER_PROFILE_ORDER:
         profile = profiles.get(key) or {}
         if bool(profile.get("configured")):
             return key
@@ -100,7 +120,7 @@ def classifier_profile_payloads(
     active_key = active_profile or resolved_active
     normalized_requested = normalize_classifier_profile(requested_profile)
     items: list[Dict[str, Any]] = []
-    for key in ("live", "backfill"):
+    for key in PREFERRED_CLASSIFIER_PROFILE_ORDER:
         profile = catalog.get(key)
         if not profile:
             continue

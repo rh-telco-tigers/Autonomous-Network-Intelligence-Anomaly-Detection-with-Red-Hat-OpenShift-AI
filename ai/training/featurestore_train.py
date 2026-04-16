@@ -86,6 +86,10 @@ DEFAULT_MANAGED_FEATURESTORE_ONLINE_STORE_PATH = "https://feast-ani-featurestore
 DEFAULT_MANAGED_FEATURESTORE_CA_CERT_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
 DEFAULT_MANAGED_FEATURESTORE_AUTH_TYPE = "no_auth"
 DEFAULT_MANAGED_FEATURESTORE_ENTITY_KEY_SERIALIZATION_VERSION = "3"
+DEFAULT_MODELCAR_BUILD_ROOT = f"{DEFAULT_WORKSPACE_ROOT}/modelcar"
+DEFAULT_MODELCAR_BASE_IMAGE = "registry.access.redhat.com/ubi9/ubi-micro:latest"
+DEFAULT_MODELCAR_IMAGE = "image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:latest"
+DEFAULT_MODELCAR_IMAGE_ALIAS = "image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:current"
 
 
 def _feature_repo_path(path: str) -> Path:
@@ -719,6 +723,158 @@ def _export_autogluon_mlserver_bundle(
     }
 
 
+def _copy_directory_reference(reference: str | Path, destination: Path) -> None:
+    reference_text = str(reference).strip()
+    if not reference_text:
+        raise ValueError("A directory reference is required")
+    if destination.exists():
+        shutil.rmtree(destination)
+    if reference_text.startswith("s3://"):
+        _download_directory_reference(reference_text, destination)
+        return
+    source_path = Path(reference_text)
+    if not source_path.exists():
+        raise FileNotFoundError(f"Directory reference {source_path} does not exist")
+    if not source_path.is_dir():
+        raise ValueError(f"Directory reference {source_path} is not a directory")
+    shutil.copytree(source_path, destination)
+
+
+def _oci_artifact_uri(image_reference: str) -> str:
+    stripped = str(image_reference or "").strip()
+    if not stripped:
+        raise ValueError("A modelcar image reference is required")
+    return stripped if stripped.startswith("oci://") else f"oci://{stripped}"
+
+
+def _write_modelcar_containerfile(containerfile_path: Path) -> None:
+    containerfile_path.write_text(
+        "\n".join(
+            [
+                f"FROM {DEFAULT_MODELCAR_BASE_IMAGE}",
+                "COPY models /models",
+                "USER 1001",
+                "",
+            ]
+        )
+    )
+
+
+def _prepare_modelcar_context_step(
+    source_model_name: str,
+    source_model_version_name: str,
+    model_registry_endpoint: str | None,
+    serving_model_name: str,
+    serving_runtime_name: str,
+    serving_model_format_name: str,
+    serving_model_format_version: str,
+    modelcar_build_root: str,
+    modelcar_image: str,
+    modelcar_image_alias: str,
+    protocol_version: str = DEFAULT_PROTOCOL_VERSION,
+) -> Dict[str, Any]:
+    source_lookup = resolve_registered_model_artifact_uri(
+        model_name=source_model_name,
+        model_version_name=source_model_version_name,
+        registry_endpoint=model_registry_endpoint,
+    )
+    source_artifact_uri = str(source_lookup["artifact_uri"] or "").strip()
+    if not source_artifact_uri:
+        raise ValueError(f"Registered model {source_model_name!r}:{source_model_version_name!r} does not have an artifact URI")
+
+    source_bundle_root = Path(tempfile.mkdtemp(prefix="ani-modelcar-source-")) / "bundle"
+    _copy_directory_reference(source_artifact_uri, source_bundle_root)
+    source_metadata_path = source_bundle_root / "serving-metadata.json"
+    if not source_metadata_path.exists():
+        raise ValueError(f"Serving metadata was not found at {source_metadata_path}")
+    serving_metadata = _json_load(source_metadata_path)
+
+    source_serving_model_name = str(serving_metadata.get("serving_model_name") or "").strip() or serving_model_name
+    source_repository_root = source_bundle_root / source_serving_model_name
+    if not source_repository_root.exists():
+        raise ValueError(
+            f"Serving repository {source_repository_root} was not found for modelcar repackaging"
+        )
+
+    build_root = Path(modelcar_build_root)
+    if build_root.exists():
+        shutil.rmtree(build_root)
+    models_root = build_root / "models"
+    models_root.mkdir(parents=True, exist_ok=True)
+
+    for child in source_bundle_root.iterdir():
+        if child.is_file():
+            shutil.copy2(child, models_root / child.name)
+
+    target_repository_root = models_root / serving_model_name
+    shutil.copytree(source_repository_root, target_repository_root)
+
+    model_settings_path = target_repository_root / "model-settings.json"
+    if not model_settings_path.exists():
+        raise ValueError(f"MLServer settings were not found at {model_settings_path}")
+    model_settings = _json_load(model_settings_path)
+    model_settings["name"] = serving_model_name
+    _json_dump(model_settings_path, model_settings)
+
+    serving_metrics = serving_metadata.get("serving_metrics", {}) if isinstance(serving_metadata, dict) else {}
+    deployment_readiness = str(serving_metadata.get("deployment_readiness_status") or "needs-review")
+    if isinstance(serving_metrics, dict) and serving_metrics:
+        try:
+            deployment_readiness = "ready" if gate_metrics(serving_metrics)["status"] == "passed" else "needs-review"
+        except Exception:  # noqa: BLE001
+            deployment_readiness = str(serving_metadata.get("deployment_readiness_status") or deployment_readiness)
+
+    serving_metadata.update(
+        {
+            "serving_model_name": serving_model_name,
+            "serving_runtime_name": serving_runtime_name,
+            "serving_model_format_name": serving_model_format_name,
+            "serving_model_format_version": serving_model_format_version,
+            "serving_protocol_version": protocol_version,
+            "serving_storage_backend": "oci-modelcar",
+        }
+    )
+    _json_dump(models_root / "serving-metadata.json", serving_metadata)
+
+    containerfile_path = build_root / "Containerfile"
+    _write_modelcar_containerfile(containerfile_path)
+
+    resolved_modelcar_image = str(modelcar_image or DEFAULT_MODELCAR_IMAGE).strip()
+    resolved_modelcar_alias = str(modelcar_image_alias or DEFAULT_MODELCAR_IMAGE_ALIAS).strip() or resolved_modelcar_image
+
+    return {
+        "bundle_version": serving_metadata.get("bundle_version", ""),
+        "feature_service_name": serving_metadata.get("feature_service_name", DEFAULT_FEATURE_SERVICE_NAME),
+        "label_taxonomy_version": serving_metadata.get("label_taxonomy_version", ""),
+        "selected_model_version": serving_metadata.get("selected_model_version", source_model_version_name),
+        "serving_model_name": serving_model_name,
+        "serving_runtime_name": serving_runtime_name,
+        "serving_model_format_name": serving_model_format_name,
+        "serving_model_format_version": serving_model_format_version,
+        "serving_protocol_version": protocol_version,
+        "serving_backend": serving_metadata.get("serving_backend", _serving_backend(serving_model_format_name)),
+        "serving_storage_backend": "oci-modelcar",
+        "serving_storage_uri": _oci_artifact_uri(resolved_modelcar_image),
+        "serving_alias_storage_uri": _oci_artifact_uri(resolved_modelcar_alias),
+        "deployment_readiness_status": deployment_readiness,
+        "serving_metrics": serving_metrics if isinstance(serving_metrics, dict) else {},
+        "class_labels": serving_metadata.get("class_labels", CANONICAL_LABELS),
+        "normal_class_label": serving_metadata.get("normal_class_label", "normal_operation"),
+        "serving_repository_path": str(target_repository_root),
+        "modelcar_build_root": str(build_root),
+        "modelcar_models_root": str(models_root),
+        "modelcar_containerfile_path": str(containerfile_path),
+        "modelcar_image": resolved_modelcar_image,
+        "modelcar_image_alias": resolved_modelcar_alias,
+        "source_model_name": source_model_name,
+        "source_model_version_name": source_model_version_name,
+        "source_serving_model_name": source_serving_model_name,
+        "source_artifact_uri": source_artifact_uri,
+        "source_registry_endpoint": source_lookup.get("registry_endpoint", ""),
+        "created_at": _now(),
+    }
+
+
 def _upload_serving_bundle(
     serving_repository_root: Path,
     *,
@@ -869,6 +1025,7 @@ def _export_serving_artifact_step(
         "training_manifest": training_manifest_path,
         "selection_manifest": selection_manifest_path,
         "serving_repository_path": str(serving_root),
+        "serving_storage_backend": "s3",
         "serving_storage_uri": upload["storage_uri"],
         "serving_alias_storage_uri": upload["alias_storage_uri"],
         "deployment_readiness_status": deployment_readiness,
@@ -913,6 +1070,32 @@ def _register_model_version_step(
 ) -> Dict[str, Any]:
     export_manifest = _json_load(export_manifest_path)
     resolved_version = model_version_name or f"{export_manifest['bundle_version']}-{export_manifest['selected_model_version']}"
+    metadata = {
+        "serving_model_name": export_manifest["serving_model_name"],
+        "serving_runtime_name": export_manifest["serving_runtime_name"],
+        "serving_model_format_name": export_manifest.get("serving_model_format_name", DEFAULT_MODEL_FORMAT_NAME),
+        "serving_model_format_version": export_manifest.get("serving_model_format_version", DEFAULT_MODEL_FORMAT_VERSION),
+        "serving_protocol_version": export_manifest.get("serving_protocol_version", DEFAULT_PROTOCOL_VERSION),
+        "serving_backend": export_manifest.get("serving_backend", _serving_backend(DEFAULT_MODEL_FORMAT_NAME)),
+        "serving_storage_backend": export_manifest.get("serving_storage_backend", ""),
+        "label_taxonomy_version": export_manifest.get("label_taxonomy_version", ""),
+        "class_labels": export_manifest.get("class_labels", []),
+        "normal_class_label": export_manifest.get("normal_class_label", "normal_operation"),
+        "selected_model_version": export_manifest["selected_model_version"],
+        "serving_alias_storage_uri": export_manifest.get("serving_alias_storage_uri", ""),
+        "description": f"Feature-store-trained ANI anomaly model for bundle {export_manifest['bundle_version']}",
+    }
+    for optional_key in (
+        "source_model_name",
+        "source_model_version_name",
+        "source_serving_model_name",
+        "source_artifact_uri",
+        "modelcar_image",
+        "modelcar_image_alias",
+    ):
+        value = export_manifest.get(optional_key)
+        if value not in (None, "", [], {}):
+            metadata[optional_key] = value
     payload = build_model_registry_payload(
         model_name=model_name,
         model_version_name=resolved_version,
@@ -926,20 +1109,7 @@ def _register_model_version_step(
         metrics=export_manifest["serving_metrics"],
         deployment_readiness_status=export_manifest.get("deployment_readiness_status", "needs-review"),
         registry_endpoint=model_registry_endpoint,
-        metadata={
-            "serving_model_name": export_manifest["serving_model_name"],
-            "serving_runtime_name": export_manifest["serving_runtime_name"],
-            "serving_model_format_name": export_manifest.get("serving_model_format_name", DEFAULT_MODEL_FORMAT_NAME),
-            "serving_model_format_version": export_manifest.get("serving_model_format_version", DEFAULT_MODEL_FORMAT_VERSION),
-            "serving_protocol_version": export_manifest.get("serving_protocol_version", DEFAULT_PROTOCOL_VERSION),
-            "serving_backend": export_manifest.get("serving_backend", _serving_backend(DEFAULT_MODEL_FORMAT_NAME)),
-            "label_taxonomy_version": export_manifest.get("label_taxonomy_version", ""),
-            "class_labels": export_manifest.get("class_labels", []),
-            "normal_class_label": export_manifest.get("normal_class_label", "normal_operation"),
-            "selected_model_version": export_manifest["selected_model_version"],
-            "serving_alias_storage_uri": export_manifest.get("serving_alias_storage_uri", ""),
-            "description": f"Feature-store-trained ANI anomaly model for bundle {export_manifest['bundle_version']}",
-        },
+        metadata=metadata,
     )
     temp_output = Path(DEFAULT_WORKSPACE_ROOT) / "model-registry" / f"{resolved_version}.json"
     published = publish_model_version(payload, temp_output)
@@ -1105,6 +1275,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--serving-prefix", default=DEFAULT_SERVING_PREFIX)
     parser.add_argument("--serving-alias", default=DEFAULT_SERVING_ALIAS)
     parser.add_argument("--service-account-name", default=DEFAULT_SERVING_SERVICE_ACCOUNT)
+    parser.add_argument("--modelcar-build-root", default=DEFAULT_MODELCAR_BUILD_ROOT)
+    parser.add_argument("--modelcar-image", default=DEFAULT_MODELCAR_IMAGE)
+    parser.add_argument("--modelcar-image-alias", default=DEFAULT_MODELCAR_IMAGE_ALIAS)
     parser.add_argument("--pipeline-name", default=DEFAULT_PIPELINE_NAME)
     parser.add_argument("--output")
     return parser.parse_args()
@@ -1204,6 +1377,22 @@ def main() -> None:
             args.feature_service_name,
             args.pipeline_name,
             args.model_registry_endpoint,
+        )
+    elif args.step == "prepare-modelcar-context":
+        if not args.model_version_name:
+            raise ValueError("--model-version-name is required")
+        manifest = _prepare_modelcar_context_step(
+            args.model_name,
+            args.model_version_name,
+            args.model_registry_endpoint,
+            args.serving_model_name,
+            args.serving_runtime_name,
+            args.serving_model_format_name,
+            args.serving_model_format_version,
+            args.modelcar_build_root,
+            args.modelcar_image,
+            args.modelcar_image_alias,
+            args.serving_protocol_version,
         )
     elif args.step == "publish-deployment-manifest":
         if not all([args.export_manifest, args.model_registry_manifest]):

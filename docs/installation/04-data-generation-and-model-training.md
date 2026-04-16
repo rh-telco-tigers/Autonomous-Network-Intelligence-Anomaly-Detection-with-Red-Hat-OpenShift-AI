@@ -234,16 +234,51 @@ oc get jobs -n ani-datascience | rg 'ani-backfill-serving-smoke'
 oc logs -n ani-datascience job/<latest-backfill-smoke-job-name>
 ```
 
-### 6. Switch The Demo UI Between Live And Backfill
+### 6. Optional: Publish The Backfill Model As A Modelcar Image
+
+Use this branch when you want to promote the already-trained backfill model into an OCI image so other demo clusters can reuse it without regenerating the large dataset first.
+
+```sh
+make backfill-modelcar-step-1-publish-image
+```
+
+Watch:
+
+```sh
+oc get pipelinerun -n ani-tekton | rg 'ani-backfill-modelcar'
+```
+
+Expected result:
+
+- the modelcar image is pushed to `image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar`
+- the OCI artifact is registered in the model registry under the modelcar model name
+- the GitOps-managed `ani-predictive-backfill-modelcar` endpoint can resolve the `current` tag without rerunning backfill generation
+
+### 7. Optional: Smoke-Check The Modelcar Predictor
+
+```sh
+make backfill-modelcar-step-2-smoke-check-serving
+```
+
+Then inspect the latest smoke job:
+
+```sh
+oc get jobs -n ani-datascience | rg 'ani-backfill-modelcar-serving-smoke'
+oc logs -n ani-datascience job/<latest-backfill-modelcar-smoke-job-name>
+```
+
+### 8. Switch The Demo UI Between Live, Backfill, And Modelcar
 
 Open the demo UI overview page. The `Classifier routing` card lets you switch:
 
 - `Live model` -> `ani-predictive-fs`
 - `Backfill model` -> `ani-predictive-backfill`
+- `Modelcar model` -> `ani-predictive-backfill-modelcar`
 
 Changing that selector updates the control-plane classifier profile. New classifications and new incidents then use the selected predictor path without shutting down the other model.
 
 ## Notes
 
 - `legacy-train-and-deploy-classifier` is the older compatibility path. Do not use it for the preferred demo flow.
+- The modelcar branch assumes the serving service account can resolve and pull `oci://image-registry.openshift-image-registry.svc:5000/...` from the same cluster. If your cluster blocks that path, add the required registry pull secret to `model-storage-sa` before switching the UI profile to `modelcar`.
 - If Step 1 starts returning `502` after Step 5, check [Troubleshooting](./troubleshooting.md), especially the sections around image drift and serving readiness.

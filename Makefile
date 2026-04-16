@@ -20,6 +20,11 @@ BACKFILL_MODEL_VERSION_NAME ?= ani-anomaly-featurestore-backfill-v1
 BACKFILL_SERVING_MODEL_NAME ?= ani-predictive-backfill
 BACKFILL_SERVING_RUNTIME_NAME ?= ani-autogluon-mlserver-runtime
 BACKFILL_SERVING_PREFIX ?= predictive-featurestore
+BACKFILL_MODELCAR_MODEL_NAME ?= ani-anomaly-featurestore-backfill-modelcar
+BACKFILL_MODELCAR_MODEL_VERSION_NAME ?= ani-anomaly-featurestore-backfill-modelcar-v1
+BACKFILL_MODELCAR_IMAGE_REPOSITORY ?= image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar
+BACKFILL_MODELCAR_SERVING_MODEL_NAME ?= ani-predictive-backfill-modelcar
+BACKFILL_MODELCAR_SERVING_RUNTIME_NAME ?= ani-autogluon-mlserver-runtime
 INCIDENT_RELEASE_VERSION ?=
 INCIDENT_RELEASE_MODE ?= draft-replacement
 INCIDENT_RELEASE_PUBLIC_RECORD_TARGET ?= 10000
@@ -35,7 +40,7 @@ GPU_REPLICAS ?= 1
 GPU_SOURCE_MACHINESET ?=
 GPU_OUTPUT ?=
 
-.PHONY: help kustomize-gitops apply-demo-ai-extras check-demo-incident-generators check-fresh-cluster-gitops check-fresh-cluster-ai check-fresh-cluster-runtime check-fresh-cluster validate-python repo-tree render-gpu-node-pool add-gpu-node-pool trigger-build-pipeline live-step-1-generate-demo-incident live-step-2-build-incident-release live-step-3-publish-feature-bundle live-step-4-train-and-deploy-classifier live-step-5-smoke-check-serving live-step-6-validate-ai-playbook-generation backfill-step-1-generate-training-dataset backfill-step-2-build-feature-bundle backfill-step-3-train-and-register-classifier backfill-step-4-activate-serving-endpoint backfill-step-5-smoke-check-serving step-1-generate-demo-incident step-2-backfill-training-dataset step-3-build-incident-release step-4-publish-feature-bundle step-5-train-and-deploy-classifier legacy-train-and-deploy-classifier smoke-check-featurestore-serving validate-ai-playbook-generation stop-incident-release list-incident-release-datasets generate-demo-incident trigger-anomaly-platform-pipeline trigger-feature-bundle-pipeline trigger-featurestore-pipeline trigger-incident-release-pipeline trigger-incident-release backfill-step-4-smoke-check-serving
+.PHONY: help kustomize-gitops apply-demo-ai-extras check-demo-incident-generators check-fresh-cluster-gitops check-fresh-cluster-ai check-fresh-cluster-runtime check-fresh-cluster validate-python repo-tree render-gpu-node-pool add-gpu-node-pool trigger-build-pipeline live-step-1-generate-demo-incident live-step-2-build-incident-release live-step-3-publish-feature-bundle live-step-4-train-and-deploy-classifier live-step-5-smoke-check-serving live-step-6-validate-ai-playbook-generation backfill-step-1-generate-training-dataset backfill-step-2-build-feature-bundle backfill-step-3-train-and-register-classifier backfill-step-4-activate-serving-endpoint backfill-step-5-smoke-check-serving backfill-modelcar-step-1-publish-image backfill-modelcar-step-2-smoke-check-serving step-1-generate-demo-incident step-2-backfill-training-dataset step-3-build-incident-release step-4-publish-feature-bundle step-5-train-and-deploy-classifier legacy-train-and-deploy-classifier smoke-check-featurestore-serving validate-ai-playbook-generation stop-incident-release list-incident-release-datasets generate-demo-incident trigger-anomaly-platform-pipeline trigger-feature-bundle-pipeline trigger-featurestore-pipeline trigger-incident-release-pipeline trigger-incident-release backfill-step-4-smoke-check-serving
 
 help: ## Print available make targets
 	@printf "Available commands:\n"
@@ -61,7 +66,7 @@ check-fresh-cluster-ai: ## Check AI, serving, and model registry readiness
 	oc get dspa,featurestore -n "$(DATASCIENCE_NAMESPACE)"
 	oc get kafka -n "$(DATA_NAMESPACE)"
 	oc get workflow -n "$(DATASCIENCE_NAMESPACE)"
-	oc get inferenceservice -n "$(DATASCIENCE_NAMESPACE)" | rg 'ani-predictive-fs|ani-predictive-backfill|ani-predictive-fs-mlserver'
+	oc get inferenceservice -n "$(DATASCIENCE_NAMESPACE)" | rg 'ani-predictive-fs|ani-predictive-backfill|ani-predictive-backfill-modelcar|ani-predictive-fs-mlserver'
 	oc get modelregistry -n "$(MODEL_REGISTRY_NAMESPACE)"
 	oc get svc -n "$(MODEL_REGISTRY_NAMESPACE)" "$(MODEL_REGISTRY_SERVICE)"
 
@@ -247,6 +252,46 @@ backfill-step-3-train-and-register-classifier: ## Backfill Step 3: Train the bes
 	MODEL_REGISTRY_NAMESPACE="$(MODEL_REGISTRY_NAMESPACE)" \
 	MODEL_REGISTRY_SERVICE="$(MODEL_REGISTRY_SERVICE)" \
 	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/backfill-featurestore-run-job.yaml").read_text(); replacements = {"__BACKFILL_BUNDLE_VERSION__": os.environ["BACKFILL_BUNDLE_VERSION"], "__BACKFILL_FEATURE_SERVICE_NAME__": os.environ["BACKFILL_FEATURE_SERVICE_NAME"], "__BACKFILL_CANDIDATE_VERSION__": os.environ["BACKFILL_CANDIDATE_VERSION"], "__BACKFILL_MODEL_NAME__": os.environ["BACKFILL_MODEL_NAME"], "__BACKFILL_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODEL_VERSION_NAME"], "__BACKFILL_SERVING_MODEL_NAME__": os.environ["BACKFILL_SERVING_MODEL_NAME"], "__BACKFILL_SERVING_RUNTIME_NAME__": os.environ["BACKFILL_SERVING_RUNTIME_NAME"], "__BACKFILL_SERVING_PREFIX__": os.environ["BACKFILL_SERVING_PREFIX"], "__MODEL_REGISTRY_ENDPOINT__": os.environ["MODEL_REGISTRY_ENDPOINT"], "__MODEL_REGISTRY_NAMESPACE__": os.environ["MODEL_REGISTRY_NAMESPACE"], "__MODEL_REGISTRY_SERVICE__": os.environ["MODEL_REGISTRY_SERVICE"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -
+
+backfill-modelcar-step-1-publish-image: ## Backfill Modelcar Step 1: Package the registered backfill model as an OCI modelcar image in the internal registry
+	@printf "Waiting for Tekton modelcar assets in %s before publishing the image\n" "$(TEKTON_NAMESPACE)"; \
+	for resource in \
+	  "pipelines.tekton.dev/ani-backfill-modelcar-publish" \
+	  "tasks.tekton.dev/prepare-modelcar-context" \
+	  "tasks.tekton.dev/buildah-lite" \
+	  "tasks.tekton.dev/copy-image-lite" \
+	  "tasks.tekton.dev/register-modelcar-version"; do \
+	  for attempt in $$(seq 1 60); do \
+	    if oc get "$$resource" -n "$(TEKTON_NAMESPACE)" >/dev/null 2>&1; then \
+	      break; \
+	    fi; \
+	    if [ "$$attempt" -eq 60 ]; then \
+	      echo "Tekton asset $$resource is still missing in $(TEKTON_NAMESPACE)."; \
+	      echo "Wait for ani-tekton to finish syncing, then rerun make backfill-modelcar-step-1-publish-image."; \
+	      exit 1; \
+	    fi; \
+	    sleep 5; \
+	  done; \
+	done; \
+	printf "Creating backfill modelcar PipelineRun in %s (source=%s:%s, target=%s:%s)\n" "$(TEKTON_NAMESPACE)" "$(BACKFILL_MODEL_NAME)" "$(BACKFILL_MODEL_VERSION_NAME)" "$(BACKFILL_MODELCAR_MODEL_NAME)" "$(BACKFILL_MODELCAR_MODEL_VERSION_NAME)"; \
+	BACKFILL_MODEL_NAME="$(BACKFILL_MODEL_NAME)" \
+	BACKFILL_MODEL_VERSION_NAME="$(BACKFILL_MODEL_VERSION_NAME)" \
+	BACKFILL_MODELCAR_MODEL_NAME="$(BACKFILL_MODELCAR_MODEL_NAME)" \
+	BACKFILL_MODELCAR_MODEL_VERSION_NAME="$(BACKFILL_MODELCAR_MODEL_VERSION_NAME)" \
+	BACKFILL_FEATURE_SERVICE_NAME="$(BACKFILL_FEATURE_SERVICE_NAME)" \
+	BACKFILL_MODELCAR_IMAGE_REPOSITORY="$(BACKFILL_MODELCAR_IMAGE_REPOSITORY)" \
+	BACKFILL_MODELCAR_SERVING_MODEL_NAME="$(BACKFILL_MODELCAR_SERVING_MODEL_NAME)" \
+	BACKFILL_MODELCAR_SERVING_RUNTIME_NAME="$(BACKFILL_MODELCAR_SERVING_RUNTIME_NAME)" \
+	MODEL_REGISTRY_ENDPOINT="$(MODEL_REGISTRY_ENDPOINT)" \
+	TEKTON_NAMESPACE="$(TEKTON_NAMESPACE)" \
+	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/backfill-modelcar-pipelinerun.yaml").read_text(); replacements = {"__TEKTON_NAMESPACE__": os.environ["TEKTON_NAMESPACE"], "__BACKFILL_MODEL_NAME__": os.environ["BACKFILL_MODEL_NAME"], "__BACKFILL_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODEL_VERSION_NAME"], "__BACKFILL_MODELCAR_MODEL_NAME__": os.environ["BACKFILL_MODELCAR_MODEL_NAME"], "__BACKFILL_MODELCAR_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODELCAR_MODEL_VERSION_NAME"], "__BACKFILL_FEATURE_SERVICE_NAME__": os.environ["BACKFILL_FEATURE_SERVICE_NAME"], "__BACKFILL_MODELCAR_IMAGE_REPOSITORY__": os.environ["BACKFILL_MODELCAR_IMAGE_REPOSITORY"], "__BACKFILL_MODELCAR_SERVING_MODEL_NAME__": os.environ["BACKFILL_MODELCAR_SERVING_MODEL_NAME"], "__BACKFILL_MODELCAR_SERVING_RUNTIME_NAME__": os.environ["BACKFILL_MODELCAR_SERVING_RUNTIME_NAME"], "__MODEL_REGISTRY_ENDPOINT__": os.environ["MODEL_REGISTRY_ENDPOINT"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -; \
+	printf "Watch PipelineRuns: oc get pipelinerun -n %s | rg 'ani-backfill-modelcar'\n" "$(TEKTON_NAMESPACE)"; \
+	printf "Next modelcar step: make backfill-modelcar-step-2-smoke-check-serving\n"
+
+backfill-modelcar-step-2-smoke-check-serving: ## Backfill Modelcar Step 2: Wait for the modelcar endpoint and smoke-check the third predictive path
+	@printf "Waiting for modelcar InferenceService %s in %s\n" "$(BACKFILL_MODELCAR_SERVING_MODEL_NAME)" "$(DATASCIENCE_NAMESPACE)"
+	oc wait --for=condition=Ready "inferenceservice/$(BACKFILL_MODELCAR_SERVING_MODEL_NAME)" -n "$(DATASCIENCE_NAMESPACE)" --timeout=10m
+	oc create -f "$(DEMO_TRIGGER_DIR)/backfill-modelcar-serving-smoke-job.yaml"
 
 backfill-step-4-activate-serving-endpoint: ## Backfill Step 4: Create or refresh the backfill serving runtime and inference endpoint so it can stay active beside the live model
 	@printf "Applying backfill serving resources in %s\n" "$(DATASCIENCE_NAMESPACE)"

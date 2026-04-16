@@ -14,7 +14,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: smoke-check
-          image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+          image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
           command:
             - python
             - ai/training/featurestore_runtime_smoke_check.py
