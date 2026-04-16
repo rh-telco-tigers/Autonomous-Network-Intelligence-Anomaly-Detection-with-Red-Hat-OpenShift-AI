@@ -128,7 +128,7 @@ It is a system that performs:
 
 ---
 
-## 4. How AutoGluon Fits Into Your IMS Pipeline
+## 4. How AutoGluon Fits Into IMS Pipeline
 
 ### Phase 1: Feature Engineering
 
