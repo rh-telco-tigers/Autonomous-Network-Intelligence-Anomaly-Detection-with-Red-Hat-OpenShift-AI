@@ -7,6 +7,10 @@ spec:
   pipelineRef:
     name: ani-backfill-modelcar-publish
   params:
+    - name: git-url
+      value: __BACKFILL_MODELCAR_GIT_URL__
+    - name: git-revision
+      value: __BACKFILL_MODELCAR_GIT_REVISION__
     - name: source-model-name
       value: __BACKFILL_MODEL_NAME__
     - name: source-model-version-name

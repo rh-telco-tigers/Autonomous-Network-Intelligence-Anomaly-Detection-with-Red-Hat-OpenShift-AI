@@ -4,6 +4,12 @@ metadata:
   name: ani-backfill-modelcar-publish
 spec:
   params:
+    - name: git-url
+      type: string
+      default: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    - name: git-revision
+      type: string
+      default: main
     - name: source-model-name
       type: string
       default: ani-anomaly-featurestore-backfill
@@ -37,7 +43,24 @@ spec:
   workspaces:
     - name: source
   tasks:
+    - name: clone
+      retries: 1
+      timeout: 15m0s
+      taskRef:
+        name: git-clone-lite
+      params:
+        - name: URL
+          value: $(params.git-url)
+        - name: REVISION
+          value: $(params.git-revision)
+        - name: DELETE_EXISTING
+          value: "true"
+      workspaces:
+        - name: output
+          workspace: source
     - name: prepare-modelcar-context
+      runAfter:
+        - clone
       taskRef:
         name: prepare-modelcar-context
       params:

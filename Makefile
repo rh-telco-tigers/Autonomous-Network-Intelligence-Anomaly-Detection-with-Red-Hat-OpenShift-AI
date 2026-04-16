@@ -25,6 +25,8 @@ BACKFILL_MODELCAR_MODEL_VERSION_NAME ?= ani-anomaly-featurestore-backfill-modelc
 BACKFILL_MODELCAR_IMAGE_REPOSITORY ?= image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar
 BACKFILL_MODELCAR_SERVING_MODEL_NAME ?= ani-predictive-backfill-modelcar
 BACKFILL_MODELCAR_SERVING_RUNTIME_NAME ?= ani-autogluon-mlserver-runtime
+BACKFILL_MODELCAR_GIT_URL ?= http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+BACKFILL_MODELCAR_GIT_REVISION ?= main
 INCIDENT_RELEASE_VERSION ?=
 INCIDENT_RELEASE_MODE ?= draft-replacement
 INCIDENT_RELEASE_PUBLIC_RECORD_TARGET ?= 10000
@@ -282,9 +284,11 @@ backfill-modelcar-step-1-publish-image: ## Backfill Modelcar Step 1: Package the
 	BACKFILL_MODELCAR_IMAGE_REPOSITORY="$(BACKFILL_MODELCAR_IMAGE_REPOSITORY)" \
 	BACKFILL_MODELCAR_SERVING_MODEL_NAME="$(BACKFILL_MODELCAR_SERVING_MODEL_NAME)" \
 	BACKFILL_MODELCAR_SERVING_RUNTIME_NAME="$(BACKFILL_MODELCAR_SERVING_RUNTIME_NAME)" \
+	BACKFILL_MODELCAR_GIT_URL="$(BACKFILL_MODELCAR_GIT_URL)" \
+	BACKFILL_MODELCAR_GIT_REVISION="$(BACKFILL_MODELCAR_GIT_REVISION)" \
 	MODEL_REGISTRY_ENDPOINT="$(MODEL_REGISTRY_ENDPOINT)" \
 	TEKTON_NAMESPACE="$(TEKTON_NAMESPACE)" \
-	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/backfill-modelcar-pipelinerun.yaml").read_text(); replacements = {"__TEKTON_NAMESPACE__": os.environ["TEKTON_NAMESPACE"], "__BACKFILL_MODEL_NAME__": os.environ["BACKFILL_MODEL_NAME"], "__BACKFILL_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODEL_VERSION_NAME"], "__BACKFILL_MODELCAR_MODEL_NAME__": os.environ["BACKFILL_MODELCAR_MODEL_NAME"], "__BACKFILL_MODELCAR_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODELCAR_MODEL_VERSION_NAME"], "__BACKFILL_FEATURE_SERVICE_NAME__": os.environ["BACKFILL_FEATURE_SERVICE_NAME"], "__BACKFILL_MODELCAR_IMAGE_REPOSITORY__": os.environ["BACKFILL_MODELCAR_IMAGE_REPOSITORY"], "__BACKFILL_MODELCAR_SERVING_MODEL_NAME__": os.environ["BACKFILL_MODELCAR_SERVING_MODEL_NAME"], "__BACKFILL_MODELCAR_SERVING_RUNTIME_NAME__": os.environ["BACKFILL_MODELCAR_SERVING_RUNTIME_NAME"], "__MODEL_REGISTRY_ENDPOINT__": os.environ["MODEL_REGISTRY_ENDPOINT"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -; \
+	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/backfill-modelcar-pipelinerun.yaml").read_text(); replacements = {"__TEKTON_NAMESPACE__": os.environ["TEKTON_NAMESPACE"], "__BACKFILL_MODELCAR_GIT_URL__": os.environ["BACKFILL_MODELCAR_GIT_URL"], "__BACKFILL_MODELCAR_GIT_REVISION__": os.environ["BACKFILL_MODELCAR_GIT_REVISION"], "__BACKFILL_MODEL_NAME__": os.environ["BACKFILL_MODEL_NAME"], "__BACKFILL_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODEL_VERSION_NAME"], "__BACKFILL_MODELCAR_MODEL_NAME__": os.environ["BACKFILL_MODELCAR_MODEL_NAME"], "__BACKFILL_MODELCAR_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODELCAR_MODEL_VERSION_NAME"], "__BACKFILL_FEATURE_SERVICE_NAME__": os.environ["BACKFILL_FEATURE_SERVICE_NAME"], "__BACKFILL_MODELCAR_IMAGE_REPOSITORY__": os.environ["BACKFILL_MODELCAR_IMAGE_REPOSITORY"], "__BACKFILL_MODELCAR_SERVING_MODEL_NAME__": os.environ["BACKFILL_MODELCAR_SERVING_MODEL_NAME"], "__BACKFILL_MODELCAR_SERVING_RUNTIME_NAME__": os.environ["BACKFILL_MODELCAR_SERVING_RUNTIME_NAME"], "__MODEL_REGISTRY_ENDPOINT__": os.environ["MODEL_REGISTRY_ENDPOINT"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -; \
 	printf "Watch PipelineRuns: oc get pipelinerun -n %s | rg 'ani-backfill-modelcar'\n" "$(TEKTON_NAMESPACE)"; \
 	printf "Next modelcar step: make backfill-modelcar-step-2-smoke-check-serving\n"
 

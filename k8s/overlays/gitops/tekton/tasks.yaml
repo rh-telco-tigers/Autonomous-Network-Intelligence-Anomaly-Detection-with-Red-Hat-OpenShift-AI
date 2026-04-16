@@ -200,7 +200,7 @@ spec:
   steps:
     - name: prepare
       image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
-      workingDir: /workspace
+      workingDir: $(workspaces.source.path)
       env:
         - name: HOME
           value: /tmp
@@ -317,7 +317,7 @@ spec:
   steps:
     - name: register
       image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
-      workingDir: /workspace
+      workingDir: $(workspaces.source.path)
       env:
         - name: HOME
           value: /tmp
