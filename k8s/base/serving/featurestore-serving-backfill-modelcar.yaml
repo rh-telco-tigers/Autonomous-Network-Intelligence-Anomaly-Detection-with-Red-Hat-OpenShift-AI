@@ -11,7 +11,7 @@ metadata:
     opendatahub.io/dashboard: "true"
 type: Opaque
 stringData:
-  URI: oci://image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:current
+  URI: oci://quay.io/autonomousnetworkintelligence/ani-predictive-backfill-modelcar:latest
 ---
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
@@ -38,7 +38,7 @@ spec:
       modelFormat:
         name: autogluon
       protocolVersion: v2
-      storageUri: oci://image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:current
+      storageUri: oci://quay.io/autonomousnetworkintelligence/ani-predictive-backfill-modelcar:latest
       resources:
         requests:
           cpu: 100m
