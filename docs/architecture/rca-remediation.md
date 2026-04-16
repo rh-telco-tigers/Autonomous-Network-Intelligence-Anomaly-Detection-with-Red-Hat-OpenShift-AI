@@ -1,8 +1,8 @@
-# IMS Anomaly Detection: RCA, Remediation, AAP / EDA Automation, Human-in-the-Loop, and Plane Integration
+# ANI (Autonomous Network Intelligence): RCA, Remediation, AAP / EDA Automation, Human-in-the-Loop, and Plane Integration
 
 ## 1. Executive Summary
 
-This document defines the production-oriented design for the runtime response phase of the IMS anomaly detection demo: converting anomaly events into grounded root cause analysis (RCA), ranked remediation suggestions, AAP-backed execution, EDA-backed policy automation, Plane-backed workflow, and verified knowledge that improves future responses.
+This document defines the production-oriented design for the runtime response phase of the ANI (Autonomous Network Intelligence) demo: converting anomaly events into grounded root cause analysis (RCA), ranked remediation suggestions, AAP-backed execution, EDA-backed policy automation, Plane-backed workflow, and verified knowledge that improves future responses.
 
 The target outcome is a closed-loop system:
 

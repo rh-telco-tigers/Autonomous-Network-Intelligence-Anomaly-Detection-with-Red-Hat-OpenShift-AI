@@ -1,6 +1,6 @@
-# IMS Anomaly Detection and RCA Demo Platform
+# ANI (Autonomous Network Intelligence) Demo Platform
 
-This repository packages an OpenShift-native demo stack for IMS anomaly detection and root cause analysis. The target deployment model is:
+This repository packages an OpenShift-native ANI (Autonomous Network Intelligence) demo stack for network anomaly detection and root cause analysis. The target deployment model is:
 
 - IMS lab services on OpenShift
 - SIPp-driven traffic generation and fault injection

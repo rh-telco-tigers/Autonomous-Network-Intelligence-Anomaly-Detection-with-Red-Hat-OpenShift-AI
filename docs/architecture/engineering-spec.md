@@ -1,4 +1,4 @@
-# IMS Anomaly Detection and RCA Platform on OpenShift AI
+# ANI (Autonomous Network Intelligence) Platform on OpenShift AI
 
 ## Engineering Specification (v1.0)
 

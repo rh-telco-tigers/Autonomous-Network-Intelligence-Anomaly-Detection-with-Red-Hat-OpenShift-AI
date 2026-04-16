@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document explains the Event-Driven Ansible path used by the current IMS anomaly detection platform. It focuses on how the control-plane publishes internal webhook events into AAP EDA, how rulebooks decide whether to act, and how EDA re-enters the same control-plane workflow instead of bypassing the platform.
+This document explains the Event-Driven Ansible path used by the current ANI (Autonomous Network Intelligence) platform. It focuses on how the control-plane publishes internal webhook events into AAP EDA, how rulebooks decide whether to act, and how EDA re-enters the same control-plane workflow instead of bypassing the platform.
 
 This document is about AAP EDA webhook activations. It is separate from Plane webhooks.
 
