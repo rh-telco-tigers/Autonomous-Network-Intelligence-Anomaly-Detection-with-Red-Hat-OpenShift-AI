@@ -89,28 +89,31 @@ patches:
       kind: RoleBinding
       metadata:
         name: control-plane-read-aap-controller-password
+# Container images: public Quay (autonomousnetworkintelligence). For OpenShift internal registry instead,
+# swap newName values to match k8s/components/image-registry/openshift-internal-images/kustomization.yaml
+# (image-registry.openshift-image-registry.svc:5000/ani-runtime/...).
 images:
   - name: feature-gateway
-    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/feature-gateway
+    newName: quay.io/autonomousnetworkintelligence/feature-gateway
     newTag: latest
   - name: anomaly-service
-    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/anomaly-service
+    newName: quay.io/autonomousnetworkintelligence/anomaly-service
     newTag: latest
   - name: rca-service
-    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/rca-service
+    newName: quay.io/autonomousnetworkintelligence/rca-service
     newTag: latest
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/control-plane
-    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/control-plane
+    newName: quay.io/autonomousnetworkintelligence/control-plane
     newTag: latest
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/feature-gateway
-    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/feature-gateway
+    newName: quay.io/autonomousnetworkintelligence/feature-gateway
     newTag: latest
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/anomaly-service
-    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/anomaly-service
+    newName: quay.io/autonomousnetworkintelligence/anomaly-service
     newTag: latest
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/rca-service
-    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/rca-service
+    newName: quay.io/autonomousnetworkintelligence/rca-service
     newTag: latest
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/demo-ui
-    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/demo-ui
+    newName: quay.io/autonomousnetworkintelligence/demo-ui
     newTag: latest

@@ -1,0 +1,40 @@
+# Reverse of quay-public-images: rewrites Quay references back to the OpenShift cluster registry.
+# Use when builds/pushes target image-registry.openshift-image-registry.svc:5000 instead of Quay.
+# Note: Kubeflow pipeline YAML embedded inside ConfigMaps is not transformed by kustomize images;
+# for those, align k8s/base/kfp/assets/*.yaml with the same registry or edit before apply.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: quay.io/autonomousnetworkintelligence/feature-gateway
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/feature-gateway
+    newTag: latest
+  - name: quay.io/autonomousnetworkintelligence/anomaly-service
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/anomaly-service
+    newTag: latest
+  - name: quay.io/autonomousnetworkintelligence/rca-service
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/rca-service
+    newTag: latest
+  - name: quay.io/autonomousnetworkintelligence/demo-ui
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/demo-ui
+    newTag: latest
+  - name: quay.io/autonomousnetworkintelligence/control-plane
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/control-plane
+    newTag: latest
+  - name: quay.io/autonomousnetworkintelligence/sipp-runner
+    newName: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner
+    newTag: latest
+  - name: quay.io/autonomousnetworkintelligence/openimss-open5gs
+    newName: image-registry.openshift-image-registry.svc:5000/ani-sipp/openimss-open5gs
+    newTag: latest
+  - name: quay.io/autonomousnetworkintelligence/openimss-opensips
+    newName: image-registry.openshift-image-registry.svc:5000/ani-sipp/openimss-opensips
+    newTag: latest
+  - name: quay.io/autonomousnetworkintelligence/ani-ai-trainer
+    newName: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer
+    newTag: latest
+  - name: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer
+    newName: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer
+    newTag: latest
+  - name: quay.io/autonomousnetworkintelligence/ani-incident-release
+    newName: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-incident-release
+    newTag: latest

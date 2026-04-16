@@ -1,0 +1,10 @@
+# Restores Tekton Pipeline IMAGE params to push to the OpenShift internal registry (build from cluster).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - path: tekton-pipeline-image-params.yaml
+    target:
+      group: tekton.dev
+      version: v1
+      kind: Pipeline
+      name: ani-platform-container-build

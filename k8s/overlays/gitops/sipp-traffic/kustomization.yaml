@@ -7,5 +7,5 @@ resources:
   - ../../../base/traffic
 images:
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/sipp-runner
-    newName: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner
+    newName: quay.io/autonomousnetworkintelligence/sipp-runner
     newTag: latest

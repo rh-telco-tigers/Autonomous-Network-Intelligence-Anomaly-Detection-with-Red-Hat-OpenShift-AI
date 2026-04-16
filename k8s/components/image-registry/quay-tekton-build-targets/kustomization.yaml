@@ -1,0 +1,11 @@
+# Tekton Pipeline build destination images (buildah push targets). Kustomize does not rewrite these
+# via the images: field; use a JSON patch. Add this component only to the ani-tekton overlay.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - path: tekton-pipeline-image-params.yaml
+    target:
+      group: tekton.dev
+      version: v1
+      kind: Pipeline
+      name: ani-platform-container-build
