@@ -5,6 +5,7 @@ metadata:
   namespace: aap
   annotations:
     argocd.argoproj.io/sync-wave: "87"
+    argocd.argoproj.io/sync-options: Force=true,Replace=true
 spec:
   backoffLimit: 4
   template:

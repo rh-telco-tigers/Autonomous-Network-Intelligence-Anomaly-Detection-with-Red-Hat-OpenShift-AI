@@ -9,73 +9,39 @@ This guide walks through enabling the AI-driven remediation workflow, which uses
 - The platform has been deployed through the GitOps path in [02-installation.md](02-installation.md)
 - AAP is installed and the AAP license import is complete
 - You have `oc` CLI access with cluster-admin permissions
-- You understand that the Lightspeed API token is still a manual step on the current branch
+- You understand that the Lightspeed secrets are still a manual step on the current branch
+- Do not commit real secret values to Git or store them in Gitea
 
 ---
 
-## Step 1 — Configure the Lightspeed Backend Secret
+## Step 1 — Create the Manual Lightspeed Backend Secret
 
-The repository contains the desired Lightspeed backend secret at `k8s/base/aap-platform/ansible-lightspeed-secret.yaml`. Populate it with your LLM backend details and make sure the cluster reconciles a matching `lightspeed-secret` in the `aap` namespace.
+Create the backend secret directly in the cluster. The integration expects this exact secret name:
 
-1. Get the Gitea URL:
-   ```bash
-   oc get route gitea -n gitea -o jsonpath='{.spec.host}'
-   ```
+- `name: lightspeed-secret`
+- `namespace: aap`
 
-2. Open the Gitea UI in your browser and navigate to:
-   ```
-   IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI
-     → k8s → base → aap-platform → ansible-lightspeed-secret.yaml
-   ```
-
-3. Click the **pencil (edit) icon** and replace the placeholder values with your LLM backend details:
-
-   ```yaml
-   stringData:
-     chatbot_model: granite-3-2-8b-instruct  # update if using a different model
-     chatbot_url: <url>                       # replace with your LLM endpoint URL
-     chatbot_token: <token>                   # replace with your LLM API token
-   ```
-
-4. Scroll down, add a commit message (for example `Configure Lightspeed LLM backend`), and click **Commit Changes**.
-
-5. Commit the change and wait for Argo CD to reconcile it. If you need the secret immediately, apply the same manifest once by hand:
+Create or update it with your real backend values:
 
 ```bash
-oc apply -f k8s/base/aap-platform/ansible-lightspeed-secret.yaml -n aap
+oc create secret generic lightspeed-secret -n aap \
+  --from-literal=chatbot_model='<model_name>' \
+  --from-literal=chatbot_url='https://<lightspeed-backend>/v1' \
+  --from-literal=chatbot_token='<backend_token>' \
+  --dry-run=client -o yaml | oc apply -f -
 ```
 
-Confirm it has been applied:
-
-```bash
-oc get secret lightspeed-secret -n aap -o jsonpath='{.data.chatbot_url}' | base64 -d && echo
-```
-
----
-
-## Step 2 — Confirm the Lightspeed Backend Secret Is Present
-
-Check the secret directly:
+Verify the values are present without printing the token:
 
 ```bash
 oc get secret lightspeed-secret -n aap
+oc get secret lightspeed-secret -n aap -o jsonpath='{.data.chatbot_url}' | base64 -d && echo
+oc get secret lightspeed-secret -n aap -o jsonpath='{.data.chatbot_model}' | base64 -d && echo
 ```
 
-If you already have Lightspeed deployments in the cluster and you changed the backend secret after they started, restart only the deployments that actually exist:
+---
 
-```bash
-oc get deploy -n aap | rg 'lightspeed'
-```
-
-For example:
-
-```bash
-oc rollout restart deployment/<lightspeed-deployment-name> -n aap
-```
-
-## Step 3 — Verify the Lightspeed Workloads Appear
-
-Wait for the related workloads and route to exist:
+## Step 2 — Verify the Lightspeed Workloads Are Running
 
 ```bash
 oc get deploy -n aap | rg 'lightspeed'
@@ -83,13 +49,25 @@ oc get pods -n aap | rg 'lightspeed'
 oc get route -n aap | rg 'lightspeed'
 ```
 
-Continue when the Lightspeed workloads that exist in your cluster are `Running` and the route is admitted.
+Continue when:
+
+- `aap-lightspeed-api` is available
+- `aap-lightspeed-chatbot-api` is available
+- the related pods are `Running`
+- route `aap-lightspeed` is admitted
+
+If you changed `lightspeed-secret` after those deployments were already running, restart them once:
+
+```bash
+oc rollout restart deployment/aap-lightspeed-api -n aap
+oc rollout restart deployment/aap-lightspeed-chatbot-api -n aap
+```
 
 ---
 
-## Step 4 — Create an Ansible Lightspeed API Token
+## Step 3 — Create an Ansible Lightspeed API Token
 
-### 4.1 — Find the Lightspeed Route
+### 3.1 — Find the Lightspeed Route
 
 Retrieve the Ansible Lightspeed route from the `aap` namespace:
 
@@ -99,7 +77,7 @@ oc get route -n aap | grep lightspeed
 
 Note the hostname — referred to as `<lightspeed_route>` in the steps below.
 
-### 4.2 — Access the Admin Portal
+### 3.2 — Access the Admin Portal
 
 Open the Django administration portal in your browser:
 
@@ -107,7 +85,7 @@ Open the Django administration portal in your browser:
 https://<lightspeed_route>/admin
 ```
 
-### 4.3 — Log In as Administrator
+### 3.3 — Log In as Administrator
 
 Use the following credentials:
 
@@ -124,12 +102,12 @@ oc get secret <lightspeed-custom-resource-name>-admin-password -n aap \
   -o jsonpath='{.data.password}' | base64 -d && echo
 ```
 
-### 4.4 — Verify the Platform User
+### 3.4 — Verify the Platform User
 
 1. On the **Django administration** window, select **Users** from the **Users** area.
 2. Confirm that the `admin` user is listed.
 
-### 4.5 — Create an Access Token
+### 3.5 — Create an Access Token
 
 1. From the **Django OAuth toolkit** area, select **Access tokens → Add**.
 2. Fill in the following fields and click **Save**:
@@ -146,7 +124,7 @@ oc get secret <lightspeed-custom-resource-name>-admin-password -n aap \
 
 3. Copy and securely store the token value before saving.
 
-### 4.6 — Store the Token in the Secret Expected by the Remediation Job
+## Step 4 — Create the Manual Token Secret for the Remediation Job
 
 The remediation bootstrap Job `aap-controller-lightspeed-template-config` reads the token from the secret `aap-lightspeed-chatbot-api-key` in the `aap` namespace.
 
@@ -164,10 +142,19 @@ Verify it exists:
 oc get secret aap-lightspeed-chatbot-api-key -n aap
 ```
 
-If `ani-remediation` or `aap-controller-lightspeed-template-config` was already stuck before the secret existed, force one new reconcile:
+## Step 5 — Rerun the Remediation Reconcile
+
+After both manual secrets exist, force one new reconcile so the bootstrap Jobs can create the AAP connection secret, the Lightspeed job template configuration, and the EDA Kafka activation:
 
 ```bash
-oc delete pod -n aap -l job-name=aap-controller-lightspeed-template-config --ignore-not-found
+oc delete secret aap-controller-connection -n aap --ignore-not-found
+oc delete job -n aap \
+  ani-remediation-connection-secret \
+  aap-controller-project-readiness \
+  aap-controller-job-template-readiness \
+  aap-controller-lightspeed-template-config \
+  eda-kafka-bootstrap \
+  --ignore-not-found
 oc annotate application.argoproj.io/ani-remediation -n openshift-gitops argocd.argoproj.io/refresh=hard --overwrite
 ```
 
@@ -175,20 +162,47 @@ oc annotate application.argoproj.io/ani-remediation -n openshift-gitops argocd.a
 
 ## Verification
 
-To confirm the end-to-end remediation flow is active, check that the EDA Kafka activation is running:
+To confirm the end-to-end remediation flow is active, verify the bootstrap outputs directly:
 
 ```bash
-# Confirm the token-backed template config job is no longer blocked
-oc get job aap-controller-lightspeed-template-config -n aap
-
-# Verify EDA Kafka bootstrap job completed successfully
-oc get job eda-kafka-bootstrap -n aap
-
-# Check the ANI Remediation activation is enabled in EDA
-oc get pods -n aap | grep eda
-
-# Confirm the ArgoCD remediation slice is no longer degraded
+oc get secret aap-controller-connection -n aap
+oc get job -n aap \
+  ani-remediation-connection-secret \
+  aap-controller-project-readiness \
+  aap-controller-job-template-readiness \
+  aap-controller-lightspeed-template-config \
+  eda-kafka-bootstrap
 oc get application.argoproj.io ani-remediation -n openshift-gitops
 ```
 
-The EDA activation **ANI Remediation** should be listening on the `aiops-ansible-playbook-generate-instruction` Kafka topic. When an anomaly event is detected, it will automatically trigger the **ANI Remediation - Lightspeed Playbook Generator** job template in AAP Controller and generate playbook.
+Check the AAP Controller template:
+
+```bash
+CONTROLLER_HOST="$(oc get route aap-controller -n aap -o jsonpath='{.status.ingress[0].host}')"
+CONTROLLER_PASS="$(oc extract -n aap secret/aap-controller-admin-password --to=- --keys=password 2>/dev/null | tail -n1)"
+curl -ksu "admin:${CONTROLLER_PASS}" \
+  "https://${CONTROLLER_HOST}/api/controller/v2/job_templates/?page_size=100&name=IMS%20Remediation%20-%20Lightspeed%20Playbook%20Generator" \
+  | python3 -m json.tool
+```
+
+Expected result:
+
+- the result count is `1`
+
+Check the EDA activation:
+
+```bash
+EDA_HOST="$(oc get route aap-eda -n aap -o jsonpath='{.status.ingress[0].host}')"
+EDA_PASS="$(oc extract -n aap secret/aap-eda-admin-password --to=- --keys=password 2>/dev/null | tail -n1)"
+curl -ksu "admin:${EDA_PASS}" \
+  "https://${EDA_HOST}/api/eda/v1/activations/?page_size=100" \
+  | python3 -m json.tool
+```
+
+Expected result:
+
+- activation `ANI Remediation` exists
+- its `rulebook_name` is `generate-playbook-event.yml`
+- its `status` is `running`
+
+When those checks pass, the EDA activation is listening on Kafka topic `aiops-ansible-playbook-generate-instruction` and launches AAP template `IMS Remediation - Lightspeed Playbook Generator` when the control-plane publishes a playbook-generation request.
