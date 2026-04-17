@@ -117,10 +117,11 @@ Wait until:
 
 On the current branch, `ani-rhoai-platform` and `ani-datascience` retry automatically once the operator and CRDs are ready. On older revisions, resync those two applications after `default-dsc` becomes ready.
 
-On the current branch, GitOps also manages the KFP pipeline definitions declaratively. Check:
+On the current branch, GitOps also manages the KFP pipeline definitions declaratively and creates background auto-run `CronJob`s for the first live-path workflows. Check:
 
 ```sh
 oc get pipelines.pipelines.kubeflow.org,pipelineversions.pipelines.kubeflow.org -n ani-datascience
+oc get cronjob -n ani-datascience | rg 'kfp-auto-run'
 ```
 
 ## Older Revisions Wait On `ani-kfp-bootstrap` And Later Resources Never Appear
@@ -149,18 +150,29 @@ oc delete job -n ani-datascience ani-kfp-bootstrap --ignore-not-found
 oc annotate application ani-datascience -n openshift-gitops argocd.argoproj.io/refresh=hard --overwrite
 ```
 
-## `ani-datascience` Is Degraded Because The Predictors Start Before Models Exist
+## `ani-datascience` Is Degraded While The Automatic Training Flow Catches Up
 
-On the current branch, GitOps creates the predictive `InferenceService` resources before the first training workflows are started. Until you run [Installation 04](./04-data-generation-and-model-training.md), the storage initializer can log `No model found` and KServe will keep retrying because the initial model artifacts are not in object storage yet.
+On the current branch, GitOps creates the predictive `InferenceService` resources first and the background KFP auto-run `CronJob`s submit the initial live-path workflows afterward. Until those workflows succeed, the storage initializer can log `No model found` and KServe will keep retrying because the initial model artifacts are not in object storage yet.
 
 Check:
 
 ```sh
+oc get cronjob -n ani-datascience | rg 'kfp-auto-run'
+oc get jobs -n ani-datascience
+oc get wf -n ani-datascience
 oc get inferenceservice -n ani-datascience
 oc get pods -n ani-datascience | rg 'ani-predictive'
 ```
 
-Then run the training flow from Installation 04 and wait for these workflows to finish with `Succeeded`:
+If the CronJobs exist but you do not want to wait for the next scheduled run, create one immediate Job from the relevant CronJob:
+
+```sh
+AUTO_JOB="ani-featurestore-kfp-auto-run-manual-$(date +%s)"
+oc create job --from=cronjob/ani-featurestore-kfp-auto-run "${AUTO_JOB}" -n ani-datascience
+oc logs -f -n ani-datascience "job/${AUTO_JOB}"
+```
+
+Then wait for these workflows to finish with `Succeeded`:
 
 - `ani-anomaly-platform-train-and-register-*`
 - `ani-feature-bundle-publish-*`

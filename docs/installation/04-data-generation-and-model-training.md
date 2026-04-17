@@ -2,7 +2,7 @@
 
 ## Objective
 
-Generate incident-linked data for the live model path, generate a separate backfill model path when needed, and verify that the app can switch between the two active predictive endpoints.
+Watch or force-rerun the live model path after installation, generate a separate backfill model path when needed, and verify that the app can switch between the active predictive endpoints.
 
 ## Before You Start
 
@@ -14,7 +14,24 @@ Generate incident-linked data for the live model path, generate a separate backf
 
 If `ani-datascience` is degraded only because `llama-32-3b-instruct` is pending on missing GPU capacity, you can still continue with this predictive-model workflow.
 
-## 1. Generate One Live Incident
+## 1. Watch The Automatic Live Path
+
+On the current branch, `ani-datascience` includes background KFP auto-run `CronJob`s. After the first image build finishes, those CronJobs submit the live-path workflows against the declaratively managed `Pipeline` / `PipelineVersion` resources.
+
+Watch:
+
+```sh
+oc get cronjob -n ani-datascience | rg 'kfp-auto-run'
+oc get jobs -n ani-datascience
+oc get wf -n ani-datascience
+oc get inferenceservice -n ani-datascience
+```
+
+Continue when the relevant workflows finish with `Succeeded` and `ani-predictive-fs` becomes `READY=True`.
+
+If you want to accelerate or force a rerun of the live path instead of waiting for the next CronJob tick, use the manual steps below.
+
+## 2. Optionally Generate One Live Incident
 
 Create one incident from the live dataset path:
 
@@ -28,7 +45,7 @@ Expected result:
 - the `score` block returns `scoring_mode: remote-kserve`
 - the demo UI shows a new incident
 
-## 2. Optionally Generate A Larger Training-Only Backfill
+## 3. Optionally Generate A Larger Training-Only Backfill
 
 Use this only when you want extra feature windows for offline analysis or model experiments:
 
@@ -47,10 +64,10 @@ Important:
 
 - backfill writes to the shared dataset version `backfill-sipp-100k`
 - backfill is training-only
-- backfill is not a valid source for Step 3
+- backfill is not a valid source for the incident-release bundle step
 - if you want a separate backfill-trained model, continue with the Backfill Model Path later in this guide
 
-## 3. List Dataset Versions If You Need To Inspect State
+## 4. List Dataset Versions If You Need To Inspect State
 
 ```sh
 make list-incident-release-datasets
@@ -63,7 +80,7 @@ Use this when you want to see:
 
 For incident release, always use the incident-linked live dataset unless you intentionally override it with another linked dataset.
 
-## 4. Build The Incident Release Bundle
+## 5. Build The Incident Release Bundle
 
 Compile the incident-linked dataset into the incident release bundle:
 
@@ -86,7 +103,7 @@ oc get wf -n ani-datascience | rg 'ani-incident-release'
 
 Continue when the workflow finishes with `Succeeded`.
 
-## 5. Publish The Feature Bundle
+## 6. Publish The Feature Bundle
 
 Publish the bundle that the feature-store training pipeline consumes:
 
@@ -102,7 +119,7 @@ oc get wf -n ani-datascience | rg 'ani-feature-bundle'
 
 Continue when the publish workflow finishes with `Succeeded`.
 
-## 6. Train, Register, And Deploy The Predictive Model
+## 7. Train, Register, And Deploy The Predictive Model
 
 Train and deploy the feature-store model:
 
@@ -119,7 +136,7 @@ oc get inferenceservice -n ani-datascience
 
 This is the preferred training path. It deploys the model behind `ani-predictive-fs`, which the app uses for live classification.
 
-## 7. Run The Serving Smoke Check
+## 8. Run The Serving Smoke Check
 
 ```sh
 make live-step-5-smoke-check-serving
@@ -137,7 +154,7 @@ Expected result:
 - ready endpoint returns `200`
 - smoke status is `passed`
 
-## 8. Verify The App Uses The Deployed Predictor
+## 9. Verify The App Uses The Deployed Predictor
 
 Call the anomaly service directly:
 
@@ -281,4 +298,4 @@ Changing that selector updates the control-plane classifier profile. New classif
 
 - `legacy-train-and-deploy-classifier` is the older compatibility path. Do not use it for the preferred demo flow.
 - The modelcar branch assumes the serving service account can resolve and pull `oci://image-registry.openshift-image-registry.svc:5000/...` from the same cluster. If your cluster blocks that path, add the required registry pull secret to `model-storage-sa` before switching the UI profile to `modelcar`.
-- If Step 1 starts returning `502` after Step 5, check [Troubleshooting](./troubleshooting.md), especially the sections around image drift and serving readiness.
+- If the live incident generation step starts returning `502` after the serving smoke check, check [Troubleshooting](./troubleshooting.md), especially the sections around image drift and serving readiness.

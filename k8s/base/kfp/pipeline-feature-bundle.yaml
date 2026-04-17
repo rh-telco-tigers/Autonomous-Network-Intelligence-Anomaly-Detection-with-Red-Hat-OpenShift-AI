@@ -105,7 +105,7 @@ spec:
               value: minioadmin
             - name: MINIO_SECRET_KEY
               value: minioadmin
-            image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+            image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
             resources:
               cpuLimit: 2.0
               cpuRequest: 0.5
@@ -152,7 +152,7 @@ spec:
               value: minioadmin
             - name: MINIO_SECRET_KEY
               value: minioadmin
-            image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+            image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
             resources:
               cpuLimit: 1.0
               cpuRequest: 0.25

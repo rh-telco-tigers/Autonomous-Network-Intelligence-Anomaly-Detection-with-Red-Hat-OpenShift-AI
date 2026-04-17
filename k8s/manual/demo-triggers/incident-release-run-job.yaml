@@ -33,6 +33,8 @@ spec:
               value: "__INCIDENT_RELEASE_PUBLIC_RECORD_TARGET__"
             - name: INCIDENT_RELEASE_PREVIOUS_VERSION
               value: __INCIDENT_RELEASE_PREVIOUS_VERSION__
+            - name: PIPELINE_USE_EXISTING_VERSION
+              value: "true"
           command:
             - /bin/bash
             - -lc

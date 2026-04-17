@@ -18,6 +18,6 @@ This directory contains source for the predictive training workflow expected to 
 
 `k8s/base/kfp` deploys the namespace-scoped `DataSciencePipelinesApplication` and declarative `Pipeline` / `PipelineVersion` resources that mirror the tracked KFP packages into the local DSPA namespace.
 
-The same kustomization also carries shared ConfigMaps and RBAC for the manual trigger Jobs under `k8s/manual/demo-triggers`.
+The same kustomization also carries shared ConfigMaps and RBAC for the background KFP auto-run `CronJob`s and the manual trigger Jobs under `k8s/manual/demo-triggers`.
 
-GitOps now registers the pipeline definitions declaratively without auto-running them, so Argo CD can finish reconciling the data science app before the trainer images and initial datasets are ready. Use the manual flow in `docs/installation/04-data-generation-and-model-training.md` to launch the first runs after the build pipeline completes.
+GitOps registers the pipeline definitions declaratively, and the background auto-run `CronJob`s submit first-run executions by referencing the registered pipeline versions instead of re-uploading YAML. Use `docs/installation/04-data-generation-and-model-training.md` to watch those runs or force a manual rerun after the build pipeline completes.

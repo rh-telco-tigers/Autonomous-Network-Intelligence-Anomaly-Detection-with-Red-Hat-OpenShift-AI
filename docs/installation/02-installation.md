@@ -77,7 +77,7 @@ On a fresh cluster this can take several minutes. It is normal for the bootstrap
 
 ## 5. Trigger The First Image Build
 
-The first Git push seeds GitOps state, but it does not populate all runtime images. Run the build pipeline once so the manually triggered training flows in Installation 04 can use the in-cluster images:
+The first Git push seeds GitOps state, but it does not populate all runtime images. Run the build pipeline once so the GitOps-managed KFP pipeline versions and background auto-run CronJobs can use the in-cluster images:
 
 ```sh
 make trigger-build-pipeline
@@ -95,6 +95,7 @@ oc get deploy -n ani-sipp
 oc get dsc -n redhat-ods-operator
 oc get dspa,featurestore,servingruntime,inferenceservice -n ani-datascience
 oc get pipelines.pipelines.kubeflow.org,pipelineversions.pipelines.kubeflow.org -n ani-datascience
+oc get cronjob -n ani-datascience | rg 'kfp-auto-run'
 oc get modelregistries.modelregistry.opendatahub.io -n rhoai-model-registries
 ```
 
@@ -106,13 +107,14 @@ Continue when:
 - `dspa` is `Ready`
 - `ani-featurestore` is `Ready`
 - the KFP `Pipeline` and `PipelineVersion` resources exist in `ani-datascience`
+- the KFP auto-run `CronJob` resources exist in `ani-datascience`
 - the serving runtimes exist in `ani-datascience`
 - `default-modelregistry` exists in `rhoai-model-registries`
 - the `InferenceService` objects exist in `ani-datascience`
 
-At this point GitOps has created the OpenShift AI resources and reconciled the KFP pipeline definitions as Kubernetes CRs, but it has not run the first training workflows yet. The predictive `InferenceService` resources can stay `READY=False` until you run [Installation 04: Data Generation And Model Training](./04-data-generation-and-model-training.md) to publish the initial model artifacts.
+At this point GitOps has created the OpenShift AI resources, reconciled the KFP pipeline definitions as Kubernetes CRs, and created non-hook auto-run `CronJob`s that submit the first live-path workflows in the background. The predictive `InferenceService` resources can stay `READY=False` until those background runs publish the initial model artifacts.
 
-If `ani-predictive` or `ani-predictive-fs` starts as `READY=False`, run the training flow in Installation 04 and let KServe retry automatically after the model artifacts appear. If `llama-32-3b-instruct` stays `Pending` with `Insufficient nvidia.com/gpu`, the RCA generation flow will stay degraded until you add a GPU worker. Use [Troubleshooting](./troubleshooting.md).
+If `ani-predictive` or `ani-predictive-fs` starts as `READY=False`, watch the background workflows in [Installation 04: Data Generation And Model Training](./04-data-generation-and-model-training.md) or use its manual rerun commands if you want to force the live path. KServe retries automatically after the model artifacts appear. If `llama-32-3b-instruct` stays `Pending` with `Insufficient nvidia.com/gpu`, the RCA generation flow will stay degraded until you add a GPU worker. Use [Troubleshooting](./troubleshooting.md).
 
 ## 7. List The Main Routes
 

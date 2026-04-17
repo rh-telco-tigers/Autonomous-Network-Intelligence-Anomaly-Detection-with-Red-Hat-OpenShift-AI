@@ -13,10 +13,11 @@ oc get deploy -n ani-sipp
 oc get dsc -n redhat-ods-operator
 oc get dspa,featurestore,servingruntime,inferenceservice -n ani-datascience
 oc get pipelines.pipelines.kubeflow.org,pipelineversions.pipelines.kubeflow.org -n ani-datascience
+oc get cronjob -n ani-datascience | rg 'kfp-auto-run'
 oc get modelregistries.modelregistry.opendatahub.io -n rhoai-model-registries
 ```
 
-If `ani-predictive` or `ani-predictive-fs` is still `READY=False`, that is expected before you run [Installation 04: Data Generation And Model Training](./04-data-generation-and-model-training.md). GitOps creates the `InferenceService` objects first; the training flow publishes the initial model artifacts later.
+If `ani-predictive` or `ani-predictive-fs` is still `READY=False`, that is expected while the background KFP auto-run `CronJob`s are still publishing the first model artifacts. GitOps creates the `InferenceService` objects first; the live-path workflows catch up afterward.
 
 ## 2. Collect The Main Routes
 
@@ -58,6 +59,7 @@ Use these credentials:
 ```sh
 oc get cronjob -n ani-runtime | rg 'demo-incident-pulse'
 oc get cronjob -n ani-sipp | rg 'sipp-'
+oc get cronjob -n ani-datascience | rg 'kfp-auto-run'
 ```
 
 ## 5. Run One Manual Traffic Check
@@ -129,6 +131,7 @@ Expected result after the approved action runs: the deployment reports `2` desir
 - `dspa` is `Ready`
 - `ani-featurestore` is `Ready`
 - the KFP `Pipeline` and `PipelineVersion` resources exist in `ani-datascience`
+- the KFP auto-run `CronJob` resources exist in `ani-datascience`
 - the serving runtimes exist in `ani-datascience`
 - `default-modelregistry` exists in `rhoai-model-registries`
 - the predictive `InferenceService` objects exist in `ani-datascience`
@@ -141,4 +144,4 @@ If the only remaining degraded item is `llama-32-3b-instruct` with `Insufficient
 
 ## Next Step
 
-After the base platform is validated, continue with [Installation 04: Data Generation And Model Training](./04-data-generation-and-model-training.md).
+After the base platform is validated, continue with [Installation 04: Data Generation And Model Training](./04-data-generation-and-model-training.md) to watch the automatic live-path workflows or force a rerun if you need one.

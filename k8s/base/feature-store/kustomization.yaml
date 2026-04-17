@@ -11,5 +11,3 @@ configMapGenerator:
 resources:
   - featurestore-config.yaml
   - featurestore-instance.yaml
-  - featurestore-bootstrap-rbac.yaml
-  - featurestore-bootstrap-job.yaml

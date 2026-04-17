@@ -83,6 +83,15 @@ def _package_digest(package_path: str) -> str:
     return hashlib.sha256(Path(package_path).read_bytes()).hexdigest()[:12]
 
 
+def _pipeline_version_name(package_path: str, pipeline_name: str, *, use_existing_version: bool) -> str:
+    explicit = os.getenv("PIPELINE_VERSION_NAME", "").strip()
+    if explicit:
+        return explicit
+    if use_existing_version:
+        return pipeline_name
+    return f"{pipeline_name}-{_package_digest(package_path)}"
+
+
 def wait_for_client(host: str, namespace: str, timeout_seconds: int = 600) -> Client:
     deadline = time.time() + timeout_seconds
     last_error: Exception | None = None
@@ -124,7 +133,7 @@ def ensure_pipeline(client: Client, package_path: str, pipeline_name: str, names
     if not pipeline_id:
         return
 
-    version_name = os.getenv("PIPELINE_VERSION_NAME", f"{pipeline_name}-{_package_digest(package_path)}")
+    version_name = _pipeline_version_name(package_path, pipeline_name, use_existing_version=False)
     existing_versions = getattr(client.list_pipeline_versions(pipeline_id=pipeline_id, page_size=100), "pipeline_versions", None)
     if _find_by_display_name(existing_versions, version_name) is not None:
         return
@@ -133,6 +142,31 @@ def ensure_pipeline(client: Client, package_path: str, pipeline_name: str, names
         pipeline_version_name=version_name,
         pipeline_id=pipeline_id,
     )
+
+
+def resolve_pipeline_version(client: Client, package_path: str, pipeline_name: str, namespace: str) -> tuple[str, str]:
+    pipeline = _find_by_display_name(
+        getattr(client.list_pipelines(page_size=100, namespace=namespace), "pipelines", None),
+        pipeline_name,
+    )
+    if pipeline is None:
+        raise RuntimeError(f"Pipeline {pipeline_name!r} is not registered in namespace {namespace!r}")
+
+    pipeline_id = getattr(pipeline, "pipeline_id", None)
+    if not pipeline_id:
+        raise RuntimeError(f"Pipeline {pipeline_name!r} is missing a pipeline_id")
+
+    version_name = _pipeline_version_name(package_path, pipeline_name, use_existing_version=True)
+    versions = getattr(client.list_pipeline_versions(pipeline_id=pipeline_id, page_size=100), "pipeline_versions", None)
+    version = _find_by_display_name(versions, version_name)
+    if version is None:
+        raise RuntimeError(f"Pipeline version {version_name!r} is not registered for pipeline {pipeline_name!r}")
+
+    version_id = getattr(version, "pipeline_version_id", None)
+    if not version_id:
+        raise RuntimeError(f"Pipeline version {version_name!r} is missing a pipeline_version_id")
+
+    return pipeline_id, version_id
 
 
 def ensure_experiment(client: Client, experiment_name: str, namespace: str) -> Any:
@@ -148,6 +182,7 @@ def ensure_experiment(client: Client, experiment_name: str, namespace: str) -> A
 def ensure_demo_run(
     client: Client,
     package_path: str,
+    pipeline_name: str,
     experiment: Any,
     experiment_name: str,
     namespace: str,
@@ -162,6 +197,24 @@ def ensure_demo_run(
     )
     existing = _find_by_display_name(runs, run_name)
     if existing is not None and getattr(existing, "state", "") in {"RUNNING", "SUCCEEDED"}:
+        return
+
+    if _env_flag("PIPELINE_USE_EXISTING_VERSION", False):
+        pipeline_id, version_id = resolve_pipeline_version(
+            client,
+            package_path=package_path,
+            pipeline_name=pipeline_name,
+            namespace=namespace,
+        )
+        client.run_pipeline(
+            experiment_id=experiment.experiment_id,
+            job_name=run_name,
+            params=parameters,
+            pipeline_id=pipeline_id,
+            version_id=version_id,
+            enable_caching=False,
+            service_account=service_account,
+        )
         return
 
     client.create_run_from_pipeline_package(
@@ -184,15 +237,18 @@ def main() -> None:
     run_name = _run_name()
     service_account = os.getenv("PIPELINE_SERVICE_ACCOUNT", "").strip() or None
     parameters = _load_pipeline_parameters()
+    use_existing_version = _env_flag("PIPELINE_USE_EXISTING_VERSION", False)
 
     host = discover_kfp_host(namespace, dspa_name)
     client = wait_for_client(host=host, namespace=namespace)
-    ensure_pipeline(client, package_path=package_path, pipeline_name=pipeline_name, namespace=namespace)
+    if not use_existing_version:
+        ensure_pipeline(client, package_path=package_path, pipeline_name=pipeline_name, namespace=namespace)
     experiment = ensure_experiment(client, experiment_name=experiment_name, namespace=namespace)
     if not _env_flag("PIPELINE_SKIP_DEMO_RUN", False):
         ensure_demo_run(
             client,
             package_path=package_path,
+            pipeline_name=pipeline_name,
             experiment=experiment,
             experiment_name=experiment_name,
             namespace=namespace,

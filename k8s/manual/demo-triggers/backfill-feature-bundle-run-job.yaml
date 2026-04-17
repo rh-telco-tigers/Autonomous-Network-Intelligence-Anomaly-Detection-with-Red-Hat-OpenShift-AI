@@ -29,6 +29,8 @@ spec:
               value: __BACKFILL_BUNDLE_VERSION__
             - name: DEMO_PROJECT
               value: __DEMO_PROJECT__
+            - name: PIPELINE_USE_EXISTING_VERSION
+              value: "true"
           command:
             - /bin/bash
             - -lc
@@ -36,7 +38,7 @@ spec:
             - |
               python -m pip install --no-cache-dir --target /tmp/kfp-site kfp==2.8.0
               export PYTHONPATH="/tmp/kfp-site:${PYTHONPATH}"
-              export PIPELINE_NAME="ani-backfill-feature-bundle-publish"
+              export PIPELINE_NAME="ani-feature-bundle-publish"
               export RUN_NAME="ani-backfill-feature-bundle-$(date +%Y%m%d-%H%M%S)"
               export PIPELINE_PARAMETERS_JSON="$(python - <<'PY'
               import json

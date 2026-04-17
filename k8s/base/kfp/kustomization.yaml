@@ -26,3 +26,4 @@ resources:
   - pipeline-feature-bundle.yaml
   - pipeline-featurestore.yaml
   - pipeline-incident-release.yaml
+  - pipeline-auto-runs.yaml
