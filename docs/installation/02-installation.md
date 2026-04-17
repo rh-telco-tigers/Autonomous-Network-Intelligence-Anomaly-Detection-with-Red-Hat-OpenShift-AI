@@ -75,15 +75,31 @@ Continue when the child applications exist and the `targetRevision` is the branc
 
 On a fresh cluster this can take several minutes. It is normal for the bootstrap Job to wait on the `rhods-operator` CSV before `ani-platform` appears, and it is normal for `ani-tekton` to retry once while the Tekton CRDs are still being installed.
 
-## 5. Trigger The First GitOps-Managed Pipeline Jobs
+## 5. Wait For The First GitOps-Managed Pipeline Jobs
 
 The default GitOps path on the current branch uses the published Quay images referenced by the manifests. On a fresh cluster you should **not** start with the older bootstrap build or `make trigger-build-pipeline` unless you are intentionally testing the in-cluster image-build flow.
 
-GitOps still only creates the KFP pipeline definitions and their background auto-run `CronJob`s. A fresh cluster does not have the initial dataset, feature-bundle, feature-store, model-registry, or incident-release artifacts until those jobs run. If you want the cluster to converge immediately instead of waiting for the scheduled offsets, create one Job from each `CronJob` in this order and wait for each submitted workflow to finish before starting the next one:
+GitOps creates the KFP pipeline definitions and their background auto-run `CronJob`s. On a healthy fresh cluster, those CronJobs submit the first live-path runs automatically after `ani-datascience` is ready, and the full stack converges without any extra bootstrap Job.
+
+Check the CronJobs and their first scheduled Jobs:
 
 ```sh
 oc get cronjob -n ani-datascience | rg 'kfp-auto-run'
+oc get jobs,wf -n ani-datascience
+```
 
+Expected automatic sequence:
+
+- `ani-kfp-auto-run` submits the anomaly training run first
+- `ani-incident-release-kfp-auto-run` submits the incident-release run
+- `ani-feature-bundle-kfp-auto-run` submits the feature-bundle publish run
+- `ani-featurestore-kfp-auto-run` submits the feature-store train-and-register run
+
+Those Jobs only submit KFP runs. The actual pipeline execution happens through the workflow objects in `ani-datascience`, so keep watching `oc get wf -n ani-datascience` until the corresponding workflows reach `Succeeded`.
+
+If you want to accelerate the first convergence instead of waiting for the scheduled offsets, create one Job from each `CronJob` in this order and wait for each submitted workflow to finish before starting the next one:
+
+```sh
 ANOMALY_JOB="ani-kfp-auto-run-manual-$(date +%s)"
 oc create job --from=cronjob/ani-kfp-auto-run "${ANOMALY_JOB}" -n ani-datascience
 oc logs -f -n ani-datascience "job/${ANOMALY_JOB}"
@@ -102,8 +118,6 @@ oc logs -f -n ani-datascience "job/${INCIDENT_RELEASE_JOB}"
 
 oc get jobs,wf -n ani-datascience
 ```
-
-Those Jobs only submit the KFP runs. The actual pipeline execution happens through the workflow objects in `ani-datascience`, so keep watching `oc get wf -n ani-datascience` until the corresponding workflows reach `Succeeded`.
 
 ## 6. Wait For Core Workloads
 
@@ -131,11 +145,11 @@ Continue when:
 - the KFP auto-run `CronJob` resources exist in `ani-datascience`
 - the serving runtimes exist in `ani-datascience`
 - `default-modelregistry` exists in `rhoai-model-registries`
-- `ani-predictive-fs` and `ani-predictive-backfill-modelcar` report `READY=True`
+- `ani-predictive`, `ani-predictive-fs`, and `ani-predictive-backfill-modelcar` report `READY=True`
 
 At this point GitOps has created the OpenShift AI resources, reconciled the KFP pipeline definitions as Kubernetes CRs, and created non-hook auto-run `CronJob`s that submit the live-path workflows. The model registry resource itself appears before it has any registered models; the first successful feature-store workflow is what creates the initial model versions and the S3 artifacts consumed by `ani-predictive-fs`.
 
-If `ani-predictive-fs` starts as `READY=False`, watch the workflows in [Installation 04: Data Generation And Model Training](./04-data-generation-and-model-training.md) or rerun the `CronJob`-backed submitters above. KServe retries automatically after the model artifacts appear. If `llama-32-3b-instruct` stays `Pending` with `Insufficient nvidia.com/gpu`, the RCA generation flow will stay degraded until you add a GPU worker. Use [Troubleshooting](./troubleshooting.md).
+If `ani-predictive` or `ani-predictive-fs` starts as `READY=False`, watch the workflows in [Installation 04: Data Generation And Model Training](./04-data-generation-and-model-training.md) or rerun the `CronJob`-backed submitters above. KServe retries automatically after the model artifacts appear, but it can take a few minutes for the next clean storage-initializer attempt to observe the newly published objects. If `llama-32-3b-instruct` stays `Pending` with `Insufficient nvidia.com/gpu`, the RCA generation flow will stay degraded until you add a GPU worker. Use [Troubleshooting](./troubleshooting.md).
 
 ## 7. List The Main Routes
 
