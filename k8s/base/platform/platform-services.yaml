@@ -105,6 +105,56 @@ spec:
                 secretKeyRef:
                   name: demo-api-auth
                   key: API_KEYS_JSON
+            - name: LLM_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_ENDPOINT
+            - name: LLM_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_MODEL
+            - name: LLM_REQUEST_TIMEOUT_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_REQUEST_TIMEOUT_SECONDS
+            - name: LLM_REQUEST_HOST_HEADER
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_REQUEST_HOST_HEADER
+            - name: ANI_GUARDRAILS_POLICY_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_GUARDRAILS_POLICY_VERSION
+            - name: ANI_GUARDRAILS_CONTRACT_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_GUARDRAILS_CONTRACT_VERSION
+            - name: ANI_GUARDRAILS_CONFIDENCE_ALLOW_THRESHOLD
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_GUARDRAILS_CONFIDENCE_ALLOW_THRESHOLD
+            - name: ANI_GUARDRAILS_MIN_ALLOW_EVIDENCE_ITEMS
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_GUARDRAILS_MIN_ALLOW_EVIDENCE_ITEMS
+            - name: ANI_RCA_SCHEMA_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_RCA_SCHEMA_VERSION
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-provider-auth
+                  key: LLM_API_KEY
             - name: CONTROL_PLANE_DB_PATH
               value: /data/control-plane.db
             - name: INCIDENT_AUTO_RCA_SAMPLE_RATE
