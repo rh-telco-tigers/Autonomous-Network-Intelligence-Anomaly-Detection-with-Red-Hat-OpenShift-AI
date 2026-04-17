@@ -25,13 +25,6 @@ data:
           port: 8000
         chunker_id: whole_doc_chunker
         default_threshold: 0.5
-      hap:
-        type: text_contents
-        service:
-          hostname: hap-detector-predictor.ani-datascience.svc.cluster.local
-          port: 8000
-        chunker_id: whole_doc_chunker
-        default_threshold: 0.5
     passthrough_headers:
       - authorization
       - content-type

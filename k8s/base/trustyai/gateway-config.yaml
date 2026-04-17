@@ -27,16 +27,10 @@ data:
             - ipv4
             - ipv6
             - us-phone-number
-      - name: hap-output
-        server: hap
-        input: false
-        output: true
-        detector_params: {}
     routes:
       - name: rca
         detectors:
           - prompt-injection-input
           - pii-output
-          - hap-output
       - name: passthrough
         detectors: []
