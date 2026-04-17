@@ -204,4 +204,9 @@ Expected result after the AAP license is imported:
 
 The AAP Rule Audit view can keep older failed rows from activations that were created before the license was imported. Treat the newest rows that reference the live activation names, not `DELETED`, as the current health signal.
 
-The Ansible Lightspeed API key remains a manual step on the current branch. Until the secret `aap-lightspeed-chatbot-api-key` exists in the `aap` namespace, the remediation Job `aap-controller-lightspeed-template-config` can stay stuck in `CreateContainerConfigError` and `ani-remediation` can remain degraded. Use [Installation 05: Remediation Using Ansible Lightspeed](./05-remediation-using-ansible-lightspeed.md) to create that secret and rerun the remediation sync.
+The Ansible Lightspeed integration remains a manual step on the current branch. The platform does not create or manage the required Lightspeed secrets through Gitea. Before the remediation flow can become healthy, create both manual secrets in the `aap` namespace:
+
+- `lightspeed-secret`
+- `aap-lightspeed-chatbot-api-key`
+
+Until those secrets exist, the Lightspeed workloads or the remediation Job `aap-controller-lightspeed-template-config` can stay degraded and `ani-remediation` can remain unhealthy. Use [Installation 05: Remediation Using Ansible Lightspeed](./05-remediation-using-ansible-lightspeed.md) to create those secrets and rerun the remediation sync.

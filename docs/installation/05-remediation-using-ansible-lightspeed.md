@@ -11,6 +11,7 @@ This guide walks through enabling the AI-driven remediation workflow, which uses
 - You have `oc` CLI access with cluster-admin permissions
 - You understand that the Lightspeed secrets are still a manual step on the current branch
 - Do not commit real secret values to Git or store them in Gitea
+- No Lightspeed secret in this flow is created or reconciled through Gitea
 
 ---
 
@@ -206,3 +207,28 @@ Expected result:
 - its `status` is `running`
 
 When those checks pass, the EDA activation is listening on Kafka topic `aiops-ansible-playbook-generate-instruction` and launches AAP template `IMS Remediation - Lightspeed Playbook Generator` when the control-plane publishes a playbook-generation request.
+
+## Runtime Validation
+
+After the verification above passes, open the demo UI and click **Generate Ansible Playbook** for an incident remediation that uses the AI playbook generation path.
+
+Expected behavior:
+
+- the control-plane publishes to Kafka topic `aiops-ansible-playbook-generate-instruction`
+- activation `ANI Remediation` consumes that event
+- AAP launches job template `IMS Remediation - Lightspeed Playbook Generator`
+
+You can verify the AAP launch directly:
+
+```bash
+CONTROLLER_HOST="$(oc get route aap-controller -n aap -o jsonpath='{.status.ingress[0].host}')"
+CONTROLLER_PASS="$(oc extract -n aap secret/aap-controller-admin-password --to=- --keys=password 2>/dev/null | tail -n1)"
+curl -ksu "admin:${CONTROLLER_PASS}" \
+  "https://${CONTROLLER_HOST}/api/controller/v2/jobs/?page_size=20&job_template__name=IMS%20Remediation%20-%20Lightspeed%20Playbook%20Generator" \
+  | python3 -m json.tool
+```
+
+Expected result:
+
+- the result count increases after the UI request
+- the newest job is created from template `IMS Remediation - Lightspeed Playbook Generator`
