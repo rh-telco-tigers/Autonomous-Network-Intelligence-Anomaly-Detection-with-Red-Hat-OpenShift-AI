@@ -323,7 +323,7 @@ spec:
   volumes:
     - name: quay-auth
       secret:
-        secretName: tekton-quay-push
+        secretName: autonomousnetworkintelligence-ocpani-pull-secret
         optional: true
   steps:
     - name: publish
@@ -355,7 +355,7 @@ spec:
         fi
 
         if [ ! -s "${auth_file}" ]; then
-          echo "Quay auth secret tekton-quay-push not present; skipping $(params.DEST_IMAGE_REPO)"
+          echo "Quay auth secret autonomousnetworkintelligence-ocpani-pull-secret not present; skipping $(params.DEST_IMAGE_REPO)"
           exit 0
         fi
 

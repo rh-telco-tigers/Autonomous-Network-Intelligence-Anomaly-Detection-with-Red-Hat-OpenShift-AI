@@ -72,7 +72,7 @@ Continue when the child applications exist and the `targetRevision` is the branc
 
 On a fresh cluster this can take several minutes. It is normal for the bootstrap Job to wait on the `rhods-operator` CSV before `ani-platform` appears, and it is normal for `ani-tekton` to retry once while the Tekton CRDs are still being installed.
 
-If you want to build a branch through Tekton later, the current pipeline now builds into the OpenShift internal registry by default and offers an optional final Quay publish stage. That keeps the normal build path secret-free while still allowing manual branch publication when you explicitly provide the `tekton-quay-push` secret and enable the extra PipelineRun params in [k8s/manual/demo-triggers/tekton-build-pipelinerun.yaml](/Users/bkpandey/Documents/workspace/activepoc/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI/k8s/manual/demo-triggers/tekton-build-pipelinerun.yaml).
+If you want to build a branch through Tekton later, the current pipeline now builds into the OpenShift internal registry by default and offers an optional final Quay publish stage. That keeps the normal build path secret-free while still allowing manual branch publication when you explicitly provide the `autonomousnetworkintelligence-ocpani-pull-secret` secret and enable the extra PipelineRun params in [k8s/manual/demo-triggers/tekton-build-pipelinerun.yaml](/Users/bkpandey/Documents/workspace/activepoc/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI/k8s/manual/demo-triggers/tekton-build-pipelinerun.yaml).
 
 ## 5. Wait For The First GitOps-Managed Pipeline Jobs
 

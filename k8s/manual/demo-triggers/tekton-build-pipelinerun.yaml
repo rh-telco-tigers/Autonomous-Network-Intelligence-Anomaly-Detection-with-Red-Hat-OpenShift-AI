@@ -4,31 +4,34 @@ metadata:
   generateName: ani-platform-build-
   namespace: ani-tekton
 spec:
+  # `make trigger-build-pipeline` replaces the __...__ placeholders below.
+  # If you apply this file manually, replace those values first.
   pipelineRef:
     name: ani-platform-container-build
   params:
     # Optional Quay publish flow:
-    # 1. Create the authfile locally without storing the credential in git:
-    #      podman login quay.io --authfile ./quay-auth.json
-    # 2. Create the optional secret in ani-tekton:
-    #      oc create secret generic tekton-quay-push -n ani-tekton \
-    #        --from-file=.dockerconfigjson=./quay-auth.json \
-    #        --type=kubernetes.io/dockerconfigjson
-    # 3. Set publish-to-quay=true and choose a quay-image-tag such as a branch slug or commit alias.
-    # 4. Set quay-promote-latest=true only when you intentionally want this run to refresh the Quay :latest tags used by deploy manifests.
-    # If the secret is absent, the publish stage skips and the pipeline still succeeds.
+    # Secret name expected by Tekton:
+    #   autonomousnetworkintelligence-ocpani-pull-secret
+    # Quay can download a Kubernetes dockerconfigjson secret in that shape.
+    # Apply it with:
+    #   oc apply -n ani-tekton -f ./autonomousnetworkintelligence-ocpani-pull-secret.yaml
+    # Or create the same secret name from an authfile:
+    #   podman login quay.io --authfile ./quay-auth.json
+    #   oc create secret generic autonomousnetworkintelligence-ocpani-pull-secret -n ani-tekton \
+    #     --from-file=.dockerconfigjson=./quay-auth.json \
+    #     --type=kubernetes.io/dockerconfigjson
     - name: git-url
       value: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
     - name: git-revision
       value: __GIT_REVISION__
     - name: publish-to-quay
-      value: "false"
+      value: "__PUBLISH_TO_QUAY__"
     - name: quay-image-tag
-      value: ""
+      value: "__QUAY_IMAGE_TAG__"
     - name: quay-promote-latest
-      value: "false"
+      value: "__QUAY_PROMOTE_LATEST__"
     - name: quay-organization
-      value: autonomousnetworkintelligence
+      value: "__QUAY_ORGANIZATION__"
   taskRunTemplate:
     serviceAccountName: pipeline
   timeouts:

@@ -34,6 +34,11 @@ INCIDENT_RELEASE_PREVIOUS_VERSION ?=
 DEMO_PROJECT ?= ani-demo
 DEMO_INCIDENT_SCENARIO ?= busy_destination
 CONTROL_PLANE_API_TOKEN ?= demo-token
+PUBLISH_TO_QUAY ?= auto
+QUAY_IMAGE_TAG ?=
+QUAY_PROMOTE_LATEST ?= false
+QUAY_ORGANIZATION ?= autonomousnetworkintelligence
+QUAY_PUSH_SECRET_NAME ?= autonomousnetworkintelligence-ocpani-pull-secret
 DEMO_TRIGGER_DIR := k8s/manual/demo-triggers
 MACHINE_API_MANUAL_DIR := k8s/manual/machine-api
 GPU_MACHINESET_RENDERER := $(MACHINE_API_MANUAL_DIR)/render_gpu_machineset.py
@@ -104,14 +109,74 @@ add-gpu-node-pool: ## Render and manually apply a GPU MachineSet to the current 
 	  $(if $(GPU_OUTPUT),--output="$(GPU_OUTPUT)") \
 	  --apply
 
-trigger-build-pipeline: ## Start the demo Tekton image build
+trigger-build-pipeline: ## Start the demo Tekton image build; supports PUBLISH_TO_QUAY, QUAY_IMAGE_TAG, QUAY_PROMOTE_LATEST
 	@branch="$$(git rev-parse --abbrev-ref HEAD)"; \
+	publish_to_quay="$(PUBLISH_TO_QUAY)"; \
+	quay_image_tag="$(QUAY_IMAGE_TAG)"; \
+	if [ -z "$$quay_image_tag" ]; then \
+	  quay_image_tag="$$branch"; \
+	fi; \
+	print_build_help() { \
+	  printf "trigger-build-pipeline options:\n"; \
+	  printf "  make trigger-build-pipeline [PUBLISH_TO_QUAY=auto|true|false] [QUAY_IMAGE_TAG=<tag>] [QUAY_PROMOTE_LATEST=true|false] [QUAY_ORGANIZATION=<org>]\n"; \
+	  printf "\n"; \
+	  printf "Auto mode:\n"; \
+	  printf "  PUBLISH_TO_QUAY=auto prints this help, then enables Quay publish only when secret %s exists in %s.\n" "$(QUAY_PUSH_SECRET_NAME)" "$(TEKTON_NAMESPACE)"; \
+	  printf "  Current branch: %s\n" "$$branch"; \
+	  printf "  Default Quay tag for this run: %s\n" "$$quay_image_tag"; \
+	  printf "\n"; \
+	  printf "Secret setup:\n"; \
+	  printf "  Quay-downloaded Kubernetes secret YAML:\n"; \
+	  printf "    oc apply -n %s -f ./autonomousnetworkintelligence-ocpani-pull-secret.yaml\n" "$(TEKTON_NAMESPACE)"; \
+	  printf "  Repo template with the same secret name:\n"; \
+	  printf "    cp %s ./autonomousnetworkintelligence-ocpani-pull-secret.yaml\n" "$(DEMO_TRIGGER_DIR)/tekton-quay-push-secret.template.yaml"; \
+	  printf "    vi ./autonomousnetworkintelligence-ocpani-pull-secret.yaml\n"; \
+	  printf "    oc apply -f ./autonomousnetworkintelligence-ocpani-pull-secret.yaml\n"; \
+	  printf "  Alternative authfile flow:\n"; \
+	  printf "    podman login quay.io --authfile ./quay-auth.json\n"; \
+	  printf "    oc create secret generic %s -n %s --from-file=.dockerconfigjson=./quay-auth.json --type=kubernetes.io/dockerconfigjson\n" "$(QUAY_PUSH_SECRET_NAME)" "$(TEKTON_NAMESPACE)"; \
+	  printf "\n"; \
+	  printf "Examples:\n"; \
+	  printf "  make trigger-build-pipeline\n"; \
+	  printf "  make trigger-build-pipeline PUBLISH_TO_QUAY=false\n"; \
+	  printf "  make trigger-build-pipeline QUAY_IMAGE_TAG=%s QUAY_PROMOTE_LATEST=true\n" "$$branch"; \
+	  printf "\n"; \
+	}; \
+	if [ -z "$$publish_to_quay" ] || [ "$$publish_to_quay" = "auto" ]; then \
+	  print_build_help; \
+	  if oc get secret "$(QUAY_PUSH_SECRET_NAME)" -n "$(TEKTON_NAMESPACE)" >/dev/null 2>&1; then \
+	    publish_to_quay=true; \
+	    printf "Auto-detected Quay secret %s in %s. Quay publish is enabled.\n" "$(QUAY_PUSH_SECRET_NAME)" "$(TEKTON_NAMESPACE)"; \
+	  else \
+	    publish_to_quay=false; \
+	    printf "Secret %s is not present in %s. Quay publish is disabled for this run.\n" "$(QUAY_PUSH_SECRET_NAME)" "$(TEKTON_NAMESPACE)"; \
+	  fi; \
+	else \
+	  case "$$publish_to_quay" in \
+	    true|false) ;; \
+	    *) \
+	      echo "PUBLISH_TO_QUAY must be one of: auto, true, false"; \
+	      exit 1; \
+	      ;; \
+	  esac; \
+	fi; \
+	case "$(QUAY_PROMOTE_LATEST)" in \
+	  true|false) ;; \
+	  *) \
+	    echo "QUAY_PROMOTE_LATEST must be true or false"; \
+	    exit 1; \
+	    ;; \
+	esac; \
+	if [ "$$publish_to_quay" = "true" ] && ! oc get secret "$(QUAY_PUSH_SECRET_NAME)" -n "$(TEKTON_NAMESPACE)" >/dev/null 2>&1; then \
+	  printf "Warning: publish-to-quay=true but secret %s is missing in %s. The Tekton publish stage will skip cleanly.\n" "$(QUAY_PUSH_SECRET_NAME)" "$(TEKTON_NAMESPACE)"; \
+	fi; \
 	printf "Waiting for Tekton pipeline assets in %s before triggering the build\n" "$(TEKTON_NAMESPACE)"; \
 	for resource in \
 	  "pipelines.tekton.dev/ani-platform-container-build" \
 	  "tasks.tekton.dev/git-clone-lite" \
 	  "tasks.tekton.dev/buildah-lite" \
-	  "tasks.tekton.dev/buildah-heavy"; do \
+	  "tasks.tekton.dev/buildah-heavy" \
+	  "tasks.tekton.dev/publish-image-if-authenticated"; do \
 	  for attempt in $$(seq 1 60); do \
 	    if oc get "$$resource" -n "$(TEKTON_NAMESPACE)" >/dev/null 2>&1; then \
 	      break; \
@@ -124,8 +189,13 @@ trigger-build-pipeline: ## Start the demo Tekton image build
 	    sleep 5; \
 	  done; \
 	done; \
-	printf "Creating demo build PipelineRun for branch %s in %s\n" "$$branch" "$(TEKTON_NAMESPACE)"; \
-	GIT_BRANCH="$$branch" python3 -c 'from pathlib import Path; import os; manifest = Path("$(DEMO_TRIGGER_DIR)/tekton-build-pipelinerun.yaml").read_text(); print(manifest.replace("__GIT_REVISION__", os.environ["GIT_BRANCH"]), end="")' | oc create -f -
+	printf "Creating demo build PipelineRun for branch %s in %s (publish_to_quay=%s, quay_image_tag=%s, quay_promote_latest=%s)\n" "$$branch" "$(TEKTON_NAMESPACE)" "$$publish_to_quay" "$$quay_image_tag" "$(QUAY_PROMOTE_LATEST)"; \
+	GIT_BRANCH="$$branch" \
+	PIPELINE_PUBLISH_TO_QUAY="$$publish_to_quay" \
+	PIPELINE_QUAY_IMAGE_TAG="$$quay_image_tag" \
+	PIPELINE_QUAY_PROMOTE_LATEST="$(QUAY_PROMOTE_LATEST)" \
+	PIPELINE_QUAY_ORGANIZATION="$(QUAY_ORGANIZATION)" \
+	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/tekton-build-pipelinerun.yaml").read_text(); replacements = {"__GIT_REVISION__": os.environ["GIT_BRANCH"], "__PUBLISH_TO_QUAY__": os.environ["PIPELINE_PUBLISH_TO_QUAY"], "__QUAY_IMAGE_TAG__": os.environ["PIPELINE_QUAY_IMAGE_TAG"], "__QUAY_PROMOTE_LATEST__": os.environ["PIPELINE_QUAY_PROMOTE_LATEST"], "__QUAY_ORGANIZATION__": os.environ["PIPELINE_QUAY_ORGANIZATION"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -
 
 live-step-1-generate-demo-incident: ## Live Step 1: Create one live incident in the demo app by calling the control-plane scenario endpoint; set DEMO_INCIDENT_SCENARIO=<scenario> if needed
 	@set -e; \
