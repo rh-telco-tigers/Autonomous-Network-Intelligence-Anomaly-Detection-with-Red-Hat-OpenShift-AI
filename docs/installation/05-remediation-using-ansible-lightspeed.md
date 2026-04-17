@@ -7,7 +7,8 @@ This guide walks through enabling the AI-driven remediation workflow, which uses
 ## Prerequisites
 
 - The platform has been deployed via the bootstrap (see [02-installation.md](02-installation.md))
-- The `ani-aap` and `ani-remediation` ArgoCD applications are `Synced` and `Healthy`
+- The `ani-aap` ArgoCD application is `Synced` and `Healthy`
+- The control-plane automation bootstrap has completed successfully after the AAP license import
 - You have `oc` CLI access with cluster-admin permissions
 
 ---
@@ -139,14 +140,20 @@ oc get secret <lightspeed-custom-resource-name>-admin-password -n aap \
 
 ## Verification
 
-To confirm the end-to-end remediation flow is active, check that the EDA Kafka activation is running:
+To confirm the end-to-end remediation flow is active, check the live automation status from the control-plane instead of looking for one-shot bootstrap Jobs:
 
 ```bash
-# Verify EDA Kafka bootstrap job completed successfully
-oc get job eda-kafka-bootstrap -n aap
+CONTROL_PLANE_HOST="$(oc get route control-plane -n ani-runtime -o jsonpath='{.status.ingress[0].host}')"
 
-# Check the ANI Remediation activation is enabled in EDA
-oc get pods -n aap | grep eda
+curl -k "https://${CONTROL_PLANE_HOST}/integrations/status" \
+  -H "x-api-key: demo-token" | python3 -m json.tool
 ```
 
-The EDA activation **ANI Remediation** should be listening on the `aiops-ansible-playbook-generate-instruction` Kafka topic. When an anomaly event is detected, it will automatically trigger the **ANI Remediation - Lightspeed Playbook Generator** job template in AAP Controller and generate playbook.
+Expected result:
+
+- `aap.bootstrapped=true`
+- `eda.bootstrapped=true`
+- every AAP action and callback template shows `template_exists=true`
+- every EDA policy activation shows `status=running`
+
+The runtime bootstrap owns the controller-side templates and EDA activations. On a fresh cluster, ArgoCD deploys AAP and the platform services, then the control-plane reconciles the live remediation objects after the AAP APIs are ready.
