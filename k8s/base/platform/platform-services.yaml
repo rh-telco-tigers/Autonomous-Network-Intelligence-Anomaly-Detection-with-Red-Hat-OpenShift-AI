@@ -38,6 +38,7 @@ metadata:
 data:
   LLM_ENDPOINT: ""
   LLM_MODEL: ""
+  LLM_REQUEST_HOST_HEADER: ""
   LLM_REQUEST_TIMEOUT_SECONDS: "20"
 ---
 apiVersion: v1
@@ -683,6 +684,11 @@ spec:
                 configMapKeyRef:
                   name: llm-provider-config
                   key: LLM_REQUEST_TIMEOUT_SECONDS
+            - name: LLM_REQUEST_HOST_HEADER
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_REQUEST_HOST_HEADER
             - name: LLM_API_KEY
               valueFrom:
                 secretKeyRef:
