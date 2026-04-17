@@ -1549,11 +1549,35 @@ def _render_supported_ai_playbook(action_ref: str) -> str:
     return content
 
 
+def _supported_ai_action_for_anomaly_type(value: object) -> str:
+    anomaly_type = canonical_anomaly_type(str(value or NORMAL_ANOMALY_TYPE))
+    mapping = {
+        NORMAL_ANOMALY_TYPE: "rate_limit_pcscf",
+        "registration_storm": "rate_limit_pcscf",
+        "registration_failure": "quarantine_imsi",
+        "authentication_failure": "quarantine_imsi",
+        "malformed_sip": "quarantine_imsi",
+        "routing_error": "rate_limit_pcscf",
+        "busy_destination": "scale_scscf",
+        "call_setup_timeout": "scale_scscf",
+        "call_drop_mid_session": "scale_scscf",
+        "server_internal_error": "scale_scscf",
+        "network_degradation": "rate_limit_pcscf",
+        "retransmission_spike": "rate_limit_pcscf",
+    }
+    return str(mapping.get(anomaly_type) or "")
+
+
 def _supported_ai_action_ref(
     incident: Dict[str, object],
     remediation: Dict[str, object],
     payload: PlaybookGenerationCallbackRequest,
 ) -> str:
+    payload_metadata = payload.metadata if isinstance(payload.metadata, dict) else {}
+    metadata_action_ref = str(payload_metadata.get("supported_action_ref") or "").strip()
+    if metadata_action_ref in _supported_ai_action_catalog():
+        return metadata_action_ref
+
     rca_payload = incident.get("rca_payload") if isinstance(incident.get("rca_payload"), dict) else {}
     haystack = " ".join(
         [
@@ -1563,6 +1587,7 @@ def _supported_ai_action_ref(
             str(payload.playbook_ref or ""),
             str(payload.action_ref or ""),
             str(payload.playbook_yaml or ""),
+            str(payload_metadata.get("supported_action_ref") or ""),
             canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
             str(incident.get("recommendation") or ""),
             str(rca_payload.get("recommendation") or ""),
@@ -1600,7 +1625,7 @@ def _supported_ai_action_ref(
         return "scale_scscf"
     if any("quarantine" in title or "imsi" in title for title in candidate_titles):
         return "quarantine_imsi"
-    return ""
+    return _supported_ai_action_for_anomaly_type(incident.get("anomaly_type"))
 
 
 def _normalize_ai_generated_playbook_for_environment(

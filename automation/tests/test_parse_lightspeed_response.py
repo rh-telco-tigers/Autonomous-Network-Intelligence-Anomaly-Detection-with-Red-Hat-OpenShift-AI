@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from textwrap import dedent
 
-from automation.ansible.parse_lightspeed_response import build_callback_payload
+import yaml
+
+from automation.ansible.parse_lightspeed_response import SUPPORTED_ACTION_BY_ANOMALY_TYPE, build_callback_payload
 
 
 def test_build_callback_payload_splits_metadata_from_fenced_playbook_response() -> None:
@@ -180,8 +182,8 @@ def test_build_callback_payload_repairs_unquoted_template_scalar_with_colon() ->
     raw_response = dedent(
         """
         ```yaml
-        title: "Scale S-CSCF safely"
-        summary: "Raise capacity with verification."
+        title: "Validate generated output safely"
+        summary: "Repair the returned YAML without changing intent."
         playbook_yaml: |
           ---
           - name: Verify scaling result
@@ -277,3 +279,78 @@ def test_build_callback_payload_accepts_block_scalar_playbook_yaml_envelope() ->
     assert payload["error"] == ""
     assert payload["title"] == "Scale S-CSCF for worker saturation"
     assert payload["playbook_yaml"].startswith("---\n- name: Scale the S-CSCF deployment")
+
+
+def test_build_callback_payload_repairs_bare_template_scalar_without_colon() -> None:
+    prompt = dedent(
+        """
+        Callback contract:
+        - callback_url: http://control-plane.ani-runtime.svc.cluster.local:8080/incidents/inc-8/playbook-generation/callback
+        - correlation_id: corr-4000
+        """
+    ).strip()
+    raw_response = dedent(
+        """
+        ```yaml
+        title: "Repair generated callback payload"
+        playbook_yaml: |
+          ---
+          - name: "Repair generated callback payload"
+            hosts: localhost
+            gather_facts: false
+            tasks:
+              - name: {{ remediation_configmap }}
+                ansible.builtin.debug:
+                  msg: "repair requested"
+        ```
+        """
+    ).strip()
+
+    payload = build_callback_payload(prompt=prompt, raw_response=raw_response)
+
+    assert payload["status"] == "generated"
+    assert payload["error"] == ""
+    assert 'name: "{{ remediation_configmap }}"' in payload["playbook_yaml"]
+
+
+def test_build_callback_payload_uses_supported_repo_templates_for_all_anomaly_types() -> None:
+    malformed_response = dedent(
+        """
+        ```yaml
+        title: "Unsupported automation draft"
+        playbook_yaml: |
+          ---
+          - name: unsupported draft
+            hosts: localhost
+            gather_facts: false
+            tasks:
+              - name: {{ remediation_configmap }}
+                ansible.builtin.debug:
+                  msg: broken
+        ```
+        """
+    ).strip()
+
+    for anomaly_type, expected_action in SUPPORTED_ACTION_BY_ANOMALY_TYPE.items():
+        prompt = dedent(
+            f"""
+            Incident context:
+            - anomaly_type: {anomaly_type}
+
+            Callback contract:
+            - callback_url: http://control-plane.ani-runtime.svc.cluster.local:8080/incidents/{anomaly_type}/playbook-generation/callback
+            - correlation_id: corr-{anomaly_type}
+            """
+        ).strip()
+
+        payload = build_callback_payload(prompt=prompt, raw_response=malformed_response)
+
+        assert payload["status"] == "generated", anomaly_type
+        assert payload["error"] == "", anomaly_type
+        assert payload["action_ref"] == expected_action, anomaly_type
+        assert payload["playbook_ref"] == expected_action, anomaly_type
+        assert payload["metadata"]["supported_action_ref"] == expected_action, anomaly_type
+        assert payload["metadata"]["environment_normalized"] is True, anomaly_type
+        assert payload["playbook_yaml"].startswith("---\n- name:"), anomaly_type
+        loaded = yaml.safe_load(payload["playbook_yaml"])
+        assert isinstance(loaded, list) and loaded, anomaly_type

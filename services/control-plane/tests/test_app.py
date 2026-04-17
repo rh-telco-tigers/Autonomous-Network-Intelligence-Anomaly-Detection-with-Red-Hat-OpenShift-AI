@@ -634,6 +634,7 @@ class AiPlaybookGenerationTests(unittest.TestCase):
             "project": "ani-demo",
             "status": control_plane_app.REMEDIATION_SUGGESTED,
             "workflow_revision": 5,
+            "anomaly_type": "registration_storm",
         }
         remediation = {
             "id": 17,
@@ -706,7 +707,9 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         self.assertEqual(captured["action_ref"], "ai_generated_playbook_corr-123")
         self.assertEqual(captured["playbook_ref"], "ai_generated_playbook_corr-123")
         self.assertTrue(captured["requires_approval"])
-        self.assertEqual(captured["playbook_yaml"], payload.playbook_yaml.strip())
+        self.assertIn("ansible.builtin.uri:", str(captured["playbook_yaml"]))
+        self.assertEqual(captured["metadata"]["supported_action_ref"], "rate_limit_pcscf")
+        self.assertTrue(captured["metadata"]["environment_normalized"])
         self.assertEqual(captured["metadata"]["gitea_draft_branch"], "draft/inc-ai-1")
         self.assertEqual(updated["generation_status"], "generated")
         record_audit.assert_called_once()
@@ -815,6 +818,43 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         self.assertEqual(captured["metadata"]["supported_action_ref"], "rate_limit_pcscf")
         self.assertTrue(captured["metadata"]["environment_normalized"])
         self.assertEqual(updated["generation_status"], "generated")
+
+    def test_supported_ai_action_ref_prefers_callback_metadata(self) -> None:
+        incident = {
+            "id": "inc-ai-meta-1",
+            "project": "ani-demo",
+            "anomaly_type": "busy_destination",
+            "recommendation": "Confirm destination capacity before broader changes.",
+        }
+        remediation = {"id": 31}
+        payload = control_plane_app.PlaybookGenerationCallbackRequest(
+            correlation_id="corr-meta-1",
+            metadata={"supported_action_ref": "scale_scscf"},
+        )
+
+        action_ref = control_plane_app._supported_ai_action_ref(incident, remediation, payload)
+
+        self.assertEqual(action_ref, "scale_scscf")
+
+    def test_supported_ai_action_ref_falls_back_to_anomaly_mapping(self) -> None:
+        incident = {
+            "id": "inc-ai-routing-1",
+            "project": "ani-demo",
+            "anomaly_type": "routing_error",
+            "recommendation": "Inspect route lookup and destination policy.",
+        }
+        remediation = {"id": 32}
+        payload = control_plane_app.PlaybookGenerationCallbackRequest(
+            correlation_id="corr-routing-1",
+            status="generated",
+            title="Trace route lookup failures",
+            description="Inspect route policy before broader action.",
+            playbook_yaml="---\n- hosts: localhost\n  gather_facts: false\n  tasks: []\n",
+        )
+
+        action_ref = control_plane_app._supported_ai_action_ref(incident, remediation, payload)
+
+        self.assertEqual(action_ref, "rate_limit_pcscf")
 
     def test_failed_callback_falls_back_to_supported_rate_limit_template(self) -> None:
         incident = {

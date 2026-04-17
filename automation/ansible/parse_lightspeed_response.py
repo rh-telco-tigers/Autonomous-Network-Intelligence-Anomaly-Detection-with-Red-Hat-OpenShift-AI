@@ -5,6 +5,7 @@ import json
 import os
 import re
 import textwrap
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -12,6 +13,23 @@ import yaml
 
 class ParseError(ValueError):
     """Raised when the Lightspeed response cannot be converted into a callback payload."""
+
+
+SUPPORTED_ACTION_BY_ANOMALY_TYPE: dict[str, str] = {
+    "normal": "rate_limit_pcscf",
+    "registration_storm": "rate_limit_pcscf",
+    "registration_failure": "quarantine_imsi",
+    "authentication_failure": "quarantine_imsi",
+    "malformed_sip": "quarantine_imsi",
+    "routing_error": "rate_limit_pcscf",
+    "busy_destination": "scale_scscf",
+    "call_setup_timeout": "scale_scscf",
+    "call_drop_mid_session": "scale_scscf",
+    "server_internal_error": "scale_scscf",
+    "network_degradation": "rate_limit_pcscf",
+    "retransmission_spike": "rate_limit_pcscf",
+    "unknown": "rate_limit_pcscf",
+}
 
 
 def _extract_prompt_field(prompt: str, field_name: str) -> str:
@@ -68,8 +86,12 @@ def _quote_problematic_template_scalars(playbook_yaml: str) -> str:
         if (
             stripped
             and "{{" in stripped
-            and ": " in stripped
-            and stripped[0] not in "\"'|>[{!&*"
+            and (stripped.startswith("{{") or stripped[0] not in "\"'|>[{!&*")
+            and (
+                ": " in stripped
+                or stripped.startswith("{{")
+                or re.fullmatch(r"\{\{.*\}\}", stripped) is not None
+            )
         ):
             escaped = stripped.replace("\\", "\\\\").replace('"', '\\"')
             repaired_lines.append(f'{prefix}"{escaped}"')
@@ -259,6 +281,155 @@ def _validate_playbook_yaml(playbook_yaml: str) -> str:
     return playbook_yaml
 
 
+def _supported_playbook_catalog() -> dict[str, dict[str, Any]]:
+    playbook_dir = Path(__file__).resolve().parent / "playbooks"
+    return {
+        "rate_limit_pcscf": {
+            "action_ref": "rate_limit_pcscf",
+            "playbook_ref": "rate_limit_pcscf",
+            "title": "Rate limit the P-CSCF ingress path",
+            "summary": "Apply the supported ingress guardrail for the P-CSCF path.",
+            "description": "Apply the supported ingress guardrail for the P-CSCF path.",
+            "expected_outcome": "Retry storms slow down and downstream control-plane components recover.",
+            "preconditions": ["Operator approval", "Ingress rate limit policy available"],
+            "playbook_path": playbook_dir / "rate-limit-pcscf.yaml",
+        },
+        "scale_scscf": {
+            "action_ref": "scale_scscf",
+            "playbook_ref": "scale_scscf",
+            "title": "Scale the S-CSCF path",
+            "summary": "Use the supported S-CSCF scaling playbook.",
+            "description": "Use the supported S-CSCF scaling playbook.",
+            "expected_outcome": "Registration or session setup latency stabilizes and retry volume decreases.",
+            "preconditions": ["Operator approval", "Scaling guardrails available"],
+            "playbook_path": playbook_dir / "scale-scscf.yaml",
+        },
+        "quarantine_imsi": {
+            "action_ref": "quarantine_imsi",
+            "playbook_ref": "quarantine_imsi",
+            "title": "Quarantine the offending subscriber or traffic source",
+            "summary": "Use the supported quarantine playbook for the offending subscriber or traffic source.",
+            "description": "Use the supported quarantine playbook for the offending subscriber or traffic source.",
+            "expected_outcome": "Malformed or abusive traffic stops while the rest of the network remains stable.",
+            "preconditions": ["Operator approval", "Source identity confirmed"],
+            "playbook_path": playbook_dir / "quarantine-imsi.yaml",
+        },
+    }
+
+
+def _render_supported_playbook(action_ref: str) -> str:
+    catalog = _supported_playbook_catalog().get(action_ref) or {}
+    playbook_path = catalog.get("playbook_path")
+    if not isinstance(playbook_path, Path) or not playbook_path.exists():
+        return ""
+    content = playbook_path.read_text(encoding="utf-8").strip()
+    if not content:
+        return ""
+    if not content.endswith("\n"):
+        content = f"{content}\n"
+    return content
+
+
+def _supported_action_from_text(text: str) -> str:
+    haystack = str(text or "").strip().lower()
+    if not haystack:
+        return ""
+    if any(token in haystack for token in ("quarantine", "imsi", "subscriber isolation", "offending subscriber")):
+        return "quarantine_imsi"
+    if (
+        (("p-cscf" in haystack) or ("pcscf" in haystack))
+        and any(token in haystack for token in ("rate limit", "guardrail", "retry", "retransmission", "ingress"))
+    ):
+        return "rate_limit_pcscf"
+    if (
+        (("s-cscf" in haystack) or ("scscf" in haystack))
+        and any(token in haystack for token in ("scale", "replica", "capacity", "latency", "timeout", "busy"))
+    ):
+        return "scale_scscf"
+    if "rate limit" in haystack:
+        return "rate_limit_pcscf"
+    if "scale the s-cscf" in haystack or "scale scscf" in haystack:
+        return "scale_scscf"
+    return ""
+
+
+def _supported_action_for_prompt(prompt: str, raw_response: str) -> str:
+    response_hint = _supported_action_from_text(raw_response)
+    if response_hint:
+        return response_hint
+
+    anomaly_type = _extract_prompt_field(prompt, "anomaly_type").strip().lower()
+    if anomaly_type:
+        return SUPPORTED_ACTION_BY_ANOMALY_TYPE.get(anomaly_type, SUPPORTED_ACTION_BY_ANOMALY_TYPE["unknown"])
+
+    prompt_hint = _supported_action_from_text(prompt)
+    if prompt_hint:
+        return prompt_hint
+    return ""
+
+
+def _build_supported_callback_payload(
+    *,
+    action_ref: str,
+    callback_url: str,
+    correlation_id: str,
+    provider_name: str,
+    provider_run_id: str,
+    error_text: str = "",
+    preserve_fields: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    catalog = _supported_playbook_catalog().get(action_ref) or {}
+    playbook_yaml = _render_supported_playbook(action_ref)
+    if not playbook_yaml:
+        raise ParseError(f"Supported fallback playbook '{action_ref}' was not available.")
+
+    preserve = dict(preserve_fields or {})
+    title = str(preserve.get("title") or catalog.get("title") or "").strip()
+    summary = str(preserve.get("summary") or preserve.get("description") or catalog.get("summary") or "").strip()
+    description = str(preserve.get("description") or summary or catalog.get("description") or title).strip()
+    expected_outcome = str(
+        preserve.get("expected_outcome") or catalog.get("expected_outcome") or ""
+    ).strip()
+    preconditions = _normalize_preconditions(
+        preserve.get("preconditions") if "preconditions" in preserve else catalog.get("preconditions")
+    )
+    metadata = preserve.get("metadata") if isinstance(preserve.get("metadata"), dict) else {}
+
+    return {
+        "callback_url": callback_url,
+        "correlation_id": correlation_id,
+        "status": "generated",
+        "title": title,
+        "description": description,
+        "summary": summary,
+        "expected_outcome": expected_outcome,
+        "preconditions": preconditions,
+        "playbook_yaml": playbook_yaml,
+        "playbook_ref": str(preserve.get("playbook_ref") or catalog.get("playbook_ref") or action_ref).strip(),
+        "action_ref": str(preserve.get("action_ref") or catalog.get("action_ref") or action_ref).strip(),
+        "provider_name": str(preserve.get("provider_name") or provider_name).strip() or provider_name,
+        "provider_run_id": str(preserve.get("provider_run_id") or provider_run_id).strip(),
+        "error": "",
+        "metadata": metadata
+        | {
+            "supported_action_ref": action_ref,
+            "environment_normalized": True,
+            "environment_normalization_reason": (
+                f"Replaced the model-generated playbook body with the supported '{action_ref}' repo template."
+            ),
+        }
+        | (
+            {
+                "supported_fallback_template": True,
+                "generation_fallback_reason": "supported_template_from_parse_failure",
+                "generation_fallback_error": error_text,
+            }
+            if error_text
+            else {}
+        ),
+    }
+
+
 def build_callback_payload(
     *,
     prompt: str,
@@ -296,9 +467,20 @@ def build_callback_payload(
         payload["error"] = "Correlation ID was not present in the Lightspeed prompt."
         return payload
 
+    supported_action_ref = _supported_action_for_prompt(prompt, raw_response)
+
     try:
         metadata, playbook_yaml = _extract_metadata_and_playbook(_extract_yaml_body(raw_response))
     except ParseError as exc:
+        if supported_action_ref:
+            return _build_supported_callback_payload(
+                action_ref=supported_action_ref,
+                callback_url=callback_url,
+                correlation_id=correlation_id,
+                provider_name=provider_name,
+                provider_run_id=provider_run_id,
+                error_text=str(exc),
+            )
         payload["status"] = "failed"
         payload["error"] = str(exc)
         return payload
@@ -322,6 +504,27 @@ def build_callback_payload(
         "correlation_id",
         "playbook_yaml",
     }
+
+    if supported_action_ref:
+        return _build_supported_callback_payload(
+            action_ref=supported_action_ref,
+            callback_url=callback_url,
+            correlation_id=correlation_id,
+            provider_name=provider_name,
+            provider_run_id=provider_run_id,
+            preserve_fields={
+                "title": title,
+                "description": description,
+                "summary": summary,
+                "expected_outcome": expected_outcome,
+                "preconditions": metadata.get("preconditions"),
+                "playbook_ref": metadata.get("playbook_ref"),
+                "action_ref": metadata.get("action_ref"),
+                "provider_name": metadata.get("provider_name"),
+                "provider_run_id": metadata.get("provider_run_id"),
+                "metadata": {key: value for key, value in metadata.items() if key not in known_metadata_fields},
+            },
+        )
 
     payload.update(
         {
