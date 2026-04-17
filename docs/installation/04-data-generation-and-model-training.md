@@ -8,15 +8,15 @@ Watch or force-rerun the live model path after installation, generate a separate
 
 - Finish [Installation](./02-installation.md) and [Validation](./03-validation.md).
 - Confirm `ani-runtime` is `Synced` / `Healthy` and the predictive `InferenceService` resources already exist in `ani-datascience`.
-- Run the initial image build at least once with `make trigger-build-pipeline`.
 - Use the feature-store path in this guide. The live serving endpoint is `ani-predictive-fs`.
-- The backfill serving endpoint is `ani-predictive-backfill`.
+- The GitOps-managed reusable modelcar endpoint is `ani-predictive-backfill-modelcar`.
+- The separate MinIO-backed backfill endpoint `ani-predictive-backfill` exists only after you run the optional backfill activation steps later in this guide.
 
 If `ani-datascience` is degraded only because `llama-32-3b-instruct` is pending on missing GPU capacity, you can still continue with this predictive-model workflow.
 
 ## 1. Watch The Automatic Live Path
 
-On the current branch, `ani-datascience` includes background KFP auto-run `CronJob`s. After the first image build finishes, those CronJobs submit the live-path workflows against the declaratively managed `Pipeline` / `PipelineVersion` resources.
+On the current branch, `ani-datascience` includes background KFP auto-run `CronJob`s. After `ani-datascience` is ready, those CronJobs submit the live-path workflows against the declaratively managed `Pipeline` / `PipelineVersion` resources.
 
 Watch:
 
@@ -28,6 +28,8 @@ oc get inferenceservice -n ani-datascience
 ```
 
 Continue when the relevant workflows finish with `Succeeded` and `ani-predictive-fs` becomes `READY=True`.
+
+If you already finished [Installation 02](./02-installation.md) on a healthy fresh cluster, these workflows may already be done. This guide is mainly for watching them, forcing a rerun, or creating the optional backfill path.
 
 If you want to accelerate or force a rerun of the live path instead of waiting for the next CronJob tick, use the manual steps below.
 

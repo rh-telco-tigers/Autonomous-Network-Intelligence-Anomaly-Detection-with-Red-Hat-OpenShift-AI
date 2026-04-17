@@ -6,8 +6,8 @@ This guide walks through enabling the AI-driven remediation workflow, which uses
 
 ## Prerequisites
 
-- The platform has been deployed via the bootstrap (see [02-installation.md](02-installation.md))
-- The `ani-aap` application is `Synced` and `Healthy`
+- The platform has been deployed through the GitOps path in [02-installation.md](02-installation.md)
+- AAP is installed and the AAP license import is complete
 - You have `oc` CLI access with cluster-admin permissions
 - You understand that the Lightspeed API token is still a manual step on the current branch
 
@@ -15,7 +15,7 @@ This guide walks through enabling the AI-driven remediation workflow, which uses
 
 ## Step 1 — Configure the Lightspeed Backend Secret
 
-The repository contains the desired Lightspeed backend secret at `k8s/base/aap-platform/ansible-lightspeed-secret.yaml`. Populate it with your LLM backend details and make sure the cluster has a matching `lightspeed-secret` in the `aap` namespace.
+The repository contains the desired Lightspeed backend secret at `k8s/base/aap-platform/ansible-lightspeed-secret.yaml`. Populate it with your LLM backend details and make sure the cluster reconciles a matching `lightspeed-secret` in the `aap` namespace.
 
 1. Get the Gitea URL:
    ```bash
@@ -39,7 +39,7 @@ The repository contains the desired Lightspeed backend secret at `k8s/base/aap-p
 
 4. Scroll down, add a commit message (for example `Configure Lightspeed LLM backend`), and click **Commit Changes**.
 
-5. If the secret does not already exist in the cluster, apply it manually:
+5. Commit the change and wait for Argo CD to reconcile it. If you need the secret immediately, apply the same manifest once by hand:
 
 ```bash
 oc apply -f k8s/base/aap-platform/ansible-lightspeed-secret.yaml -n aap
@@ -53,33 +53,37 @@ oc get secret lightspeed-secret -n aap -o jsonpath='{.data.chatbot_url}' | base6
 
 ---
 
-## Step 2 — Roll Out the Ansible Lightspeed Pods
+## Step 2 — Confirm the Lightspeed Backend Secret Is Present
 
-Restart the Lightspeed deployments to pick up the updated secret:
-
-```bash
-oc rollout restart deployment/ansible-lightspeed -n aap
-oc rollout restart deployment/ansible-lightspeed-api -n aap
-```
-
----
-
-## Step 3 — Verify the Pods are Running
-
-Wait for both deployments to complete their rollout:
+Check the secret directly:
 
 ```bash
-oc rollout status deployment/ansible-lightspeed -n aap
-oc rollout status deployment/ansible-lightspeed-api -n aap
+oc get secret lightspeed-secret -n aap
 ```
 
-Confirm all pods are in `Running` state:
+If you already have Lightspeed deployments in the cluster and you changed the backend secret after they started, restart only the deployments that actually exist:
 
 ```bash
-oc get pods -n aap | grep lightspeed
+oc get deploy -n aap | rg 'lightspeed'
 ```
 
-Both deployments should show `1/1 Running` before continuing.
+For example:
+
+```bash
+oc rollout restart deployment/<lightspeed-deployment-name> -n aap
+```
+
+## Step 3 — Verify the Lightspeed Workloads Appear
+
+Wait for the related workloads and route to exist:
+
+```bash
+oc get deploy -n aap | rg 'lightspeed'
+oc get pods -n aap | rg 'lightspeed'
+oc get route -n aap | rg 'lightspeed'
+```
+
+Continue when the Lightspeed workloads that exist in your cluster are `Running` and the route is admitted.
 
 ---
 

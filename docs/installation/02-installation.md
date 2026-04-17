@@ -4,6 +4,8 @@
 
 Deploy the platform on a fresh cluster through the GitOps path and bring it to a usable state.
 
+On the current branch, a first-time deployer can bring up the base platform and the RHOAI path by following this guide. The remaining manual install step is the Ansible Lightspeed API token described in [Installation 05](./05-remediation-using-ansible-lightspeed.md).
+
 ## Before You Start
 
 - Log in to the target cluster with cluster-admin access.

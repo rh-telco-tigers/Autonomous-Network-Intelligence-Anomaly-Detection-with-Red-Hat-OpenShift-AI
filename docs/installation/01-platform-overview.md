@@ -50,7 +50,7 @@ The main applications you will see after bootstrap are:
 - `ani-tekton`
 - `ani-observability`
 - `ani-sipp-traffic`
-- `ani-aap`
+- `ani-remediation`
 
 ## Install Flow
 
@@ -58,5 +58,5 @@ The main applications you will see after bootstrap are:
 2. Push the branch you want to deploy into the in-cluster Gitea repo.
 3. Bootstrap Argo CD.
 4. Wait for the child applications to appear.
-5. Trigger the first image build so the runtime namespaces get their `:latest` images.
+5. Wait for the first GitOps-managed KFP `CronJob`s and workflows to publish the initial model artifacts.
 6. Validate the routes, workloads, and AAP/EDA integration after AAP license import.

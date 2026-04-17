@@ -87,11 +87,14 @@ oc get applications.argoproj.io ani-tekton -n openshift-gitops -o yaml | sed -n 
 oc get crd tasks.tekton.dev pipelines.tekton.dev eventlisteners.triggers.tekton.dev triggerbindings.triggers.tekton.dev triggertemplates.triggers.tekton.dev
 ```
 
-If the app message mentions `no matches for kind "Task" in version "tekton.dev/v1"` or similar, wait for the CRDs to appear and then recheck `ani-tekton`. When the app reaches `Synced` / `Healthy`, rerun:
+If the app message mentions `no matches for kind "Task" in version "tekton.dev/v1"` or similar, wait for the CRDs to appear and then recheck `ani-tekton`. When the app reaches `Synced` / `Healthy`, confirm the GitOps-managed pipeline resources exist:
 
 ```sh
-make trigger-build-pipeline
+oc get cronjob -n ani-datascience | rg 'kfp-auto-run'
+oc get pipelines.pipelines.kubeflow.org,pipelineversions.pipelines.kubeflow.org -n ani-datascience
 ```
+
+Only rerun `make trigger-build-pipeline` if you are intentionally validating the older internal-image bootstrap flow. It is not part of the default fresh-cluster install path on the current branch.
 
 ## OpenShift AI Or Datascience Resources Are Not Ready
 

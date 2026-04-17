@@ -19,6 +19,8 @@ oc get modelregistries.modelregistry.opendatahub.io -n rhoai-model-registries
 
 If `ani-predictive` or `ani-predictive-fs` is still `READY=False`, that is expected while the background KFP auto-run `CronJob`s are still publishing the first model artifacts. GitOps creates the `InferenceService` objects first; the live-path workflows catch up afterward.
 
+If `ani-remediation` is the only degraded Argo application at this stage and the secret `aap-lightspeed-chatbot-api-key` does not exist yet, continue with [Installation 05](./05-remediation-using-ansible-lightspeed.md). That manual token step is still required on the current branch.
+
 ## 2. Collect The Main Routes
 
 ```sh
@@ -123,7 +125,7 @@ Expected result after the approved action runs: the deployment reports `2` desir
 
 ## What Good Looks Like
 
-- Argo applications are present and mostly `Synced` / `Healthy`
+- The base platform and RHOAI Argo applications are `Synced` / `Healthy`
 - Demo UI opens
 - OpenIMS WebUI login works
 - Plane login works
@@ -142,6 +144,8 @@ Expected result after the approved action runs: the deployment reports `2` desir
 
 If the only remaining degraded item is `llama-32-3b-instruct` with `Insufficient nvidia.com/gpu`, the predictive incident workflow can still work, but the generative RCA path is not available until the cluster exposes allocatable GPU capacity.
 
+If the only remaining degraded application is `ani-remediation` and the missing dependency is `aap-lightspeed-chatbot-api-key`, the install is still incomplete. Finish [Installation 05](./05-remediation-using-ansible-lightspeed.md) before calling the full platform healthy.
+
 ## Next Step
 
-After the base platform is validated, continue with [Installation 04: Data Generation And Model Training](./04-data-generation-and-model-training.md) to watch the automatic live-path workflows or force a rerun if you need one.
+If you want to inspect or rerun the RHOAI model path, continue with [Installation 04: Data Generation And Model Training](./04-data-generation-and-model-training.md). If you want the remediation slice to converge fully, continue with [Installation 05: Remediation Using Ansible Lightspeed](./05-remediation-using-ansible-lightspeed.md).
