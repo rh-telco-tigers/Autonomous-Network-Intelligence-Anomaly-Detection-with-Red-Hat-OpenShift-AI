@@ -13,7 +13,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -335,6 +335,152 @@ def _force_console_scenario_incident(
     return incident
 
 
+def _console_guardrails_demo_payloads(example: Literal["review", "block"], project: str) -> tuple[IncidentCreate, RCAAttach]:
+    suffix = uuid.uuid4().hex[:8]
+    incident_id = f"demo-guardrails-{example}-{suffix}"
+    request_id = f"demo-guardrails-{example}-{suffix}"
+    trace_id = f"trace-guardrails-{example}-{suffix}"
+
+    if example == "review":
+        return (
+            IncidentCreate(
+                incident_id=incident_id,
+                project=project,
+                anomaly_score=0.68,
+                anomaly_type="network_degradation",
+                predicted_confidence=0.68,
+                class_probabilities={"network_degradation": 0.68},
+                top_classes=[{"anomaly_type": "network_degradation", "probability": 0.68}],
+                is_anomaly=True,
+                model_version="ani-predictive-backfill-modelcar",
+                feature_window_id=f"demo-review-fw-{suffix}",
+                feature_snapshot={
+                    "node_id": "edge-1",
+                    "node_role": "edge",
+                    "scenario_name": "network_degradation",
+                    "latency_p95": 3100,
+                    "packet_loss": 0.08,
+                },
+                source_system="console-guardrails-demo",
+                auto_generate_rca=False,
+            ),
+            RCAAttach(
+                root_cause="Intermittent packet loss is degrading signaling reliability.",
+                explanation=(
+                    "The incident has enough context to be useful, but the RCA confidence is below the automatic "
+                    "allow threshold and should be reviewed by an operator before remediation is unlocked."
+                ),
+                confidence=0.54,
+                evidence=[
+                    {"type": "doc", "reference": "incident-evidence/network-loss-window.json", "weight": 0.5},
+                    {"type": "doc", "reference": "knowledge/network/latency-and-loss-review.json", "weight": 0.5},
+                ],
+                recommendation="Review low-risk traffic steering options after validating the evidence chain.",
+                rca_request_id=request_id,
+                trace_id=trace_id,
+                rca_schema_version="ani.rca.v1",
+                rca_state="VALIDATED_REVIEW",
+                generation_mode="guardrails-demo",
+                generation_source_label="ui-seeded-review",
+                llm_used=False,
+                llm_configured=True,
+                llm_model=str(os.getenv("LLM_MODEL", "llama-32-3b-instruct")),
+                llm_runtime="trustyai-demo",
+                guardrails={
+                    "status": "require_review",
+                    "reason": "confidence_below_threshold",
+                    "input_status": "allow",
+                    "output_status": "require_review",
+                    "policy_version": str(os.getenv("ANI_GUARDRAILS_POLICY_VERSION", "v1")),
+                    "violations": [
+                        {
+                            "type": "confidence_below_threshold",
+                            "severity": "medium",
+                            "message": "Confidence is below the automatic allow threshold.",
+                        }
+                    ],
+                    "detectors": [
+                        {"name": "response_schema", "result": "pass"},
+                        {"name": "grounding_consistency", "result": "warn"},
+                    ],
+                },
+                retrieved_documents=[
+                    {"reference": "incident-evidence/network-loss-window.json", "title": "Packet loss window"},
+                    {"reference": "knowledge/network/latency-and-loss-review.json", "title": "Network review guidance"},
+                ],
+            ),
+        )
+
+    return (
+        IncidentCreate(
+            incident_id=incident_id,
+            project=project,
+            anomaly_score=0.91,
+            anomaly_type="server_internal_error",
+            predicted_confidence=0.91,
+            class_probabilities={"server_internal_error": 0.91},
+            top_classes=[{"anomaly_type": "server_internal_error", "probability": 0.91}],
+            is_anomaly=True,
+            model_version="ani-predictive-backfill-modelcar",
+            feature_window_id=f"demo-blocked-fw-{suffix}",
+            feature_snapshot={
+                "node_id": "scscf-1",
+                "node_role": "S-CSCF",
+                "scenario_name": "server_internal_error",
+                "error_5xx_ratio": 0.42,
+                "latency_p95": 4200,
+            },
+            source_system="console-guardrails-demo",
+            auto_generate_rca=False,
+        ),
+        RCAAttach(
+            root_cause="TrustyAI Guardrails blocked the RCA before it could be accepted.",
+            explanation=(
+                "The prompt path included unsafe or policy-violating content, so the RCA was replaced with a safe "
+                "blocked result."
+            ),
+            confidence=0.0,
+            evidence=[
+                {"type": "doc", "reference": "incident-evidence/server-internal-error.json", "weight": 0.5},
+                {"type": "doc", "reference": "incident-reasoning/server-tier-guardrails.json", "weight": 0.5},
+            ],
+            recommendation="Manual investigation required before any remediation is unlocked.",
+            rca_request_id=request_id,
+            trace_id=trace_id,
+            rca_schema_version="ani.rca.v1",
+            rca_state="BLOCKED_POLICY",
+            generation_mode="guardrails-demo",
+            generation_source_label="ui-seeded-block",
+            llm_used=False,
+            llm_configured=True,
+            llm_model=str(os.getenv("LLM_MODEL", "llama-32-3b-instruct")),
+            llm_runtime="trustyai-demo",
+            guardrails={
+                "status": "block",
+                "reason": "input_blocked",
+                "input_status": "block",
+                "output_status": "block",
+                "policy_version": str(os.getenv("ANI_GUARDRAILS_POLICY_VERSION", "v1")),
+                "violations": [
+                    {
+                        "type": "prompt_injection",
+                        "severity": "high",
+                        "message": "Unsafe prompt instructions were detected in the RCA request path.",
+                    }
+                ],
+                "detectors": [
+                    {"name": "prompt-injection", "result": "fail"},
+                    {"name": "response_schema", "result": "not_run"},
+                ],
+            },
+            retrieved_documents=[
+                {"reference": "incident-evidence/server-internal-error.json", "title": "5xx error burst"},
+                {"reference": "incident-reasoning/server-tier-guardrails.json", "title": "Guardrails policy note"},
+            ],
+        ),
+    )
+
+
 class ModelPromotionRequest(BaseModel):
     version: str
     approved_by: str
@@ -348,6 +494,11 @@ class ClassifierProfileSelectionRequest(BaseModel):
 
 class ConsoleScenarioRequest(BaseModel):
     scenario: str
+    project: str = "ani-demo"
+
+
+class ConsoleGuardrailsDemoRequest(BaseModel):
+    example: Literal["review", "block"]
     project: str = "ani-demo"
 
 
@@ -5484,6 +5635,36 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
         "rca": rca_payload,
         "rca_error": rca_error,
         "incident": enriched_incident,
+        "state": state,
+    }
+
+
+@app.post("/console/guardrails-demo")
+def console_guardrails_demo(payload: ConsoleGuardrailsDemoRequest, auth: AuthContext | None = Depends(require_api_key)):
+    ensure_project_access(auth, payload.project)
+    actor = auth.subject if auth else "console-ui"
+    incident_payload, rca_payload = _console_guardrails_demo_payloads(payload.example, payload.project)
+    background_tasks = BackgroundTasks()
+    incident = post_incident(incident_payload, background_tasks, auth=auth)
+    _run_background_tasks_immediately(background_tasks)
+    workflow = post_rca(str(incident.get("id") or incident_payload.incident_id), rca_payload, auth=auth)
+    incident_id = str(incident.get("id") or incident_payload.incident_id)
+    record_audit(
+        "console_guardrails_demo_created",
+        actor,
+        {
+            "example": payload.example,
+            "project": payload.project,
+            "incident_id": incident_id,
+        },
+        incident_id=incident_id,
+    )
+    state = _build_console_state(payload.project)
+    enriched_incident = next((item for item in state["incidents"] if item.get("id") == incident_id), None)
+    return {
+        "example": payload.example,
+        "incident": enriched_incident or (workflow.get("incident") if isinstance(workflow, dict) else None) or incident,
+        "workflow": workflow,
         "state": state,
     }
 

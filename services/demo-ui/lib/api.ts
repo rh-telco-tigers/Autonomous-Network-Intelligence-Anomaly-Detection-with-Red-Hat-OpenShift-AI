@@ -6,6 +6,8 @@ import { useApiToken } from "@/components/providers/app-providers";
 import type {
   ConsoleState,
   DocumentResponse,
+  GuardrailsDemoExample,
+  GuardrailsDemoResponse,
   IncidentDebugTraceResponse,
   IncidentRecord,
   IncidentWorkflow,
@@ -266,6 +268,26 @@ export function useScenarioRunner() {
     onSuccess: (payload) => {
       queryClient.setQueryData(["console-state", defaultProject, token], payload.state);
       queryClient.invalidateQueries({ queryKey: ["incidents"] });
+    },
+  });
+}
+
+export function useGuardrailsDemoRunner() {
+  const { token } = useApiToken();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (example: GuardrailsDemoExample) =>
+      request<GuardrailsDemoResponse>("/api/console/guardrails-demo", token, {
+        method: "POST",
+        body: JSON.stringify({ example, project: defaultProject }),
+        timeoutMs: LONG_RUNNING_REQUEST_TIMEOUT_MS,
+      }),
+    onSuccess: (payload) => {
+      queryClient.setQueryData(["console-state", defaultProject, token], payload.state);
+      queryClient.invalidateQueries({ queryKey: ["incidents"] });
+      if (payload.incident?.id) {
+        queryClient.invalidateQueries({ queryKey: ["incident-workflow", payload.incident.id, token] });
+      }
     },
   });
 }

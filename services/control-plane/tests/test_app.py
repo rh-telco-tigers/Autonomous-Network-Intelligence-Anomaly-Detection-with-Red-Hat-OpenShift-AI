@@ -355,6 +355,68 @@ class ConsoleScenarioFallbackTests(unittest.TestCase):
         force_incident.assert_called_once()
 
 
+class GuardrailsDemoTests(unittest.TestCase):
+    def test_console_guardrails_demo_creates_review_example(self) -> None:
+        payload = control_plane_app.ConsoleGuardrailsDemoRequest(example="review", project="ani-demo")
+        incident = {
+            "id": "demo-guardrails-review-test",
+            "project": "ani-demo",
+            "status": control_plane_app.RCA_GENERATED,
+        }
+        workflow = {"incident": incident}
+        state = {"incidents": [dict(incident, rca_payload={"rca_state": "VALIDATED_REVIEW"})]}
+
+        with (
+            mock.patch.object(control_plane_app, "ensure_project_access"),
+            mock.patch.object(control_plane_app, "post_incident", return_value=incident) as post_incident,
+            mock.patch.object(control_plane_app, "_run_background_tasks_immediately") as run_background,
+            mock.patch.object(control_plane_app, "post_rca", return_value=workflow) as post_rca,
+            mock.patch.object(control_plane_app, "record_audit") as record_audit,
+            mock.patch.object(control_plane_app, "_build_console_state", return_value=state),
+        ):
+            response = control_plane_app.console_guardrails_demo(payload, auth=None)
+
+        created_payload = post_incident.call_args.args[0]
+        attached_payload = post_rca.call_args.args[1]
+        self.assertEqual(created_payload.anomaly_type, "network_degradation")
+        self.assertEqual(attached_payload.rca_state, "VALIDATED_REVIEW")
+        self.assertEqual(attached_payload.guardrails["status"], "require_review")
+        run_background.assert_called_once()
+        self.assertEqual(response["example"], "review")
+        self.assertEqual(response["incident"]["id"], "demo-guardrails-review-test")
+        self.assertEqual(response["state"], state)
+        self.assertTrue(any(call.args[0] == "console_guardrails_demo_created" for call in record_audit.call_args_list))
+
+    def test_console_guardrails_demo_creates_block_example(self) -> None:
+        payload = control_plane_app.ConsoleGuardrailsDemoRequest(example="block", project="ani-demo")
+        incident = {
+            "id": "demo-guardrails-block-test",
+            "project": "ani-demo",
+            "status": control_plane_app.RCA_GENERATED,
+        }
+        workflow = {"incident": incident}
+        state = {"incidents": [dict(incident, rca_payload={"rca_state": "BLOCKED_POLICY"})]}
+
+        with (
+            mock.patch.object(control_plane_app, "ensure_project_access"),
+            mock.patch.object(control_plane_app, "post_incident", return_value=incident) as post_incident,
+            mock.patch.object(control_plane_app, "_run_background_tasks_immediately"),
+            mock.patch.object(control_plane_app, "post_rca", return_value=workflow) as post_rca,
+            mock.patch.object(control_plane_app, "record_audit"),
+            mock.patch.object(control_plane_app, "_build_console_state", return_value=state),
+        ):
+            response = control_plane_app.console_guardrails_demo(payload, auth=None)
+
+        created_payload = post_incident.call_args.args[0]
+        attached_payload = post_rca.call_args.args[1]
+        self.assertEqual(created_payload.anomaly_type, "server_internal_error")
+        self.assertEqual(attached_payload.rca_state, "BLOCKED_POLICY")
+        self.assertEqual(attached_payload.guardrails["status"], "block")
+        self.assertEqual(attached_payload.guardrails["reason"], "input_blocked")
+        self.assertEqual(response["example"], "block")
+        self.assertEqual(response["incident"]["id"], "demo-guardrails-block-test")
+
+
 class AIPlaybookGenerationRetryTests(unittest.TestCase):
     def test_request_ai_playbook_generation_schedules_retry_publish(self) -> None:
         incident = {

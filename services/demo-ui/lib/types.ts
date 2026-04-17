@@ -126,6 +126,15 @@ export type ConsoleState = {
   }>;
 };
 
+export type GuardrailsDemoExample = "review" | "block";
+
+export type GuardrailsDemoResponse = {
+  example: GuardrailsDemoExample;
+  incident: IncidentRecord;
+  workflow: IncidentWorkflow;
+  state: ConsoleState;
+};
+
 export type ClassifierProfile = {
   key: string;
   label: string;
