@@ -1,0 +1,249 @@
+apiVersion: pipelines.kubeflow.org/v2beta1
+kind: Pipeline
+metadata:
+  name: ani-feature-bundle-publish
+  annotations:
+    argocd.argoproj.io/sync-wave: '32'
+    argocd.argoproj.io/ignore-healthcheck: 'true'
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  displayName: ani-feature-bundle-publish
+---
+apiVersion: pipelines.kubeflow.org/v2beta1
+kind: PipelineVersion
+metadata:
+  name: ani-feature-bundle-publish
+  annotations:
+    argocd.argoproj.io/sync-wave: '33'
+    argocd.argoproj.io/ignore-healthcheck: 'true'
+    argocd.argoproj.io/sync-options: Force=true,Replace=true,SkipDryRunOnMissingResource=true
+spec:
+  displayName: ani-feature-bundle-publish
+  pipelineName: ani-feature-bundle-publish
+  pipelineSpec:
+    components:
+      comp-build-bundle:
+        executorLabel: exec-build-bundle
+        inputDefinitions:
+          parameters:
+            bundle_version:
+              parameterType: STRING
+            project:
+              parameterType: STRING
+            require_control_plane_history:
+              parameterType: STRING
+            source_dataset_versions_json:
+              parameterType: STRING
+            workspace_root:
+              defaultValue: /tmp/ani-featurestore
+              isOptional: true
+              parameterType: STRING
+        outputDefinitions:
+          parameters:
+            output_manifest:
+              parameterType: STRING
+      comp-validate-bundle:
+        executorLabel: exec-validate-bundle
+        inputDefinitions:
+          parameters:
+            bundle_manifest_path:
+              parameterType: STRING
+            workspace_root:
+              defaultValue: /tmp/ani-featurestore
+              isOptional: true
+              parameterType: STRING
+        outputDefinitions:
+          parameters:
+            output_manifest:
+              parameterType: STRING
+    deploymentSpec:
+      executors:
+        exec-build-bundle:
+          container:
+            args:
+            - --step
+            - build-bundle
+            - --bundle-version
+            - '{{$.inputs.parameters[''bundle_version'']}}'
+            - --source-dataset-versions-json
+            - '{{$.inputs.parameters[''source_dataset_versions_json'']}}'
+            - --require-control-plane-history
+            - '{{$.inputs.parameters[''require_control_plane_history'']}}'
+            - --project
+            - '{{$.inputs.parameters[''project'']}}'
+            - --workspace-root
+            - '{{$.inputs.parameters[''workspace_root'']}}'
+            - --output
+            - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+            command:
+            - python
+            - ai/training/featurestore_train.py
+            env:
+            - name: HOME
+              value: /tmp
+            - name: CONTROL_PLANE_URL
+              value: http://control-plane.ani-runtime.svc.cluster.local:8080
+            - name: CONTROL_PLANE_API_KEY
+              value: demo-token
+            - name: DATASET_STORE_MODE
+              value: s3
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ani-models
+            - name: DATASET_STORE_ACCESS_KEY
+              value: minioadmin
+            - name: DATASET_STORE_SECRET_KEY
+              value: minioadmin
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ani-datascience/datasets
+            - name: MINIO_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: MINIO_BUCKET
+              value: ani-models
+            - name: MINIO_ACCESS_KEY
+              value: minioadmin
+            - name: MINIO_SECRET_KEY
+              value: minioadmin
+            image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+            resources:
+              cpuLimit: 2.0
+              cpuRequest: 0.5
+              memoryLimit: 8.589934592
+              memoryRequest: 2.147483648
+        exec-validate-bundle:
+          container:
+            args:
+            - --step
+            - validate-bundle
+            - --bundle-manifest
+            - '{{$.inputs.parameters[''bundle_manifest_path'']}}'
+            - --workspace-root
+            - '{{$.inputs.parameters[''workspace_root'']}}'
+            - --output
+            - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+            command:
+            - python
+            - ai/training/featurestore_train.py
+            env:
+            - name: HOME
+              value: /tmp
+            - name: CONTROL_PLANE_URL
+              value: http://control-plane.ani-runtime.svc.cluster.local:8080
+            - name: CONTROL_PLANE_API_KEY
+              value: demo-token
+            - name: DATASET_STORE_MODE
+              value: s3
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ani-models
+            - name: DATASET_STORE_ACCESS_KEY
+              value: minioadmin
+            - name: DATASET_STORE_SECRET_KEY
+              value: minioadmin
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ani-datascience/datasets
+            - name: MINIO_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: MINIO_BUCKET
+              value: ani-models
+            - name: MINIO_ACCESS_KEY
+              value: minioadmin
+            - name: MINIO_SECRET_KEY
+              value: minioadmin
+            image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+            resources:
+              cpuLimit: 1.0
+              cpuRequest: 0.25
+              memoryLimit: 2.147483648
+              memoryRequest: 1.073741824
+    pipelineInfo:
+      name: ani-feature-bundle-publish
+    root:
+      dag:
+        tasks:
+          build-bundle:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-build-bundle
+            inputs:
+              parameters:
+                bundle_version:
+                  componentInputParameter: bundle_version
+                project:
+                  componentInputParameter: project
+                require_control_plane_history:
+                  componentInputParameter: require_control_plane_history
+                source_dataset_versions_json:
+                  componentInputParameter: source_dataset_versions_json
+            taskInfo:
+              name: build-bundle
+          validate-bundle:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-validate-bundle
+            dependentTasks:
+            - build-bundle
+            inputs:
+              parameters:
+                bundle_manifest_path:
+                  taskOutputParameter:
+                    outputParameterKey: output_manifest
+                    producerTask: build-bundle
+            taskInfo:
+              name: validate-bundle
+      inputDefinitions:
+        parameters:
+          bundle_version:
+            defaultValue: ani-feature-bundle-v1
+            isOptional: true
+            parameterType: STRING
+          control_plane_api_key:
+            defaultValue: demo-token
+            isOptional: true
+            parameterType: STRING
+          control_plane_url:
+            defaultValue: http://control-plane.ani-runtime.svc.cluster.local:8080
+            isOptional: true
+            parameterType: STRING
+          dataset_store_access_key:
+            defaultValue: minioadmin
+            isOptional: true
+            parameterType: STRING
+          dataset_store_bucket:
+            defaultValue: ani-models
+            isOptional: true
+            parameterType: STRING
+          dataset_store_endpoint:
+            defaultValue: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            isOptional: true
+            parameterType: STRING
+          dataset_store_mode:
+            defaultValue: s3
+            isOptional: true
+            parameterType: STRING
+          dataset_store_prefix:
+            defaultValue: pipelines/ani-datascience/datasets
+            isOptional: true
+            parameterType: STRING
+          dataset_store_secret_key:
+            defaultValue: minioadmin
+            isOptional: true
+            parameterType: STRING
+          project:
+            defaultValue: ani-demo
+            isOptional: true
+            parameterType: STRING
+          require_control_plane_history:
+            defaultValue: 'true'
+            isOptional: true
+            parameterType: STRING
+          source_dataset_versions_json:
+            defaultValue: '["live-sipp-v1"]'
+            isOptional: true
+            parameterType: STRING
+    schemaVersion: 2.1.0
+    sdkVersion: kfp-2.8.0

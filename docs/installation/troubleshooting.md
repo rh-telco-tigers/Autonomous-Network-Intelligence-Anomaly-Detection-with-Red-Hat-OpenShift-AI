@@ -16,6 +16,41 @@ oc get applications.argoproj.io -n openshift-gitops -o jsonpath='{range .items[*
 
 If the branches do not match, push the branch you want to deploy to in-cluster Gitea and update the Argo bootstrap input before resyncing.
 
+## Bootstrap Job Looks Idle Or Stops Before `ani-platform`
+
+The `argocd-bootstrap-application-v3` Job in `openshift-gitops` creates `ani-operators` first and, on the current branch, waits for the OpenShift AI operator subscription and CSV before it creates `ani-platform`.
+
+Check:
+
+```sh
+oc get job,pod -n openshift-gitops | rg 'argocd-bootstrap'
+oc logs -n openshift-gitops job/argocd-bootstrap-application-v3 -f
+oc get application.argoproj.io -n openshift-gitops ani-operators ani-platform
+oc get subscription rhods-operator -n redhat-ods-operator
+oc get csv -n redhat-ods-operator
+```
+
+If `oc apply -k deploy/argocd` fails with `The Job "argocd-bootstrap-application-v3" is invalid ... field is immutable`, the previous Job still exists and Kubernetes will not patch its pod template in place. Recreate it:
+
+```sh
+oc delete job -n openshift-gitops argocd-bootstrap-application-v3 --ignore-not-found
+oc apply -k deploy/argocd
+oc logs -n openshift-gitops job/argocd-bootstrap-application-v3 -f
+```
+
+Expected log progression on the current branch:
+
+- `Applying ani-operators root application`
+- `Waiting for redhat-ods-operator/rhods-operator to report an installed CSV`
+- `Waiting for ClusterServiceVersion ... to reach phase Succeeded`
+- `Applying ani-platform root application after OpenShift AI operator install`
+
+If the cluster is still on an older revision, this Job can look silent because the wait loop did not print progress. Sync to the latest branch state and rerun:
+
+```sh
+oc apply -k deploy/argocd
+```
+
 ## Pods Are In `ImagePullBackOff`
 
 First rerun the Tekton build:
@@ -57,29 +92,75 @@ If the app message mentions `no matches for kind "Task" in version "tekton.dev/v
 make trigger-build-pipeline
 ```
 
-## OpenShift AI Or DSPA Is Not Ready
+## OpenShift AI Or Datascience Resources Are Not Ready
+
+Missing `FeatureStore`, `DataSciencePipelinesApplication`, `ServingRuntime`, `InferenceService`, or `ModelRegistry` resources on a fresh cluster usually means the OpenShift AI operator install or `default-dsc` reconciliation is still in progress.
 
 ```sh
+oc get application.argoproj.io -n openshift-gitops ani-rhoai-platform ani-datascience
+oc get subscription rhods-operator -n redhat-ods-operator -o jsonpath='{.status.installedCSV}{"\n"}'
+oc get csv -n redhat-ods-operator
 oc get dsc -n redhat-ods-operator
+oc get crd dscinitializations.dscinitialization.opendatahub.io datascienceclusters.datasciencecluster.opendatahub.io datasciencepipelinesapplications.datasciencepipelinesapplications.opendatahub.io featurestores.feast.dev servingruntimes.serving.kserve.io inferenceservices.serving.kserve.io modelregistries.modelregistry.opendatahub.io
 oc get deploy -n redhat-ods-applications
-oc get dspa,featurestore,inferenceservice -n ani-datascience
+oc get dspa,featurestore,servingruntime,inferenceservice -n ani-datascience
+oc get modelregistries.modelregistry.opendatahub.io -n rhoai-model-registries
 ```
 
-If `default-dsc` is not `Ready=True`, wait for the `redhat-ods-applications` controllers to come up before retrying the `ani-datascience` validation.
+Wait until:
 
-## `ani-datascience` Is Degraded Because The Predictors Start Before Models Exist
+- the `installedCSV` field for `rhods-operator` is non-empty
+- the RHODS CSV phase is `Succeeded`
+- `default-dsc` is `Ready=True`
+- the listed CRDs exist
+- `ani-rhoai-platform` and `ani-datascience` reach `Synced` / `Healthy`
 
-On a fresh install, the predictive `InferenceService` resources can start before the bootstrap training workflows publish the initial models into object storage. In that case the storage initializer logs `No model found` and KServe keeps retrying until the artifacts land.
+On the current branch, `ani-rhoai-platform` and `ani-datascience` retry automatically once the operator and CRDs are ready. On older revisions, resync those two applications after `default-dsc` becomes ready.
+
+On the current branch, GitOps also manages the KFP pipeline definitions declaratively. Check:
+
+```sh
+oc get pipelines.pipelines.kubeflow.org,pipelineversions.pipelines.kubeflow.org -n ani-datascience
+```
+
+## Older Revisions Wait On `ani-kfp-bootstrap` And Later Resources Never Appear
+
+On older revisions, the first KFP bootstrap hook waits for the trainer image stream tag before it publishes the pipeline definition. While that hook is still running, Argo CD does not advance to the later serving waves, so the `InferenceService` and some metrics resources can remain missing even though `dspa` itself is already `Ready`.
 
 Check:
 
 ```sh
-oc get wf -n ani-datascience
+oc get application.argoproj.io ani-datascience -n openshift-gitops
+oc get job,pod -n ani-datascience | rg 'ani-kfp-bootstrap'
+oc get is -n ani-datascience
+oc logs -n ani-datascience job/ani-kfp-bootstrap
+```
+
+If the Job stays `Running` for a long time and the pod logs are empty, inspect the running process:
+
+```sh
+oc exec -n ani-datascience "$(oc get pod -n ani-datascience -l job-name=ani-kfp-bootstrap -o jsonpath='{.items[0].metadata.name}')" -- ps -ef
+```
+
+If you see the job still sitting in the `ImageStreamTag` wait loop, sync to the current branch state and recreate the Job so it only publishes the pipeline definition and does not block on the first demo run:
+
+```sh
+oc delete job -n ani-datascience ani-kfp-bootstrap --ignore-not-found
+oc annotate application ani-datascience -n openshift-gitops argocd.argoproj.io/refresh=hard --overwrite
+```
+
+## `ani-datascience` Is Degraded Because The Predictors Start Before Models Exist
+
+On the current branch, GitOps creates the predictive `InferenceService` resources before the first training workflows are started. Until you run [Installation 04](./04-data-generation-and-model-training.md), the storage initializer can log `No model found` and KServe will keep retrying because the initial model artifacts are not in object storage yet.
+
+Check:
+
+```sh
 oc get inferenceservice -n ani-datascience
 oc get pods -n ani-datascience | rg 'ani-predictive'
 ```
 
-Wait for these workflows to finish with `Succeeded`:
+Then run the training flow from Installation 04 and wait for these workflows to finish with `Succeeded`:
 
 - `ani-anomaly-platform-train-and-register-*`
 - `ani-feature-bundle-publish-*`

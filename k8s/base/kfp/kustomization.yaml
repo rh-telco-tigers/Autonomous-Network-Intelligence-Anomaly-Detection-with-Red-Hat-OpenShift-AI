@@ -22,7 +22,7 @@ generatorOptions:
 resources:
   - dspa.yaml
   - bootstrap-rbac.yaml
-  - pipeline-bootstrap-job.yaml
-  - feature-bundle-bootstrap-job.yaml
-  - featurestore-bootstrap-job.yaml
-  - incident-release-bootstrap-job.yaml
+  - pipeline-anomaly.yaml
+  - pipeline-feature-bundle.yaml
+  - pipeline-featurestore.yaml
+  - pipeline-incident-release.yaml

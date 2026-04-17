@@ -30,7 +30,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: REQUIRED_IMAGESTREAM_TAGS
-              value: ani-ai-featurestore-trainer:latest
+              value: ""
             - name: IMAGESTREAM_WAIT_TIMEOUT_SECONDS
               value: "3600"
             - name: DSPA_NAME
@@ -58,6 +58,8 @@ spec:
                 secretKeyRef:
                   name: demo-api-auth
                   key: API_KEY
+            - name: PIPELINE_SKIP_DEMO_RUN
+              value: "true"
           command:
             - /bin/bash
             - -lc

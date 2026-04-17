@@ -27,7 +27,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: REQUIRED_IMAGESTREAM_TAGS
-              value: ani-ai-trainer:latest
+              value: ""
             - name: IMAGESTREAM_WAIT_TIMEOUT_SECONDS
               value: "3600"
             - name: DSPA_NAME
@@ -40,6 +40,8 @@ spec:
               value: ani-demo
             - name: RUN_NAME
               value: ani-anomaly-platform-demo
+            - name: PIPELINE_SKIP_DEMO_RUN
+              value: "true"
             - name: PIPELINE_PARAMETERS_JSON
               value: |
                 {"dataset_version":"live-sipp-v1","baseline_version":"baseline-v1","automl_version":"candidate-v1","automl_engine":"autogluon"}

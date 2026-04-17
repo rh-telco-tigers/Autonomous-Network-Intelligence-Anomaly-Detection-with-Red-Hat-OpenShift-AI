@@ -43,6 +43,12 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    retry:
+      limit: 20
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m
     syncOptions:
       - CreateNamespace=true
       - SkipDryRunOnMissingResource=true
@@ -217,6 +223,12 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    retry:
+      limit: 20
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m
     syncOptions:
       - CreateNamespace=true
       - RespectIgnoreDifferences=true

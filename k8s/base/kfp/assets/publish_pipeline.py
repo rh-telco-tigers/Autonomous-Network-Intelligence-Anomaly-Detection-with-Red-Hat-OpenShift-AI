@@ -49,6 +49,13 @@ def _load_pipeline_parameters() -> dict[str, Any]:
     return parsed
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _run_name() -> str:
     explicit = os.getenv("RUN_NAME", "").strip()
     if explicit:
@@ -180,16 +187,17 @@ def main() -> None:
     client = wait_for_client(host=host, namespace=namespace)
     ensure_pipeline(client, package_path=package_path, pipeline_name=pipeline_name, namespace=namespace)
     experiment = ensure_experiment(client, experiment_name=experiment_name, namespace=namespace)
-    ensure_demo_run(
-        client,
-        package_path=package_path,
-        experiment=experiment,
-        experiment_name=experiment_name,
-        namespace=namespace,
-        run_name=run_name,
-        parameters=parameters,
-        service_account=service_account,
-    )
+    if not _env_flag("PIPELINE_SKIP_DEMO_RUN", False):
+        ensure_demo_run(
+            client,
+            package_path=package_path,
+            experiment=experiment,
+            experiment_name=experiment_name,
+            namespace=namespace,
+            run_name=run_name,
+            parameters=parameters,
+            service_account=service_account,
+        )
     print(json.dumps({"host": host, "experiment": experiment_name, "run_name": run_name}, indent=2))
 
 

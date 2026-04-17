@@ -11,11 +11,12 @@ oc get applications.argoproj.io -n openshift-gitops
 oc get deploy -n ani-runtime
 oc get deploy -n ani-sipp
 oc get dsc -n redhat-ods-operator
-oc get dspa,featurestore,inferenceservice -n ani-datascience
-oc get wf -n ani-datascience
+oc get dspa,featurestore,servingruntime,inferenceservice -n ani-datascience
+oc get pipelines.pipelines.kubeflow.org,pipelineversions.pipelines.kubeflow.org -n ani-datascience
+oc get modelregistries.modelregistry.opendatahub.io -n rhoai-model-registries
 ```
 
-If `ani-predictive` or `ani-predictive-fs` is still `READY=False`, wait for the bootstrap workflows in `ani-datascience` to finish with `Succeeded` and then recheck the `InferenceService` resources.
+If `ani-predictive` or `ani-predictive-fs` is still `READY=False`, that is expected before you run [Installation 04: Data Generation And Model Training](./04-data-generation-and-model-training.md). GitOps creates the `InferenceService` objects first; the training flow publishes the initial model artifacts later.
 
 ## 2. Collect The Main Routes
 
@@ -125,10 +126,12 @@ Expected result after the approved action runs: the deployment reports `2` desir
 - OpenIMS WebUI login works
 - Plane login works
 - `default-dsc` is `Ready=True`
-- `dspa` exists
+- `dspa` is `Ready`
 - `ani-featurestore` is `Ready`
-- the bootstrap workflows in `ani-datascience` finish with `Succeeded`
-- the predictive `InferenceService` resources are `READY=True`
+- the KFP `Pipeline` and `PipelineVersion` resources exist in `ani-datascience`
+- the serving runtimes exist in `ani-datascience`
+- `default-modelregistry` exists in `rhoai-model-registries`
+- the predictive `InferenceService` objects exist in `ani-datascience`
 - the manual SIPp jobs finish and print `window_uri`
 - the control-plane status endpoint returns JSON without errors
 - after AAP license import, `aap` and `eda` report `live_configured=true`

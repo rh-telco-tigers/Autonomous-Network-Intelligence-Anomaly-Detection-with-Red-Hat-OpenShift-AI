@@ -1,0 +1,1278 @@
+apiVersion: pipelines.kubeflow.org/v2beta1
+kind: Pipeline
+metadata:
+  name: ani-featurestore-train-and-register
+  annotations:
+    argocd.argoproj.io/sync-wave: '34'
+    argocd.argoproj.io/ignore-healthcheck: 'true'
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  displayName: ani-featurestore-train-and-register
+---
+apiVersion: pipelines.kubeflow.org/v2beta1
+kind: PipelineVersion
+metadata:
+  name: ani-featurestore-train-and-register
+  annotations:
+    argocd.argoproj.io/sync-wave: '35'
+    argocd.argoproj.io/ignore-healthcheck: 'true'
+    argocd.argoproj.io/sync-options: Force=true,Replace=true,SkipDryRunOnMissingResource=true
+spec:
+  displayName: ani-featurestore-train-and-register
+  pipelineName: ani-featurestore-train-and-register
+  pipelineSpec:
+    components:
+      comp-evaluate-candidate:
+        executorLabel: exec-evaluate-candidate
+        inputDefinitions:
+          parameters:
+            candidate_manifest:
+              parameterType: STRING
+            training_manifest:
+              parameterType: STRING
+        outputDefinitions:
+          parameters:
+            output_manifest:
+              parameterType: STRING
+      comp-export-serving-artifact:
+        executorLabel: exec-export-serving-artifact
+        inputDefinitions:
+          parameters:
+            artifact_dir:
+              defaultValue: /tmp/ani-featurestore/models/artifacts
+              isOptional: true
+              parameterType: STRING
+            selection_manifest:
+              parameterType: STRING
+            serving_alias:
+              defaultValue: current
+              isOptional: true
+              parameterType: STRING
+            serving_model_format_name:
+              defaultValue: autogluon
+              isOptional: true
+              parameterType: STRING
+            serving_model_format_version:
+              defaultValue: '1'
+              isOptional: true
+              parameterType: STRING
+            serving_model_name:
+              defaultValue: ani-predictive-fs
+              isOptional: true
+              parameterType: STRING
+            serving_prefix:
+              defaultValue: predictive-featurestore
+              isOptional: true
+              parameterType: STRING
+            serving_protocol_version:
+              defaultValue: v2
+              isOptional: true
+              parameterType: STRING
+            serving_runtime_name:
+              defaultValue: ani-autogluon-mlserver-runtime
+              isOptional: true
+              parameterType: STRING
+            training_manifest:
+              parameterType: STRING
+        outputDefinitions:
+          parameters:
+            output_manifest:
+              parameterType: STRING
+      comp-publish-deployment-manifest:
+        executorLabel: exec-publish-deployment-manifest
+        inputDefinitions:
+          parameters:
+            export_manifest:
+              parameterType: STRING
+            model_registry_manifest:
+              parameterType: STRING
+            service_account_name:
+              defaultValue: model-storage-sa
+              isOptional: true
+              parameterType: STRING
+        outputDefinitions:
+          parameters:
+            output_manifest:
+              parameterType: STRING
+      comp-register-model-version:
+        executorLabel: exec-register-model-version
+        inputDefinitions:
+          parameters:
+            export_manifest:
+              parameterType: STRING
+            feature_service_name:
+              parameterType: STRING
+            model_name:
+              parameterType: STRING
+            model_registry_endpoint:
+              defaultValue: http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080
+              isOptional: true
+              parameterType: STRING
+            model_version_name:
+              parameterType: STRING
+            pipeline_name:
+              defaultValue: ani-featurestore-train-and-register
+              isOptional: true
+              parameterType: STRING
+        outputDefinitions:
+          parameters:
+            output_manifest:
+              parameterType: STRING
+      comp-resolve-bundle:
+        executorLabel: exec-resolve-bundle
+        inputDefinitions:
+          parameters:
+            bundle_version:
+              parameterType: STRING
+            workspace_root:
+              defaultValue: /tmp/ani-featurestore
+              isOptional: true
+              parameterType: STRING
+        outputDefinitions:
+          parameters:
+            output_manifest:
+              parameterType: STRING
+      comp-retrieve-training-dataset:
+        executorLabel: exec-retrieve-training-dataset
+        inputDefinitions:
+          parameters:
+            bundle_manifest_path:
+              parameterType: STRING
+            feature_repo_path:
+              defaultValue: /workspace/ai/featurestore/feature_repo
+              isOptional: true
+              parameterType: STRING
+            feature_service_name:
+              parameterType: STRING
+            workspace_root:
+              defaultValue: /tmp/ani-featurestore
+              isOptional: true
+              parameterType: STRING
+        outputDefinitions:
+          parameters:
+            output_manifest:
+              parameterType: STRING
+      comp-select-candidate:
+        executorLabel: exec-select-candidate
+        inputDefinitions:
+          parameters:
+            evaluation_manifest:
+              parameterType: STRING
+        outputDefinitions:
+          parameters:
+            output_manifest:
+              parameterType: STRING
+      comp-sync-feature-store-definitions:
+        executorLabel: exec-sync-feature-store-definitions
+        inputDefinitions:
+          parameters:
+            bundle_manifest_path:
+              parameterType: STRING
+            feature_repo_path:
+              defaultValue: /workspace/ai/featurestore/feature_repo
+              isOptional: true
+              parameterType: STRING
+            workspace_root:
+              defaultValue: /tmp/ani-featurestore
+              isOptional: true
+              parameterType: STRING
+        outputDefinitions:
+          parameters:
+            output_manifest:
+              parameterType: STRING
+      comp-train-automl:
+        executorLabel: exec-train-automl
+        inputDefinitions:
+          parameters:
+            artifact_dir:
+              defaultValue: /tmp/ani-featurestore/models/artifacts
+              isOptional: true
+              parameterType: STRING
+            automl_engine:
+              defaultValue: autogluon
+              isOptional: true
+              parameterType: STRING
+            candidate_version:
+              parameterType: STRING
+            training_manifest:
+              parameterType: STRING
+            workspace_root:
+              defaultValue: /tmp/ani-featurestore
+              isOptional: true
+              parameterType: STRING
+        outputDefinitions:
+          parameters:
+            output_manifest:
+              parameterType: STRING
+      comp-validate-bundle:
+        executorLabel: exec-validate-bundle
+        inputDefinitions:
+          parameters:
+            bundle_manifest_path:
+              parameterType: STRING
+            workspace_root:
+              defaultValue: /tmp/ani-featurestore
+              isOptional: true
+              parameterType: STRING
+        outputDefinitions:
+          parameters:
+            output_manifest:
+              parameterType: STRING
+    deploymentSpec:
+      executors:
+        exec-evaluate-candidate:
+          container:
+            args:
+            - --step
+            - evaluate-candidate
+            - --training-manifest
+            - '{{$.inputs.parameters[''training_manifest'']}}'
+            - --candidate-manifest
+            - '{{$.inputs.parameters[''candidate_manifest'']}}'
+            - --output
+            - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+            command:
+            - python
+            - ai/training/featurestore_train.py
+            env:
+            - name: HOME
+              value: /tmp
+            - name: MPLCONFIGDIR
+              value: /tmp/matplotlib
+            - name: DATASET_STORE_MODE
+              value: s3
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ani-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ani-datascience/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              value: minioadmin
+            - name: DATASET_STORE_SECRET_KEY
+              value: minioadmin
+            - name: MINIO_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: MINIO_BUCKET
+              value: ani-models
+            - name: MINIO_ACCESS_KEY
+              value: minioadmin
+            - name: MINIO_SECRET_KEY
+              value: minioadmin
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              value: minioadmin
+            - name: AWS_SECRET_ACCESS_KEY
+              value: minioadmin
+            - name: IMS_FEATURESTORE_MODE
+              value: remote
+            - name: IMS_FEATURESTORE_PROJECT
+              value: ani_anomaly_featurestore
+            - name: IMS_FEATURESTORE_REGISTRY_PATH
+              value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+              value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_CA_CERT_PATH
+              value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+            - name: IMS_FEATURESTORE_AUTH_TYPE
+              value: no_auth
+            - name: FEAST_S3_ENDPOINT_URL
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: AWS_S3_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+            resources:
+              cpuLimit: 1.0
+              cpuRequest: 0.25
+              memoryLimit: 2.147483648
+              memoryRequest: 1.073741824
+        exec-export-serving-artifact:
+          container:
+            args:
+            - --step
+            - export-serving-artifact
+            - --training-manifest
+            - '{{$.inputs.parameters[''training_manifest'']}}'
+            - --selection-manifest
+            - '{{$.inputs.parameters[''selection_manifest'']}}'
+            - --artifact-dir
+            - '{{$.inputs.parameters[''artifact_dir'']}}'
+            - --serving-model-name
+            - '{{$.inputs.parameters[''serving_model_name'']}}'
+            - --serving-runtime-name
+            - '{{$.inputs.parameters[''serving_runtime_name'']}}'
+            - --serving-model-format-name
+            - '{{$.inputs.parameters[''serving_model_format_name'']}}'
+            - --serving-model-format-version
+            - '{{$.inputs.parameters[''serving_model_format_version'']}}'
+            - --serving-protocol-version
+            - '{{$.inputs.parameters[''serving_protocol_version'']}}'
+            - --serving-prefix
+            - '{{$.inputs.parameters[''serving_prefix'']}}'
+            - --serving-alias
+            - '{{$.inputs.parameters[''serving_alias'']}}'
+            - --output
+            - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+            command:
+            - python
+            - ai/training/featurestore_train.py
+            env:
+            - name: HOME
+              value: /tmp
+            - name: MPLCONFIGDIR
+              value: /tmp/matplotlib
+            - name: DATASET_STORE_MODE
+              value: s3
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ani-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ani-datascience/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              value: minioadmin
+            - name: DATASET_STORE_SECRET_KEY
+              value: minioadmin
+            - name: MINIO_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: MINIO_BUCKET
+              value: ani-models
+            - name: MINIO_ACCESS_KEY
+              value: minioadmin
+            - name: MINIO_SECRET_KEY
+              value: minioadmin
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              value: minioadmin
+            - name: AWS_SECRET_ACCESS_KEY
+              value: minioadmin
+            - name: IMS_FEATURESTORE_MODE
+              value: remote
+            - name: IMS_FEATURESTORE_PROJECT
+              value: ani_anomaly_featurestore
+            - name: IMS_FEATURESTORE_REGISTRY_PATH
+              value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+              value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_CA_CERT_PATH
+              value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+            - name: IMS_FEATURESTORE_AUTH_TYPE
+              value: no_auth
+            - name: FEAST_S3_ENDPOINT_URL
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: AWS_S3_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+            resources:
+              cpuLimit: 2.0
+              cpuRequest: 0.5
+              memoryLimit: 8.589934592
+              memoryRequest: 2.147483648
+        exec-publish-deployment-manifest:
+          container:
+            args:
+            - --step
+            - publish-deployment-manifest
+            - --export-manifest
+            - '{{$.inputs.parameters[''export_manifest'']}}'
+            - --model-registry-manifest
+            - '{{$.inputs.parameters[''model_registry_manifest'']}}'
+            - --service-account-name
+            - '{{$.inputs.parameters[''service_account_name'']}}'
+            - --output
+            - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+            command:
+            - python
+            - ai/training/featurestore_train.py
+            env:
+            - name: HOME
+              value: /tmp
+            - name: MPLCONFIGDIR
+              value: /tmp/matplotlib
+            - name: DATASET_STORE_MODE
+              value: s3
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ani-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ani-datascience/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              value: minioadmin
+            - name: DATASET_STORE_SECRET_KEY
+              value: minioadmin
+            - name: MINIO_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: MINIO_BUCKET
+              value: ani-models
+            - name: MINIO_ACCESS_KEY
+              value: minioadmin
+            - name: MINIO_SECRET_KEY
+              value: minioadmin
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              value: minioadmin
+            - name: AWS_SECRET_ACCESS_KEY
+              value: minioadmin
+            - name: IMS_FEATURESTORE_MODE
+              value: remote
+            - name: IMS_FEATURESTORE_PROJECT
+              value: ani_anomaly_featurestore
+            - name: IMS_FEATURESTORE_REGISTRY_PATH
+              value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+              value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_CA_CERT_PATH
+              value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+            - name: IMS_FEATURESTORE_AUTH_TYPE
+              value: no_auth
+            - name: FEAST_S3_ENDPOINT_URL
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: AWS_S3_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+            resources:
+              cpuLimit: 1.0
+              cpuRequest: 0.25
+              memoryLimit: 2.147483648
+              memoryRequest: 1.073741824
+        exec-register-model-version:
+          container:
+            args:
+            - --step
+            - register-model-version
+            - --export-manifest
+            - '{{$.inputs.parameters[''export_manifest'']}}'
+            - --feature-service-name
+            - '{{$.inputs.parameters[''feature_service_name'']}}'
+            - --model-name
+            - '{{$.inputs.parameters[''model_name'']}}'
+            - --model-version-name
+            - '{{$.inputs.parameters[''model_version_name'']}}'
+            - --pipeline-name
+            - '{{$.inputs.parameters[''pipeline_name'']}}'
+            - --model-registry-endpoint
+            - '{{$.inputs.parameters[''model_registry_endpoint'']}}'
+            - --output
+            - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+            command:
+            - python
+            - ai/training/featurestore_train.py
+            env:
+            - name: HOME
+              value: /tmp
+            - name: MPLCONFIGDIR
+              value: /tmp/matplotlib
+            - name: DATASET_STORE_MODE
+              value: s3
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ani-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ani-datascience/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              value: minioadmin
+            - name: DATASET_STORE_SECRET_KEY
+              value: minioadmin
+            - name: MINIO_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: MINIO_BUCKET
+              value: ani-models
+            - name: MINIO_ACCESS_KEY
+              value: minioadmin
+            - name: MINIO_SECRET_KEY
+              value: minioadmin
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              value: minioadmin
+            - name: AWS_SECRET_ACCESS_KEY
+              value: minioadmin
+            - name: IMS_FEATURESTORE_MODE
+              value: remote
+            - name: IMS_FEATURESTORE_PROJECT
+              value: ani_anomaly_featurestore
+            - name: IMS_FEATURESTORE_REGISTRY_PATH
+              value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+              value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_CA_CERT_PATH
+              value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+            - name: IMS_FEATURESTORE_AUTH_TYPE
+              value: no_auth
+            - name: FEAST_S3_ENDPOINT_URL
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: AWS_S3_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: RHOAI_MODEL_REGISTRY_REQUIRED
+              value: 'true'
+            image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+            resources:
+              cpuLimit: 1.0
+              cpuRequest: 0.25
+              memoryLimit: 2.147483648
+              memoryRequest: 1.073741824
+        exec-resolve-bundle:
+          container:
+            args:
+            - --step
+            - resolve-bundle
+            - --bundle-version
+            - '{{$.inputs.parameters[''bundle_version'']}}'
+            - --workspace-root
+            - '{{$.inputs.parameters[''workspace_root'']}}'
+            - --output
+            - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+            command:
+            - python
+            - ai/training/featurestore_train.py
+            env:
+            - name: HOME
+              value: /tmp
+            - name: MPLCONFIGDIR
+              value: /tmp/matplotlib
+            - name: DATASET_STORE_MODE
+              value: s3
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ani-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ani-datascience/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              value: minioadmin
+            - name: DATASET_STORE_SECRET_KEY
+              value: minioadmin
+            - name: MINIO_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: MINIO_BUCKET
+              value: ani-models
+            - name: MINIO_ACCESS_KEY
+              value: minioadmin
+            - name: MINIO_SECRET_KEY
+              value: minioadmin
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              value: minioadmin
+            - name: AWS_SECRET_ACCESS_KEY
+              value: minioadmin
+            - name: IMS_FEATURESTORE_MODE
+              value: remote
+            - name: IMS_FEATURESTORE_PROJECT
+              value: ani_anomaly_featurestore
+            - name: IMS_FEATURESTORE_REGISTRY_PATH
+              value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+              value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_CA_CERT_PATH
+              value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+            - name: IMS_FEATURESTORE_AUTH_TYPE
+              value: no_auth
+            - name: FEAST_S3_ENDPOINT_URL
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: AWS_S3_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+            resources:
+              cpuLimit: 1.0
+              cpuRequest: 0.25
+              memoryLimit: 2.147483648
+              memoryRequest: 1.073741824
+        exec-retrieve-training-dataset:
+          container:
+            args:
+            - --step
+            - retrieve-training-dataset
+            - --bundle-manifest
+            - '{{$.inputs.parameters[''bundle_manifest_path'']}}'
+            - --feature-service-name
+            - '{{$.inputs.parameters[''feature_service_name'']}}'
+            - --feature-repo-path
+            - '{{$.inputs.parameters[''feature_repo_path'']}}'
+            - --workspace-root
+            - '{{$.inputs.parameters[''workspace_root'']}}'
+            - --output
+            - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+            command:
+            - python
+            - ai/training/featurestore_train.py
+            env:
+            - name: HOME
+              value: /tmp
+            - name: MPLCONFIGDIR
+              value: /tmp/matplotlib
+            - name: DATASET_STORE_MODE
+              value: s3
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ani-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ani-datascience/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              value: minioadmin
+            - name: DATASET_STORE_SECRET_KEY
+              value: minioadmin
+            - name: MINIO_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: MINIO_BUCKET
+              value: ani-models
+            - name: MINIO_ACCESS_KEY
+              value: minioadmin
+            - name: MINIO_SECRET_KEY
+              value: minioadmin
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              value: minioadmin
+            - name: AWS_SECRET_ACCESS_KEY
+              value: minioadmin
+            - name: IMS_FEATURESTORE_MODE
+              value: remote
+            - name: IMS_FEATURESTORE_PROJECT
+              value: ani_anomaly_featurestore
+            - name: IMS_FEATURESTORE_REGISTRY_PATH
+              value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+              value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_CA_CERT_PATH
+              value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+            - name: IMS_FEATURESTORE_AUTH_TYPE
+              value: no_auth
+            - name: FEAST_S3_ENDPOINT_URL
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: AWS_S3_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+            resources:
+              cpuLimit: 2.0
+              cpuRequest: 0.5
+              memoryLimit: 8.589934592
+              memoryRequest: 2.147483648
+        exec-select-candidate:
+          container:
+            args:
+            - --step
+            - select-candidate
+            - --evaluation-manifest
+            - '{{$.inputs.parameters[''evaluation_manifest'']}}'
+            - --output
+            - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+            command:
+            - python
+            - ai/training/featurestore_train.py
+            env:
+            - name: HOME
+              value: /tmp
+            - name: MPLCONFIGDIR
+              value: /tmp/matplotlib
+            - name: DATASET_STORE_MODE
+              value: s3
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ani-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ani-datascience/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              value: minioadmin
+            - name: DATASET_STORE_SECRET_KEY
+              value: minioadmin
+            - name: MINIO_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: MINIO_BUCKET
+              value: ani-models
+            - name: MINIO_ACCESS_KEY
+              value: minioadmin
+            - name: MINIO_SECRET_KEY
+              value: minioadmin
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              value: minioadmin
+            - name: AWS_SECRET_ACCESS_KEY
+              value: minioadmin
+            - name: IMS_FEATURESTORE_MODE
+              value: remote
+            - name: IMS_FEATURESTORE_PROJECT
+              value: ani_anomaly_featurestore
+            - name: IMS_FEATURESTORE_REGISTRY_PATH
+              value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+              value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_CA_CERT_PATH
+              value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+            - name: IMS_FEATURESTORE_AUTH_TYPE
+              value: no_auth
+            - name: FEAST_S3_ENDPOINT_URL
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: AWS_S3_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+            resources:
+              cpuLimit: 1.0
+              cpuRequest: 0.25
+              memoryLimit: 2.147483648
+              memoryRequest: 1.073741824
+        exec-sync-feature-store-definitions:
+          container:
+            args:
+            - --step
+            - sync-feature-store-definitions
+            - --bundle-manifest
+            - '{{$.inputs.parameters[''bundle_manifest_path'']}}'
+            - --workspace-root
+            - '{{$.inputs.parameters[''workspace_root'']}}'
+            - --feature-repo-path
+            - '{{$.inputs.parameters[''feature_repo_path'']}}'
+            - --output
+            - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+            command:
+            - python
+            - ai/training/featurestore_train.py
+            env:
+            - name: HOME
+              value: /tmp
+            - name: MPLCONFIGDIR
+              value: /tmp/matplotlib
+            - name: DATASET_STORE_MODE
+              value: s3
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ani-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ani-datascience/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              value: minioadmin
+            - name: DATASET_STORE_SECRET_KEY
+              value: minioadmin
+            - name: MINIO_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: MINIO_BUCKET
+              value: ani-models
+            - name: MINIO_ACCESS_KEY
+              value: minioadmin
+            - name: MINIO_SECRET_KEY
+              value: minioadmin
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              value: minioadmin
+            - name: AWS_SECRET_ACCESS_KEY
+              value: minioadmin
+            - name: IMS_FEATURESTORE_MODE
+              value: remote
+            - name: IMS_FEATURESTORE_PROJECT
+              value: ani_anomaly_featurestore
+            - name: IMS_FEATURESTORE_REGISTRY_PATH
+              value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+              value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_CA_CERT_PATH
+              value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+            - name: IMS_FEATURESTORE_AUTH_TYPE
+              value: no_auth
+            - name: FEAST_S3_ENDPOINT_URL
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: AWS_S3_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+            resources:
+              cpuLimit: 2.0
+              cpuRequest: 0.5
+              memoryLimit: 8.589934592
+              memoryRequest: 2.147483648
+        exec-train-automl:
+          container:
+            args:
+            - --step
+            - train-automl
+            - --training-manifest
+            - '{{$.inputs.parameters[''training_manifest'']}}'
+            - --candidate-version
+            - '{{$.inputs.parameters[''candidate_version'']}}'
+            - --workspace-root
+            - '{{$.inputs.parameters[''workspace_root'']}}'
+            - --artifact-dir
+            - '{{$.inputs.parameters[''artifact_dir'']}}'
+            - --automl-engine
+            - '{{$.inputs.parameters[''automl_engine'']}}'
+            - --output
+            - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+            command:
+            - python
+            - ai/training/featurestore_train.py
+            env:
+            - name: HOME
+              value: /tmp
+            - name: MPLCONFIGDIR
+              value: /tmp/matplotlib
+            - name: DATASET_STORE_MODE
+              value: s3
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ani-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ani-datascience/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              value: minioadmin
+            - name: DATASET_STORE_SECRET_KEY
+              value: minioadmin
+            - name: MINIO_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: MINIO_BUCKET
+              value: ani-models
+            - name: MINIO_ACCESS_KEY
+              value: minioadmin
+            - name: MINIO_SECRET_KEY
+              value: minioadmin
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              value: minioadmin
+            - name: AWS_SECRET_ACCESS_KEY
+              value: minioadmin
+            - name: IMS_FEATURESTORE_MODE
+              value: remote
+            - name: IMS_FEATURESTORE_PROJECT
+              value: ani_anomaly_featurestore
+            - name: IMS_FEATURESTORE_REGISTRY_PATH
+              value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+              value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_CA_CERT_PATH
+              value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+            - name: IMS_FEATURESTORE_AUTH_TYPE
+              value: no_auth
+            - name: FEAST_S3_ENDPOINT_URL
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: AWS_S3_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+            resources:
+              cpuLimit: 4.0
+              cpuRequest: 0.5
+              memoryLimit: 8.589934592
+              memoryRequest: 2.147483648
+        exec-validate-bundle:
+          container:
+            args:
+            - --step
+            - validate-bundle
+            - --bundle-manifest
+            - '{{$.inputs.parameters[''bundle_manifest_path'']}}'
+            - --workspace-root
+            - '{{$.inputs.parameters[''workspace_root'']}}'
+            - --output
+            - '{{$.outputs.parameters[''output_manifest''].output_file}}'
+            command:
+            - python
+            - ai/training/featurestore_train.py
+            env:
+            - name: HOME
+              value: /tmp
+            - name: MPLCONFIGDIR
+              value: /tmp/matplotlib
+            - name: DATASET_STORE_MODE
+              value: s3
+            - name: DATASET_STORE_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: DATASET_STORE_BUCKET
+              value: ani-models
+            - name: DATASET_STORE_PREFIX
+              value: pipelines/ani-datascience/datasets
+            - name: DATASET_STORE_ACCESS_KEY
+              value: minioadmin
+            - name: DATASET_STORE_SECRET_KEY
+              value: minioadmin
+            - name: MINIO_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: MINIO_BUCKET
+              value: ani-models
+            - name: MINIO_ACCESS_KEY
+              value: minioadmin
+            - name: MINIO_SECRET_KEY
+              value: minioadmin
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              value: minioadmin
+            - name: AWS_SECRET_ACCESS_KEY
+              value: minioadmin
+            - name: IMS_FEATURESTORE_MODE
+              value: remote
+            - name: IMS_FEATURESTORE_PROJECT
+              value: ani_anomaly_featurestore
+            - name: IMS_FEATURESTORE_REGISTRY_PATH
+              value: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_ONLINE_STORE_PATH
+              value: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
+            - name: IMS_FEATURESTORE_CA_CERT_PATH
+              value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+            - name: IMS_FEATURESTORE_AUTH_TYPE
+              value: no_auth
+            - name: FEAST_S3_ENDPOINT_URL
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            - name: AWS_S3_ENDPOINT
+              value: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+            resources:
+              cpuLimit: 1.0
+              cpuRequest: 0.25
+              memoryLimit: 2.147483648
+              memoryRequest: 1.073741824
+    pipelineInfo:
+      name: ani-featurestore-train-and-register
+    root:
+      dag:
+        tasks:
+          evaluate-candidate:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-evaluate-candidate
+            dependentTasks:
+            - retrieve-training-dataset
+            - train-automl
+            inputs:
+              parameters:
+                candidate_manifest:
+                  taskOutputParameter:
+                    outputParameterKey: output_manifest
+                    producerTask: train-automl
+                training_manifest:
+                  taskOutputParameter:
+                    outputParameterKey: output_manifest
+                    producerTask: retrieve-training-dataset
+            taskInfo:
+              name: evaluate-candidate
+          export-serving-artifact:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-export-serving-artifact
+            dependentTasks:
+            - retrieve-training-dataset
+            - select-candidate
+            inputs:
+              parameters:
+                selection_manifest:
+                  taskOutputParameter:
+                    outputParameterKey: output_manifest
+                    producerTask: select-candidate
+                serving_alias:
+                  componentInputParameter: serving_alias
+                serving_model_format_name:
+                  componentInputParameter: serving_model_format_name
+                serving_model_format_version:
+                  componentInputParameter: serving_model_format_version
+                serving_model_name:
+                  componentInputParameter: serving_model_name
+                serving_prefix:
+                  componentInputParameter: serving_prefix
+                serving_protocol_version:
+                  componentInputParameter: serving_protocol_version
+                serving_runtime_name:
+                  componentInputParameter: serving_runtime_name
+                training_manifest:
+                  taskOutputParameter:
+                    outputParameterKey: output_manifest
+                    producerTask: retrieve-training-dataset
+            taskInfo:
+              name: export-serving-artifact
+          publish-deployment-manifest:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-publish-deployment-manifest
+            dependentTasks:
+            - export-serving-artifact
+            - register-model-version
+            inputs:
+              parameters:
+                export_manifest:
+                  taskOutputParameter:
+                    outputParameterKey: output_manifest
+                    producerTask: export-serving-artifact
+                model_registry_manifest:
+                  taskOutputParameter:
+                    outputParameterKey: output_manifest
+                    producerTask: register-model-version
+            taskInfo:
+              name: publish-deployment-manifest
+          register-model-version:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-register-model-version
+            dependentTasks:
+            - export-serving-artifact
+            inputs:
+              parameters:
+                export_manifest:
+                  taskOutputParameter:
+                    outputParameterKey: output_manifest
+                    producerTask: export-serving-artifact
+                feature_service_name:
+                  componentInputParameter: feature_service_name
+                model_name:
+                  componentInputParameter: model_name
+                model_registry_endpoint:
+                  componentInputParameter: model_registry_endpoint
+                model_version_name:
+                  componentInputParameter: model_version_name
+            taskInfo:
+              name: register-model-version
+          resolve-bundle:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-resolve-bundle
+            inputs:
+              parameters:
+                bundle_version:
+                  componentInputParameter: bundle_version
+            taskInfo:
+              name: resolve-bundle
+          retrieve-training-dataset:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-retrieve-training-dataset
+            dependentTasks:
+            - resolve-bundle
+            - sync-feature-store-definitions
+            - validate-bundle
+            inputs:
+              parameters:
+                bundle_manifest_path:
+                  taskOutputParameter:
+                    outputParameterKey: output_manifest
+                    producerTask: resolve-bundle
+                feature_service_name:
+                  componentInputParameter: feature_service_name
+            taskInfo:
+              name: retrieve-training-dataset
+          select-candidate:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-select-candidate
+            dependentTasks:
+            - evaluate-candidate
+            inputs:
+              parameters:
+                evaluation_manifest:
+                  taskOutputParameter:
+                    outputParameterKey: output_manifest
+                    producerTask: evaluate-candidate
+            taskInfo:
+              name: select-candidate
+          sync-feature-store-definitions:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-sync-feature-store-definitions
+            dependentTasks:
+            - resolve-bundle
+            inputs:
+              parameters:
+                bundle_manifest_path:
+                  taskOutputParameter:
+                    outputParameterKey: output_manifest
+                    producerTask: resolve-bundle
+            taskInfo:
+              name: sync-feature-store-definitions
+          train-automl:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-train-automl
+            dependentTasks:
+            - retrieve-training-dataset
+            inputs:
+              parameters:
+                automl_engine:
+                  componentInputParameter: automl_engine
+                candidate_version:
+                  componentInputParameter: candidate_version
+                training_manifest:
+                  taskOutputParameter:
+                    outputParameterKey: output_manifest
+                    producerTask: retrieve-training-dataset
+            taskInfo:
+              name: train-automl
+          validate-bundle:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-validate-bundle
+            dependentTasks:
+            - resolve-bundle
+            inputs:
+              parameters:
+                bundle_manifest_path:
+                  taskOutputParameter:
+                    outputParameterKey: output_manifest
+                    producerTask: resolve-bundle
+            taskInfo:
+              name: validate-bundle
+      inputDefinitions:
+        parameters:
+          automl_engine:
+            defaultValue: autogluon
+            isOptional: true
+            parameterType: STRING
+          bundle_version:
+            defaultValue: ani-feature-bundle-v1
+            isOptional: true
+            parameterType: STRING
+          candidate_version:
+            defaultValue: candidate-fs-v1
+            isOptional: true
+            parameterType: STRING
+          control_plane_api_key:
+            defaultValue: demo-token
+            isOptional: true
+            parameterType: STRING
+          control_plane_url:
+            defaultValue: http://control-plane.ani-runtime.svc.cluster.local:8080
+            isOptional: true
+            parameterType: STRING
+          dataset_store_access_key:
+            defaultValue: minioadmin
+            isOptional: true
+            parameterType: STRING
+          dataset_store_bucket:
+            defaultValue: ani-models
+            isOptional: true
+            parameterType: STRING
+          dataset_store_endpoint:
+            defaultValue: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            isOptional: true
+            parameterType: STRING
+          dataset_store_mode:
+            defaultValue: s3
+            isOptional: true
+            parameterType: STRING
+          dataset_store_prefix:
+            defaultValue: pipelines/ani-datascience/datasets
+            isOptional: true
+            parameterType: STRING
+          dataset_store_secret_key:
+            defaultValue: minioadmin
+            isOptional: true
+            parameterType: STRING
+          feature_service_name:
+            defaultValue: ani_anomaly_scoring_v1
+            isOptional: true
+            parameterType: STRING
+          featurestore_auth_type:
+            defaultValue: no_auth
+            isOptional: true
+            parameterType: STRING
+          featurestore_aws_access_key_id:
+            defaultValue: minioadmin
+            isOptional: true
+            parameterType: STRING
+          featurestore_aws_region:
+            defaultValue: us-east-1
+            isOptional: true
+            parameterType: STRING
+          featurestore_aws_secret_access_key:
+            defaultValue: minioadmin
+            isOptional: true
+            parameterType: STRING
+          featurestore_ca_cert_path:
+            defaultValue: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+            isOptional: true
+            parameterType: STRING
+          featurestore_mode:
+            defaultValue: remote
+            isOptional: true
+            parameterType: STRING
+          featurestore_online_store_path:
+            defaultValue: https://feast-ani-featurestore-online.ani-datascience.svc.cluster.local:443
+            isOptional: true
+            parameterType: STRING
+          featurestore_project:
+            defaultValue: ani_anomaly_featurestore
+            isOptional: true
+            parameterType: STRING
+          featurestore_registry_path:
+            defaultValue: feast-ani-featurestore-registry.ani-datascience.svc.cluster.local:443
+            isOptional: true
+            parameterType: STRING
+          featurestore_s3_endpoint_url:
+            defaultValue: http://model-storage-minio.ani-data.svc.cluster.local:9000
+            isOptional: true
+            parameterType: STRING
+          model_name:
+            defaultValue: ani-anomaly-featurestore
+            isOptional: true
+            parameterType: STRING
+          model_registry_endpoint:
+            defaultValue: http://default-modelregistry.rhoai-model-registries.svc.cluster.local:8080
+            isOptional: true
+            parameterType: STRING
+          model_version_name:
+            defaultValue: ani-anomaly-featurestore-v1
+            isOptional: true
+            parameterType: STRING
+          serving_alias:
+            defaultValue: current
+            isOptional: true
+            parameterType: STRING
+          serving_model_format_name:
+            defaultValue: autogluon
+            isOptional: true
+            parameterType: STRING
+          serving_model_format_version:
+            defaultValue: '1'
+            isOptional: true
+            parameterType: STRING
+          serving_model_name:
+            defaultValue: ani-predictive-fs
+            isOptional: true
+            parameterType: STRING
+          serving_prefix:
+            defaultValue: predictive-featurestore
+            isOptional: true
+            parameterType: STRING
+          serving_protocol_version:
+            defaultValue: v2
+            isOptional: true
+            parameterType: STRING
+          serving_runtime_name:
+            defaultValue: ani-autogluon-mlserver-runtime
+            isOptional: true
+            parameterType: STRING
+    schemaVersion: 2.1.0
+    sdkVersion: kfp-2.8.0

@@ -66,31 +66,33 @@ spec:
               )
               PY
               )"
-              python - <<'PY'
-              import os
-              import sys
-              import time
-              from urllib.error import HTTPError, URLError
-              from urllib.request import urlopen
+              if [ "${PIPELINE_SKIP_DEMO_RUN:-false}" != "true" ]; then
+                python - <<'PY'
+                import os
+                import sys
+                import time
+                from urllib.error import HTTPError, URLError
+                from urllib.request import urlopen
 
-              base = os.environ["CONTROL_PLANE_URL"].rstrip("/")
-              url = f"{base}/healthz"
-              deadline = time.time() + int(os.getenv("CONTROL_PLANE_WAIT_TIMEOUT_SECONDS", "900"))
-              last_error = None
+                base = os.environ["CONTROL_PLANE_URL"].rstrip("/")
+                url = f"{base}/healthz"
+                deadline = time.time() + int(os.getenv("CONTROL_PLANE_WAIT_TIMEOUT_SECONDS", "900"))
+                last_error = None
 
-              while time.time() < deadline:
-                  try:
-                      with urlopen(url, timeout=5) as response:
-                          if 200 <= response.status < 300:
-                              print(f"control-plane ready at {url}")
-                              sys.exit(0)
-                  except (HTTPError, URLError) as exc:
-                      last_error = exc
-                      print(f"waiting for control-plane at {url}: {exc}", flush=True)
-                  time.sleep(10)
+                while time.time() < deadline:
+                    try:
+                        with urlopen(url, timeout=5) as response:
+                            if 200 <= response.status < 300:
+                                print(f"control-plane ready at {url}")
+                                sys.exit(0)
+                    except (HTTPError, URLError) as exc:
+                        last_error = exc
+                        print(f"waiting for control-plane at {url}: {exc}", flush=True)
+                    time.sleep(10)
 
-              raise SystemExit(f"control-plane did not become ready at {url}: {last_error}")
-              PY
+                raise SystemExit(f"control-plane did not become ready at {url}: {last_error}")
+                PY
+              fi
               python -m pip install --no-cache-dir --target /tmp/kfp-site kfp==2.8.0
               export PYTHONPATH="/tmp/kfp-site:${PYTHONPATH}"
               python /opt/kfp/publish_incident_release_pipeline.py

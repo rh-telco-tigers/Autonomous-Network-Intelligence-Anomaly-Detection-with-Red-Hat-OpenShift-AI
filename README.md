@@ -83,8 +83,13 @@ Demo API tokens for the platform services:
 5. Bootstrap Argo CD and the operator subscriptions:
 
 ```sh
+if oc get namespace openshift-gitops >/dev/null 2>&1; then
+  oc delete job -n openshift-gitops argocd-bootstrap-application-v3 --ignore-not-found
+fi
 oc apply -k deploy/argocd
 ```
+
+If you rerun bootstrap after changing this repository, deleting the old Job first avoids the Kubernetes immutable Job template error.
 
 6. Confirm the Argo CD applications are tracking the branch you pushed:
 

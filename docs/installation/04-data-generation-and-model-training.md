@@ -7,7 +7,7 @@ Generate incident-linked data for the live model path, generate a separate backf
 ## Before You Start
 
 - Finish [Installation](./02-installation.md) and [Validation](./03-validation.md).
-- Confirm `ani-runtime` is `Synced` / `Healthy` and the predictive `InferenceService` resources in `ani-datascience` are `READY=True`.
+- Confirm `ani-runtime` is `Synced` / `Healthy` and the predictive `InferenceService` resources already exist in `ani-datascience`.
 - Run the initial image build at least once with `make trigger-build-pipeline`.
 - Use the feature-store path in this guide. The live serving endpoint is `ani-predictive-fs`.
 - The backfill serving endpoint is `ani-predictive-backfill`.
