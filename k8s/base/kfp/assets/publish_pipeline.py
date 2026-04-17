@@ -324,12 +324,30 @@ def ensure_demo_run(
         return {"action": f"skipped:{run_action}", "run_name": requested_run_name}
 
     if _env_flag("PIPELINE_USE_EXISTING_VERSION", False):
-        pipeline_id, version_id = resolve_pipeline_version(
-            client,
-            package_path=package_path,
-            pipeline_name=pipeline_name,
-            namespace=namespace,
-        )
+        try:
+            pipeline_id, version_id = resolve_pipeline_version(
+                client,
+                package_path=package_path,
+                pipeline_name=pipeline_name,
+                namespace=namespace,
+            )
+        except RuntimeError:
+            if not _env_flag("PIPELINE_ALLOW_PACKAGE_FALLBACK", True):
+                raise
+            # Fresh DSPA installs can expose the Pipeline CR through the API before any
+            # PipelineVersion rows are queryable. Register from the packaged spec and run.
+            ensure_pipeline(client, package_path=package_path, pipeline_name=pipeline_name, namespace=namespace)
+            client.create_run_from_pipeline_package(
+                pipeline_file=package_path,
+                arguments=parameters,
+                run_name=submission_run_name,
+                experiment_name=experiment_name,
+                namespace=namespace,
+                service_account=service_account,
+                enable_caching=False,
+            )
+            return {"action": f"{run_action}:package-fallback", "run_name": submission_run_name}
+
         client.run_pipeline(
             experiment_id=experiment.experiment_id,
             job_name=submission_run_name,
