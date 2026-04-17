@@ -18,7 +18,7 @@ spec:
       runtime: guardrails-detector-runtime-hap
       modelFormat:
         name: guardrails-detector-hf-runtime
-      storageUri: oci://quay.io/trustyai_testing/detectors/granite-guardian-hap-38m@sha256:9dd129668cce86dac82bca9ed1cd5fd5dbad81cdd6db1b65be7e88bfca30f0a4
+      storageUri: oci://quay.io/trustyai_testing/detectors/granite-guardian-hap-38m@sha256:9dd129668cce86dac674814c0a965b1526a01de562fd1e9a28d1892429bdad7b
       resources:
         requests:
           cpu: 500m
