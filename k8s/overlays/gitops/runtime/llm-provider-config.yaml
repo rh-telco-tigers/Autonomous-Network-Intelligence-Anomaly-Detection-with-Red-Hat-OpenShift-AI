@@ -3,6 +3,6 @@ kind: ConfigMap
 metadata:
   name: llm-provider-config
 data:
-  LLM_ENDPOINT: http://guardrails-gateway.ani-datascience.svc.cluster.local/rca
+  LLM_ENDPOINT: http://guardrails-orchestrator-service.ani-datascience.svc.cluster.local:8090/rca
   LLM_MODEL: llama-32-3b-instruct
   LLM_REQUEST_TIMEOUT_SECONDS: "20"
