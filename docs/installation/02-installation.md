@@ -7,7 +7,7 @@ Deploy the platform on a fresh cluster through the GitOps path and bring it to a
 ## Before You Start
 
 - Log in to the target cluster with cluster-admin access.
-- For the default GitOps install path, use `main`. If your change requires new runtime images, push or merge it to `main` first and wait for the external Quay builds to finish before expecting the cluster to converge on those image changes.
+- Check out the git branch you want Argo CD to follow.
 - This installation flow is only tested on OpenShift on AWS.
 - **GPU workers:** GitOps installs the NVIDIA GPU Operator, Node Feature Discovery, and OpenShift AI model serving that targets GPU runtimes (including vLLM). Use a cluster or machine pool with **GPU-capable worker nodes** and enough capacity for the operator DaemonSets; without that, the `ani-datascience` slice will not fully converge and the LLM-backed RCA flow will not work.
 
@@ -77,7 +77,7 @@ On a fresh cluster this can take several minutes. It is normal for the bootstrap
 
 ## 5. Trigger The First GitOps-Managed Pipeline Jobs
 
-The default GitOps path on the current branch uses the published Quay images referenced by the manifests. Quay builds are triggered from `main`, not from ad hoc in-cluster bootstrap Jobs, and new image builds can take several minutes to appear after a push. On a fresh cluster you should **not** start with the older bootstrap build or `make trigger-build-pipeline` unless you are intentionally testing the in-cluster image-build flow.
+The default GitOps path on the current branch uses the published Quay images referenced by the manifests. On a fresh cluster you should **not** start with the older bootstrap build or `make trigger-build-pipeline` unless you are intentionally testing the in-cluster image-build flow.
 
 GitOps still only creates the KFP pipeline definitions and their background auto-run `CronJob`s. A fresh cluster does not have the initial dataset, feature-bundle, feature-store, model-registry, or incident-release artifacts until those jobs run. If you want the cluster to converge immediately instead of waiting for the scheduled offsets, create one Job from each `CronJob` in this order and wait for each submitted workflow to finish before starting the next one:
 
