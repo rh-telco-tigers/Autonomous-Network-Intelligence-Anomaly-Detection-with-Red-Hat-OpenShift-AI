@@ -6,7 +6,6 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "86"
 spec:
-  ttlSecondsAfterFinished: 300
   backoffLimit: 4
   template:
     spec:
