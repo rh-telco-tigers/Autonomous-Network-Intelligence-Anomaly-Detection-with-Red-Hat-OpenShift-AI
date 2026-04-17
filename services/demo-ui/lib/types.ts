@@ -135,6 +135,61 @@ export type GuardrailsDemoResponse = {
   state: ConsoleState;
 };
 
+export type SafetyControlsStatus = {
+  provider: {
+    key: string;
+    label: string;
+    family: string;
+  };
+  project: string;
+  configured: boolean;
+  endpoint: string;
+  chat_completions_url: string;
+  model_name: string;
+  policy_version: string;
+  contract_version: string;
+  rca_schema_version: string;
+  request_timeout_seconds: number;
+  summary: {
+    tracked_incidents: number;
+    allow_count: number;
+    review_count: number;
+    block_count: number;
+    error_count: number;
+  };
+  recent_incidents: Array<{
+    incident_id: string;
+    anomaly_type: string;
+    severity: string;
+    workflow_state: string;
+    created_at: string;
+    updated_at: string;
+    guardrail_status: string;
+    guardrail_reason: string;
+    rca_state: string;
+    generation_mode: string;
+    generation_source_label: string;
+    llm_used: boolean;
+    root_cause: string;
+    recommendation: string;
+  }>;
+};
+
+export type SafetyProbeResponse = {
+  provider: {
+    key: string;
+    label: string;
+    family: string;
+  };
+  model_name: string;
+  request_endpoint: string;
+  response_time_ms: number;
+  warnings?: Array<Record<string, unknown>> | null;
+  detections?: Record<string, unknown> | null;
+  content?: string;
+  raw?: Record<string, unknown> | null;
+};
+
 export type ClassifierProfile = {
   key: string;
   label: string;

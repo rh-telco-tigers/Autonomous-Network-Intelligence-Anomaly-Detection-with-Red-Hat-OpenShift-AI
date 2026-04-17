@@ -13,6 +13,8 @@ import type {
   IncidentWorkflow,
   KnowledgeArticleResponse,
   RelatedRecords,
+  SafetyControlsStatus,
+  SafetyProbeResponse,
   ScenarioRunResponse,
   TicketLookupResponse,
 } from "@/lib/types";
@@ -88,6 +90,23 @@ export function useConsoleStateQuery(refetchInterval = 15_000) {
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     staleTime: Math.max(CONSOLE_STALE_TIME_MS, Math.floor(refetchInterval * 0.75)),
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 8_000),
+  });
+}
+
+export function useSafetyControlsStatusQuery(refetchInterval = 30_000) {
+  const { token } = useApiToken();
+  return useQuery({
+    queryKey: ["safety-controls-status", defaultProject, token],
+    queryFn: () =>
+      request<SafetyControlsStatus>(`/api/safety-controls/status?project=${encodeURIComponent(defaultProject)}`, token),
+    placeholderData: (previousData) => previousData,
+    refetchInterval,
+    refetchIntervalInBackground: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    staleTime: 20_000,
     retry: 2,
     retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 8_000),
   });
@@ -289,6 +308,18 @@ export function useGuardrailsDemoRunner() {
         queryClient.invalidateQueries({ queryKey: ["incident-workflow", payload.incident.id, token] });
       }
     },
+  });
+}
+
+export function useSafetyProbeRunner() {
+  const { token } = useApiToken();
+  return useMutation({
+    mutationFn: (prompt: string) =>
+      request<SafetyProbeResponse>("/api/safety-controls/probe", token, {
+        method: "POST",
+        body: JSON.stringify({ prompt, project: defaultProject }),
+        timeoutMs: LONG_RUNNING_REQUEST_TIMEOUT_MS,
+      }),
   });
 }
 

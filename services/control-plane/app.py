@@ -481,6 +481,157 @@ def _console_guardrails_demo_payloads(example: Literal["review", "block"], proje
     )
 
 
+def _safety_controls_provider(endpoint: str) -> Dict[str, str]:
+    normalized = endpoint.strip().lower()
+    if "guardrails" in normalized:
+        return {
+            "key": "trustyai",
+            "label": "TrustyAI Guardrails",
+            "family": "Guardrails",
+        }
+    if normalized:
+        return {
+            "key": "configured",
+            "label": "Configured safety provider",
+            "family": "Guardrails",
+        }
+    return {
+        "key": "none",
+        "label": "No safety provider configured",
+        "family": "Guardrails",
+    }
+
+
+def _llm_chat_completions_url(endpoint: str) -> str:
+    base = endpoint.rstrip("/")
+    if base.endswith("/chat/completions"):
+        return base
+    if base.endswith("/v1"):
+        return f"{base}/chat/completions"
+    return f"{base}/v1/chat/completions"
+
+
+def _safety_controls_status(project: str) -> Dict[str, object]:
+    endpoint = str(os.getenv("LLM_ENDPOINT", "")).strip()
+    model_name = str(os.getenv("LLM_MODEL", "llama-32-3b-instruct")).strip()
+    provider = _safety_controls_provider(endpoint)
+    incidents = list_incidents(project=project)
+    recent_items: List[Dict[str, object]] = []
+    counts = {"allow": 0, "require_review": 0, "block": 0, "error": 0, "untracked": 0}
+
+    for incident in incidents:
+        rca_payload = incident.get("rca_payload")
+        if not isinstance(rca_payload, dict) or not rca_payload:
+            continue
+        guardrail_summary = _rca_guardrails_summary(rca_payload)
+        status = str(guardrail_summary.get("status") or "").strip() or "untracked"
+        if status not in counts:
+            counts["untracked"] += 1
+        else:
+            counts[status] += 1
+        recent_items.append(
+            {
+                "incident_id": str(incident.get("id") or ""),
+                "anomaly_type": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
+                "severity": _incident_severity_label(incident),
+                "workflow_state": normalize_workflow_state(str(incident.get("status") or NEW)),
+                "created_at": str(incident.get("created_at") or ""),
+                "updated_at": str(incident.get("updated_at") or incident.get("created_at") or ""),
+                "guardrail_status": status,
+                "guardrail_reason": str(guardrail_summary.get("reason") or "").strip(),
+                "rca_state": str(guardrail_summary.get("state") or "").strip(),
+                "generation_mode": str(rca_payload.get("generation_mode") or "").strip(),
+                "generation_source_label": str(rca_payload.get("generation_source_label") or "").strip(),
+                "llm_used": bool(rca_payload.get("llm_used")),
+                "root_cause": str(rca_payload.get("root_cause") or ""),
+                "recommendation": str(rca_payload.get("recommendation") or ""),
+            }
+        )
+
+    recent_items.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""), reverse=True)
+    return {
+        "provider": provider,
+        "project": project,
+        "configured": bool(endpoint),
+        "endpoint": endpoint,
+        "chat_completions_url": _llm_chat_completions_url(endpoint) if endpoint else "",
+        "model_name": model_name,
+        "policy_version": str(os.getenv("ANI_GUARDRAILS_POLICY_VERSION", "v1")).strip(),
+        "contract_version": str(os.getenv("ANI_GUARDRAILS_CONTRACT_VERSION", "ani.guardrails.v1")).strip(),
+        "rca_schema_version": str(os.getenv("ANI_RCA_SCHEMA_VERSION", "ani.rca.v1")).strip(),
+        "request_timeout_seconds": float(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "10")),
+        "summary": {
+            "tracked_incidents": len(recent_items),
+            "allow_count": counts["allow"],
+            "review_count": counts["require_review"],
+            "block_count": counts["block"],
+            "error_count": counts["error"],
+        },
+        "recent_incidents": recent_items[:10],
+    }
+
+
+def _run_safety_probe(prompt: str) -> Dict[str, object]:
+    endpoint = str(os.getenv("LLM_ENDPOINT", "")).strip()
+    if not endpoint:
+        raise HTTPException(status_code=503, detail="No safety provider is configured.")
+
+    request_endpoint = _llm_chat_completions_url(endpoint)
+    model_name = str(os.getenv("LLM_MODEL", "llama-32-3b-instruct")).strip()
+    api_key = str(os.getenv("LLM_API_KEY", "")).strip()
+    host_header = str(os.getenv("LLM_REQUEST_HOST_HEADER", "")).strip()
+    request_timeout_seconds = min(float(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "10")), 15.0)
+    request_payload = {
+        "model": model_name,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+        "temperature": 0,
+    }
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    if host_header:
+        headers["Host"] = host_header
+
+    started_at = time.perf_counter()
+    try:
+        response = requests.post(
+            request_endpoint,
+            headers=headers,
+            json=request_payload,
+            timeout=request_timeout_seconds,
+        )
+        elapsed_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Safety probe failed: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=f"Safety probe returned invalid JSON: {exc}") from exc
+
+    choices = payload.get("choices") if isinstance(payload, dict) else None
+    first_choice = choices[0] if isinstance(choices, list) and choices else {}
+    first_message = first_choice.get("message") if isinstance(first_choice, dict) else {}
+    content = ""
+    if isinstance(first_message, dict):
+        content = str(first_message.get("content") or "")
+
+    return {
+        "provider": _safety_controls_provider(endpoint),
+        "model_name": model_name,
+        "request_endpoint": request_endpoint,
+        "response_time_ms": elapsed_ms,
+        "warnings": payload.get("warnings") if isinstance(payload, dict) else None,
+        "detections": payload.get("detections") if isinstance(payload, dict) else None,
+        "content": content,
+        "raw": payload,
+    }
+
+
 class ModelPromotionRequest(BaseModel):
     version: str
     approved_by: str
@@ -499,6 +650,11 @@ class ConsoleScenarioRequest(BaseModel):
 
 class ConsoleGuardrailsDemoRequest(BaseModel):
     example: Literal["review", "block"]
+    project: str = "ani-demo"
+
+
+class SafetyProbeRequest(BaseModel):
+    prompt: str
     project: str = "ani-demo"
 
 
@@ -5492,6 +5648,20 @@ def platform_status(auth: AuthContext | None = Depends(require_api_key)):
         "integrations": integration_status(),
         "automation_actions": _list_automation_actions(),
     }
+
+
+@app.get("/safety-controls/status")
+def safety_controls_status(project: str = "ani-demo", auth: AuthContext | None = Depends(require_api_key)):
+    ensure_role(auth, "operator")
+    ensure_project_access(auth, project)
+    return _safety_controls_status(project)
+
+
+@app.post("/safety-controls/probe")
+def safety_controls_probe(payload: SafetyProbeRequest, auth: AuthContext | None = Depends(require_api_key)):
+    ensure_role(auth, "operator")
+    ensure_project_access(auth, payload.project)
+    return _run_safety_probe(payload.prompt)
 
 
 @app.get("/console/state")
