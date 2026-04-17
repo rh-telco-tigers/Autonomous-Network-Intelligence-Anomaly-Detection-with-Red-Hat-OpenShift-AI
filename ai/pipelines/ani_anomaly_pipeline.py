@@ -3,7 +3,7 @@
 from kfp import dsl
 
 
-PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest"
+PIPELINE_IMAGE = "quay.io/autonomousnetworkintelligence/ani-ai-trainer:latest"
 WORKSPACE_ROOT = "/tmp/ani-pipeline"
 ARTIFACT_DIR = "/tmp/ani-pipeline/models/artifacts"
 REGISTRY_PATH = "/tmp/ani-pipeline/registry/model_registry.json"

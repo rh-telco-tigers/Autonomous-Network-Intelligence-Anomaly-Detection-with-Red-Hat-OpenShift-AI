@@ -3,7 +3,7 @@
 from kfp import dsl
 
 
-PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest"
+PIPELINE_IMAGE = "quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest"
 WORKSPACE_ROOT = "/tmp/ani-featurestore"
 CONTROL_PLANE_URL = "http://control-plane.ani-runtime.svc.cluster.local:8080"
 CONTROL_PLANE_API_KEY = "demo-token"

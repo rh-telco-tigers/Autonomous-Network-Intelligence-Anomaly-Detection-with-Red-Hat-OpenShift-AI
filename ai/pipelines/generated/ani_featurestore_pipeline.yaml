@@ -295,7 +295,7 @@ deploymentSpec:
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
         resources:
           cpuLimit: 1.0
           cpuRequest: 0.25
@@ -380,7 +380,7 @@ deploymentSpec:
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
         resources:
           cpuLimit: 2.0
           cpuRequest: 0.5
@@ -451,7 +451,7 @@ deploymentSpec:
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
         resources:
           cpuLimit: 1.0
           cpuRequest: 0.25
@@ -530,7 +530,7 @@ deploymentSpec:
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: RHOAI_MODEL_REGISTRY_REQUIRED
           value: 'true'
-        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
         resources:
           cpuLimit: 1.0
           cpuRequest: 0.25
@@ -599,7 +599,7 @@ deploymentSpec:
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
         resources:
           cpuLimit: 1.0
           cpuRequest: 0.25
@@ -672,7 +672,7 @@ deploymentSpec:
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
         resources:
           cpuLimit: 2.0
           cpuRequest: 0.5
@@ -739,7 +739,7 @@ deploymentSpec:
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
         resources:
           cpuLimit: 1.0
           cpuRequest: 0.25
@@ -810,7 +810,7 @@ deploymentSpec:
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
         resources:
           cpuLimit: 2.0
           cpuRequest: 0.5
@@ -885,7 +885,7 @@ deploymentSpec:
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
         resources:
           cpuLimit: 4.0
           cpuRequest: 0.5
@@ -954,7 +954,7 @@ deploymentSpec:
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
         - name: AWS_S3_ENDPOINT
           value: http://model-storage-minio.ani-data.svc.cluster.local:9000
-        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
         resources:
           cpuLimit: 1.0
           cpuRequest: 0.25

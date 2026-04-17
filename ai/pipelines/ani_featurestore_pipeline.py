@@ -3,7 +3,7 @@
 from kfp import dsl
 
 
-PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest"
+PIPELINE_IMAGE = "quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest"
 WORKSPACE_ROOT = "/tmp/ani-featurestore"
 ARTIFACT_DIR = "/tmp/ani-featurestore/models/artifacts"
 FEATURE_REPO_PATH = "/workspace/ai/featurestore/feature_repo"

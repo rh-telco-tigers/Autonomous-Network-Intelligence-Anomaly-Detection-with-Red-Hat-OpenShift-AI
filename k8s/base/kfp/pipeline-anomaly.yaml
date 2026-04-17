@@ -184,7 +184,7 @@ spec:
             command:
             - python
             - ai/training/train_and_register.py
-            image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
+            image: quay.io/autonomousnetworkintelligence/ani-ai-trainer:latest
         exec-evaluate-models:
           container:
             args:
@@ -203,7 +203,7 @@ spec:
             command:
             - python
             - ai/training/train_and_register.py
-            image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
+            image: quay.io/autonomousnetworkintelligence/ani-ai-trainer:latest
         exec-feature-engineering:
           container:
             args:
@@ -220,7 +220,7 @@ spec:
             command:
             - python
             - ai/training/train_and_register.py
-            image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
+            image: quay.io/autonomousnetworkintelligence/ani-ai-trainer:latest
         exec-ingest-data:
           container:
             args:
@@ -237,7 +237,7 @@ spec:
             command:
             - python
             - ai/training/train_and_register.py
-            image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
+            image: quay.io/autonomousnetworkintelligence/ani-ai-trainer:latest
         exec-label-generation:
           container:
             args:
@@ -254,7 +254,7 @@ spec:
             command:
             - python
             - ai/training/train_and_register.py
-            image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
+            image: quay.io/autonomousnetworkintelligence/ani-ai-trainer:latest
         exec-register-model:
           container:
             args:
@@ -273,7 +273,7 @@ spec:
             command:
             - python
             - ai/training/train_and_register.py
-            image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
+            image: quay.io/autonomousnetworkintelligence/ani-ai-trainer:latest
         exec-select-best:
           container:
             args:
@@ -288,7 +288,7 @@ spec:
             command:
             - python
             - ai/training/train_and_register.py
-            image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
+            image: quay.io/autonomousnetworkintelligence/ani-ai-trainer:latest
         exec-train-autogluon:
           container:
             args:
@@ -309,7 +309,7 @@ spec:
             command:
             - python
             - ai/training/train_and_register.py
-            image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
+            image: quay.io/autonomousnetworkintelligence/ani-ai-trainer:latest
         exec-train-baseline:
           container:
             args:
@@ -326,7 +326,7 @@ spec:
             command:
             - python
             - ai/training/train_and_register.py
-            image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
+            image: quay.io/autonomousnetworkintelligence/ani-ai-trainer:latest
     pipelineInfo:
       name: ani-anomaly-platform-train-and-register
     root:

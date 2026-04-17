@@ -137,7 +137,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-trainer:latest
+          value: quay.io/autonomousnetworkintelligence/ani-ai-trainer:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -154,7 +154,7 @@ spec:
         name: buildah-heavy
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+          value: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
