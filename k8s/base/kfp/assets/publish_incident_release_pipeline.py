@@ -84,6 +84,20 @@ def _find_by_display_name(items: list[Any] | None, expected: str) -> Any | None:
     return None
 
 
+def _version_candidates(package_path: str, pipeline_name: str) -> list[str]:
+    candidates: list[str] = []
+    explicit = os.getenv("PIPELINE_VERSION_NAME", "").strip()
+    if explicit:
+        return [explicit]
+    for candidate in (
+        _pipeline_version_name(package_path, pipeline_name, use_existing_version=True),
+        _pipeline_version_name(package_path, pipeline_name, use_existing_version=False),
+    ):
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
+
+
 def _package_digest(package_path: str) -> str:
     return hashlib.sha256(Path(package_path).read_bytes()).hexdigest()[:12]
 
@@ -256,11 +270,22 @@ def resolve_pipeline_version(client: Client, package_path: str, pipeline_name: s
     if not pipeline_id:
         raise RuntimeError(f"Pipeline {pipeline_name!r} is missing a pipeline_id")
 
-    version_name = _pipeline_version_name(package_path, pipeline_name, use_existing_version=True)
     versions = getattr(client.list_pipeline_versions(pipeline_id=pipeline_id, page_size=100), "pipeline_versions", None)
-    version = _find_by_display_name(versions, version_name)
+    version = None
+    version_name = ""
+    for candidate in _version_candidates(package_path, pipeline_name):
+        version = _find_by_display_name(versions, candidate)
+        if version is not None:
+            version_name = candidate
+            break
+    if version is None and len(versions or []) == 1:
+        version = versions[0]
+        version_name = str(getattr(version, "display_name", "") or "")
     if version is None:
-        raise RuntimeError(f"Pipeline version {version_name!r} is not registered for pipeline {pipeline_name!r}")
+        raise RuntimeError(
+            f"Pipeline version for {pipeline_name!r} is not registered. "
+            f"Checked candidates={_version_candidates(package_path, pipeline_name)!r}"
+        )
 
     version_id = getattr(version, "pipeline_version_id", None)
     if not version_id:
