@@ -7,14 +7,15 @@ This guide walks through enabling the AI-driven remediation workflow, which uses
 ## Prerequisites
 
 - The platform has been deployed via the bootstrap (see [02-installation.md](02-installation.md))
-- The `ani-aap` and `ani-remediation` ArgoCD applications are `Synced` and `Healthy`
+- The `ani-aap` application is `Synced` and `Healthy`
 - You have `oc` CLI access with cluster-admin permissions
+- You understand that the Lightspeed API token is still a manual step on the current branch
 
 ---
 
-## Step 1 — Configure the Lightspeed Secret in Gitea
+## Step 1 — Configure the Lightspeed Backend Secret
 
-The `lightspeed-secret` is already deployed in the cluster by ArgoCD. To update it, edit the file **directly in Gitea** — do not use `oc edit` or `oc create`, as ArgoCD self-heal will immediately revert any in-cluster change back to whatever is stored in Gitea.
+The repository contains the desired Lightspeed backend secret at `k8s/base/aap-platform/ansible-lightspeed-secret.yaml`. Populate it with your LLM backend details and make sure the cluster has a matching `lightspeed-secret` in the `aap` namespace.
 
 1. Get the Gitea URL:
    ```bash
@@ -36,9 +37,15 @@ The `lightspeed-secret` is already deployed in the cluster by ArgoCD. To update 
      chatbot_token: <token>                   # replace with your LLM API token
    ```
 
-4. Scroll down, add a commit message (e.g. `Configure Lightspeed LLM backend`), and click **Commit Changes**.
+4. Scroll down, add a commit message (for example `Configure Lightspeed LLM backend`), and click **Commit Changes**.
 
-ArgoCD will detect the commit and apply the updated secret to the cluster within seconds. Confirm it has been applied:
+5. If the secret does not already exist in the cluster, apply it manually:
+
+```bash
+oc apply -f k8s/base/aap-platform/ansible-lightspeed-secret.yaml -n aap
+```
+
+Confirm it has been applied:
 
 ```bash
 oc get secret lightspeed-secret -n aap -o jsonpath='{.data.chatbot_url}' | base64 -d && echo
@@ -135,6 +142,31 @@ oc get secret <lightspeed-custom-resource-name>-admin-password -n aap \
 
 3. Copy and securely store the token value before saving.
 
+### 4.6 — Store the Token in the Secret Expected by the Remediation Job
+
+The remediation bootstrap Job `aap-controller-lightspeed-template-config` reads the token from the secret `aap-lightspeed-chatbot-api-key` in the `aap` namespace.
+
+Create or update that secret with the token you just copied:
+
+```bash
+oc create secret generic aap-lightspeed-chatbot-api-key -n aap \
+  --from-literal=api_key='<copied_token>' \
+  --dry-run=client -o yaml | oc apply -f -
+```
+
+Verify it exists:
+
+```bash
+oc get secret aap-lightspeed-chatbot-api-key -n aap
+```
+
+If `ani-remediation` or `aap-controller-lightspeed-template-config` was already stuck before the secret existed, force one new reconcile:
+
+```bash
+oc delete pod -n aap -l job-name=aap-controller-lightspeed-template-config --ignore-not-found
+oc annotate application.argoproj.io/ani-remediation -n openshift-gitops argocd.argoproj.io/refresh=hard --overwrite
+```
+
 ---
 
 ## Verification
@@ -142,11 +174,17 @@ oc get secret <lightspeed-custom-resource-name>-admin-password -n aap \
 To confirm the end-to-end remediation flow is active, check that the EDA Kafka activation is running:
 
 ```bash
+# Confirm the token-backed template config job is no longer blocked
+oc get job aap-controller-lightspeed-template-config -n aap
+
 # Verify EDA Kafka bootstrap job completed successfully
 oc get job eda-kafka-bootstrap -n aap
 
 # Check the ANI Remediation activation is enabled in EDA
 oc get pods -n aap | grep eda
+
+# Confirm the ArgoCD remediation slice is no longer degraded
+oc get application.argoproj.io ani-remediation -n openshift-gitops
 ```
 
 The EDA activation **ANI Remediation** should be listening on the `aiops-ansible-playbook-generate-instruction` Kafka topic. When an anomaly event is detected, it will automatically trigger the **ANI Remediation - Lightspeed Playbook Generator** job template in AAP Controller and generate playbook.

@@ -206,3 +206,5 @@ Expected result after the AAP license is imported:
 - all EDA activations show `status=running`
 
 The AAP Rule Audit view can keep older failed rows from activations that were created before the license was imported. Treat the newest rows that reference the live activation names, not `DELETED`, as the current health signal.
+
+The Ansible Lightspeed API key remains a manual step on the current branch. Until the secret `aap-lightspeed-chatbot-api-key` exists in the `aap` namespace, the remediation Job `aap-controller-lightspeed-template-config` can stay stuck in `CreateContainerConfigError` and `ani-remediation` can remain degraded. Use [Installation 05: Remediation Using Ansible Lightspeed](./05-remediation-using-ansible-lightspeed.md) to create that secret and rerun the remediation sync.
