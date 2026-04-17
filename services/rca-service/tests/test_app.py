@@ -171,5 +171,103 @@ class RCASelectionTests(unittest.TestCase):
         )
 
 
+class GuardrailsFallbackTests(unittest.TestCase):
+    def _documents(self) -> list[dict[str, object]]:
+        return [
+            {
+                "title": "Registration storm RCA",
+                "reference": "knowledge/signaling/registration-storm.json",
+                "content": json.dumps(
+                    {
+                        "summary": "Retry amplification is saturating the ingress tier.",
+                        "anomaly_types": ["registration_storm"],
+                        "recommended_rca": {
+                            "root_cause": "P-CSCF registration saturation is driving retransmission pressure.",
+                            "explanation": "Retry amplification is clustered on the ingress tier and historical matches align to a registration storm.",
+                        },
+                    }
+                ),
+                "doc_type": "knowledge_article",
+                "collection": rca_service_app.RUNBOOK_COLLECTION,
+                "category": "signaling",
+                "score": 0.95,
+            },
+            {
+                "title": "Historical evidence",
+                "reference": "incident/registration-storm-1.json",
+                "content": json.dumps({"summary": "4xx ratios and retries rose together."}),
+                "doc_type": "incident_evidence",
+                "collection": "incident_evidence",
+                "category": "historical_rca",
+                "score": 0.8,
+            },
+        ]
+
+    def test_rca_uses_guardrails_blocked_response_instead_of_local_fallback(self) -> None:
+        request = rca_service_app.RCARequest(
+            incident_id="INC-100",
+            context={"anomaly_type": "registration_storm"},
+        )
+        llm_trace = {
+            "parsed": None,
+            "raw_content": "Warning: Unsuitable input detected. Input Detections: prompt injection",
+            "response_payload": {"raw_text": "Warning: Unsuitable input detected. Input Detections: prompt injection"},
+            "trace_packets": [],
+        }
+
+        with (
+            mock.patch.dict(
+                rca_service_app.os.environ,
+                {
+                    "LLM_ENDPOINT": "http://guardrails-gateway.ani-datascience.svc.cluster.local/rca",
+                    "LLM_MODEL": "llama-32-3b-instruct",
+                },
+                clear=False,
+            ),
+            mock.patch.object(rca_service_app, "_retrieve_rca_documents", return_value=self._documents()),
+            mock.patch.object(rca_service_app, "generate_with_llm_trace", return_value=llm_trace),
+            mock.patch.object(rca_service_app, "attach_rca"),
+            mock.patch.object(rca_service_app, "record_rca"),
+        ):
+            response = rca_service_app.rca(request)
+
+        self.assertEqual(response["generation_mode"], "guardrails-blocked")
+        self.assertEqual(response["guardrails"]["status"], "block")
+        self.assertEqual(response["guardrails"]["reason"], "input_blocked")
+        self.assertIn("Guardrails blocked", response["root_cause"])
+
+    def test_rca_surfaces_guardrails_errors_without_bypassing_validation(self) -> None:
+        request = rca_service_app.RCARequest(
+            incident_id="INC-101",
+            context={"anomaly_type": "registration_storm"},
+        )
+        llm_trace = {
+            "parsed": None,
+            "raw_content": "",
+            "response_payload": {"error": "connection timed out"},
+            "trace_packets": [],
+        }
+
+        with (
+            mock.patch.dict(
+                rca_service_app.os.environ,
+                {
+                    "LLM_ENDPOINT": "http://guardrails-gateway.ani-datascience.svc.cluster.local/rca",
+                    "LLM_MODEL": "llama-32-3b-instruct",
+                },
+                clear=False,
+            ),
+            mock.patch.object(rca_service_app, "_retrieve_rca_documents", return_value=self._documents()),
+            mock.patch.object(rca_service_app, "generate_with_llm_trace", return_value=llm_trace),
+            mock.patch.object(rca_service_app, "attach_rca"),
+            mock.patch.object(rca_service_app, "record_rca"),
+        ):
+            response = rca_service_app.rca(request)
+
+        self.assertEqual(response["generation_mode"], "guardrails-error")
+        self.assertEqual(response["guardrails"]["status"], "error")
+        self.assertIn("Guardrails could not validate", response["root_cause"])
+
+
 if __name__ == "__main__":
     unittest.main()

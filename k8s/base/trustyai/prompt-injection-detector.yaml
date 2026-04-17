@@ -1,0 +1,28 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: prompt-injection-detector
+  annotations:
+    argocd.argoproj.io/sync-wave: "62"
+    openshift.io/display-name: prompt-injection-detector
+    security.opendatahub.io/enable-auth: "false"
+    serving.kserve.io/deploymentMode: RawDeployment
+  labels:
+    opendatahub.io/dashboard: "true"
+    ani.redhat.com/trustyai-detector: "true"
+spec:
+  predictor:
+    minReplicas: 1
+    maxReplicas: 1
+    model:
+      runtime: guardrails-detector-runtime-prompt-injection
+      modelFormat:
+        name: guardrails-detector-hf-runtime
+      storageUri: oci://quay.io/trustyai_testing/detectors/deberta-v3-base-prompt-injection-v2@sha256:8737d6c7c09edf4c16dc87426624fd8ed7d118a12527a36b670be60f089da215
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: "1"
+          memory: 2Gi

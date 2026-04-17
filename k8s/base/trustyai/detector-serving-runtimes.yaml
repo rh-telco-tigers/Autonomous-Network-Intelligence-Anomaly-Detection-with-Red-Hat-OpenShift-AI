@@ -1,0 +1,77 @@
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: guardrails-detector-runtime-prompt-injection
+  annotations:
+    argocd.argoproj.io/sync-wave: "61"
+    openshift.io/display-name: guardrails-detector-runtime-prompt-injection
+    opendatahub.io/template-name: guardrails-detector-huggingface-runtime
+  labels:
+    opendatahub.io/dashboard: "true"
+    ani.redhat.com/trustyai-detector: "true"
+spec:
+  annotations:
+    prometheus.io/port: "8080"
+    prometheus.io/path: /metrics
+  multiModel: false
+  supportedModelFormats:
+    - autoSelect: true
+      name: guardrails-detector-hf-runtime
+  containers:
+    - name: kserve-container
+      image: quay.io/trustyai/guardrails-detector-huggingface-runtime:v0.2.0
+      command:
+        - uvicorn
+        - app:app
+      args:
+        - --workers=1
+        - --host=0.0.0.0
+        - --port=8000
+        - --log-config=/common/log_conf.yaml
+      env:
+        - name: MODEL_DIR
+          value: /mnt/models
+        - name: HF_HOME
+          value: /tmp/hf_home
+      ports:
+        - containerPort: 8000
+          protocol: TCP
+---
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: guardrails-detector-runtime-hap
+  annotations:
+    argocd.argoproj.io/sync-wave: "61"
+    openshift.io/display-name: guardrails-detector-runtime-hap
+    opendatahub.io/template-name: guardrails-detector-huggingface-runtime
+  labels:
+    opendatahub.io/dashboard: "true"
+    ani.redhat.com/trustyai-detector: "true"
+spec:
+  annotations:
+    prometheus.io/port: "8080"
+    prometheus.io/path: /metrics
+  multiModel: false
+  supportedModelFormats:
+    - autoSelect: true
+      name: guardrails-detector-hf-runtime
+  containers:
+    - name: kserve-container
+      image: quay.io/trustyai/guardrails-detector-huggingface-runtime:v0.2.0
+      command:
+        - uvicorn
+        - app:app
+      args:
+        - --workers=1
+        - --host=0.0.0.0
+        - --port=8000
+        - --log-config=/common/log_conf.yaml
+      env:
+        - name: MODEL_DIR
+          value: /mnt/models
+        - name: HF_HOME
+          value: /tmp/hf_home
+      ports:
+        - containerPort: 8000
+          protocol: TCP

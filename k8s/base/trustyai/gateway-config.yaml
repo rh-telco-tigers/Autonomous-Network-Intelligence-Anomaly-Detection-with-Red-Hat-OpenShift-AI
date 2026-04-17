@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ani-guardrails-gateway-config
+  annotations:
+    argocd.argoproj.io/sync-wave: "70"
+data:
+  config.yaml: |
+    orchestrator:
+      host: localhost
+      port: 8032
+    detectors:
+      - name: prompt-injection-input
+        server: prompt_injection
+        input: true
+        output: false
+        detector_params: {}
+      - name: pii-output
+        server: pii_regex
+        input: false
+        output: true
+        detector_params:
+          regex:
+            - email
+            - us-social-security-number
+            - credit-card
+            - ipv4
+            - ipv6
+            - us-phone-number
+      - name: hap-output
+        server: hap
+        input: false
+        output: true
+        detector_params: {}
+    routes:
+      - name: rca
+        detectors:
+          - prompt-injection-input
+          - pii-output
+          - hap-output
+      - name: passthrough
+        detectors: []

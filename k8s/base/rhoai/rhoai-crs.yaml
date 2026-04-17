@@ -40,7 +40,7 @@ spec:
         lmeval:
           permitCodeExecution: deny
           permitOnline: deny
-      managementState: Removed
+      managementState: Managed
     aipipelines:
       argoWorkflowsControllers:
         managementState: Managed

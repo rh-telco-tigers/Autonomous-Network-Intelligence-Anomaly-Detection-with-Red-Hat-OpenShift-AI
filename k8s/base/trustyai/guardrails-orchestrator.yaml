@@ -1,0 +1,14 @@
+apiVersion: trustyai.opendatahub.io/v1alpha1
+kind: GuardrailsOrchestrator
+metadata:
+  name: guardrails-orchestrator
+  annotations:
+    argocd.argoproj.io/sync-wave: "75"
+    security.opendatahub.io/enable-auth: "false"
+spec:
+  orchestratorConfig: ani-guardrails-orchestrator-config
+  guardrailsGatewayConfig: ani-guardrails-gateway-config
+  enableBuiltInDetectors: true
+  enableGuardrailsGateway: true
+  logLevel: INFO
+  replicas: 1

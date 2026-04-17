@@ -389,6 +389,8 @@ def _llm_runtime_name() -> str | None:
         return None
     if "openai.com" in endpoint:
         return "OpenAI"
+    if "guardrails" in endpoint or endpoint.endswith("/rca"):
+        return "TrustyAI Guardrails Gateway"
     if "ani-generative-proxy" in endpoint or ".svc.cluster.local" in endpoint or "predictor" in endpoint:
         return "vLLM"
     return "OpenAI-compatible"
@@ -397,15 +399,104 @@ def _llm_runtime_name() -> str | None:
 def _generation_metadata(mode: str) -> Dict[str, object]:
     endpoint = os.getenv("LLM_ENDPOINT", "").strip()
     llm_configured = bool(endpoint)
-    llm_used = mode == "llm-rag"
+    llm_used = mode in {"llm-rag", "guardrails-blocked", "guardrails-error"}
     model_name = os.getenv("LLM_MODEL", "").strip() if llm_configured else ""
+    source_labels = {
+        "llm-rag": "LLM + RAG",
+        "local-rag": "Local RAG fallback",
+        "guardrails-blocked": "Guardrails blocked the RCA response",
+        "guardrails-error": "Guardrails validation path unavailable",
+    }
     return {
         "generation_mode": mode,
-        "generation_source_label": "LLM + RAG" if llm_used else "Local RAG fallback",
+        "generation_source_label": source_labels.get(mode, "Local RAG fallback"),
         "llm_used": llm_used,
         "llm_configured": llm_configured,
         "llm_model": model_name or None,
         "llm_runtime": _llm_runtime_name(),
+    }
+
+
+def _uses_guardrails_gateway() -> bool:
+    endpoint = os.getenv("LLM_ENDPOINT", "").strip().lower()
+    if not endpoint:
+        return False
+    return "guardrails" in endpoint or endpoint.endswith("/rca")
+
+
+def _guardrails_message(llm_trace: Dict[str, object] | None) -> str:
+    if not isinstance(llm_trace, dict):
+        return ""
+    raw_content = str(llm_trace.get("raw_content") or "").strip()
+    if raw_content:
+        return raw_content
+    response_payload = llm_trace.get("response_payload")
+    if isinstance(response_payload, dict):
+        for key in ("raw_text", "message", "error"):
+            value = str(response_payload.get(key) or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def _guardrails_block_reason(message: str) -> str | None:
+    normalized = " ".join(str(message or "").lower().split())
+    if not normalized:
+        return None
+    if "unsuitable input" in normalized or "input detections" in normalized:
+        return "input_blocked"
+    if "unsuitable output" in normalized or "output detections" in normalized:
+        return "output_blocked"
+    if "prompt injection" in normalized or "flagged the following text" in normalized or "detected entities" in normalized:
+        return "policy_blocked"
+    return None
+
+
+def _guardrails_response(
+    llm_trace: Dict[str, object] | None,
+    documents: List[Dict[str, object]],
+    anomaly_type: str,
+) -> Dict[str, object] | None:
+    if not _uses_guardrails_gateway():
+        return None
+
+    message = _guardrails_message(llm_trace)
+    block_reason = _guardrails_block_reason(message)
+    evidence = build_evidence(anomaly_type, documents)
+
+    if block_reason:
+        return {
+            "root_cause": "TrustyAI Guardrails blocked the RCA request before a model-authored diagnosis could be accepted.",
+            "explanation": (
+                "The guarded LLM endpoint flagged the RCA request or response and did not return a valid JSON RCA payload. "
+                "Keep the incident open for review, but do not unlock remediation until the flagged content is reviewed."
+            ),
+            "confidence": 0.0,
+            "evidence": evidence,
+            "recommendation": "Review the evidence set and guardrail findings, then retry RCA generation only after the prompt path is safe.",
+            "guardrails": {
+                "status": "block",
+                "reason": block_reason,
+                "message": message or "Guardrails blocked the RCA request.",
+            },
+            "generation_mode": "guardrails-blocked",
+        }
+
+    return {
+        "root_cause": "TrustyAI Guardrails could not validate RCA output because the guarded generation path was unavailable.",
+        "explanation": (
+            "The RCA request reached the guarded LLM path, but Guardrails did not return a usable response. "
+            "Treat this as a platform availability issue rather than a trusted RCA result."
+        ),
+        "confidence": 0.0,
+        "evidence": evidence,
+        "recommendation": "Investigate the Guardrails gateway and detector health, then retry RCA generation before enabling remediation.",
+        "guardrails": {
+            "status": "error",
+            "reason": "guardrails_unavailable",
+            "message": message or "Guardrails did not return a usable response.",
+        },
+        "generation_mode": "guardrails-error",
     }
 
 
@@ -463,9 +554,27 @@ def rca(request: RCARequest):
     generated = llm_trace.get("parsed") if isinstance(llm_trace, dict) else None
     if isinstance(llm_trace, dict):
         trace_packets.extend(llm_trace.get("trace_packets") or [])
+    guarded_response = _guardrails_response(llm_trace, documents, anomaly_type) if not generated else None
     if generated:
         response = normalize_response(generated, documents, anomaly_type, request.incident_id)
         response.update(_generation_metadata("llm-rag"))
+    elif guarded_response:
+        trace_packets.append(
+            make_trace_packet(
+                "guardrails",
+                "event",
+                title="Guardrails blocked or degraded the RCA response",
+                service="rca-service",
+                timestamp=trace_now(),
+                payload={
+                    "status": str((guarded_response.get("guardrails") or {}).get("status") or ""),
+                    "reason": str((guarded_response.get("guardrails") or {}).get("reason") or ""),
+                    "message": str((guarded_response.get("guardrails") or {}).get("message") or ""),
+                },
+            )
+        )
+        response = normalize_response(guarded_response, documents, anomaly_type, request.incident_id)
+        response.update(_generation_metadata(str(guarded_response.get("generation_mode") or "guardrails-error")))
     else:
         response = normalize_response(response, documents, anomaly_type, request.incident_id)
         response.update(_generation_metadata("local-rag"))
@@ -492,6 +601,7 @@ def rca(request: RCARequest):
             "llm_configured": response.get("llm_configured"),
             "llm_model": response.get("llm_model"),
             "llm_runtime": response.get("llm_runtime"),
+            "guardrails": response.get("guardrails"),
             "retrieved_documents": response.get("retrieved_documents", []),
             "debug_trace": trace_packets,
         },

@@ -1,0 +1,28 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: hap-detector
+  annotations:
+    argocd.argoproj.io/sync-wave: "62"
+    openshift.io/display-name: hap-detector
+    security.opendatahub.io/enable-auth: "false"
+    serving.kserve.io/deploymentMode: RawDeployment
+  labels:
+    opendatahub.io/dashboard: "true"
+    ani.redhat.com/trustyai-detector: "true"
+spec:
+  predictor:
+    minReplicas: 1
+    maxReplicas: 1
+    model:
+      runtime: guardrails-detector-runtime-hap
+      modelFormat:
+        name: guardrails-detector-hf-runtime
+      storageUri: oci://quay.io/trustyai_testing/detectors/granite-guardian-hap-38m@sha256:9dd129668cce86dac82bca9ed1cd5fd5dbad81cdd6db1b65be7e88bfca30f0a4
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: "1"
+          memory: 2Gi
