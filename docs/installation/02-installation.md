@@ -161,7 +161,7 @@ oc extract -n aap secret/aap-eda-admin-password --to=- --keys=password
 
 2. Import the AAP license in the AAP UI and complete any first-login prompts.
 
-3. Wait for the control-plane bootstrap worker to finish creating the controller-side inventory, project, Kubernetes credential, job templates, callback templates, EDA project, decision environment, and activations. The GitOps runtime config enables AAP and EDA by default, there is no separate `ani-remediation` bootstrap application anymore, and the control-plane retries bootstrap automatically until the AAP APIs accept writes.
+3. Wait for the control-plane bootstrap worker to finish creating the controller-side inventory, project, Kubernetes credential, job templates, callback templates, EDA project, decision environment, and activations. The GitOps runtime config now enables AAP and EDA by default and the control-plane retries bootstrap automatically until the AAP APIs accept writes.
 
 4. If AAP was already running without a license and you only imported the license later, force an immediate retry instead of waiting for the next background attempt:
 

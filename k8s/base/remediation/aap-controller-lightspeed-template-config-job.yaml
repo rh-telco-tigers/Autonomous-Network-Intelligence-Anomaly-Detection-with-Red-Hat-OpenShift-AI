@@ -1,0 +1,139 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: aap-controller-lightspeed-template-config
+  namespace: aap
+  annotations:
+    argocd.argoproj.io/sync-wave: "87"
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: ani-remediation-bootstrap
+      containers:
+        - name: patch-controller-template
+          image: registry.access.redhat.com/ubi9/python-311:latest
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              python3 - <<'PYEOF'
+              import base64
+              import json
+              import os
+              import urllib.error
+              import urllib.parse
+              import urllib.request
+
+              host = os.environ["AAP_CONTROLLER_HOST"].strip().rstrip("/")
+              password = os.environ["AAP_CONTROLLER_PASSWORD"].strip()
+              username = os.getenv("AAP_CONTROLLER_USERNAME", "admin").strip() or "admin"
+              template_name = (
+                  os.getenv("AAP_JOB_TEMPLATE_NAME", "IMS Remediation - Lightspeed Playbook Generator").strip()
+                  or "IMS Remediation - Lightspeed Playbook Generator"
+              )
+              lightspeed_url = (
+                  os.getenv(
+                      "AAP_LIGHTSPEED_URL",
+                      "https://aap-lightspeed-chatbot-api.aap.svc.cluster.local:8443/v1/query",
+                  ).strip()
+                  or "https://aap-lightspeed-chatbot-api.aap.svc.cluster.local:8443/v1/query"
+              )
+              lightspeed_token = os.environ["AAP_LIGHTSPEED_TOKEN"].strip()
+              lightspeed_model = os.getenv("AAP_LIGHTSPEED_MODEL", "").strip()
+              lightspeed_provider = os.getenv("AAP_LIGHTSPEED_PROVIDER", "").strip()
+              validate_certs = os.getenv("AAP_LIGHTSPEED_VALIDATE_CERTS", "false").strip().lower() not in {
+                  "false",
+                  "0",
+                  "no",
+              }
+
+              basic_auth = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+
+              def request_json(method: str, path: str, payload: dict | None = None) -> dict:
+                  url = f"{host}{path}"
+                  body = json.dumps(payload).encode("utf-8") if payload is not None else None
+                  request = urllib.request.Request(
+                      url,
+                      data=body,
+                      method=method,
+                      headers={
+                          "Authorization": f"Basic {basic_auth}",
+                          "Accept": "application/json",
+                          "Content-Type": "application/json",
+                      },
+                  )
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.loads(response.read().decode("utf-8") or "{}")
+
+              query_path = "/api/v2/job_templates/?page_size=200&name=" + urllib.parse.quote(template_name)
+              payload = request_json("GET", query_path)
+              results = payload.get("results", [])
+              template = next(
+                  (item for item in results if isinstance(item, dict) and str(item.get("name") or "") == template_name),
+                  None,
+              )
+              if template is None:
+                  raise SystemExit(f"Controller job template '{template_name}' was not found.")
+
+              extra_vars = {
+                  "input_lightspeed_url": lightspeed_url,
+                  "lightspeed_model": lightspeed_model,
+                  "lightspeed_provider": lightspeed_provider,
+                  "lightspeed_token": lightspeed_token,
+                  "lightspeed_prompt": "",
+                  "lightspeed_validate_certs": validate_certs,
+              }
+              request_json("PATCH", f"/api/v2/job_templates/{int(template['id'])}/", {"extra_vars": json.dumps(extra_vars)})
+              print(
+                  json.dumps(
+                      {
+                          "template_id": int(template["id"]),
+                          "template_name": template_name,
+                          "input_lightspeed_url": lightspeed_url,
+                          "lightspeed_model": lightspeed_model,
+                          "lightspeed_provider": lightspeed_provider,
+                          "lightspeed_validate_certs": validate_certs,
+                          "lightspeed_token_length": len(lightspeed_token),
+                      }
+                  )
+              )
+              PYEOF
+          env:
+            - name: AAP_CONTROLLER_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: aap-controller-connection
+                  key: host
+            - name: AAP_CONTROLLER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: aap-controller-admin-password
+                  key: password
+            - name: AAP_CONTROLLER_USERNAME
+              value: "admin"
+            - name: AAP_JOB_TEMPLATE_NAME
+              value: "IMS Remediation - Lightspeed Playbook Generator"
+            - name: AAP_LIGHTSPEED_URL
+              value: "https://aap-lightspeed-chatbot-api.aap.svc.cluster.local:8443/v1/query"
+            - name: AAP_LIGHTSPEED_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: aap-lightspeed-chatbot-api-key
+                  key: api_key
+            - name: AAP_LIGHTSPEED_MODEL
+              value: ""
+            - name: AAP_LIGHTSPEED_PROVIDER
+              value: ""
+            - name: AAP_LIGHTSPEED_VALIDATE_CERTS
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
