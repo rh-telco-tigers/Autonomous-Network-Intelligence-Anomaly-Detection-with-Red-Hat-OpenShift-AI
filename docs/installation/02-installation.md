@@ -51,9 +51,6 @@ GIT_SSL_NO_VERIFY=true git push "https://gitadmin:GiteaAdmin123%21@${GITEA_HOST}
 ## 3. Bootstrap Argo CD
 
 ```sh
-if oc get namespace openshift-gitops >/dev/null 2>&1; then
-  oc delete job -n openshift-gitops argocd-bootstrap-application-v3 --ignore-not-found
-fi
 oc apply -k deploy/argocd
 ```
 
@@ -63,8 +60,6 @@ Follow the bootstrap Job while it creates the root Argo CD applications. On the 
 oc get job,pod -n openshift-gitops | rg 'argocd-bootstrap'
 oc logs -n openshift-gitops job/argocd-bootstrap-application-v3 -f
 ```
-
-If you see `The Job "argocd-bootstrap-application-v3" is invalid ... field is immutable`, the cluster is still holding the previous Job object. Delete it and rerun the bootstrap command block above.
 
 ## 4. Confirm Argo CD Is Tracking The Expected Branch
 
