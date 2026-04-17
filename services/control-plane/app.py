@@ -576,6 +576,10 @@ PREDICTIVE_BACKFILL_SERVICE_URL = (
     os.getenv("PREDICTIVE_BACKFILL_SERVICE_URL", "").strip()
     or os.getenv("PREDICTIVE_ENDPOINT_BACKFILL", "").strip()
 ).rstrip("/")
+PREDICTIVE_MODELCAR_SERVICE_URL = (
+    os.getenv("PREDICTIVE_MODELCAR_SERVICE_URL", "").strip()
+    or os.getenv("PREDICTIVE_ENDPOINT_MODELCAR", "").strip()
+).rstrip("/")
 CLASSIFIER_PROFILE_SETTING_KEY = "active_classifier_profile"
 _SERVICE_SNAPSHOT_CACHE_LOCK = threading.Lock()
 _SERVICE_SNAPSHOT_CACHE: List[Dict[str, object]] | None = None
@@ -3013,6 +3017,24 @@ def _clear_service_snapshot_cache() -> None:
         _SERVICE_SNAPSHOT_CACHE_EXPIRES_AT = 0.0
 
 
+def _append_unique_service_probe(
+    services: List[Dict[str, object]],
+    seen_endpoints: set[str],
+    name: str,
+    endpoint: str,
+    *,
+    path: str = "/healthz",
+) -> None:
+    normalized_endpoint = endpoint.rstrip("/")
+    if not normalized_endpoint:
+        return
+    endpoint_key = normalized_endpoint.lower()
+    if endpoint_key in seen_endpoints:
+        return
+    seen_endpoints.add(endpoint_key)
+    services.append(_probe_service(name, normalized_endpoint, path=path))
+
+
 def _service_snapshot() -> List[Dict[str, object]]:
     global _SERVICE_SNAPSHOT_CACHE, _SERVICE_SNAPSHOT_CACHE_EXPIRES_AT
     now = time.time()
@@ -3033,10 +3055,28 @@ def _service_snapshot() -> List[Dict[str, object]]:
         _probe_service("Anomaly Service", ANOMALY_SERVICE_URL),
         _probe_service("RCA Service", RCA_SERVICE_URL),
     ]
-    if PREDICTIVE_SERVICE_URL:
-        services.append(_probe_service("Predictive Service", PREDICTIVE_SERVICE_URL, path="/v2/health/ready"))
-    if PREDICTIVE_BACKFILL_SERVICE_URL:
-        services.append(_probe_service("Backfill Predictive Service", PREDICTIVE_BACKFILL_SERVICE_URL, path="/v2/health/ready"))
+    seen_predictive_endpoints: set[str] = set()
+    _append_unique_service_probe(
+        services,
+        seen_predictive_endpoints,
+        "Predictive Service",
+        PREDICTIVE_SERVICE_URL,
+        path="/v2/health/ready",
+    )
+    _append_unique_service_probe(
+        services,
+        seen_predictive_endpoints,
+        "Backfill Predictive Service",
+        PREDICTIVE_BACKFILL_SERVICE_URL,
+        path="/v2/health/ready",
+    )
+    _append_unique_service_probe(
+        services,
+        seen_predictive_endpoints,
+        "Modelcar Predictive Service",
+        PREDICTIVE_MODELCAR_SERVICE_URL,
+        path="/v2/health/ready",
+    )
     if SERVICE_SNAPSHOT_CACHE_SECONDS > 0:
         with _SERVICE_SNAPSHOT_CACHE_LOCK:
             _SERVICE_SNAPSHOT_CACHE = services

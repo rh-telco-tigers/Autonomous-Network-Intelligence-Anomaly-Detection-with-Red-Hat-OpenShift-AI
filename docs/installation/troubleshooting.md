@@ -53,14 +53,15 @@ oc apply -k deploy/argocd
 
 ## Pods Are In `ImagePullBackOff`
 
-First rerun the Tekton build:
+The default GitOps path on the current branch uses the published Quay images. Do **not** start with `make trigger-build-pipeline` on a fresh cluster unless you are explicitly validating the older internal-image bootstrap flow.
 
 ```sh
-make trigger-build-pipeline
-oc get pipelinerun -n ani-tekton
+oc get pods -A | rg 'ImagePullBackOff|ErrImagePull'
 ```
 
-If `ani-sipp` is still missing `openimss-open5gs:latest` or `openimss-opensips:latest`, check the OpenShift builds:
+If the failing image is one of the KFP trainer or release images and it still resolves to `image-registry.openshift-image-registry.svc:5000/.../ani-ai-*`, the cluster is still using stale pipeline assets or stale fixed-name KFP runs from an older revision. Sync the latest branch state, then recreate the KFP auto-run Jobs from the `CronJob`s in `ani-datascience`.
+
+If `ani-sipp` is still missing `openimss-open5gs:latest` or `openimss-opensips:latest`, check the OpenShift builds for that namespace:
 
 ```sh
 oc get builds -n ani-sipp
@@ -185,6 +186,8 @@ oc get inferenceservice -n ani-datascience
 ```
 
 The predictive services should recover automatically once the model artifacts exist.
+
+If the KFP API still shows a fixed-name run such as `ani-feature-bundle-demo`, `ani-featurestore-demo`, or `ani-incident-release-demo` as `RUNNING` even though there is no matching workflow or pod anymore, that run is stale. On the current branch, the submitters automatically create a `-retry-<timestamp>` run after the active run ages past `PIPELINE_STALE_RUN_SECONDS` (30 minutes by default). After syncing the latest branch state, creating a fresh Job from the corresponding `CronJob` is enough to use the updated retry logic.
 
 ## `llama-32-3b-instruct` Stays `Pending` With `Insufficient nvidia.com/gpu`
 

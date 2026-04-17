@@ -8,4 +8,3 @@ resources:
   - tekton-triggering.yaml
   - tekton-pipeline.yaml
   - backfill-modelcar-pipeline.yaml
-  - bootstrap-build-job.yaml

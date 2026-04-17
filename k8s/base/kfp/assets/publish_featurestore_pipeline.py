@@ -5,6 +5,7 @@ import json
 import os
 import ssl
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -25,6 +26,7 @@ DEFAULT_MODEL_REGISTRY_NAMESPACE = "rhoai-model-registries"
 DEFAULT_MODEL_REGISTRY_SERVICE = "default-modelregistry"
 DEFAULT_MODEL_REGISTRY_ROUTE_NAME = ""
 DEFAULT_KUBERNETES_CA_CERT = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+DEFAULT_STALE_RUN_SECONDS = 1800
 DEFAULT_PIPELINE_PARAMETERS = {
     "bundle_version": "ani-feature-bundle-v1",
     "feature_service_name": "ani_anomaly_scoring_v1",
@@ -125,10 +127,13 @@ def _env_flag(name: str, default: bool = False) -> bool:
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _run_name() -> str:
-    explicit = os.getenv("RUN_NAME", "").strip()
-    if explicit:
-        return explicit
+def _explicit_run_name() -> str:
+    return os.getenv("RUN_NAME", "").strip()
+
+
+def _run_name(explicit_run_name: str = "") -> str:
+    if explicit_run_name:
+        return explicit_run_name
     return f"{DEFAULT_RUN_NAME_PREFIX}-{time.strftime('%Y%m%d-%H%M%S')}"
 
 
@@ -157,6 +162,101 @@ def _pipeline_version_name(package_path: str, pipeline_name: str, *, use_existin
     if use_existing_version:
         return pipeline_name
     return f"{pipeline_name}-{_package_digest(package_path)}"
+
+
+def _stale_run_seconds() -> int:
+    raw_value = os.getenv("PIPELINE_STALE_RUN_SECONDS", str(DEFAULT_STALE_RUN_SECONDS)).strip()
+    if not raw_value:
+        return DEFAULT_STALE_RUN_SECONDS
+    try:
+        return max(int(raw_value), 0)
+    except ValueError:
+        return DEFAULT_STALE_RUN_SECONDS
+
+
+def _timestamp_value(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc).timestamp()
+        return value.timestamp()
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        return datetime.fromisoformat(text).timestamp()
+    except ValueError:
+        return None
+
+
+def _run_timestamp(run: Any) -> float | None:
+    for attr in ("created_at", "scheduled_at", "finished_at"):
+        timestamp = _timestamp_value(getattr(run, attr, None))
+        if timestamp is not None:
+            return timestamp
+    return None
+
+
+def _run_state(run: Any) -> str:
+    return str(getattr(run, "state", "") or "").strip().upper()
+
+
+def _run_display_name(run: Any) -> str:
+    return str(getattr(run, "display_name", "") or "").strip()
+
+
+def _related_runs(runs: list[Any] | None, base_name: str) -> list[Any]:
+    related = []
+    retry_prefix = f"{base_name}-retry-"
+    for run in runs or []:
+        display_name = _run_display_name(run)
+        if display_name == base_name or display_name.startswith(retry_prefix):
+            related.append(run)
+    return sorted(related, key=lambda run: _run_timestamp(run) or 0.0, reverse=True)
+
+
+def _is_active_run(run: Any) -> bool:
+    return _run_state(run) in {"PENDING", "RUNNING"}
+
+
+def _is_stale_run(run: Any, stale_run_seconds: int) -> bool:
+    if not _is_active_run(run):
+        return False
+    if stale_run_seconds <= 0:
+        return False
+    started_at = _run_timestamp(run)
+    if started_at is None:
+        return False
+    return (time.time() - started_at) >= stale_run_seconds
+
+
+def resolve_run_submission_name(
+    runs: list[Any] | None,
+    requested_run_name: str,
+    explicit_run_name: str,
+) -> tuple[str | None, str]:
+    if not explicit_run_name:
+        existing = _find_by_display_name(runs, requested_run_name)
+        if existing is not None and _run_state(existing) in {"RUNNING", "SUCCEEDED"}:
+            return None, "existing_active_or_succeeded"
+        return requested_run_name, "requested"
+
+    related_runs = _related_runs(runs, explicit_run_name)
+    if any(_run_state(run) == "SUCCEEDED" for run in related_runs):
+        return None, "already_succeeded"
+
+    active_runs = [run for run in related_runs if _is_active_run(run)]
+    if any(not _is_stale_run(run, _stale_run_seconds()) for run in active_runs):
+        return None, "active"
+
+    if related_runs:
+        return f"{explicit_run_name}-retry-{time.strftime('%Y%m%d-%H%M%S')}", "retry"
+    return requested_run_name, "requested"
 
 
 def wait_for_client(host: str, namespace: str, timeout_seconds: int = 600) -> Client:
@@ -253,18 +353,19 @@ def ensure_demo_run(
     experiment: Any,
     experiment_name: str,
     namespace: str,
-    run_name: str,
+    requested_run_name: str,
+    explicit_run_name: str,
     parameters: dict[str, Any],
     service_account: str | None,
-) -> None:
+) -> dict[str, str]:
     runs = getattr(
         client.list_runs(page_size=100, experiment_id=experiment.experiment_id, namespace=namespace),
         "runs",
         None,
     )
-    existing = _find_by_display_name(runs, run_name)
-    if existing is not None and getattr(existing, "state", "") in {"RUNNING", "SUCCEEDED"}:
-        return
+    submission_run_name, run_action = resolve_run_submission_name(runs, requested_run_name, explicit_run_name)
+    if not submission_run_name:
+        return {"action": f"skipped:{run_action}", "run_name": requested_run_name}
 
     if _env_flag("PIPELINE_USE_EXISTING_VERSION", False):
         pipeline_id, version_id = resolve_pipeline_version(
@@ -275,24 +376,25 @@ def ensure_demo_run(
         )
         client.run_pipeline(
             experiment_id=experiment.experiment_id,
-            job_name=run_name,
+            job_name=submission_run_name,
             params=parameters,
             pipeline_id=pipeline_id,
             version_id=version_id,
             enable_caching=False,
             service_account=service_account,
         )
-        return
+        return {"action": run_action, "run_name": submission_run_name}
 
     client.create_run_from_pipeline_package(
         pipeline_file=package_path,
         arguments=parameters,
-        run_name=run_name,
+        run_name=submission_run_name,
         experiment_name=experiment_name,
         namespace=namespace,
         service_account=service_account,
         enable_caching=False,
     )
+    return {"action": run_action, "run_name": submission_run_name}
 
 
 def main() -> None:
@@ -301,7 +403,8 @@ def main() -> None:
     package_path = _env("PIPELINE_PACKAGE_PATH", DEFAULT_PACKAGE_PATH)
     pipeline_name = os.getenv("PIPELINE_NAME", DEFAULT_PIPELINE_NAME)
     experiment_name = os.getenv("EXPERIMENT_NAME", DEFAULT_EXPERIMENT_NAME)
-    run_name = _run_name()
+    explicit_run_name = _explicit_run_name()
+    requested_run_name = _run_name(explicit_run_name)
     service_account = os.getenv("PIPELINE_SERVICE_ACCOUNT", "").strip() or None
     parameters = _load_pipeline_parameters()
     use_existing_version = _env_flag("PIPELINE_USE_EXISTING_VERSION", False)
@@ -311,19 +414,34 @@ def main() -> None:
     if not use_existing_version:
         ensure_pipeline(client, package_path=package_path, pipeline_name=pipeline_name, namespace=namespace)
     experiment = ensure_experiment(client, experiment_name=experiment_name, namespace=namespace)
+
+    run_result = {"action": "skipped:disabled", "run_name": requested_run_name}
     if not _env_flag("PIPELINE_SKIP_DEMO_RUN", False):
-        ensure_demo_run(
+        run_result = ensure_demo_run(
             client,
             package_path=package_path,
             pipeline_name=pipeline_name,
             experiment=experiment,
             experiment_name=experiment_name,
             namespace=namespace,
-            run_name=run_name,
+            requested_run_name=requested_run_name,
+            explicit_run_name=explicit_run_name,
             parameters=parameters,
             service_account=service_account,
         )
-    print(json.dumps({"host": host, "experiment": experiment_name, "run_name": run_name}, indent=2))
+
+    print(
+        json.dumps(
+            {
+                "host": host,
+                "experiment": experiment_name,
+                "requested_run_name": requested_run_name,
+                "submitted_run_name": run_result["run_name"],
+                "run_action": run_result["action"],
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

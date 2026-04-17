@@ -75,17 +75,35 @@ Continue when the child applications exist and the `targetRevision` is the branc
 
 On a fresh cluster this can take several minutes. It is normal for the bootstrap Job to wait on the `rhods-operator` CSV before `ani-platform` appears, and it is normal for `ani-tekton` to retry once while the Tekton CRDs are still being installed.
 
-## 5. Trigger The First Image Build
+## 5. Trigger The First GitOps-Managed Pipeline Jobs
 
-The first Git push seeds GitOps state, but it does not populate all runtime images. Run the build pipeline once so the GitOps-managed KFP pipeline versions and background auto-run CronJobs can use the in-cluster images:
+The default GitOps path on the current branch uses the published Quay images referenced by the manifests. On a fresh cluster you should **not** start with the older bootstrap build or `make trigger-build-pipeline` unless you are intentionally testing the in-cluster image-build flow.
+
+GitOps still only creates the KFP pipeline definitions and their background auto-run `CronJob`s. A fresh cluster does not have the initial dataset, feature-bundle, feature-store, model-registry, or incident-release artifacts until those jobs run. If you want the cluster to converge immediately instead of waiting for the scheduled offsets, create one Job from each `CronJob` in this order and wait for each submitted workflow to finish before starting the next one:
 
 ```sh
-make trigger-build-pipeline
-oc get pipelinerun -n ani-tekton
-oc get is -n ani-runtime
-oc get is -n ani-sipp
-oc get is -n ani-datascience
+oc get cronjob -n ani-datascience | rg 'kfp-auto-run'
+
+ANOMALY_JOB="ani-kfp-auto-run-manual-$(date +%s)"
+oc create job --from=cronjob/ani-kfp-auto-run "${ANOMALY_JOB}" -n ani-datascience
+oc logs -f -n ani-datascience "job/${ANOMALY_JOB}"
+
+FEATURE_BUNDLE_JOB="ani-feature-bundle-kfp-auto-run-manual-$(date +%s)"
+oc create job --from=cronjob/ani-feature-bundle-kfp-auto-run "${FEATURE_BUNDLE_JOB}" -n ani-datascience
+oc logs -f -n ani-datascience "job/${FEATURE_BUNDLE_JOB}"
+
+FEATURESTORE_JOB="ani-featurestore-kfp-auto-run-manual-$(date +%s)"
+oc create job --from=cronjob/ani-featurestore-kfp-auto-run "${FEATURESTORE_JOB}" -n ani-datascience
+oc logs -f -n ani-datascience "job/${FEATURESTORE_JOB}"
+
+INCIDENT_RELEASE_JOB="ani-incident-release-kfp-auto-run-manual-$(date +%s)"
+oc create job --from=cronjob/ani-incident-release-kfp-auto-run "${INCIDENT_RELEASE_JOB}" -n ani-datascience
+oc logs -f -n ani-datascience "job/${INCIDENT_RELEASE_JOB}"
+
+oc get jobs,wf -n ani-datascience
 ```
+
+Those Jobs only submit the KFP runs. The actual pipeline execution happens through the workflow objects in `ani-datascience`, so keep watching `oc get wf -n ani-datascience` until the corresponding workflows reach `Succeeded`.
 
 ## 6. Wait For Core Workloads
 
@@ -94,6 +112,7 @@ oc get deploy -n ani-runtime
 oc get deploy -n ani-sipp
 oc get dsc -n redhat-ods-operator
 oc get dspa,featurestore,servingruntime,inferenceservice -n ani-datascience
+oc get jobs,wf -n ani-datascience
 oc get pipelines.pipelines.kubeflow.org,pipelineversions.pipelines.kubeflow.org -n ani-datascience
 oc get cronjob -n ani-datascience | rg 'kfp-auto-run'
 oc get modelregistries.modelregistry.opendatahub.io -n rhoai-model-registries
@@ -106,15 +125,17 @@ Continue when:
 - `default-dsc` is `Ready=True`
 - `dspa` is `Ready`
 - `ani-featurestore` is `Ready`
+- the initial manual or scheduled KFP Jobs exist in `ani-datascience`
+- the corresponding workflow objects reach `Succeeded`
 - the KFP `Pipeline` and `PipelineVersion` resources exist in `ani-datascience`
 - the KFP auto-run `CronJob` resources exist in `ani-datascience`
 - the serving runtimes exist in `ani-datascience`
 - `default-modelregistry` exists in `rhoai-model-registries`
-- the `InferenceService` objects exist in `ani-datascience`
+- `ani-predictive-fs` and `ani-predictive-backfill-modelcar` report `READY=True`
 
-At this point GitOps has created the OpenShift AI resources, reconciled the KFP pipeline definitions as Kubernetes CRs, and created non-hook auto-run `CronJob`s that submit the first live-path workflows in the background. The predictive `InferenceService` resources can stay `READY=False` until those background runs publish the initial model artifacts.
+At this point GitOps has created the OpenShift AI resources, reconciled the KFP pipeline definitions as Kubernetes CRs, and created non-hook auto-run `CronJob`s that submit the live-path workflows. The model registry resource itself appears before it has any registered models; the first successful feature-store workflow is what creates the initial model versions and the S3 artifacts consumed by `ani-predictive-fs`.
 
-If `ani-predictive` or `ani-predictive-fs` starts as `READY=False`, watch the background workflows in [Installation 04: Data Generation And Model Training](./04-data-generation-and-model-training.md) or use its manual rerun commands if you want to force the live path. KServe retries automatically after the model artifacts appear. If `llama-32-3b-instruct` stays `Pending` with `Insufficient nvidia.com/gpu`, the RCA generation flow will stay degraded until you add a GPU worker. Use [Troubleshooting](./troubleshooting.md).
+If `ani-predictive-fs` starts as `READY=False`, watch the workflows in [Installation 04: Data Generation And Model Training](./04-data-generation-and-model-training.md) or rerun the `CronJob`-backed submitters above. KServe retries automatically after the model artifacts appear. If `llama-32-3b-instruct` stays `Pending` with `Insufficient nvidia.com/gpu`, the RCA generation flow will stay degraded until you add a GPU worker. Use [Troubleshooting](./troubleshooting.md).
 
 ## 7. List The Main Routes
 

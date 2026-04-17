@@ -1341,5 +1341,75 @@ class ClassifierProfileSelectionTests(unittest.TestCase):
         self.assertTrue(next(item for item in status["profiles"] if item["key"] == "modelcar")["active"])
 
 
+class ServiceSnapshotTests(unittest.TestCase):
+    def setUp(self) -> None:
+        control_plane_app._clear_service_snapshot_cache()
+
+    def tearDown(self) -> None:
+        control_plane_app._clear_service_snapshot_cache()
+
+    def test_service_snapshot_uses_modelcar_and_skips_empty_backfill_endpoint(self) -> None:
+        def probe(name: str, endpoint: str, path: str = "/healthz") -> dict[str, object]:
+            return {
+                "name": name,
+                "ok": True,
+                "status": "ready",
+                "endpoint": endpoint,
+                "payload": {"path": path},
+            }
+
+        with (
+            mock.patch.object(control_plane_app, "healthz", return_value={"status": "ok"}),
+            mock.patch.object(control_plane_app, "FEATURE_GATEWAY_URL", "http://feature-gateway.example.com"),
+            mock.patch.object(control_plane_app, "ANOMALY_SERVICE_URL", "http://anomaly-service.example.com"),
+            mock.patch.object(control_plane_app, "RCA_SERVICE_URL", "http://rca-service.example.com"),
+            mock.patch.object(control_plane_app, "PREDICTIVE_SERVICE_URL", "http://predictive-live.example.com"),
+            mock.patch.object(control_plane_app, "PREDICTIVE_BACKFILL_SERVICE_URL", ""),
+            mock.patch.object(control_plane_app, "PREDICTIVE_MODELCAR_SERVICE_URL", "http://predictive-modelcar.example.com"),
+            mock.patch.object(control_plane_app, "_probe_service", side_effect=probe),
+        ):
+            services = control_plane_app._service_snapshot()
+
+        self.assertEqual(
+            [service["name"] for service in services],
+            [
+                "Control Plane",
+                "Feature Gateway",
+                "Anomaly Service",
+                "RCA Service",
+                "Predictive Service",
+                "Modelcar Predictive Service",
+            ],
+        )
+        self.assertEqual(services[-1]["payload"]["path"], "/v2/health/ready")
+
+    def test_service_snapshot_deduplicates_predictive_endpoints(self) -> None:
+        def probe(name: str, endpoint: str, path: str = "/healthz") -> dict[str, object]:
+            return {
+                "name": name,
+                "ok": True,
+                "status": "ready",
+                "endpoint": endpoint,
+                "payload": {"path": path},
+            }
+
+        shared_endpoint = "http://predictive-shared.example.com"
+        with (
+            mock.patch.object(control_plane_app, "healthz", return_value={"status": "ok"}),
+            mock.patch.object(control_plane_app, "FEATURE_GATEWAY_URL", "http://feature-gateway.example.com"),
+            mock.patch.object(control_plane_app, "ANOMALY_SERVICE_URL", "http://anomaly-service.example.com"),
+            mock.patch.object(control_plane_app, "RCA_SERVICE_URL", "http://rca-service.example.com"),
+            mock.patch.object(control_plane_app, "PREDICTIVE_SERVICE_URL", shared_endpoint),
+            mock.patch.object(control_plane_app, "PREDICTIVE_BACKFILL_SERVICE_URL", shared_endpoint),
+            mock.patch.object(control_plane_app, "PREDICTIVE_MODELCAR_SERVICE_URL", shared_endpoint),
+            mock.patch.object(control_plane_app, "_probe_service", side_effect=probe),
+        ):
+            services = control_plane_app._service_snapshot()
+
+        predictive_services = [service for service in services if service["payload"].get("path") == "/v2/health/ready"]
+        self.assertEqual(len(predictive_services), 1)
+        self.assertEqual(predictive_services[0]["name"], "Predictive Service")
+
+
 if __name__ == "__main__":
     unittest.main()
