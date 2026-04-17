@@ -80,7 +80,7 @@ deploymentSpec:
           value: 'true'
         - name: KAFKA_BOOTSTRAP_SERVERS
           value: ani-release-kafka-kafka-bootstrap.ani-data.svc.cluster.local:9092
-        image: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-incident-release:latest
+        image: quay.io/autonomousnetworkintelligence/ani-incident-release:latest
 pipelineInfo:
   name: ani-incident-release
 root:

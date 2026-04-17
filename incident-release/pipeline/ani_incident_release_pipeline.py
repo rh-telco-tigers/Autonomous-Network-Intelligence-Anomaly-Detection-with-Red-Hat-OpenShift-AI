@@ -3,7 +3,7 @@
 from kfp import dsl
 
 
-PIPELINE_IMAGE = "image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-incident-release:latest"
+PIPELINE_IMAGE = "quay.io/autonomousnetworkintelligence/ani-incident-release:latest"
 WORKSPACE_ROOT = "/tmp/ani-incident-release"
 CONTROL_PLANE_APPROVAL_LIMIT = "1000"
 CONTROL_PLANE_AUDIT_LIMIT = "1000"

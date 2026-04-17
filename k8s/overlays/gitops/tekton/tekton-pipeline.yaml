@@ -171,7 +171,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-incident-release:latest
+          value: quay.io/autonomousnetworkintelligence/ani-incident-release:latest
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
