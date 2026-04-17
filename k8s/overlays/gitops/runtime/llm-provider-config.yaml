@@ -6,3 +6,8 @@ data:
   LLM_ENDPOINT: http://guardrails-orchestrator-service.ani-datascience.svc.cluster.local:8090/rca
   LLM_MODEL: llama-32-3b-instruct
   LLM_REQUEST_TIMEOUT_SECONDS: "20"
+  ANI_GUARDRAILS_CONTRACT_VERSION: ani.guardrails.v1
+  ANI_GUARDRAILS_POLICY_VERSION: v1
+  ANI_RCA_SCHEMA_VERSION: ani.rca.v1
+  ANI_GUARDRAILS_CONFIDENCE_ALLOW_THRESHOLD: "0.60"
+  ANI_GUARDRAILS_MIN_ALLOW_EVIDENCE_ITEMS: "2"

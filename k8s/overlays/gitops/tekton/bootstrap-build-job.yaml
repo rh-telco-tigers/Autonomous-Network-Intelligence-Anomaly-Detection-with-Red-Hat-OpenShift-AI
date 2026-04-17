@@ -80,6 +80,8 @@ spec:
                     value: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
                   - name: git-revision
                     value: main
+                  - name: publish-to-quay
+                    value: "false"
                 taskRunTemplate:
                   serviceAccountName: pipeline
                 timeouts:

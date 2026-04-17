@@ -8,6 +8,18 @@ spec:
       type: string
     - name: git-revision
       type: string
+    - name: publish-to-quay
+      type: string
+      default: "false"
+    - name: quay-image-tag
+      type: string
+      default: ""
+    - name: quay-promote-latest
+      type: string
+      default: "false"
+    - name: quay-organization
+      type: string
+      default: autonomousnetworkintelligence
   workspaces:
     - name: source
   tasks:
@@ -179,3 +191,219 @@ spec:
       workspaces:
         - name: source
           workspace: source
+    - name: publish-sipp-runner-to-quay
+      retries: 1
+      timeout: 20m0s
+      runAfter:
+        - build-ani-incident-release
+      when:
+        - input: "$(params.publish-to-quay)"
+          operator: in
+          values: ["true"]
+      taskRef:
+        name: publish-image-if-authenticated
+      params:
+        - name: SOURCE_IMAGE
+          value: $(tasks.build-sipp-runner.results.IMAGE_URL)
+        - name: DEST_IMAGE_REPO
+          value: quay.io/$(params.quay-organization)/sipp-runner
+        - name: IMAGE_TAG
+          value: $(params.quay-image-tag)
+        - name: FALLBACK_IMAGE_TAG
+          value: $(tasks.clone.results.COMMIT)
+        - name: PUBLISH_ENABLED
+          value: $(params.publish-to-quay)
+        - name: PROMOTE_LATEST
+          value: $(params.quay-promote-latest)
+    - name: publish-feature-gateway-to-quay
+      retries: 1
+      timeout: 20m0s
+      runAfter:
+        - build-ani-incident-release
+      when:
+        - input: "$(params.publish-to-quay)"
+          operator: in
+          values: ["true"]
+      taskRef:
+        name: publish-image-if-authenticated
+      params:
+        - name: SOURCE_IMAGE
+          value: $(tasks.build-feature-gateway.results.IMAGE_URL)
+        - name: DEST_IMAGE_REPO
+          value: quay.io/$(params.quay-organization)/feature-gateway
+        - name: IMAGE_TAG
+          value: $(params.quay-image-tag)
+        - name: FALLBACK_IMAGE_TAG
+          value: $(tasks.clone.results.COMMIT)
+        - name: PUBLISH_ENABLED
+          value: $(params.publish-to-quay)
+        - name: PROMOTE_LATEST
+          value: $(params.quay-promote-latest)
+    - name: publish-anomaly-service-to-quay
+      retries: 1
+      timeout: 20m0s
+      runAfter:
+        - build-ani-incident-release
+      when:
+        - input: "$(params.publish-to-quay)"
+          operator: in
+          values: ["true"]
+      taskRef:
+        name: publish-image-if-authenticated
+      params:
+        - name: SOURCE_IMAGE
+          value: $(tasks.build-anomaly-service.results.IMAGE_URL)
+        - name: DEST_IMAGE_REPO
+          value: quay.io/$(params.quay-organization)/anomaly-service
+        - name: IMAGE_TAG
+          value: $(params.quay-image-tag)
+        - name: FALLBACK_IMAGE_TAG
+          value: $(tasks.clone.results.COMMIT)
+        - name: PUBLISH_ENABLED
+          value: $(params.publish-to-quay)
+        - name: PROMOTE_LATEST
+          value: $(params.quay-promote-latest)
+    - name: publish-rca-service-to-quay
+      retries: 1
+      timeout: 20m0s
+      runAfter:
+        - build-ani-incident-release
+      when:
+        - input: "$(params.publish-to-quay)"
+          operator: in
+          values: ["true"]
+      taskRef:
+        name: publish-image-if-authenticated
+      params:
+        - name: SOURCE_IMAGE
+          value: $(tasks.build-rca-service.results.IMAGE_URL)
+        - name: DEST_IMAGE_REPO
+          value: quay.io/$(params.quay-organization)/rca-service
+        - name: IMAGE_TAG
+          value: $(params.quay-image-tag)
+        - name: FALLBACK_IMAGE_TAG
+          value: $(tasks.clone.results.COMMIT)
+        - name: PUBLISH_ENABLED
+          value: $(params.publish-to-quay)
+        - name: PROMOTE_LATEST
+          value: $(params.quay-promote-latest)
+    - name: publish-demo-ui-to-quay
+      retries: 1
+      timeout: 20m0s
+      runAfter:
+        - build-ani-incident-release
+      when:
+        - input: "$(params.publish-to-quay)"
+          operator: in
+          values: ["true"]
+      taskRef:
+        name: publish-image-if-authenticated
+      params:
+        - name: SOURCE_IMAGE
+          value: $(tasks.build-demo-ui.results.IMAGE_URL)
+        - name: DEST_IMAGE_REPO
+          value: quay.io/$(params.quay-organization)/demo-ui
+        - name: IMAGE_TAG
+          value: $(params.quay-image-tag)
+        - name: FALLBACK_IMAGE_TAG
+          value: $(tasks.clone.results.COMMIT)
+        - name: PUBLISH_ENABLED
+          value: $(params.publish-to-quay)
+        - name: PROMOTE_LATEST
+          value: $(params.quay-promote-latest)
+    - name: publish-control-plane-to-quay
+      retries: 1
+      timeout: 20m0s
+      runAfter:
+        - build-ani-incident-release
+      when:
+        - input: "$(params.publish-to-quay)"
+          operator: in
+          values: ["true"]
+      taskRef:
+        name: publish-image-if-authenticated
+      params:
+        - name: SOURCE_IMAGE
+          value: $(tasks.build-control-plane.results.IMAGE_URL)
+        - name: DEST_IMAGE_REPO
+          value: quay.io/$(params.quay-organization)/control-plane
+        - name: IMAGE_TAG
+          value: $(params.quay-image-tag)
+        - name: FALLBACK_IMAGE_TAG
+          value: $(tasks.clone.results.COMMIT)
+        - name: PUBLISH_ENABLED
+          value: $(params.publish-to-quay)
+        - name: PROMOTE_LATEST
+          value: $(params.quay-promote-latest)
+    - name: publish-ani-ai-trainer-to-quay
+      retries: 1
+      timeout: 20m0s
+      runAfter:
+        - build-ani-incident-release
+      when:
+        - input: "$(params.publish-to-quay)"
+          operator: in
+          values: ["true"]
+      taskRef:
+        name: publish-image-if-authenticated
+      params:
+        - name: SOURCE_IMAGE
+          value: $(tasks.build-ani-ai-trainer.results.IMAGE_URL)
+        - name: DEST_IMAGE_REPO
+          value: quay.io/$(params.quay-organization)/ani-ai-trainer
+        - name: IMAGE_TAG
+          value: $(params.quay-image-tag)
+        - name: FALLBACK_IMAGE_TAG
+          value: $(tasks.clone.results.COMMIT)
+        - name: PUBLISH_ENABLED
+          value: $(params.publish-to-quay)
+        - name: PROMOTE_LATEST
+          value: $(params.quay-promote-latest)
+    - name: publish-ani-ai-featurestore-trainer-to-quay
+      retries: 1
+      timeout: 20m0s
+      runAfter:
+        - build-ani-incident-release
+      when:
+        - input: "$(params.publish-to-quay)"
+          operator: in
+          values: ["true"]
+      taskRef:
+        name: publish-image-if-authenticated
+      params:
+        - name: SOURCE_IMAGE
+          value: $(tasks.build-ani-ai-featurestore-trainer.results.IMAGE_URL)
+        - name: DEST_IMAGE_REPO
+          value: quay.io/$(params.quay-organization)/ani-ai-featurestore-trainer
+        - name: IMAGE_TAG
+          value: $(params.quay-image-tag)
+        - name: FALLBACK_IMAGE_TAG
+          value: $(tasks.clone.results.COMMIT)
+        - name: PUBLISH_ENABLED
+          value: $(params.publish-to-quay)
+        - name: PROMOTE_LATEST
+          value: $(params.quay-promote-latest)
+    - name: publish-ani-incident-release-to-quay
+      retries: 1
+      timeout: 20m0s
+      runAfter:
+        - build-ani-incident-release
+      when:
+        - input: "$(params.publish-to-quay)"
+          operator: in
+          values: ["true"]
+      taskRef:
+        name: publish-image-if-authenticated
+      params:
+        - name: SOURCE_IMAGE
+          value: $(tasks.build-ani-incident-release.results.IMAGE_URL)
+        - name: DEST_IMAGE_REPO
+          value: quay.io/$(params.quay-organization)/ani-incident-release
+        - name: IMAGE_TAG
+          value: $(params.quay-image-tag)
+        - name: FALLBACK_IMAGE_TAG
+          value: $(tasks.clone.results.COMMIT)
+        - name: PUBLISH_ENABLED
+          value: $(params.publish-to-quay)
+        - name: PROMOTE_LATEST
+          value: $(params.quay-promote-latest)

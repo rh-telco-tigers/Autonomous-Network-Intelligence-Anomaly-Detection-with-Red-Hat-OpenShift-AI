@@ -56,6 +56,7 @@ from shared.gitea import (
     promote_generated_playbook,
     sync_generated_playbook_to_draft,
 )
+from shared.guardrails import guardrail_status, remediation_unlock_allowed
 from shared.db import (
     attach_rca,
     create_ticket_resolution_extract,
@@ -195,12 +196,18 @@ class RCAAttach(BaseModel):
     confidence: float
     evidence: List[Dict[str, object]]
     recommendation: str
+    rca_request_id: Optional[str] = None
+    trace_id: Optional[str] = None
+    rca_schema_version: Optional[str] = None
+    source_workflow_revision: Optional[int] = None
+    rca_state: Optional[str] = None
     generation_mode: Optional[str] = None
     generation_source_label: Optional[str] = None
     llm_used: Optional[bool] = None
     llm_configured: Optional[bool] = None
     llm_model: Optional[str] = None
     llm_runtime: Optional[str] = None
+    guardrails: Dict[str, object] = Field(default_factory=dict)
     retrieved_documents: List[Dict[str, object]] = Field(default_factory=list)
     debug_trace: List[Dict[str, object]] = Field(default_factory=list)
 
@@ -776,6 +783,20 @@ def _generate_and_store_remediations(incident_id: str, actor: str = "control-pla
         raise HTTPException(status_code=404, detail="Incident not found")
     rca_payload = incident.get("rca_payload") or {}
     if not isinstance(rca_payload, dict) or not rca_payload:
+        return []
+    if not remediation_unlock_allowed(rca_payload):
+        summary = _rca_guardrails_summary(rca_payload)
+        record_audit(
+            "remediation_unlock_blocked",
+            actor,
+            {
+                "guardrail_status": summary["status"],
+                "guardrail_reason": summary["reason"],
+                "rca_state": summary["state"],
+                "detail": "Guardrails did not allow remediation unlock from the current RCA payload.",
+            },
+            incident_id=incident_id,
+        )
         return []
     previous_state = normalize_workflow_state(str(incident.get("status") or NEW))
     suggestions = generate_remediation_suggestions(incident, rca_payload, remediation_success_rates())
@@ -2904,6 +2925,8 @@ def _incident_feature_context(incident: Dict[str, object]) -> Dict[str, object]:
 
 def _incident_rca_request_payload(incident: Dict[str, object]) -> Dict[str, object]:
     features = _incident_feature_context(incident)
+    rca_request_id = f"rca-{uuid.uuid4().hex}"
+    trace_id = f"trace-{uuid.uuid4().hex}"
     return {
         "incident_id": str(incident.get("id") or incident.get("incident_id") or ""),
         "context": {
@@ -2912,7 +2935,24 @@ def _incident_rca_request_payload(incident: Dict[str, object]) -> Dict[str, obje
             "anomaly_type": incident.get("anomaly_type"),
             "feature_window_id": incident.get("feature_window_id"),
             "features": features,
+            "workflow_revision": int(incident.get("workflow_revision") or 1),
+            "rca_request_id": rca_request_id,
+            "trace_id": trace_id,
         },
+    }
+
+
+def _rca_guardrails_summary(rca_payload: Dict[str, object] | None) -> Dict[str, str]:
+    if not isinstance(rca_payload, dict):
+        return {"status": "", "reason": "", "state": ""}
+    guardrails = rca_payload.get("guardrails")
+    guardrail_reason = ""
+    if isinstance(guardrails, dict):
+        guardrail_reason = str(guardrails.get("reason") or "").strip()
+    return {
+        "status": guardrail_status(rca_payload),
+        "reason": guardrail_reason,
+        "state": str(rca_payload.get("rca_state") or "").strip(),
     }
 
 
@@ -3267,7 +3307,9 @@ def _timeline_title(event_type: str) -> str:
         "scenario_executed": "Scenario executed",
         "incident_created": "Incident created",
         "rca_attached": "RCA attached",
+        "rca_review_required": "RCA review required",
         "remediations_generated": "Remediations generated",
+        "remediation_unlock_blocked": "Remediation unlock blocked",
         "workflow_transition": "Workflow transitioned",
         "incident_approved": "Action approved",
         "action_executed": "Action executed",
@@ -3302,8 +3344,18 @@ def _timeline_detail(event: Dict[str, object]) -> str:
     if event_type == "rca_attached":
         confidence = _coerce_float(payload.get("confidence"))
         return f"RCA attached with confidence {confidence:.2f}."
+    if event_type == "rca_review_required":
+        return (
+            f"Guardrails marked the RCA as {payload.get('guardrail_status', 'review required')} "
+            f"({payload.get('guardrail_reason', 'policy review')})."
+        )
     if event_type == "remediations_generated":
         return f"{int(payload.get('count', 0))} remediation suggestions ranked for approval."
+    if event_type == "remediation_unlock_blocked":
+        return (
+            f"Guardrails prevented remediation unlock with status {payload.get('guardrail_status', 'unknown')} "
+            f"({payload.get('guardrail_reason', 'no reason recorded')})."
+        )
     if event_type == "workflow_transition":
         from_state = payload.get("from_state", "unknown")
         to_state = payload.get("to_state", "unknown")
@@ -3941,7 +3993,20 @@ def post_rca(incident_id: str, payload: RCAAttach, auth: AuthContext | None = De
         + inbound_debug_trace,
     )
     refreshed = get_incident(incident_id) or incident
-    _publish_rca_reasoning_record(refreshed, payload.model_dump())
+    if remediation_unlock_allowed(request_payload):
+        _publish_rca_reasoning_record(refreshed, request_payload)
+    else:
+        guardrail_summary = _rca_guardrails_summary(request_payload)
+        record_audit(
+            "rca_review_required",
+            "rca-service",
+            {
+                "guardrail_status": guardrail_summary["status"],
+                "guardrail_reason": guardrail_summary["reason"],
+                "rca_state": guardrail_summary["state"],
+            },
+            incident_id=incident_id,
+        )
     _publish_eda_event_best_effort("rca_attached", refreshed)
     _generate_and_store_remediations(incident_id, actor="rca-service")
     refreshed = get_incident(incident_id)

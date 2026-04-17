@@ -62,6 +62,8 @@ spec:
             value: $(tt.params.git-url)
           - name: git-revision
             value: $(tt.params.git-revision)
+          - name: publish-to-quay
+            value: "false"
         taskRunTemplate:
           serviceAccountName: pipeline
         timeouts:

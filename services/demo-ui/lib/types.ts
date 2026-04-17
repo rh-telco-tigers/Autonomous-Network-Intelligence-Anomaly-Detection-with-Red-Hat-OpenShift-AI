@@ -187,12 +187,16 @@ export type RcaRecord = {
 export type RcaPayload = Record<string, unknown> & {
   root_cause?: string;
   explanation?: string;
+  rca_request_id?: string;
+  trace_id?: string;
+  rca_state?: string;
   generation_mode?: string;
   generation_source_label?: string;
   llm_used?: boolean;
   llm_configured?: boolean;
   llm_model?: string | null;
   llm_runtime?: string | null;
+  guardrails?: Record<string, unknown>;
   recommendation?: string;
   retrieved_documents?: Array<Record<string, unknown>>;
 };

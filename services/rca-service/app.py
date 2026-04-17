@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel, Field
@@ -8,6 +8,25 @@ from pydantic import BaseModel, Field
 from shared.control_plane_client import attach_rca
 from shared.cors import install_cors
 from shared.debug_trace import make_trace_packet, trace_now
+from shared.guardrails import (
+    ALLOW,
+    BLOCK,
+    ERROR,
+    REQUIRE_REVIEW,
+    detector_result,
+    guardrails_confidence_allow_threshold,
+    guardrails_contract_version,
+    guardrails_min_allow_evidence_items,
+    guardrails_policy_version,
+    lifecycle_state_for_status,
+    new_rca_request_id,
+    new_trace_id,
+    rca_schema_version,
+    recommendation_is_unsafe,
+    sanitize_documents_for_prompt,
+    sanitize_json_like,
+    violation,
+)
 from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE, canonical_anomaly_type, metric_weights, scenario_definition
 from shared.metrics import install_metrics, record_rca
 from shared.rag import DEFAULT_MILVUS_COLLECTIONS, RUNBOOK_COLLECTION, build_prompt, generate_with_llm_trace, retrieve_context, retrieve_knowledge_articles
@@ -417,6 +436,24 @@ def _generation_metadata(mode: str) -> Dict[str, object]:
     }
 
 
+def _source_workflow_revision(context: Dict[str, object]) -> int:
+    raw_value = context.get("workflow_revision") or context.get("source_workflow_revision") or 1
+    try:
+        return max(int(raw_value), 1)
+    except (TypeError, ValueError):
+        return 1
+
+
+def _llm_trace_payload_body(llm_trace: Dict[str, object] | None) -> Dict[str, object]:
+    if not isinstance(llm_trace, dict):
+        return {}
+    response_payload = llm_trace.get("response_payload")
+    if not isinstance(response_payload, dict):
+        return {}
+    body = response_payload.get("body")
+    return body if isinstance(body, dict) else response_payload
+
+
 def _uses_guardrails_gateway() -> bool:
     endpoint = os.getenv("LLM_ENDPOINT", "").strip().lower()
     if not endpoint:
@@ -452,20 +489,274 @@ def _guardrails_block_reason(message: str) -> str | None:
     return None
 
 
+def _guardrails_gateway_findings(llm_trace: Dict[str, object] | None) -> Dict[str, object]:
+    body = _llm_trace_payload_body(llm_trace)
+    message = _guardrails_message(llm_trace)
+    detector_results: List[Dict[str, str]] = []
+    violations: List[Dict[str, str]] = []
+    input_status = ALLOW
+    output_status = ALLOW
+    status = ALLOW
+
+    warnings = body.get("warnings")
+    warning_items = warnings if isinstance(warnings, list) else [warnings] if warnings not in (None, "") else []
+    normalized_warnings = [str(item.get("type") or item.get("message") or item).strip() if isinstance(item, dict) else str(item).strip() for item in warning_items]
+    normalized_warnings = [item for item in normalized_warnings if item]
+    if any("unsuitable_input" in item.lower() or "unsuitable input" in item.lower() for item in normalized_warnings):
+        input_status = BLOCK
+        status = BLOCK
+        violations.append(violation("unsuitable_input", "high", "Guardrails marked the RCA request as unsuitable input."))
+    if any("unsuitable_output" in item.lower() or "unsuitable output" in item.lower() for item in normalized_warnings):
+        output_status = BLOCK
+        status = BLOCK
+        violations.append(violation("unsuitable_output", "high", "Guardrails marked the RCA response as unsuitable output."))
+
+    detections = body.get("detections")
+    if isinstance(detections, dict):
+        for phase in ("input", "output"):
+            items = detections.get(phase)
+            if not isinstance(items, list):
+                items = [items] if items not in (None, "") else []
+            for item in items:
+                if isinstance(item, dict):
+                    label = str(item.get("detector") or item.get("type") or item.get("label") or phase).strip()
+                    score = item.get("score")
+                    message_text = str(item.get("message") or item.get("text") or label).strip()
+                    if score not in (None, ""):
+                        message_text = f"{message_text} (score={score})"
+                else:
+                    label = phase
+                    message_text = str(item).strip()
+                detector_results.append(
+                    detector_result(
+                        label or phase,
+                        "high" if phase == "input" else "medium",
+                        "warn",
+                        f"{phase.title()} detection: {message_text}",
+                    )
+                )
+
+    block_reason = _guardrails_block_reason(message)
+    if block_reason == "input_blocked":
+        input_status = BLOCK
+        status = BLOCK
+    elif block_reason in {"output_blocked", "policy_blocked"}:
+        output_status = BLOCK
+        status = BLOCK
+
+    if status == BLOCK and message:
+        violations.append(violation(block_reason or "guardrails_blocked", "high", message))
+
+    return {
+        "status": status,
+        "input_status": input_status,
+        "output_status": output_status,
+        "detector_results": detector_results,
+        "violations": violations,
+        "message": message,
+    }
+
+
+def _guardrails_envelope(
+    *,
+    status: str,
+    input_status: str,
+    output_status: str,
+    reason: str,
+    message: str,
+    detector_results: List[Dict[str, str]],
+    violations: List[Dict[str, str]],
+    sanitization: Dict[str, object],
+) -> Dict[str, object]:
+    detectors = list(detector_results)
+    return {
+        "contract_version": guardrails_contract_version(),
+        "policy_version": guardrails_policy_version(),
+        "status": status,
+        "input_status": input_status,
+        "output_status": output_status,
+        "reason": reason,
+        "message": message,
+        "detector_results": detectors,
+        "detectors": detectors,
+        "violations": list(violations),
+        "sanitization": dict(sanitization),
+    }
+
+
+def _policy_blocked_response(
+    *,
+    anomaly_type: str,
+    documents: List[Dict[str, object]],
+    guardrails_payload: Dict[str, object],
+) -> Dict[str, object]:
+    return {
+        "root_cause": "TrustyAI Guardrails blocked the generated RCA before it could be accepted.",
+        "explanation": (
+            "The guarded RCA response violated ANI policy and has been replaced with a safe blocked result. "
+            "Keep the incident open for operator review, but do not unlock remediation until the flagged content is cleared."
+        ),
+        "confidence": 0.0,
+        "evidence": build_evidence(anomaly_type, documents),
+        "recommendation": "Review the guardrail findings and regenerate RCA only after the unsafe recommendation path is removed.",
+        "guardrails": guardrails_payload,
+        "generation_mode": "guardrails-blocked",
+    }
+
+
+def _finalize_guarded_response(
+    response: Dict[str, object],
+    *,
+    llm_trace: Dict[str, object] | None,
+    documents: List[Dict[str, object]],
+    anomaly_type: str,
+    rca_request_id: str,
+    trace_id: str,
+    source_workflow_revision: int,
+    input_sanitization: Dict[str, object],
+) -> Dict[str, object]:
+    normalized = normalize_response(response, documents, anomaly_type, str(response.get("incident_id") or ""))
+    gateway_findings = _guardrails_gateway_findings(llm_trace)
+    detector_results = [*list(input_sanitization.get("detector_results") or []), *list(gateway_findings.get("detector_results") or [])]
+    violations = [*list(input_sanitization.get("violations") or []), *list(gateway_findings.get("violations") or [])]
+
+    status = str(gateway_findings.get("status") or ALLOW)
+    input_status = "sanitize" if str(input_sanitization.get("status") or ALLOW) == "sanitize" else str(gateway_findings.get("input_status") or ALLOW)
+    output_status = str(gateway_findings.get("output_status") or ALLOW)
+    message = str(gateway_findings.get("message") or "").strip()
+
+    evidence = normalized.get("evidence")
+    evidence_items = evidence if isinstance(evidence, list) else []
+    confidence = float(normalized.get("confidence") or 0.0)
+    recommendation = str(normalized.get("recommendation") or "").strip()
+    document_refs = {str(doc.get("reference") or "") for doc in documents}
+    evidence_refs = {
+        str(item.get("reference") or "")
+        for item in evidence_items
+        if isinstance(item, dict) and str(item.get("reference") or "").strip()
+    }
+
+    if recommendation_is_unsafe(recommendation):
+        status = BLOCK
+        output_status = BLOCK
+        violations.append(
+            violation(
+                "unsafe_recommendation_language",
+                "high",
+                "The generated recommendation included unsupported or destructive action guidance.",
+            )
+        )
+        detector_results.append(
+            detector_result(
+                "unsafe_recommendation_language",
+                "high",
+                "fail",
+                "The generated recommendation violated the safe-action policy.",
+            )
+        )
+    elif confidence < guardrails_confidence_allow_threshold():
+        status = REQUIRE_REVIEW
+        output_status = REQUIRE_REVIEW
+        violations.append(
+            violation(
+                "confidence_below_threshold",
+                "medium",
+                "Model confidence is below the allow threshold for automatic remediation unlock.",
+            )
+        )
+        detector_results.append(
+            detector_result(
+                "confidence_policy",
+                "medium",
+                "warn",
+                "Confidence fell below the allow threshold and requires operator review.",
+            )
+        )
+
+    if len(evidence_items) < guardrails_min_allow_evidence_items() and status != BLOCK:
+        status = REQUIRE_REVIEW
+        output_status = REQUIRE_REVIEW
+        violations.append(
+            violation(
+                "insufficient_evidence",
+                "medium",
+                "The RCA did not include enough evidence items for automatic remediation unlock.",
+            )
+        )
+
+    if documents and not (document_refs & evidence_refs) and status != BLOCK:
+        status = REQUIRE_REVIEW
+        output_status = REQUIRE_REVIEW
+        violations.append(
+            violation(
+                "evidence_reference_gap",
+                "medium",
+                "The RCA evidence did not reference any retrieved support document directly.",
+            )
+        )
+
+    decision_reason = "validated"
+    if status == REQUIRE_REVIEW:
+        decision_reason = str((violations[0] if violations else {}).get("type") or "policy_review_required")
+    elif status == BLOCK:
+        decision_reason = str((violations[0] if violations else {}).get("type") or "policy_blocked")
+
+    guardrails_payload = _guardrails_envelope(
+        status=status,
+        input_status=input_status,
+        output_status=output_status,
+        reason=decision_reason,
+        message=message,
+        detector_results=detector_results,
+        violations=violations,
+        sanitization={
+            "modified_documents": int(input_sanitization.get("modified_documents") or 0),
+            "dropped_documents": int(input_sanitization.get("dropped_documents") or 0),
+            "modified_context_paths": list(input_sanitization.get("modified_context_paths") or []),
+        },
+    )
+
+    if status == BLOCK:
+        normalized = normalize_response(
+            _policy_blocked_response(anomaly_type=anomaly_type, documents=documents, guardrails_payload=guardrails_payload),
+            documents,
+            anomaly_type,
+            str(normalized.get("incident_id") or ""),
+        )
+        normalized.update(_generation_metadata("guardrails-blocked"))
+    else:
+        normalized["guardrails"] = guardrails_payload
+
+    normalized["rca_request_id"] = rca_request_id
+    normalized["trace_id"] = trace_id
+    normalized["rca_schema_version"] = rca_schema_version()
+    normalized["source_workflow_revision"] = source_workflow_revision
+    normalized["rca_state"] = lifecycle_state_for_status(status)
+    return normalized
+
+
 def _guardrails_response(
     llm_trace: Dict[str, object] | None,
     documents: List[Dict[str, object]],
     anomaly_type: str,
+    *,
+    rca_request_id: str,
+    trace_id: str,
+    source_workflow_revision: int,
+    input_sanitization: Dict[str, object],
 ) -> Dict[str, object] | None:
     if not _uses_guardrails_gateway():
         return None
 
-    message = _guardrails_message(llm_trace)
+    findings = _guardrails_gateway_findings(llm_trace)
+    message = str(findings.get("message") or "").strip()
     block_reason = _guardrails_block_reason(message)
     evidence = build_evidence(anomaly_type, documents)
+    detector_results = [*list(input_sanitization.get("detector_results") or []), *list(findings.get("detector_results") or [])]
+    violations = [*list(input_sanitization.get("violations") or []), *list(findings.get("violations") or [])]
 
     if block_reason:
-        return {
+        response = {
             "root_cause": "TrustyAI Guardrails blocked the RCA request before a model-authored diagnosis could be accepted.",
             "explanation": (
                 "The guarded LLM endpoint flagged the RCA request or response and did not return a valid JSON RCA payload. "
@@ -474,15 +765,30 @@ def _guardrails_response(
             "confidence": 0.0,
             "evidence": evidence,
             "recommendation": "Review the evidence set and guardrail findings, then retry RCA generation only after the prompt path is safe.",
-            "guardrails": {
-                "status": "block",
-                "reason": block_reason,
-                "message": message or "Guardrails blocked the RCA request.",
-            },
+            "guardrails": _guardrails_envelope(
+                status=BLOCK,
+                input_status=str(findings.get("input_status") or ALLOW),
+                output_status=str(findings.get("output_status") or ALLOW),
+                reason=block_reason,
+                message=message or "Guardrails blocked the RCA request.",
+                detector_results=detector_results,
+                violations=[*violations, violation(block_reason, "high", message or "Guardrails blocked the RCA request.")],
+                sanitization={
+                    "modified_documents": int(input_sanitization.get("modified_documents") or 0),
+                    "dropped_documents": int(input_sanitization.get("dropped_documents") or 0),
+                    "modified_context_paths": list(input_sanitization.get("modified_context_paths") or []),
+                },
+            ),
             "generation_mode": "guardrails-blocked",
         }
+        response["rca_request_id"] = rca_request_id
+        response["trace_id"] = trace_id
+        response["rca_schema_version"] = rca_schema_version()
+        response["source_workflow_revision"] = source_workflow_revision
+        response["rca_state"] = lifecycle_state_for_status(BLOCK)
+        return response
 
-    return {
+    response = {
         "root_cause": "TrustyAI Guardrails could not validate RCA output because the guarded generation path was unavailable.",
         "explanation": (
             "The RCA request reached the guarded LLM path, but Guardrails did not return a usable response. "
@@ -491,13 +797,28 @@ def _guardrails_response(
         "confidence": 0.0,
         "evidence": evidence,
         "recommendation": "Investigate the Guardrails gateway and detector health, then retry RCA generation before enabling remediation.",
-        "guardrails": {
-            "status": "error",
-            "reason": "guardrails_unavailable",
-            "message": message or "Guardrails did not return a usable response.",
-        },
+        "guardrails": _guardrails_envelope(
+            status=ERROR,
+            input_status=str(input_sanitization.get("status") or ALLOW),
+            output_status=ERROR,
+            reason="guardrails_unavailable",
+            message=message or "Guardrails did not return a usable response.",
+            detector_results=detector_results,
+            violations=[*violations, violation("guardrails_unavailable", "high", message or "Guardrails did not return a usable response.")],
+            sanitization={
+                "modified_documents": int(input_sanitization.get("modified_documents") or 0),
+                "dropped_documents": int(input_sanitization.get("dropped_documents") or 0),
+                "modified_context_paths": list(input_sanitization.get("modified_context_paths") or []),
+            },
+        ),
         "generation_mode": "guardrails-error",
     }
+    response["rca_request_id"] = rca_request_id
+    response["trace_id"] = trace_id
+    response["rca_schema_version"] = rca_schema_version()
+    response["source_workflow_revision"] = source_workflow_revision
+    response["rca_state"] = lifecycle_state_for_status(ERROR)
+    return response
 
 
 @app.get("/healthz")
@@ -514,13 +835,37 @@ def healthz():
 @app.post("/rca", dependencies=[Depends(require_api_key)])
 def rca(request: RCARequest):
     anomaly_type = canonical_anomaly_type(str(request.context.get("anomaly_type", NORMAL_ANOMALY_TYPE)))
+    source_workflow_revision = _source_workflow_revision(request.context)
+    rca_request_id = str(request.context.get("rca_request_id") or new_rca_request_id()).strip() or new_rca_request_id()
+    trace_id = str(request.context.get("trace_id") or new_trace_id()).strip() or new_trace_id()
     query = _retrieval_query(request.incident_id, anomaly_type, request.context)
     retrieval_started_at = trace_now()
     documents = _retrieve_rca_documents(query, anomaly_type)
     retrieval_finished_at = trace_now()
     evidence = build_evidence(anomaly_type, documents)
     confidence = compute_confidence(evidence, documents)
-    prompt = build_prompt({"incident_id": request.incident_id, **request.context}, documents)
+    prompt_documents, prompt_document_sanitization = sanitize_documents_for_prompt(documents)
+    prompt_context, prompt_context_sanitization = sanitize_json_like(
+        {"incident_id": request.incident_id, **request.context},
+        path="incident_context",
+    )
+    input_sanitization = {
+        "status": "sanitize"
+        if str(prompt_document_sanitization.get("status") or ALLOW) == "sanitize" or str(prompt_context_sanitization.get("status") or ALLOW) == "sanitize"
+        else ALLOW,
+        "detector_results": [
+            *list(prompt_document_sanitization.get("detector_results") or []),
+            *list(prompt_context_sanitization.get("detector_results") or []),
+        ],
+        "violations": [
+            *list(prompt_document_sanitization.get("violations") or []),
+            *list(prompt_context_sanitization.get("violations") or []),
+        ],
+        "modified_documents": int(prompt_document_sanitization.get("modified_documents") or 0),
+        "dropped_documents": int(prompt_document_sanitization.get("dropped_documents") or 0),
+        "modified_context_paths": list(prompt_context_sanitization.get("modified_paths") or []),
+    }
+    prompt = build_prompt(prompt_context if isinstance(prompt_context, dict) else {"incident_id": request.incident_id}, prompt_documents)
     trace_packets = [
         make_trace_packet(
             "llm",
@@ -539,6 +884,25 @@ def rca(request: RCARequest):
             },
         )
     ]
+    if (
+        input_sanitization["modified_documents"]
+        or input_sanitization["dropped_documents"]
+        or input_sanitization["modified_context_paths"]
+    ):
+        trace_packets.append(
+            make_trace_packet(
+                "guardrails",
+                "event",
+                title="Prompt path sanitized before guarded generation",
+                service="rca-service",
+                timestamp=trace_now(),
+                payload={
+                    "modified_documents": input_sanitization["modified_documents"],
+                    "dropped_documents": input_sanitization["dropped_documents"],
+                    "modified_context_paths": input_sanitization["modified_context_paths"],
+                },
+            )
+        )
 
     response = {
         "incident_id": request.incident_id,
@@ -548,16 +912,43 @@ def rca(request: RCARequest):
         "evidence": evidence,
         "recommendation": infer_recommendation(anomaly_type, documents),
         "retrieved_documents": summarize_documents(documents),
+        "rca_request_id": rca_request_id,
+        "trace_id": trace_id,
+        "rca_schema_version": rca_schema_version(),
+        "source_workflow_revision": source_workflow_revision,
         **_generation_metadata("local-rag"),
     }
     llm_trace = generate_with_llm_trace(prompt)
     generated = llm_trace.get("parsed") if isinstance(llm_trace, dict) else None
     if isinstance(llm_trace, dict):
         trace_packets.extend(llm_trace.get("trace_packets") or [])
-    guarded_response = _guardrails_response(llm_trace, documents, anomaly_type) if not generated else None
+    guarded_response = (
+        _guardrails_response(
+            llm_trace,
+            documents,
+            anomaly_type,
+            rca_request_id=rca_request_id,
+            trace_id=trace_id,
+            source_workflow_revision=source_workflow_revision,
+            input_sanitization=input_sanitization,
+        )
+        if not generated
+        else None
+    )
     if generated:
-        response = normalize_response(generated, documents, anomaly_type, request.incident_id)
-        response.update(_generation_metadata("llm-rag"))
+        generated["incident_id"] = request.incident_id
+        response = _finalize_guarded_response(
+            generated,
+            llm_trace=llm_trace,
+            documents=documents,
+            anomaly_type=anomaly_type,
+            rca_request_id=rca_request_id,
+            trace_id=trace_id,
+            source_workflow_revision=source_workflow_revision,
+            input_sanitization=input_sanitization,
+        )
+        if str(response.get("generation_mode") or "") != "guardrails-blocked":
+            response.update(_generation_metadata("llm-rag"))
     elif guarded_response:
         trace_packets.append(
             make_trace_packet(
@@ -595,6 +986,11 @@ def rca(request: RCARequest):
             "confidence": response["confidence"],
             "evidence": response["evidence"],
             "recommendation": response["recommendation"],
+            "rca_request_id": response.get("rca_request_id"),
+            "trace_id": response.get("trace_id"),
+            "rca_schema_version": response.get("rca_schema_version"),
+            "source_workflow_revision": response.get("source_workflow_revision"),
+            "rca_state": response.get("rca_state"),
             "generation_mode": response.get("generation_mode"),
             "generation_source_label": response.get("generation_source_label"),
             "llm_used": response.get("llm_used"),

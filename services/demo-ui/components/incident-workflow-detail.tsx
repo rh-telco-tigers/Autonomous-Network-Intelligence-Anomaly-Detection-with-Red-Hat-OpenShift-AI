@@ -567,6 +567,7 @@ export function IncidentWorkflowDetail() {
 
   const latestRca = data?.rca_history[0];
   const latestRcaGeneration = buildRcaGenerationInfo(latestRca);
+  const latestRcaGuardrails = buildRcaGuardrailInfo(latestRca);
   const latestRcaAnalysis = buildRcaAnalysis(latestRca, incident);
   const latestRcaRecommendation = buildRcaRecommendation(latestRca, incident?.recommendation);
   const latestAction = data?.actions[0];
@@ -1046,6 +1047,11 @@ export function IncidentWorkflowDetail() {
                       <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" aria-hidden="true" />
                       <span>AI investigation summary</span>
                       {hasRca ? <AiGeneratedBadge generation={latestRcaGeneration} /> : null}
+                      {hasRca && latestRcaGuardrails.label ? (
+                        <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-[10px] font-medium tracking-[0.16em] text-[var(--text-secondary)]">
+                          {latestRcaGuardrails.label}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="mt-2 text-xl font-semibold text-[var(--text-strong)]">
                       {latestRca?.root_cause ?? "RCA has not been generated yet"}
@@ -1072,6 +1078,7 @@ export function IncidentWorkflowDetail() {
                   <SummaryItem label="Runtime" value={latestRcaGeneration.runtime} />
                   <SummaryItem label="Model" value={latestRcaGeneration.model} />
                   <SummaryItem label="Evidence docs" value={String(latestRcaGeneration.retrievedDocumentCount)} />
+                  <SummaryItem label="Guardrails" value={latestRcaGuardrails.summary} />
                 </div>
 
                 <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
@@ -2814,6 +2821,41 @@ function buildRcaGenerationInfo(source?: RcaRecord | RcaPayload | null): RcaGene
     llmConfigured,
     provenanceLabel,
   };
+}
+
+function buildRcaGuardrailInfo(source?: RcaRecord | RcaPayload | null): { label: string; summary: string } {
+  const payload = asRcaPayload(source);
+  const rawGuardrails = payload.guardrails;
+  const guardrails =
+    rawGuardrails && typeof rawGuardrails === "object" ? (rawGuardrails as Record<string, unknown>) : {};
+  const status = asStringValue(guardrails.status || payload.rca_state);
+  const reason = asStringValue(guardrails.reason);
+
+  if (!status) {
+    return { label: "", summary: "Not recorded" };
+  }
+  if (status === "allow" || status === "VALIDATED_ALLOW") {
+    return { label: "Guardrails allow", summary: "Allow" };
+  }
+  if (status === "require_review" || status === "VALIDATED_REVIEW") {
+    return {
+      label: "Guardrails review",
+      summary: reason ? `Review required: ${titleize(reason)}` : "Review required",
+    };
+  }
+  if (status === "block" || status === "BLOCKED_POLICY") {
+    return {
+      label: "Guardrails blocked",
+      summary: reason ? `Blocked: ${titleize(reason)}` : "Blocked by policy",
+    };
+  }
+  if (status === "error" || status === "BLOCKED_SYSTEM") {
+    return {
+      label: "Guardrails degraded",
+      summary: reason ? `System issue: ${titleize(reason)}` : "Validation path unavailable",
+    };
+  }
+  return { label: titleize(status), summary: titleize(status) };
 }
 
 function buildRcaAnalysis(source: RcaRecord | undefined, incident?: IncidentRecord): string {

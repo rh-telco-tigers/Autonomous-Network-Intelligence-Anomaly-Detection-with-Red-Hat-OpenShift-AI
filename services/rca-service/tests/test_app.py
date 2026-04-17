@@ -268,6 +268,106 @@ class GuardrailsFallbackTests(unittest.TestCase):
         self.assertEqual(response["guardrails"]["status"], "error")
         self.assertIn("Guardrails could not validate", response["root_cause"])
 
+    def test_rca_records_allow_state_for_guarded_llm_response(self) -> None:
+        request = rca_service_app.RCARequest(
+            incident_id="INC-102",
+            context={"anomaly_type": "registration_storm", "workflow_revision": 3},
+        )
+        llm_trace = {
+            "parsed": {
+                "root_cause": "Retry amplification is saturating the P-CSCF ingress path.",
+                "explanation": "Historical matches and current evidence both point to ingress saturation.",
+                "confidence": 0.84,
+                "evidence": [
+                    {"type": "doc", "reference": "knowledge/signaling/registration-storm.json", "weight": 0.4},
+                    {"type": "metric", "reference": "retransmission_count", "weight": 0.4},
+                ],
+                "recommendation": "Review low-risk ingress guardrails before broader scaling changes.",
+            },
+            "response_payload": {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "{}",
+                        }
+                    }
+                ]
+            },
+            "raw_content": "{}",
+            "trace_packets": [],
+        }
+
+        with (
+            mock.patch.dict(
+                rca_service_app.os.environ,
+                {
+                    "LLM_ENDPOINT": "http://guardrails-orchestrator-service.ani-datascience.svc.cluster.local:8090/rca",
+                    "LLM_MODEL": "llama-32-3b-instruct",
+                },
+                clear=False,
+            ),
+            mock.patch.object(rca_service_app, "_retrieve_rca_documents", return_value=self._documents()),
+            mock.patch.object(rca_service_app, "generate_with_llm_trace", return_value=llm_trace),
+            mock.patch.object(rca_service_app, "attach_rca"),
+            mock.patch.object(rca_service_app, "record_rca"),
+        ):
+            response = rca_service_app.rca(request)
+
+        self.assertEqual(response["guardrails"]["status"], "allow")
+        self.assertEqual(response["rca_state"], "VALIDATED_ALLOW")
+        self.assertEqual(response["source_workflow_revision"], 3)
+        self.assertTrue(str(response["rca_request_id"]).startswith("rca-"))
+        self.assertTrue(str(response["trace_id"]).startswith("trace-"))
+
+    def test_rca_downgrades_low_confidence_guarded_response_to_review(self) -> None:
+        request = rca_service_app.RCARequest(
+            incident_id="INC-103",
+            context={"anomaly_type": "registration_storm"},
+        )
+        llm_trace = {
+            "parsed": {
+                "root_cause": "Retry amplification is saturating the P-CSCF ingress path.",
+                "explanation": "Historical matches and current evidence both point to ingress saturation.",
+                "confidence": 0.42,
+                "evidence": [
+                    {"type": "doc", "reference": "knowledge/signaling/registration-storm.json", "weight": 0.4},
+                    {"type": "metric", "reference": "retransmission_count", "weight": 0.4},
+                ],
+                "recommendation": "Review low-risk ingress guardrails before broader scaling changes.",
+            },
+            "response_payload": {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "{}",
+                        }
+                    }
+                ]
+            },
+            "raw_content": "{}",
+            "trace_packets": [],
+        }
+
+        with (
+            mock.patch.dict(
+                rca_service_app.os.environ,
+                {
+                    "LLM_ENDPOINT": "http://guardrails-orchestrator-service.ani-datascience.svc.cluster.local:8090/rca",
+                    "LLM_MODEL": "llama-32-3b-instruct",
+                },
+                clear=False,
+            ),
+            mock.patch.object(rca_service_app, "_retrieve_rca_documents", return_value=self._documents()),
+            mock.patch.object(rca_service_app, "generate_with_llm_trace", return_value=llm_trace),
+            mock.patch.object(rca_service_app, "attach_rca"),
+            mock.patch.object(rca_service_app, "record_rca"),
+        ):
+            response = rca_service_app.rca(request)
+
+        self.assertEqual(response["guardrails"]["status"], "require_review")
+        self.assertEqual(response["rca_state"], "VALIDATED_REVIEW")
+        self.assertEqual(response["guardrails"]["reason"], "confidence_below_threshold")
+
 
 if __name__ == "__main__":
     unittest.main()

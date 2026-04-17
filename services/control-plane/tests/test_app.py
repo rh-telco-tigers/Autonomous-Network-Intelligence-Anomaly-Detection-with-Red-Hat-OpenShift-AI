@@ -1451,5 +1451,73 @@ class ServiceSnapshotTests(unittest.TestCase):
         self.assertEqual(predictive_services[0]["name"], "Predictive Service")
 
 
+class GuardrailsWorkflowTests(unittest.TestCase):
+    def test_generate_and_store_remediations_blocks_review_required_rca(self) -> None:
+        incident = {
+            "id": "inc-guardrails-1",
+            "project": "ani-demo",
+            "status": control_plane_app.RCA_GENERATED,
+            "workflow_revision": 4,
+            "rca_payload": {
+                "root_cause": "Retry amplification is saturating ingress.",
+                "recommendation": "Review ingress guardrails.",
+                "confidence": 0.41,
+                "guardrails": {
+                    "status": "require_review",
+                    "reason": "confidence_below_threshold",
+                },
+                "rca_state": "VALIDATED_REVIEW",
+            },
+        }
+
+        with (
+            mock.patch.object(control_plane_app, "get_incident", return_value=incident),
+            mock.patch.object(control_plane_app, "record_audit") as record_audit,
+            mock.patch.object(control_plane_app, "generate_remediation_suggestions") as generate_remediation_suggestions,
+            mock.patch.object(control_plane_app, "replace_remediations") as replace_remediations,
+        ):
+            remediations = control_plane_app._generate_and_store_remediations("inc-guardrails-1")
+
+        self.assertEqual(remediations, [])
+        generate_remediation_suggestions.assert_not_called()
+        replace_remediations.assert_not_called()
+        audit_types = [call.args[0] for call in record_audit.call_args_list]
+        self.assertIn("remediation_unlock_blocked", audit_types)
+
+    def test_post_rca_skips_reasoning_publication_for_review_required_rca(self) -> None:
+        payload = control_plane_app.RCAAttach(
+            root_cause="Retry amplification is saturating ingress.",
+            explanation="Evidence is still weak and needs review.",
+            confidence=0.41,
+            evidence=[
+                {"type": "metric", "reference": "retransmission_count", "weight": 0.4},
+                {"type": "doc", "reference": "knowledge/signaling/registration-storm.json", "weight": 0.4},
+            ],
+            recommendation="Review ingress guardrails.",
+            guardrails={"status": "require_review", "reason": "confidence_below_threshold"},
+            rca_state="VALIDATED_REVIEW",
+        )
+        incident = {"id": "inc-guardrails-2", "project": "ani-demo", "status": control_plane_app.RCA_GENERATED}
+        workflow_payload = {"incident": incident, "available_transitions": []}
+
+        with (
+            mock.patch.object(control_plane_app, "attach_rca", return_value=incident),
+            mock.patch.object(control_plane_app, "get_incident", return_value=incident),
+            mock.patch.object(control_plane_app, "ensure_project_access"),
+            mock.patch.object(control_plane_app, "record_audit"),
+            mock.patch.object(control_plane_app, "_record_debug_trace_packets"),
+            mock.patch.object(control_plane_app, "_publish_rca_reasoning_record") as publish_reasoning,
+            mock.patch.object(control_plane_app, "_publish_eda_event_best_effort"),
+            mock.patch.object(control_plane_app, "_generate_and_store_remediations", return_value=[]),
+            mock.patch.object(control_plane_app, "list_incidents", return_value=[]),
+            mock.patch.object(control_plane_app, "set_active_incidents"),
+            mock.patch.object(control_plane_app, "_workflow_payload", return_value=workflow_payload),
+        ):
+            response = control_plane_app.post_rca("inc-guardrails-2", payload, auth=None)
+
+        publish_reasoning.assert_not_called()
+        self.assertEqual(response, workflow_payload)
+
+
 if __name__ == "__main__":
     unittest.main()
