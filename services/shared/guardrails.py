@@ -577,6 +577,7 @@ def evaluate_ai_playbook_generation_guardrails(
     instruction_override: str = "",
     override_requested: bool = False,
     treat_instruction_as_operator_text: bool = True,
+    evaluation_text: str | None = None,
 ) -> Dict[str, Any]:
     raw_instruction = str(instruction or "").strip()
     raw_notes = str(notes or "").strip()
@@ -597,7 +598,12 @@ def evaluate_ai_playbook_generation_guardrails(
     sanitized_notes = str(sanitized_bundle.get("notes") or raw_notes).strip()
     detectors = list(summary.get("detector_results") or [])
     violations = list(summary.get("violations") or [])
-    evaluation_text = raw_instruction if treat_instruction_as_operator_text else (raw_override or raw_instruction)
+    raw_evaluation_text = None if evaluation_text is None else str(evaluation_text or "").strip()
+    evaluation_text = (
+        raw_evaluation_text
+        if raw_evaluation_text is not None
+        else (raw_instruction if treat_instruction_as_operator_text else (raw_override or raw_instruction))
+    )
     secret_exposure_detected = any(
         str(item.get("type") or "").strip() == "secret_exposure"
         for item in detectors
@@ -675,6 +681,7 @@ def evaluate_ai_playbook_generation_guardrails(
             "raw_instruction_length": len(raw_instruction),
             "sanitized_instruction_length": len(sanitized_instruction),
             "notes_length": len(raw_notes),
+            "evaluation_text_length": len(evaluation_text),
         },
         "instruction_preview": sanitized_instruction[:400],
         "notes_preview": sanitized_notes[:240],

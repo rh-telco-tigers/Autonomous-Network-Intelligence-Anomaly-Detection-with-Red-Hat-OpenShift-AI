@@ -1266,6 +1266,7 @@ def _request_ai_playbook_generation(
         raise HTTPException(status_code=400, detail="RCA must pass guardrails before requesting AI playbook generation")
 
     normalized_override = str(instruction_override or "").strip()
+    guardrails_evaluation_text = _playbook_guardrails_evaluation_text(notes, source_url, normalized_override)
     draft_instruction = (
         normalized_override
         if normalized_override
@@ -1284,6 +1285,7 @@ def _request_ai_playbook_generation(
         instruction_override=normalized_override,
         override_requested=guardrails_override,
         treat_instruction_as_operator_text=False,
+        evaluation_text=guardrails_evaluation_text,
     )
     sanitized_instruction = str(playbook_guardrails.get("sanitized_instruction") or draft_instruction).strip()
     sanitized_notes = str(playbook_guardrails.get("sanitized_notes") or notes).strip()
@@ -1398,6 +1400,7 @@ def _request_ai_playbook_generation(
         instruction_override=normalized_override,
         override_requested=guardrails_override,
         treat_instruction_as_operator_text=False,
+        evaluation_text=_playbook_guardrails_evaluation_text(sanitized_notes, source_url, normalized_override),
     )
     instruction = str(playbook_guardrails.get("sanitized_instruction") or instruction).strip()
     try:
@@ -1477,6 +1480,7 @@ def _preview_ai_playbook_generation_instruction(
     if not remediation_unlock_allowed(rca_payload):
         raise HTTPException(status_code=400, detail="RCA must pass guardrails before previewing AI playbook generation")
     normalized_override = str(instruction_override or "").strip()
+    guardrails_evaluation_text = _playbook_guardrails_evaluation_text(notes, source_url, normalized_override)
     instruction = (
         normalized_override
         if normalized_override
@@ -1494,6 +1498,7 @@ def _preview_ai_playbook_generation_instruction(
         source_url=source_url,
         instruction_override=normalized_override,
         treat_instruction_as_operator_text=False,
+        evaluation_text=guardrails_evaluation_text,
     )
     return {
         "instruction": str(playbook_guardrails.get("sanitized_instruction") or instruction).strip(),
@@ -2333,6 +2338,18 @@ def _operational_generation_constraints() -> List[str]:
         "- do not use k8s or kubernetes.core.k8s modules for generated playbooks in this environment",
         "- if a safe playbook cannot be grounded to these supported primitives, return a failed callback instead of unsupported YAML",
     ]
+
+
+def _playbook_guardrails_evaluation_text(
+    notes: str,
+    source_url: str,
+    instruction_override: str = "",
+) -> str:
+    override = str(instruction_override or "").strip()
+    if override:
+        return override
+    parts = [str(notes or "").strip(), str(source_url or "").strip()]
+    return "\n".join(part for part in parts if part).strip()
 
 
 def _build_playbook_generation_instruction(

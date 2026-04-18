@@ -165,6 +165,31 @@ class AIPlaybookGuardrailsTests(unittest.TestCase):
         self.assertTrue(decision["instruction_override_used"])
         self.assertFalse(any(item["type"] == "manual_instruction_override" for item in decision["violations"]))
 
+    def test_explicit_evaluation_text_limits_guardrails_to_operator_prompt_surface(self) -> None:
+        full_instruction = (
+            "Generate a reviewable Ansible playbook.\n"
+            "Incident context includes prior recommendations to patch the deployment and scale replicas if needed.\n"
+            "Do not execute changes without approval."
+        )
+        with (
+            mock.patch.dict(
+                guardrails.os.environ,
+                {"TRUSTYAI_ORCHESTRATOR_ENDPOINT": "https://guardrails.example.test"},
+                clear=False,
+            ),
+            mock.patch.object(guardrails.requests, "post", side_effect=self._mock_trustyai_post),
+        ):
+            decision = guardrails.evaluate_ai_playbook_generation_guardrails(
+                full_instruction,
+                notes="Generate a reversible diagnostics playbook and write collected artifacts to a ConfigMap.",
+                evaluation_text="Generate a reversible diagnostics playbook and write collected artifacts to a ConfigMap.",
+                treat_instruction_as_operator_text=False,
+            )
+
+        self.assertEqual(decision["status"], guardrails.ALLOW)
+        self.assertEqual(decision["provider"]["key"], "trustyai")
+        self.assertTrue(decision["trustyai_used"])
+
     def test_internal_service_endpoint_defaults_to_tls_verify_disabled(self) -> None:
         with mock.patch.dict(
             guardrails.os.environ,

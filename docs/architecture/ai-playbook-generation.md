@@ -189,7 +189,8 @@ This flow now has a dedicated prompt guardrail boundary before Kafka publish. Th
 
 - `notes` on the AI playbook request card
 - any full-text `instruction_override`
-- the final plain-text instruction assembled by the control-plane, which is sanitized before publish
+
+The full instruction assembled by the control-plane still exists and is what gets published to Kafka, but TrustyAI evaluation for this feature is intentionally anchored on the operator-controlled prompt surface rather than the full system-generated instruction bundle.
 
 This guardrail layer is implemented on the platform side, not in AAP Controller and not in the generated playbook itself.
 The control-plane now uses TrustyAI Guardrails standalone detections before Kafka publish:
