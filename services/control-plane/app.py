@@ -4693,6 +4693,7 @@ def generate_incident_ai_playbook(
     return {
         "remediation": result["remediation"],
         "generation": result["publish"],
+        "guardrails": result["guardrails"],
         "workflow": _workflow_payload(updated),
     }
 

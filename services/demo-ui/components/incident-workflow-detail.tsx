@@ -647,16 +647,6 @@ export function IncidentWorkflowDetail() {
   );
 
   const actorName = actionActor.trim() || "demo-ui";
-  const aiPlaybookNote = aiPlaybookRequest ? remediationNote(aiPlaybookRequest.id) : "";
-  const debouncedAiPlaybookNote = useDebouncedValue(aiPlaybookNote, 400);
-  const debouncedActorName = useDebouncedValue(actorName, 400);
-  const debouncedCurrentPageUrl = useDebouncedValue(currentPageUrl, 400);
-  const playbookInstructionPreviewQuery = usePlaybookInstructionPreviewQuery(incidentId, aiPlaybookRequest?.id, {
-    requestedBy: debouncedActorName,
-    notes: debouncedAiPlaybookNote,
-    sourceUrl: debouncedCurrentPageUrl,
-    enabled: Boolean(aiPlaybookRequest),
-  });
 
   const runRemediationAction = React.useCallback(
     async (remediation: RemediationRecord, mode: "approve" | "execute" | "reject", playbookYaml?: string) => {
@@ -1228,22 +1218,21 @@ export function IncidentWorkflowDetail() {
 
                     {aiPlaybookRequest ? (
                       <AiPlaybookGenerationCard
+                        incidentId={incidentId}
                         remediation={aiPlaybookRequest}
                         actor={actorName}
+                        sourceUrl={currentPageUrl}
                         note={remediationNote(aiPlaybookRequest.id)}
                         publishedInstruction={
                           generatePlaybookMutation.data?.remediation?.id === aiPlaybookRequest.id
                             ? generatePlaybookMutation.data?.generation.instruction
                             : undefined
                         }
-                        instructionDraft={playbookInstructionPreviewQuery.data?.instruction}
-                        previewGuardrails={playbookInstructionPreviewQuery.data?.guardrails}
                         latestGuardrails={
                           generatePlaybookMutation.data?.remediation?.id === aiPlaybookRequest.id
                             ? generatePlaybookMutation.data?.guardrails
                             : undefined
                         }
-                        instructionDraftLoading={playbookInstructionPreviewQuery.isLoading || playbookInstructionPreviewQuery.isFetching}
                         pending={pending}
                         onNoteChange={updateRemediationNote}
                         onFocus={setFocusedRemediationId}
@@ -2008,27 +1997,25 @@ function RemediationActionCard({
 }
 
 function AiPlaybookGenerationCard({
+  incidentId,
   remediation,
   actor,
+  sourceUrl,
   note,
   publishedInstruction,
-  instructionDraft,
-  previewGuardrails,
   latestGuardrails,
-  instructionDraftLoading,
   pending,
   onNoteChange,
   onFocus,
   onGenerate,
 }: {
+  incidentId: string;
   remediation: RemediationRecord;
   actor: string;
+  sourceUrl?: string;
   note: string;
   publishedInstruction?: string;
-  instructionDraft?: string;
-  previewGuardrails?: PlaybookGuardrailsDecision;
   latestGuardrails?: PlaybookGuardrailsDecision;
-  instructionDraftLoading?: boolean;
   pending: boolean;
   onNoteChange: (remediationId: number, value: string) => void;
   onFocus: (remediationId: number) => void;
@@ -2039,26 +2026,58 @@ function AiPlaybookGenerationCard({
   const metadata = (remediation.metadata ?? {}) as Record<string, unknown>;
   const generationStatus = playbookGenerationStatus(remediation);
   const storedGuardrails = playbookGuardrailsFromMetadata(remediation);
+  const exactInstruction = asStringValue(publishedInstruction) || asStringValue(metadata.generation_instruction);
+  const storedInstructionDraft =
+    asStringValue(storedGuardrails?.sanitized_instruction) ||
+    asStringValue(storedGuardrails?.instruction_preview) ||
+    exactInstruction;
+  const [instructionExpanded, setInstructionExpanded] = React.useState(false);
+  const [instructionValue, setInstructionValue] = React.useState(storedInstructionDraft);
+  const [instructionCustomized, setInstructionCustomized] = React.useState(false);
+  const debouncedActor = useDebouncedValue(actor.trim() || "demo-ui", 400);
+  const debouncedNote = useDebouncedValue(note, 400);
+  const debouncedSourceUrl = useDebouncedValue(sourceUrl ?? "", 400);
+  const trimmedInstructionOverride = instructionCustomized ? instructionValue.trim() : "";
+  const debouncedInstructionOverride = useDebouncedValue(trimmedInstructionOverride, 400);
+  const playbookInstructionPreviewQuery = usePlaybookInstructionPreviewQuery(incidentId, remediation.id, {
+    requestedBy: debouncedActor,
+    notes: debouncedNote,
+    sourceUrl: debouncedSourceUrl,
+    instructionOverride: debouncedInstructionOverride || undefined,
+    enabled: generationStatus !== "requested",
+  });
+  const previewGuardrails = playbookInstructionPreviewQuery.data?.guardrails;
+  const previewInstruction = playbookInstructionPreviewQuery.data?.instruction;
+  const storedNotesPreview = asStringValue(storedGuardrails?.notes_preview).trim();
+  const noteChangedFromStored = note.trim() !== storedNotesPreview;
   const activeGuardrails =
     latestGuardrails ??
-    (generationStatus === "requested" ? storedGuardrails : previewGuardrails ?? storedGuardrails);
-  const guardrailStatus = String(activeGuardrails?.status || "").trim().toLowerCase();
+    (generationStatus === "requested"
+      ? storedGuardrails ?? previewGuardrails
+      : instructionCustomized
+        ? previewGuardrails ?? storedGuardrails
+        : noteChangedFromStored
+          ? previewGuardrails ?? storedGuardrails
+          : storedGuardrails ?? previewGuardrails);
+  const activeGuardrailStatus =
+    String(activeGuardrails?.status || "").trim().toLowerCase() ||
+    (generationStatus === "review_required"
+      ? "require_review"
+      : generationStatus === "blocked"
+        ? "block"
+        : "");
   const guardrailProvider = activeGuardrails?.provider;
   const trustyaiMarked = Boolean(activeGuardrails?.trustyai_used) || guardrailProvider?.key === "trustyai";
   const guardrailViolations = Array.isArray(activeGuardrails?.violations) ? activeGuardrails.violations : [];
-  const exactInstruction = asStringValue(publishedInstruction) || asStringValue(metadata.generation_instruction);
   const draftInstruction =
-    asStringValue(instructionDraft) ||
+    asStringValue(previewInstruction) ||
     asStringValue(activeGuardrails?.sanitized_instruction) ||
-    asStringValue(storedGuardrails?.sanitized_instruction);
+    storedInstructionDraft;
   const displayedInstruction = generationStatus === "requested" && exactInstruction ? exactInstruction : draftInstruction || exactInstruction;
-  const [instructionExpanded, setInstructionExpanded] = React.useState(false);
-  const [instructionValue, setInstructionValue] = React.useState(displayedInstruction);
-  const [instructionCustomized, setInstructionCustomized] = React.useState(false);
   const correlationId = asStringValue(metadata.generation_correlation_id);
   const topic = asStringValue(metadata.generation_topic);
   const canEditInstruction = generationStatus !== "requested";
-  const canOverrideGuardrails = guardrailStatus === "require_review" && generationStatus !== "requested";
+  const canOverrideGuardrails = activeGuardrailStatus === "require_review" && generationStatus !== "requested";
   const sectionTitle = generationStatus === "requested" && exactInstruction ? "Exact Kafka instruction" : "Kafka instruction draft";
   const sectionSummary =
     generationStatus === "requested" && exactInstruction
@@ -2067,35 +2086,41 @@ function AiPlaybookGenerationCard({
   const statusMessage =
     generationStatus === "requested"
       ? "Instruction published to Kafka. Waiting for the external playbook generator to call back with the generated YAML."
-      : generationStatus === "review_required"
-        ? remediation.generation_error || "Guardrails require review before Kafka publish."
-        : generationStatus === "blocked"
-          ? remediation.generation_error || "Guardrails blocked this AI playbook request before Kafka publish."
-          : generationStatus === "failed"
-            ? remediation.generation_error || "The external generator reported a failure. Update the note and retry when ready."
-            : guardrailStatus === "require_review"
-              ? "The current draft is reviewable but will not publish until you explicitly override the guardrail."
-              : guardrailStatus === "block"
-                ? "The current draft would be blocked at publish time. Adjust the note or instruction to continue."
-                : "Publish a plain-text playbook request from the RCA, feature signals, and ranked remediation context.";
+      : generationStatus === "failed"
+        ? remediation.generation_error || "The external generator reported a failure. Update the note and retry when ready."
+        : activeGuardrailStatus === "require_review"
+          ? remediation.generation_error || "AI playbook request requires safety review before Kafka publish."
+          : activeGuardrailStatus === "block"
+            ? remediation.generation_error || "AI playbook request was blocked by guardrails before Kafka publish."
+            : activeGuardrailStatus === "allow"
+              ? "The current draft passed TrustyAI validation and can be published to Kafka."
+              : "Publish a plain-text playbook request from the RCA, feature signals, and ranked remediation context.";
   const statusClasses =
     generationStatus === "requested"
       ? "border-sky-400/20 bg-sky-500/8 text-[var(--text-strong)]"
-      : generationStatus === "review_required" || guardrailStatus === "require_review"
+      : activeGuardrailStatus === "require_review"
         ? "border-amber-400/25 bg-amber-500/10 text-[var(--text-strong)]"
-        : generationStatus === "blocked" || guardrailStatus === "block"
+        : activeGuardrailStatus === "block"
           ? "border-rose-400/25 bg-rose-500/10 text-[var(--text-strong)]"
           : generationStatus === "failed"
             ? "border-rose-400/20 bg-rose-500/10 text-[var(--text-strong)]"
             : "border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-[var(--text-strong)]";
   const guardrailMessage =
-    guardrailStatus === "allow"
+    activeGuardrailStatus === "allow"
       ? "The current draft passed the playbook-request guardrails and can be published."
-      : guardrailStatus === "require_review"
-        ? "The current draft is reviewable but risky. Kafka publish stays closed until you override."
-        : guardrailStatus === "block"
+      : activeGuardrailStatus === "require_review"
+        ? remediation.generation_error || "AI playbook request requires safety review before Kafka publish."
+        : activeGuardrailStatus === "block"
           ? "The current draft is blocked because it contains destructive or injection-like language."
           : "Guardrails evaluate the operator note and final prompt before Kafka publish.";
+  const statusLabel =
+    generationStatus === "requested"
+      ? "Requested"
+      : generationStatus === "failed"
+        ? "Failed"
+        : activeGuardrailStatus
+          ? playbookGuardrailLabel(activeGuardrailStatus)
+          : titleize(generationStatus.replace(/_/g, " "));
 
   React.useEffect(() => {
     setInstructionExpanded(false);
@@ -2130,7 +2155,7 @@ function AiPlaybookGenerationCard({
       <div className="mt-4 grid gap-4 md:grid-cols-4">
         <SummaryItem label="Action type" value="AI playbook request" />
         <SummaryItem label="Delivery path" value="Kafka -> callback" />
-        <SummaryItem label="Status" value={titleize(generationStatus.replace(/_/g, " "))} />
+        <SummaryItem label="Status" value={statusLabel} />
         <SummaryItem label="Revision scope" value={`Revision ${remediation.based_on_revision ?? "current"}`} />
       </div>
 
@@ -2183,8 +2208,8 @@ function AiPlaybookGenerationCard({
             ) : null}
             <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{guardrailMessage}</p>
           </div>
-          <div className={cn("inline-flex rounded-full border px-3 py-1 text-xs font-semibold", playbookGuardrailTone(guardrailStatus))}>
-            {playbookGuardrailLabel(guardrailStatus)}
+          <div className={cn("inline-flex rounded-full border px-3 py-1 text-xs font-semibold", playbookGuardrailTone(activeGuardrailStatus))}>
+            {playbookGuardrailLabel(activeGuardrailStatus)}
           </div>
         </div>
         {guardrailViolations.length ? (
@@ -2258,7 +2283,7 @@ function AiPlaybookGenerationCard({
                     : "This draft comes from the control-plane builder. If you leave it untouched, the server rebuilds it from the latest note and incident context at publish time."}
               </div>
             </div>
-          ) : instructionDraftLoading ? (
+          ) : playbookInstructionPreviewQuery.isLoading || playbookInstructionPreviewQuery.isFetching ? (
             <div className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
               Building the current server-generated instruction draft...
             </div>
