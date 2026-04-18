@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - detector-serving-runtimes.yaml
+  - prompt-injection-detector.yaml
+  - orchestrator-config.yaml
+  - gateway-config.yaml
+  - guardrails-orchestrator.yaml

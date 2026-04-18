@@ -1282,6 +1282,7 @@ def generate_with_llm_trace(prompt: str) -> Dict[str, object] | None:
     endpoint = os.getenv("LLM_ENDPOINT", "").rstrip("/")
     model_name = os.getenv("LLM_MODEL", "granite")
     api_key = os.getenv("LLM_API_KEY", "").strip()
+    host_header = os.getenv("LLM_REQUEST_HOST_HEADER", "").strip()
     request_timeout_seconds = float(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "10"))
     if not endpoint:
         return None
@@ -1299,11 +1300,15 @@ def generate_with_llm_trace(prompt: str) -> Dict[str, object] | None:
         "model_name": model_name,
         "timeout_seconds": request_timeout_seconds,
     }
+    if host_header:
+        metadata["host_header"] = host_header
     started_at = trace_now()
     try:
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
+        if host_header:
+            headers["Host"] = host_header
         response = requests.post(
             request_endpoint,
             headers=headers,
@@ -1312,10 +1317,67 @@ def generate_with_llm_trace(prompt: str) -> Dict[str, object] | None:
         )
         finished_at = trace_now()
         response.raise_for_status()
-        response_payload = response.json()
-        content = response_payload["choices"][0]["message"]["content"]
-        raw_content = _coerce_llm_message_content(content)
-        parsed = _parse_llm_json_content(content)
+        raw_response_text = response.text or ""
+        try:
+            response_payload = response.json()
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            response_payload = {
+                "status_code": response.status_code,
+                "raw_text": raw_response_text,
+                "error": str(exc),
+            }
+            return {
+                "parsed": None,
+                "request_payload": request_payload,
+                "response_payload": response_payload,
+                "raw_content": raw_response_text,
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "trace_packets": interaction_trace_packets(
+                    category="llm",
+                    service="rca-service",
+                    target="llm-runtime",
+                    method="POST",
+                    endpoint=request_endpoint,
+                    request_payload=request_payload,
+                    response_payload=response_payload,
+                    request_timestamp=started_at,
+                    response_timestamp=finished_at,
+                    metadata=metadata,
+                ),
+            }
+
+        try:
+            content = response_payload["choices"][0]["message"]["content"]
+            raw_content = _coerce_llm_message_content(content)
+            parsed = _parse_llm_json_content(content)
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            error_payload = {
+                "status_code": response.status_code,
+                "body": response_payload,
+                "raw_text": raw_response_text,
+                "error": str(exc),
+            }
+            return {
+                "parsed": None,
+                "request_payload": request_payload,
+                "response_payload": error_payload,
+                "raw_content": raw_response_text,
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "trace_packets": interaction_trace_packets(
+                    category="llm",
+                    service="rca-service",
+                    target="llm-runtime",
+                    method="POST",
+                    endpoint=request_endpoint,
+                    request_payload=request_payload,
+                    response_payload=error_payload,
+                    request_timestamp=started_at,
+                    response_timestamp=finished_at,
+                    metadata=metadata,
+                ),
+            }
         return {
             "parsed": parsed,
             "request_payload": request_payload,

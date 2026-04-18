@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from shared.incident_taxonomy import NORMAL_ANOMALY_TYPE
+from shared.guardrails import guardrail_status
 from shared.workflow import NEW, RCA_GENERATED, REMEDIATION_SUGGESTED, normalize_workflow_state, severity_from_prediction, severity_from_score
 
 
@@ -105,7 +106,14 @@ def init_db() -> None:
               prompt_version TEXT,
               retrieval_refs TEXT,
               payload TEXT,
-              created_at TEXT NOT NULL
+              created_at TEXT NOT NULL,
+              request_id TEXT,
+              trace_id TEXT,
+              lifecycle_state TEXT,
+              guardrail_status TEXT,
+              guardrail_reason TEXT,
+              is_active INTEGER DEFAULT 1,
+              superseded_at TEXT
             );
 
             CREATE TABLE IF NOT EXISTS incident_remediation (
@@ -252,6 +260,20 @@ def init_db() -> None:
                 "playbook_yaml": "TEXT",
             },
         )
+        _ensure_columns(
+            connection,
+            "incident_rca",
+            {
+                "request_id": "TEXT",
+                "trace_id": "TEXT",
+                "lifecycle_state": "TEXT",
+                "guardrail_status": "TEXT",
+                "guardrail_reason": "TEXT",
+                "is_active": "INTEGER DEFAULT 1",
+                "superseded_at": "TEXT",
+            },
+        )
+        connection.execute("UPDATE incident_rca SET is_active = COALESCE(is_active, 1)")
         connection.execute(
             """
             UPDATE incidents
@@ -430,7 +452,21 @@ def attach_rca(incident_id: str, rca_payload: Dict[str, Any]) -> Dict[str, Any] 
         incident = _incident_row(connection, incident_id)
         if not incident:
             return None
+        request_id = str(rca_payload.get("rca_request_id") or "").strip()
+        if request_id:
+            existing = connection.execute(
+                "SELECT id FROM incident_rca WHERE incident_id = ? AND request_id = ?",
+                (incident_id, request_id),
+            ).fetchone()
+            if existing:
+                return get_incident(incident_id)
         current_revision = int(incident["workflow_revision"] or 1)
+        try:
+            source_revision = int(rca_payload.get("source_workflow_revision") or current_revision)
+        except (TypeError, ValueError):
+            source_revision = current_revision
+        if source_revision < current_revision:
+            return get_incident(incident_id)
         next_revision = current_revision + 1
         version = int(
             connection.execute(
@@ -438,17 +474,32 @@ def attach_rca(incident_id: str, rca_payload: Dict[str, Any]) -> Dict[str, Any] 
                 (incident_id,),
             ).fetchone()[0]
         )
+        guardrails = rca_payload.get("guardrails") if isinstance(rca_payload.get("guardrails"), dict) else {}
+        lifecycle_state = str(rca_payload.get("rca_state") or "").strip()
+        current_guardrail_status = guardrail_status(rca_payload)
+        guardrail_reason = str(guardrails.get("reason") or "").strip()
+        trace_id = str(rca_payload.get("trace_id") or "").strip()
         retrieval_refs = [
             str(item.get("reference") or item.get("title") or "")
             for item in rca_payload.get("retrieved_documents", [])
             if isinstance(item, dict)
         ]
+        connection.execute(
+            """
+            UPDATE incident_rca
+            SET is_active = 0,
+                superseded_at = ?
+            WHERE incident_id = ? AND COALESCE(is_active, 1) = 1
+            """,
+            (_now(), incident_id),
+        )
         cursor = connection.execute(
             """
             INSERT INTO incident_rca (
               incident_id, version, based_on_revision, root_cause, category, confidence, explanation,
-              model_name, prompt_version, retrieval_refs, payload, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              model_name, prompt_version, retrieval_refs, payload, created_at,
+              request_id, trace_id, lifecycle_state, guardrail_status, guardrail_reason, is_active, superseded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 incident_id,
@@ -463,6 +514,13 @@ def attach_rca(incident_id: str, rca_payload: Dict[str, Any]) -> Dict[str, Any] 
                 _json_dumps(retrieval_refs),
                 _json_dumps(rca_payload),
                 _now(),
+                request_id,
+                trace_id,
+                lifecycle_state,
+                current_guardrail_status,
+                guardrail_reason,
+                1,
+                None,
             ),
         )
         rca_id = int(cursor.lastrowid)
@@ -491,7 +549,7 @@ def attach_rca(incident_id: str, rca_payload: Dict[str, Any]) -> Dict[str, Any] 
 def list_incident_rca(incident_id: str) -> List[Dict[str, Any]]:
     with closing(_connect()) as connection:
         rows = connection.execute(
-            "SELECT * FROM incident_rca WHERE incident_id = ? ORDER BY created_at DESC, id DESC",
+            "SELECT * FROM incident_rca WHERE incident_id = ? ORDER BY COALESCE(is_active, 1) DESC, created_at DESC, id DESC",
             (incident_id,),
         ).fetchall()
     return [_deserialize_rca(row) for row in rows]
@@ -1280,6 +1338,7 @@ def _deserialize_rca(row: sqlite3.Row) -> Dict[str, Any]:
     record["confidence"] = float(record.get("confidence") or 0.0)
     record["retrieval_refs"] = _json_loads(record.get("retrieval_refs"), [])
     record["payload"] = _json_loads(record.get("payload"), {})
+    record["is_active"] = bool(record.get("is_active"))
     return record
 
 

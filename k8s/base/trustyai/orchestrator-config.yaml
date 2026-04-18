@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ani-guardrails-orchestrator-config
+  annotations:
+    argocd.argoproj.io/sync-wave: "70"
+data:
+  config.yaml: |
+    chat_generation:
+      service:
+        hostname: ani-generative-proxy.ani-datascience.svc.cluster.local
+        port: 80
+    detectors:
+      pii_regex:
+        type: text_contents
+        service:
+          hostname: "127.0.0.1"
+          port: 8080
+        chunker_id: whole_doc_chunker
+        default_threshold: 0.5
+      prompt_injection:
+        type: text_contents
+        service:
+          hostname: prompt-injection-detector-predictor.ani-datascience.svc.cluster.local
+          port: 8000
+        chunker_id: whole_doc_chunker
+        default_threshold: 0.5
+    passthrough_headers:
+      - authorization
+      - content-type

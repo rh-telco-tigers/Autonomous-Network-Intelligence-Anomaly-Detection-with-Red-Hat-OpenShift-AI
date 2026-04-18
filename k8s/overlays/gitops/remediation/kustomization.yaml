@@ -3,3 +3,6 @@ kind: Kustomization
 
 resources:
   - ../../../base/remediation
+
+patches:
+  - path: aap-project-branch-patch.yaml

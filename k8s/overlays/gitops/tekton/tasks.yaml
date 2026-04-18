@@ -292,6 +292,122 @@ spec:
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
+  name: publish-image-if-authenticated
+  namespace: ani-tekton
+spec:
+  params:
+    - name: SOURCE_IMAGE
+      type: string
+    - name: DEST_IMAGE_REPO
+      type: string
+    - name: IMAGE_TAG
+      type: string
+      default: ""
+    - name: FALLBACK_IMAGE_TAG
+      type: string
+    - name: PUBLISH_ENABLED
+      type: string
+      default: "false"
+    - name: PROMOTE_LATEST
+      type: string
+      default: "false"
+    - name: STORAGE_DRIVER
+      type: string
+      default: vfs
+    - name: SOURCE_TLS_VERIFY
+      type: string
+      default: "true"
+    - name: DEST_TLS_VERIFY
+      type: string
+      default: "true"
+  volumes:
+    - name: quay-auth
+      secret:
+        secretName: autonomousnetworkintelligence-ocpani-pull-secret
+        optional: true
+  steps:
+    - name: publish
+      image: registry.redhat.io/rhel9/buildah@sha256:4e604d18fc609d25b2fc99814281944acaac78e8cd5e47b8359709b8b505db86
+      securityContext:
+        capabilities:
+          add:
+            - SETFCAP
+      volumeMounts:
+        - name: quay-auth
+          mountPath: /var/run/quay-auth
+          readOnly: true
+      computeResources:
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        auth_file="/var/run/quay-auth/.dockerconfigjson"
+
+        if [ "$(params.PUBLISH_ENABLED)" != "true" ]; then
+          echo "Quay publish disabled; skipping $(params.DEST_IMAGE_REPO)"
+          exit 0
+        fi
+
+        if [ ! -s "${auth_file}" ]; then
+          echo "Quay auth secret autonomousnetworkintelligence-ocpani-pull-secret not present; skipping $(params.DEST_IMAGE_REPO)"
+          exit 0
+        fi
+
+        if ! grep -q 'quay.io' "${auth_file}"; then
+          echo "Quay auth secret does not contain quay.io credentials; skipping $(params.DEST_IMAGE_REPO)"
+          exit 0
+        fi
+
+        raw_tag="$(params.IMAGE_TAG)"
+        if [ -z "${raw_tag}" ]; then
+          raw_tag="$(params.FALLBACK_IMAGE_TAG)"
+        fi
+
+        sanitized_tag="$(printf '%s' "${raw_tag}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^[-._]+//; s/[-._]+$//')"
+        if [ -z "${sanitized_tag}" ]; then
+          sanitized_tag="manual"
+        fi
+
+        primary_dest="$(params.DEST_IMAGE_REPO):${sanitized_tag}"
+
+        buildah --storage-driver="$(params.STORAGE_DRIVER)" \
+          pull \
+          --tls-verify="$(params.SOURCE_TLS_VERIFY)" \
+          "docker://$(params.SOURCE_IMAGE)"
+        buildah --storage-driver="$(params.STORAGE_DRIVER)" \
+          tag \
+          "$(params.SOURCE_IMAGE)" \
+          "${primary_dest}"
+        buildah --storage-driver="$(params.STORAGE_DRIVER)" \
+          push \
+          --tls-verify="$(params.DEST_TLS_VERIFY)" \
+          --authfile "${auth_file}" \
+          "${primary_dest}" \
+          "docker://${primary_dest}"
+
+        if [ "$(params.PROMOTE_LATEST)" = "true" ] && [ "${sanitized_tag}" != "latest" ]; then
+          latest_dest="$(params.DEST_IMAGE_REPO):latest"
+          buildah --storage-driver="$(params.STORAGE_DRIVER)" \
+            tag \
+            "${primary_dest}" \
+            "${latest_dest}"
+          buildah --storage-driver="$(params.STORAGE_DRIVER)" \
+            push \
+            --tls-verify="$(params.DEST_TLS_VERIFY)" \
+            --authfile "${auth_file}" \
+            "${latest_dest}" \
+            "docker://${latest_dest}"
+        fi
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
   name: register-modelcar-version
   namespace: ani-tekton
 spec:

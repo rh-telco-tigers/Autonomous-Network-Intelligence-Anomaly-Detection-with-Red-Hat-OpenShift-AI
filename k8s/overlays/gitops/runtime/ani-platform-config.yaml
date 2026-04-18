@@ -14,6 +14,7 @@ data:
   FEATURE_GATEWAY_URL: http://feature-gateway.ani-runtime.svc.cluster.local:8080
   ANOMALY_SERVICE_URL: http://anomaly-service.ani-runtime.svc.cluster.local:8080
   RCA_SERVICE_URL: http://rca-service.ani-runtime.svc.cluster.local:8080
+  CONSOLE_UPSTREAM_TIMEOUT_SECONDS: "60"
   PREDICTIVE_SERVICE_URL: http://ani-predictive-fs-predictor.ani-datascience.svc.cluster.local:8080
   PREDICTIVE_ENDPOINT: http://ani-predictive-fs-predictor.ani-datascience.svc.cluster.local:8080
   PREDICTIVE_MODEL_NAME: ani-predictive-fs
@@ -30,7 +31,7 @@ data:
   PREDICTIVE_ENDPOINT_MODELCAR: http://ani-predictive-backfill-modelcar-predictor.ani-datascience.svc.cluster.local:8080
   PREDICTIVE_MODEL_NAME_MODELCAR: ani-predictive-backfill-modelcar
   PREDICTIVE_MODEL_VERSION_LABEL_MODELCAR: ani-predictive-backfill-modelcar
-  INCIDENT_AUTO_RCA_SAMPLE_RATE: "1.0"
+  INCIDENT_AUTO_RCA_SAMPLE_RATE: "0.5"
   AI_PLAYBOOK_GENERATION_ENABLED: "true"
   AI_PLAYBOOK_GENERATION_KAFKA_BOOTSTRAP_SERVERS: ani-release-kafka-kafka-bootstrap.ani-data.svc.cluster.local:9092
   AI_PLAYBOOK_GENERATION_KAFKA_TOPIC: aiops-ansible-playbook-generate-instruction

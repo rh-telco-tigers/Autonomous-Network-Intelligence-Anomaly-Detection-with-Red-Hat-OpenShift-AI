@@ -1,3 +1,4 @@
+import difflib
 import logging
 import html
 import json
@@ -13,7 +14,8 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
+from urllib.parse import urlencode
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -55,6 +57,17 @@ from shared.gitea import (
     GiteaAutomationError,
     promote_generated_playbook,
     sync_generated_playbook_to_draft,
+)
+from shared.guardrails import (
+    ALLOW,
+    BLOCK,
+    REQUIRE_REVIEW,
+    evaluate_ai_playbook_generation_guardrails,
+    guardrail_status,
+    playbook_guardrails_provider,
+    remediation_unlock_allowed,
+    trustyai_orchestrator_endpoint,
+    trustyai_playbook_guardrails_enabled,
 )
 from shared.db import (
     attach_rca,
@@ -195,12 +208,18 @@ class RCAAttach(BaseModel):
     confidence: float
     evidence: List[Dict[str, object]]
     recommendation: str
+    rca_request_id: Optional[str] = None
+    trace_id: Optional[str] = None
+    rca_schema_version: Optional[str] = None
+    source_workflow_revision: Optional[int] = None
+    rca_state: Optional[str] = None
     generation_mode: Optional[str] = None
     generation_source_label: Optional[str] = None
     llm_used: Optional[bool] = None
     llm_configured: Optional[bool] = None
     llm_model: Optional[str] = None
     llm_runtime: Optional[str] = None
+    guardrails: Dict[str, object] = Field(default_factory=dict)
     retrieved_documents: List[Dict[str, object]] = Field(default_factory=list)
     debug_trace: List[Dict[str, object]] = Field(default_factory=list)
 
@@ -328,6 +347,387 @@ def _force_console_scenario_incident(
     return incident
 
 
+def _console_guardrails_demo_payloads(example: Literal["review", "block"], project: str) -> tuple[IncidentCreate, RCAAttach]:
+    suffix = uuid.uuid4().hex[:8]
+    incident_id = f"demo-guardrails-{example}-{suffix}"
+    request_id = f"demo-guardrails-{example}-{suffix}"
+    trace_id = f"trace-guardrails-{example}-{suffix}"
+
+    if example == "review":
+        return (
+            IncidentCreate(
+                incident_id=incident_id,
+                project=project,
+                anomaly_score=0.68,
+                anomaly_type="network_degradation",
+                predicted_confidence=0.68,
+                class_probabilities={"network_degradation": 0.68},
+                top_classes=[{"anomaly_type": "network_degradation", "probability": 0.68}],
+                is_anomaly=True,
+                model_version="ani-predictive-backfill-modelcar",
+                feature_window_id=f"demo-review-fw-{suffix}",
+                feature_snapshot={
+                    "node_id": "edge-1",
+                    "node_role": "edge",
+                    "scenario_name": "network_degradation",
+                    "latency_p95": 3100,
+                    "packet_loss": 0.08,
+                },
+                source_system="console-guardrails-demo",
+                auto_generate_rca=False,
+            ),
+            RCAAttach(
+                root_cause="Intermittent packet loss is degrading signaling reliability.",
+                explanation=(
+                    "The incident has enough context to be useful, but the RCA confidence is below the automatic "
+                    "allow threshold and should be reviewed by an operator before remediation is unlocked."
+                ),
+                confidence=0.54,
+                evidence=[
+                    {"type": "doc", "reference": "incident-evidence/network-loss-window.json", "weight": 0.5},
+                    {"type": "doc", "reference": "knowledge/network/latency-and-loss-review.json", "weight": 0.5},
+                ],
+                recommendation="Review low-risk traffic steering options after validating the evidence chain.",
+                rca_request_id=request_id,
+                trace_id=trace_id,
+                rca_schema_version="ani.rca.v1",
+                rca_state="VALIDATED_REVIEW",
+                generation_mode="guardrails-demo",
+                generation_source_label="ui-seeded-review",
+                llm_used=False,
+                llm_configured=True,
+                llm_model=str(os.getenv("LLM_MODEL", "llama-32-3b-instruct")),
+                llm_runtime="trustyai-demo",
+                guardrails={
+                    "status": "require_review",
+                    "reason": "confidence_below_threshold",
+                    "input_status": "allow",
+                    "output_status": "require_review",
+                    "policy_version": str(os.getenv("ANI_GUARDRAILS_POLICY_VERSION", "v1")),
+                    "violations": [
+                        {
+                            "type": "confidence_below_threshold",
+                            "severity": "medium",
+                            "message": "Confidence is below the automatic allow threshold.",
+                        }
+                    ],
+                    "detectors": [
+                        {"name": "response_schema", "result": "pass"},
+                        {"name": "grounding_consistency", "result": "warn"},
+                    ],
+                },
+                retrieved_documents=[
+                    {"reference": "incident-evidence/network-loss-window.json", "title": "Packet loss window"},
+                    {"reference": "knowledge/network/latency-and-loss-review.json", "title": "Network review guidance"},
+                ],
+            ),
+        )
+
+    return (
+        IncidentCreate(
+            incident_id=incident_id,
+            project=project,
+            anomaly_score=0.91,
+            anomaly_type="server_internal_error",
+            predicted_confidence=0.91,
+            class_probabilities={"server_internal_error": 0.91},
+            top_classes=[{"anomaly_type": "server_internal_error", "probability": 0.91}],
+            is_anomaly=True,
+            model_version="ani-predictive-backfill-modelcar",
+            feature_window_id=f"demo-blocked-fw-{suffix}",
+            feature_snapshot={
+                "node_id": "scscf-1",
+                "node_role": "S-CSCF",
+                "scenario_name": "server_internal_error",
+                "error_5xx_ratio": 0.42,
+                "latency_p95": 4200,
+            },
+            source_system="console-guardrails-demo",
+            auto_generate_rca=False,
+        ),
+        RCAAttach(
+            root_cause="TrustyAI Guardrails blocked the RCA before it could be accepted.",
+            explanation=(
+                "The prompt path included unsafe or policy-violating content, so the RCA was replaced with a safe "
+                "blocked result."
+            ),
+            confidence=0.0,
+            evidence=[
+                {"type": "doc", "reference": "incident-evidence/server-internal-error.json", "weight": 0.5},
+                {"type": "doc", "reference": "incident-reasoning/server-tier-guardrails.json", "weight": 0.5},
+            ],
+            recommendation="Manual investigation required before any remediation is unlocked.",
+            rca_request_id=request_id,
+            trace_id=trace_id,
+            rca_schema_version="ani.rca.v1",
+            rca_state="BLOCKED_POLICY",
+            generation_mode="guardrails-demo",
+            generation_source_label="ui-seeded-block",
+            llm_used=False,
+            llm_configured=True,
+            llm_model=str(os.getenv("LLM_MODEL", "llama-32-3b-instruct")),
+            llm_runtime="trustyai-demo",
+            guardrails={
+                "status": "block",
+                "reason": "input_blocked",
+                "input_status": "block",
+                "output_status": "block",
+                "policy_version": str(os.getenv("ANI_GUARDRAILS_POLICY_VERSION", "v1")),
+                "violations": [
+                    {
+                        "type": "prompt_injection",
+                        "severity": "high",
+                        "message": "Unsafe prompt instructions were detected in the RCA request path.",
+                    }
+                ],
+                "detectors": [
+                    {"name": "prompt-injection", "result": "fail"},
+                    {"name": "response_schema", "result": "not_run"},
+                ],
+            },
+            retrieved_documents=[
+                {"reference": "incident-evidence/server-internal-error.json", "title": "5xx error burst"},
+                {"reference": "incident-reasoning/server-tier-guardrails.json", "title": "Guardrails policy note"},
+            ],
+        ),
+    )
+
+
+def _safety_controls_provider(endpoint: str) -> Dict[str, str]:
+    normalized = endpoint.strip().lower()
+    if "guardrails" in normalized:
+        return {
+            "key": "trustyai",
+            "label": "TrustyAI Guardrails",
+            "family": "Guardrails",
+        }
+    if normalized:
+        return {
+            "key": "configured",
+            "label": "Configured safety provider",
+            "family": "Guardrails",
+        }
+    return {
+        "key": "none",
+        "label": "No safety provider configured",
+        "family": "Guardrails",
+    }
+
+
+def _playbook_request_safety_provider() -> Dict[str, str]:
+    return playbook_guardrails_provider(
+        trustyai_playbook_guardrails_enabled() and bool(trustyai_orchestrator_endpoint())
+    )
+
+
+def _llm_chat_completions_url(endpoint: str) -> str:
+    base = endpoint.rstrip("/")
+    if base.endswith("/chat/completions"):
+        return base
+    if base.endswith("/v1"):
+        return f"{base}/chat/completions"
+    return f"{base}/v1/chat/completions"
+
+
+def _safety_controls_status(project: str) -> Dict[str, object]:
+    endpoint = str(os.getenv("LLM_ENDPOINT", "")).strip()
+    model_name = str(os.getenv("LLM_MODEL", "llama-32-3b-instruct")).strip()
+    provider = _safety_controls_provider(endpoint)
+    incidents = list_incidents(project=project)
+    recent_items: List[Dict[str, object]] = []
+    counts = {"allow": 0, "require_review": 0, "block": 0, "error": 0, "untracked": 0}
+    playbook_items: List[Dict[str, object]] = []
+    playbook_counts = {"allow": 0, "require_review": 0, "block": 0, "untracked": 0}
+    override_count = 0
+    published_count = 0
+
+    for incident in incidents:
+        rca_payload = incident.get("rca_payload")
+        if not isinstance(rca_payload, dict) or not rca_payload:
+            pass
+        else:
+            guardrail_summary = _rca_guardrails_summary(rca_payload)
+            status = str(guardrail_summary.get("status") or "").strip() or "untracked"
+            if status not in counts:
+                counts["untracked"] += 1
+            else:
+                counts[status] += 1
+            recent_items.append(
+                {
+                    "incident_id": str(incident.get("id") or ""),
+                    "anomaly_type": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
+                    "severity": _incident_severity_label(incident),
+                    "workflow_state": normalize_workflow_state(str(incident.get("status") or NEW)),
+                    "created_at": str(incident.get("created_at") or ""),
+                    "updated_at": str(incident.get("updated_at") or incident.get("created_at") or ""),
+                    "guardrail_status": status,
+                    "guardrail_reason": str(guardrail_summary.get("reason") or "").strip(),
+                    "rca_state": str(guardrail_summary.get("state") or "").strip(),
+                    "generation_mode": str(rca_payload.get("generation_mode") or "").strip(),
+                    "generation_source_label": str(rca_payload.get("generation_source_label") or "").strip(),
+                    "llm_used": bool(rca_payload.get("llm_used")),
+                    "root_cause": str(rca_payload.get("root_cause") or ""),
+                    "recommendation": str(rca_payload.get("recommendation") or ""),
+                }
+            )
+
+        for remediation in list_incident_remediations(str(incident.get("id") or "")):
+            metadata = remediation.get("metadata") if isinstance(remediation.get("metadata"), dict) else {}
+            if not metadata:
+                continue
+            playbook_guardrails = (
+                metadata.get("playbook_guardrails") if isinstance(metadata.get("playbook_guardrails"), dict) else {}
+            )
+            if not playbook_guardrails:
+                continue
+            request_provider = (
+                playbook_guardrails.get("provider") if isinstance(playbook_guardrails.get("provider"), dict) else {}
+            )
+            request_provider = request_provider if request_provider else _playbook_request_safety_provider()
+            status = str(playbook_guardrails.get("status") or "").strip() or "untracked"
+            if status not in playbook_counts:
+                playbook_counts["untracked"] += 1
+            else:
+                playbook_counts[status] += 1
+
+            generation_status = str(
+                metadata.get("generation_status") or remediation.get("generation_status") or ""
+            ).strip()
+            if generation_status in {"requested", "generated"}:
+                published_count += 1
+            if bool(playbook_guardrails.get("override_applied")):
+                override_count += 1
+
+            updated_at = str(
+                metadata.get("playbook_guardrails_updated_at")
+                or metadata.get("generation_updated_at")
+                or metadata.get("generation_requested_at")
+                or incident.get("updated_at")
+                or remediation.get("created_at")
+                or ""
+            )
+            playbook_items.append(
+                {
+                    "incident_id": str(incident.get("id") or ""),
+                    "remediation_id": int(remediation.get("id") or 0),
+                    "title": str(remediation.get("title") or ""),
+                    "anomaly_type": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
+                    "severity": _incident_severity_label(incident),
+                    "workflow_state": normalize_workflow_state(str(incident.get("status") or NEW)),
+                    "generation_status": generation_status,
+                    "guardrail_status": status,
+                    "guardrail_reason": str(playbook_guardrails.get("reason") or "").strip(),
+                    "provider": request_provider,
+                    "trustyai_used": bool(playbook_guardrails.get("trustyai_used"))
+                    or str(request_provider.get("key") or "").strip() == "trustyai",
+                    "override_requested": bool(playbook_guardrails.get("override_requested")),
+                    "override_applied": bool(playbook_guardrails.get("override_applied")),
+                    "instruction_override_used": bool(playbook_guardrails.get("instruction_override_used")),
+                    "instruction_preview": str(playbook_guardrails.get("instruction_preview") or "").strip(),
+                    "notes_preview": str(playbook_guardrails.get("notes_preview") or "").strip(),
+                    "updated_at": updated_at,
+                }
+            )
+
+    recent_items.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""), reverse=True)
+    playbook_items.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+    return {
+        "provider": provider,
+        "project": project,
+        "configured": bool(endpoint),
+        "endpoint": endpoint,
+        "chat_completions_url": _llm_chat_completions_url(endpoint) if endpoint else "",
+        "model_name": model_name,
+        "policy_version": str(os.getenv("ANI_GUARDRAILS_POLICY_VERSION", "v1")).strip(),
+        "contract_version": str(os.getenv("ANI_GUARDRAILS_CONTRACT_VERSION", "ani.guardrails.v1")).strip(),
+        "rca_schema_version": str(os.getenv("ANI_RCA_SCHEMA_VERSION", "ani.rca.v1")).strip(),
+        "request_timeout_seconds": float(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "10")),
+        "summary": {
+            "tracked_incidents": len(recent_items),
+            "allow_count": counts["allow"],
+            "review_count": counts["require_review"],
+            "block_count": counts["block"],
+            "error_count": counts["error"],
+        },
+        "recent_incidents": recent_items[:10],
+        "playbook_generation": {
+            "provider": _playbook_request_safety_provider(),
+            "uses_trustyai": str(_playbook_request_safety_provider().get("key") or "") == "trustyai",
+            "manual_instruction_override_requires_review": False,
+            "summary": {
+                "tracked_requests": len(playbook_items),
+                "allow_count": playbook_counts["allow"],
+                "review_count": playbook_counts["require_review"],
+                "block_count": playbook_counts["block"],
+                "override_count": override_count,
+                "published_count": published_count,
+            },
+            "recent_requests": playbook_items[:10],
+        },
+    }
+
+
+def _run_safety_probe(prompt: str) -> Dict[str, object]:
+    endpoint = str(os.getenv("LLM_ENDPOINT", "")).strip()
+    if not endpoint:
+        raise HTTPException(status_code=503, detail="No safety provider is configured.")
+
+    request_endpoint = _llm_chat_completions_url(endpoint)
+    model_name = str(os.getenv("LLM_MODEL", "llama-32-3b-instruct")).strip()
+    api_key = str(os.getenv("LLM_API_KEY", "")).strip()
+    host_header = str(os.getenv("LLM_REQUEST_HOST_HEADER", "")).strip()
+    request_timeout_seconds = min(float(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "10")), 15.0)
+    request_payload = {
+        "model": model_name,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+        "temperature": 0,
+    }
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    if host_header:
+        headers["Host"] = host_header
+
+    started_at = time.perf_counter()
+    try:
+        response = requests.post(
+            request_endpoint,
+            headers=headers,
+            json=request_payload,
+            timeout=request_timeout_seconds,
+        )
+        elapsed_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Safety probe failed: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=f"Safety probe returned invalid JSON: {exc}") from exc
+
+    choices = payload.get("choices") if isinstance(payload, dict) else None
+    first_choice = choices[0] if isinstance(choices, list) and choices else {}
+    first_message = first_choice.get("message") if isinstance(first_choice, dict) else {}
+    content = ""
+    if isinstance(first_message, dict):
+        content = str(first_message.get("content") or "")
+
+    return {
+        "provider": _safety_controls_provider(endpoint),
+        "model_name": model_name,
+        "request_endpoint": request_endpoint,
+        "response_time_ms": elapsed_ms,
+        "warnings": payload.get("warnings") if isinstance(payload, dict) else None,
+        "detections": payload.get("detections") if isinstance(payload, dict) else None,
+        "content": content,
+        "raw": payload,
+    }
+
+
 class ModelPromotionRequest(BaseModel):
     version: str
     approved_by: str
@@ -341,6 +741,16 @@ class ClassifierProfileSelectionRequest(BaseModel):
 
 class ConsoleScenarioRequest(BaseModel):
     scenario: str
+    project: str = "ani-demo"
+
+
+class ConsoleGuardrailsDemoRequest(BaseModel):
+    example: Literal["review", "block"]
+    project: str = "ani-demo"
+
+
+class SafetyProbeRequest(BaseModel):
+    prompt: str
     project: str = "ani-demo"
 
 
@@ -401,6 +811,7 @@ class PlaybookGenerationRequest(BaseModel):
     notes: str = ""
     source_url: str = ""
     instruction_override: str = ""
+    guardrails_override: bool = False
 
 
 class PlaybookGenerationCallbackRequest(BaseModel):
@@ -777,6 +1188,20 @@ def _generate_and_store_remediations(incident_id: str, actor: str = "control-pla
     rca_payload = incident.get("rca_payload") or {}
     if not isinstance(rca_payload, dict) or not rca_payload:
         return []
+    if not remediation_unlock_allowed(rca_payload):
+        summary = _rca_guardrails_summary(rca_payload)
+        record_audit(
+            "remediation_unlock_blocked",
+            actor,
+            {
+                "guardrail_status": summary["status"],
+                "guardrail_reason": summary["reason"],
+                "rca_state": summary["state"],
+                "detail": "Guardrails did not allow remediation unlock from the current RCA payload.",
+            },
+            incident_id=incident_id,
+        )
+        return []
     previous_state = normalize_workflow_state(str(incident.get("status") or NEW))
     suggestions = generate_remediation_suggestions(incident, rca_payload, remediation_success_rates())
     remediations = replace_remediations(incident_id, incident.get("current_rca_id"), suggestions)
@@ -830,21 +1255,172 @@ def _request_ai_playbook_generation(
     notes: str,
     source_url: str,
     instruction_override: str = "",
+    guardrails_override: bool = False,
     background_tasks: BackgroundTasks | None = None,
 ) -> Dict[str, object]:
     if not _ai_playbook_generation_enabled():
         raise HTTPException(status_code=400, detail="AI playbook generation is disabled")
     if not _is_ai_playbook_generation_request(remediation):
         raise HTTPException(status_code=400, detail="Selected remediation is not an AI playbook generation request")
-    if not isinstance(incident.get("rca_payload"), dict) or not incident.get("rca_payload"):
+    rca_payload = incident.get("rca_payload") if isinstance(incident.get("rca_payload"), dict) else {}
+    if not rca_payload:
         raise HTTPException(status_code=400, detail="RCA must exist before requesting AI playbook generation")
+    if not remediation_unlock_allowed(rca_payload):
+        raise HTTPException(status_code=400, detail="RCA must pass guardrails before requesting AI playbook generation")
+
+    normalized_override = str(instruction_override or "").strip()
+    guardrails_evaluation_text = _playbook_guardrails_evaluation_text(notes, source_url, normalized_override)
+    draft_instruction = (
+        normalized_override
+        if normalized_override
+        else _build_playbook_generation_instruction(
+            incident,
+            remediation,
+            AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
+            notes,
+            source_url,
+        )
+    )
+    playbook_guardrails = evaluate_ai_playbook_generation_guardrails(
+        draft_instruction,
+        notes=notes,
+        source_url=source_url,
+        instruction_override=normalized_override,
+        override_requested=guardrails_override,
+        treat_instruction_as_operator_text=False,
+        evaluation_text=guardrails_evaluation_text,
+    )
+    sanitized_instruction = str(playbook_guardrails.get("sanitized_instruction") or draft_instruction).strip()
+    sanitized_notes = str(playbook_guardrails.get("sanitized_notes") or notes).strip()
+    status = str(playbook_guardrails.get("status") or "").strip().lower()
+
+    if status == BLOCK:
+        metadata = _merge_remediation_metadata(
+            remediation,
+            {
+                "ai_generated": True,
+                "generation_kind": "request",
+                "generation_provider": AI_PLAYBOOK_GENERATION_PROVIDER,
+                "generation_status": "blocked",
+                "generation_error": "AI playbook request blocked by guardrails before Kafka publish.",
+                "generation_requested_at": _now_iso(),
+                "generation_requested_by": requested_by,
+                "generation_notes": sanitized_notes,
+                "generation_source_url": source_url,
+                "generation_instruction_preview": sanitized_instruction,
+                "playbook_guardrails": playbook_guardrails,
+            },
+        )
+        updated_remediation = update_incident_remediation(
+            str(incident.get("id") or ""),
+            int(remediation.get("id") or 0),
+            status="available",
+            metadata=metadata,
+        )
+        if not updated_remediation:
+            raise HTTPException(status_code=500, detail="Failed to persist blocked AI playbook generation request")
+        record_audit(
+            "ai_playbook_generation_blocked",
+            requested_by,
+            {
+                "remediation_id": updated_remediation.get("id"),
+                "source_url": source_url,
+                "notes": sanitized_notes,
+                "guardrails": playbook_guardrails,
+            },
+            incident_id=str(incident.get("id") or ""),
+        )
+        return {
+            "remediation": updated_remediation,
+            "publish": {
+                "published": False,
+                "topic": "",
+                "correlation_id": "",
+                "instruction": sanitized_instruction,
+                "instruction_preview": sanitized_instruction[:400],
+            },
+            "guardrails": playbook_guardrails,
+        }
+
+    if status == REQUIRE_REVIEW and not guardrails_override:
+        metadata = _merge_remediation_metadata(
+            remediation,
+            {
+                "ai_generated": True,
+                "generation_kind": "request",
+                "generation_provider": AI_PLAYBOOK_GENERATION_PROVIDER,
+                "generation_status": "review_required",
+                "generation_error": "AI playbook request requires safety review before Kafka publish.",
+                "generation_requested_at": _now_iso(),
+                "generation_requested_by": requested_by,
+                "generation_notes": sanitized_notes,
+                "generation_source_url": source_url,
+                "generation_instruction_preview": sanitized_instruction,
+                "playbook_guardrails": playbook_guardrails,
+            },
+        )
+        updated_remediation = update_incident_remediation(
+            str(incident.get("id") or ""),
+            int(remediation.get("id") or 0),
+            status="available",
+            metadata=metadata,
+        )
+        if not updated_remediation:
+            raise HTTPException(status_code=500, detail="Failed to persist AI playbook generation review request")
+        record_audit(
+            "ai_playbook_generation_review_required",
+            requested_by,
+            {
+                "remediation_id": updated_remediation.get("id"),
+                "source_url": source_url,
+                "notes": sanitized_notes,
+                "guardrails": playbook_guardrails,
+            },
+            incident_id=str(incident.get("id") or ""),
+        )
+        return {
+            "remediation": updated_remediation,
+            "publish": {
+                "published": False,
+                "topic": "",
+                "correlation_id": "",
+                "instruction": sanitized_instruction,
+                "instruction_preview": sanitized_instruction[:400],
+            },
+            "guardrails": playbook_guardrails,
+        }
 
     correlation_id = uuid.uuid4().hex
-    normalized_override = str(instruction_override or "").strip()
+    preview_instruction = _build_playbook_generation_instruction(
+        incident,
+        remediation,
+        AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
+        sanitized_notes,
+        source_url,
+    )
     instruction = (
         normalized_override
         if normalized_override
-        else _build_playbook_generation_instruction(incident, remediation, correlation_id, notes, source_url)
+        else _build_playbook_generation_instruction(incident, remediation, correlation_id, sanitized_notes, source_url)
+    )
+    evaluation_override = (
+        _playbook_instruction_override_delta(preview_instruction, normalized_override) if normalized_override else ""
+    )
+    playbook_guardrails = evaluate_ai_playbook_generation_guardrails(
+        instruction,
+        notes=sanitized_notes,
+        source_url=source_url,
+        instruction_override=normalized_override,
+        override_requested=guardrails_override,
+        treat_instruction_as_operator_text=False,
+        evaluation_text=_playbook_guardrails_evaluation_text(sanitized_notes, source_url, evaluation_override),
+    )
+    instruction = str(playbook_guardrails.get("sanitized_instruction") or instruction).strip()
+    instruction = _finalize_playbook_generation_instruction(
+        str(incident.get("id") or ""),
+        int(remediation.get("id") or 0),
+        instruction,
+        correlation_id,
     )
     try:
         publish_result = _publish_playbook_generation_instruction(correlation_id, instruction)
@@ -862,10 +1438,12 @@ def _request_ai_playbook_generation(
             "generation_error": "",
             "generation_requested_at": _now_iso(),
             "generation_requested_by": requested_by,
-            "generation_notes": notes,
+            "generation_notes": sanitized_notes,
             "generation_source_url": source_url,
             "generation_topic": publish_result["topic"],
             "generation_instruction": instruction,
+            "generation_instruction_preview": instruction[:400],
+            "playbook_guardrails": playbook_guardrails,
         },
     )
     updated_remediation = update_incident_remediation(
@@ -877,14 +1455,17 @@ def _request_ai_playbook_generation(
     if not updated_remediation:
         raise HTTPException(status_code=500, detail="Failed to persist AI playbook generation request")
     record_audit(
-        "ai_playbook_generation_requested",
+        "ai_playbook_generation_requested"
+        if status == ALLOW
+        else "ai_playbook_generation_override_published",
         requested_by,
         {
             "remediation_id": updated_remediation.get("id"),
             "correlation_id": correlation_id,
             "topic": publish_result["topic"],
             "source_url": source_url,
-            "notes": notes,
+            "notes": sanitized_notes,
+            "guardrails": playbook_guardrails,
         },
         incident_id=str(incident.get("id") or ""),
     )
@@ -898,44 +1479,155 @@ def _request_ai_playbook_generation(
         )
     return {
         "remediation": updated_remediation,
-        "publish": publish_result,
+        "publish": {"published": True} | publish_result,
+        "guardrails": playbook_guardrails,
     }
 
 
 def _preview_ai_playbook_generation_instruction(
     incident: Dict[str, object],
     remediation: Dict[str, object],
+    requested_by: str,
     notes: str,
     source_url: str,
+    instruction_override: str = "",
 ) -> Dict[str, object]:
     if not _is_ai_playbook_generation_request(remediation):
         raise HTTPException(status_code=400, detail="Selected remediation is not an AI playbook generation request")
-    if not isinstance(incident.get("rca_payload"), dict) or not incident.get("rca_payload"):
+    rca_payload = incident.get("rca_payload") if isinstance(incident.get("rca_payload"), dict) else {}
+    if not rca_payload:
         raise HTTPException(status_code=400, detail="RCA must exist before previewing AI playbook generation")
-
+    if not remediation_unlock_allowed(rca_payload):
+        raise HTTPException(status_code=400, detail="RCA must pass guardrails before previewing AI playbook generation")
+    normalized_override = str(instruction_override or "").strip()
+    base_instruction = _build_playbook_generation_instruction(
+        incident,
+        remediation,
+        AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
+        notes,
+        source_url,
+    )
+    evaluation_override = (
+        _playbook_instruction_override_delta(base_instruction, normalized_override) if normalized_override else ""
+    )
+    guardrails_evaluation_text = _playbook_guardrails_evaluation_text(notes, source_url, evaluation_override)
+    instruction = normalized_override if normalized_override else base_instruction
+    playbook_guardrails = evaluate_ai_playbook_generation_guardrails(
+        instruction,
+        notes=notes,
+        source_url=source_url,
+        instruction_override=normalized_override,
+        treat_instruction_as_operator_text=False,
+        evaluation_text=guardrails_evaluation_text,
+    )
+    updated_metadata = _merge_remediation_metadata(
+        remediation,
+        {
+            "generation_requested_by": requested_by,
+            "generation_notes": str(playbook_guardrails.get("sanitized_notes") or notes).strip(),
+            "generation_source_url": source_url,
+            "generation_instruction_preview": str(playbook_guardrails.get("sanitized_instruction") or instruction).strip()[:400],
+            "playbook_guardrails": playbook_guardrails,
+            "playbook_guardrails_updated_at": _now_iso(),
+        },
+    )
+    updated = update_incident_remediation(
+        str(incident.get("id") or ""),
+        int(remediation.get("id") or 0),
+        status=str(remediation.get("status") or "available"),
+        metadata=updated_metadata,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to persist AI playbook generation preview state")
     return {
-        "instruction": _build_playbook_generation_instruction(
-            incident,
-            remediation,
-            AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
-            notes,
-            source_url,
-        ),
+        "instruction": str(playbook_guardrails.get("sanitized_instruction") or instruction).strip(),
         "correlation_id": AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
         "draft": True,
+        "guardrails": playbook_guardrails,
     }
+
+
+def _effective_callback_correlation_id(
+    remediation: Dict[str, object],
+    payload_correlation_id: str,
+) -> tuple[str, Dict[str, object]]:
+    metadata = _remediation_metadata(remediation)
+    requested_correlation_id = str(metadata.get("generation_correlation_id") or "").strip()
+    provider_correlation_id = str(payload_correlation_id or "").strip()
+    effective_correlation_id = requested_correlation_id or provider_correlation_id
+    callback_metadata: Dict[str, object] = {}
+    if provider_correlation_id:
+        callback_metadata["provider_reported_correlation_id"] = provider_correlation_id
+        callback_metadata["provider_reported_correlation_mismatch"] = (
+            bool(requested_correlation_id) and provider_correlation_id != requested_correlation_id
+        )
+    return effective_correlation_id, callback_metadata
+
+
+def _fallback_ai_playbook_generation_remediation(
+    incident_id: str,
+    correlation_id: str,
+) -> Dict[str, object] | None:
+    normalized_correlation_id = str(correlation_id or "").strip()
+    pending_candidates: list[Dict[str, object]] = []
+    generated_candidates: list[Dict[str, object]] = []
+
+    for remediation in list_incident_remediations(incident_id):
+        metadata = _remediation_metadata(remediation)
+        generation_kind = str(metadata.get("generation_kind") or "").strip().lower()
+        generation_status = str(metadata.get("generation_status") or remediation.get("generation_status") or "").strip().lower()
+        if not (
+            _is_ai_playbook_generation_request(remediation)
+            or generation_kind in {"request", "generated"}
+            or bool(metadata.get("ai_generated"))
+        ):
+            continue
+        if generation_status == "requested":
+            pending_candidates.append(remediation)
+        elif generation_status in {"generated", "failed"}:
+            generated_candidates.append(remediation)
+
+    if len(pending_candidates) == 1:
+        return pending_candidates[0]
+    if normalized_correlation_id in {"", AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID} and len(generated_candidates) == 1:
+        return generated_candidates[0]
+    return None
+
+
+def _find_ai_playbook_generation_remediation_for_callback(
+    incident_id: str,
+    correlation_id: str,
+    remediation_id: int | None = None,
+) -> Dict[str, object] | None:
+    if remediation_id is not None and remediation_id > 0:
+        remediation = get_incident_remediation(incident_id, remediation_id)
+        if remediation and (
+            _is_ai_playbook_generation_request(remediation)
+            or str(_remediation_metadata(remediation).get("generation_kind") or "").strip().lower() in {"request", "generated"}
+            or bool(_remediation_metadata(remediation).get("ai_generated"))
+        ):
+            return remediation
+
+    remediation = _find_ai_playbook_generation_remediation(incident_id, correlation_id)
+    if remediation is not None:
+        return remediation
+
+    return _fallback_ai_playbook_generation_remediation(incident_id, correlation_id)
 
 
 def _apply_ai_playbook_generation_callback(
     incident_id: str,
     payload: PlaybookGenerationCallbackRequest,
+    remediation_id: int | None = None,
 ) -> Dict[str, object]:
     incident = get_incident(incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
-    remediation = _find_ai_playbook_generation_remediation(incident_id, payload.correlation_id)
+    remediation = _find_ai_playbook_generation_remediation_for_callback(incident_id, payload.correlation_id, remediation_id)
     if remediation is None:
         raise HTTPException(status_code=404, detail="No AI playbook generation request matches this correlation id")
+    effective_correlation_id, callback_correlation_metadata = _effective_callback_correlation_id(remediation, payload.correlation_id)
+    payload = payload.model_copy(update={"correlation_id": effective_correlation_id})
 
     provider_name = str(payload.provider_name or AI_PLAYBOOK_GENERATION_PROVIDER).strip() or AI_PLAYBOOK_GENERATION_PROVIDER
     normalized_status = str(payload.status or "generated").strip().lower() or "generated"
@@ -948,7 +1640,8 @@ def _apply_ai_playbook_generation_callback(
             "generation_correlation_id": payload.correlation_id,
             "generation_updated_at": _now_iso(),
             "provider_run_id": str(payload.provider_run_id or "").strip(),
-        },
+        }
+        | callback_correlation_metadata,
     )
 
     if normalized_status == "failed":
@@ -1256,8 +1949,11 @@ def _public_control_plane_base_url() -> str:
     ).rstrip("/")
 
 
-def _playbook_generation_callback_url(incident_id: str) -> str:
-    return f"{_public_control_plane_base_url()}/incidents/{incident_id}/playbook-generation/callback"
+def _playbook_generation_callback_url(incident_id: str, remediation_id: int | None = None) -> str:
+    base_url = f"{_public_control_plane_base_url()}/incidents/{incident_id}/playbook-generation/callback"
+    if remediation_id is None or remediation_id <= 0:
+        return base_url
+    return f"{base_url}?{urlencode({'remediation_id': remediation_id})}"
 
 
 def _remediation_metadata(remediation: Dict[str, object] | None) -> Dict[str, object]:
@@ -1758,6 +2454,18 @@ def _operational_generation_constraints() -> List[str]:
     ]
 
 
+def _playbook_guardrails_evaluation_text(
+    notes: str,
+    source_url: str,
+    instruction_override: str = "",
+) -> str:
+    override = str(instruction_override or "").strip()
+    if override:
+        return override
+    parts = [str(notes or "").strip(), str(source_url or "").strip()]
+    return "\n".join(part for part in parts if part).strip()
+
+
 def _build_playbook_generation_instruction(
     incident: Dict[str, object],
     remediation: Dict[str, object],
@@ -1775,7 +2483,7 @@ def _build_playbook_generation_instruction(
         if isinstance(item, dict)
     ]
     candidate_titles = _candidate_remediation_titles(incident_id, ignored_id=int(remediation.get("id") or 0))
-    callback_url = _playbook_generation_callback_url(incident_id)
+    callback_url = _playbook_generation_callback_url(incident_id, int(remediation.get("id") or 0))
     lines = [
         f"Generate a reviewable Ansible playbook for IMS incident {incident_id}.",
         "",
@@ -1832,6 +2540,40 @@ def _build_playbook_generation_instruction(
         ]
     )
     return "\n".join(lines).strip()
+
+
+def _playbook_instruction_override_delta(base_instruction: str, override_instruction: str) -> str:
+    base_lines = str(base_instruction or "").splitlines()
+    override_lines = str(override_instruction or "").splitlines()
+    delta_lines = [line[2:].strip() for line in difflib.ndiff(base_lines, override_lines) if line.startswith("+ ")]
+    delta = "\n".join(line for line in delta_lines if line).strip()
+    return delta or str(override_instruction or "").strip()
+
+
+def _replace_or_append_playbook_contract_field(instruction: str, field_name: str, value: str) -> str:
+    replacement = f"- {field_name}: {value}"
+    pattern = re.compile(rf"(?m)^- {re.escape(field_name)}:\s*.*$")
+    if pattern.search(instruction):
+        return pattern.sub(replacement, instruction, count=1)
+    if instruction.strip():
+        return f"{instruction.rstrip()}\n{replacement}"
+    return replacement
+
+
+def _finalize_playbook_generation_instruction(
+    incident_id: str,
+    remediation_id: int,
+    instruction: str,
+    correlation_id: str,
+) -> str:
+    finalized = str(instruction or "").strip()
+    finalized = _replace_or_append_playbook_contract_field(
+        finalized,
+        "callback_url",
+        _playbook_generation_callback_url(incident_id, remediation_id),
+    )
+    finalized = _replace_or_append_playbook_contract_field(finalized, "correlation_id", correlation_id)
+    return finalized
 
 
 def _publish_playbook_generation_instruction(correlation_id: str, instruction: str) -> Dict[str, object]:
@@ -2904,6 +3646,8 @@ def _incident_feature_context(incident: Dict[str, object]) -> Dict[str, object]:
 
 def _incident_rca_request_payload(incident: Dict[str, object]) -> Dict[str, object]:
     features = _incident_feature_context(incident)
+    rca_request_id = f"rca-{uuid.uuid4().hex}"
+    trace_id = f"trace-{uuid.uuid4().hex}"
     return {
         "incident_id": str(incident.get("id") or incident.get("incident_id") or ""),
         "context": {
@@ -2912,7 +3656,24 @@ def _incident_rca_request_payload(incident: Dict[str, object]) -> Dict[str, obje
             "anomaly_type": incident.get("anomaly_type"),
             "feature_window_id": incident.get("feature_window_id"),
             "features": features,
+            "workflow_revision": int(incident.get("workflow_revision") or 1),
+            "rca_request_id": rca_request_id,
+            "trace_id": trace_id,
         },
+    }
+
+
+def _rca_guardrails_summary(rca_payload: Dict[str, object] | None) -> Dict[str, str]:
+    if not isinstance(rca_payload, dict):
+        return {"status": "", "reason": "", "state": ""}
+    guardrails = rca_payload.get("guardrails")
+    guardrail_reason = ""
+    if isinstance(guardrails, dict):
+        guardrail_reason = str(guardrails.get("reason") or "").strip()
+    return {
+        "status": guardrail_status(rca_payload),
+        "reason": guardrail_reason,
+        "state": str(rca_payload.get("rca_state") or "").strip(),
     }
 
 
@@ -3267,7 +4028,9 @@ def _timeline_title(event_type: str) -> str:
         "scenario_executed": "Scenario executed",
         "incident_created": "Incident created",
         "rca_attached": "RCA attached",
+        "rca_review_required": "RCA review required",
         "remediations_generated": "Remediations generated",
+        "remediation_unlock_blocked": "Remediation unlock blocked",
         "workflow_transition": "Workflow transitioned",
         "incident_approved": "Action approved",
         "action_executed": "Action executed",
@@ -3302,8 +4065,18 @@ def _timeline_detail(event: Dict[str, object]) -> str:
     if event_type == "rca_attached":
         confidence = _coerce_float(payload.get("confidence"))
         return f"RCA attached with confidence {confidence:.2f}."
+    if event_type == "rca_review_required":
+        return (
+            f"Guardrails marked the RCA as {payload.get('guardrail_status', 'review required')} "
+            f"({payload.get('guardrail_reason', 'policy review')})."
+        )
     if event_type == "remediations_generated":
         return f"{int(payload.get('count', 0))} remediation suggestions ranked for approval."
+    if event_type == "remediation_unlock_blocked":
+        return (
+            f"Guardrails prevented remediation unlock with status {payload.get('guardrail_status', 'unknown')} "
+            f"({payload.get('guardrail_reason', 'no reason recorded')})."
+        )
     if event_type == "workflow_transition":
         from_state = payload.get("from_state", "unknown")
         to_state = payload.get("to_state", "unknown")
@@ -3941,7 +4714,20 @@ def post_rca(incident_id: str, payload: RCAAttach, auth: AuthContext | None = De
         + inbound_debug_trace,
     )
     refreshed = get_incident(incident_id) or incident
-    _publish_rca_reasoning_record(refreshed, payload.model_dump())
+    if remediation_unlock_allowed(request_payload):
+        _publish_rca_reasoning_record(refreshed, request_payload)
+    else:
+        guardrail_summary = _rca_guardrails_summary(request_payload)
+        record_audit(
+            "rca_review_required",
+            "rca-service",
+            {
+                "guardrail_status": guardrail_summary["status"],
+                "guardrail_reason": guardrail_summary["reason"],
+                "rca_state": guardrail_summary["state"],
+            },
+            incident_id=incident_id,
+        )
     _publish_eda_event_best_effort("rca_attached", refreshed)
     _generate_and_store_remediations(incident_id, actor="rca-service")
     refreshed = get_incident(incident_id)
@@ -4048,12 +4834,14 @@ def generate_incident_ai_playbook(
         payload.notes,
         payload.source_url,
         payload.instruction_override,
+        payload.guardrails_override,
         background_tasks,
     )
     updated = get_incident(incident_id) or incident
     return {
         "remediation": result["remediation"],
         "generation": result["publish"],
+        "guardrails": result["guardrails"],
         "workflow": _workflow_payload(updated),
     }
 
@@ -4076,8 +4864,10 @@ def preview_incident_ai_playbook_instruction(
     return _preview_ai_playbook_generation_instruction(
         incident,
         remediation,
+        payload.requested_by,
         payload.notes,
         payload.source_url,
+        payload.instruction_override,
     )
 
 
@@ -4085,6 +4875,7 @@ def preview_incident_ai_playbook_instruction(
 def ai_playbook_generation_callback(
     incident_id: str,
     payload: PlaybookGenerationCallbackRequest,
+    remediation_id: int | None = None,
     auth: AuthContext | None = Depends(require_api_key),
 ):
     ensure_role(auth, "automation")
@@ -4092,7 +4883,7 @@ def ai_playbook_generation_callback(
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
     ensure_project_access(auth, incident["project"])
-    updated_remediation = _apply_ai_playbook_generation_callback(incident_id, payload)
+    updated_remediation = _apply_ai_playbook_generation_callback(incident_id, payload, remediation_id)
     updated_incident = get_incident(incident_id) or incident
     actor = str(payload.provider_name or AI_PLAYBOOK_GENERATION_PROVIDER).strip() or AI_PLAYBOOK_GENERATION_PROVIDER
     _sync_current_ticket_best_effort(
@@ -5278,6 +6069,20 @@ def platform_status(auth: AuthContext | None = Depends(require_api_key)):
     }
 
 
+@app.get("/safety-controls/status")
+def safety_controls_status(project: str = "ani-demo", auth: AuthContext | None = Depends(require_api_key)):
+    ensure_role(auth, "operator")
+    ensure_project_access(auth, project)
+    return _safety_controls_status(project)
+
+
+@app.post("/safety-controls/probe")
+def safety_controls_probe(payload: SafetyProbeRequest, auth: AuthContext | None = Depends(require_api_key)):
+    ensure_role(auth, "operator")
+    ensure_project_access(auth, payload.project)
+    return _run_safety_probe(payload.prompt)
+
+
 @app.get("/console/state")
 def console_state(project: str = "ani-demo", auth: AuthContext | None = Depends(require_api_key)):
     ensure_project_access(auth, project)
@@ -5419,6 +6224,36 @@ def console_run_scenario(payload: ConsoleScenarioRequest, auth: AuthContext | No
         "rca": rca_payload,
         "rca_error": rca_error,
         "incident": enriched_incident,
+        "state": state,
+    }
+
+
+@app.post("/console/guardrails-demo")
+def console_guardrails_demo(payload: ConsoleGuardrailsDemoRequest, auth: AuthContext | None = Depends(require_api_key)):
+    ensure_project_access(auth, payload.project)
+    actor = auth.subject if auth else "console-ui"
+    incident_payload, rca_payload = _console_guardrails_demo_payloads(payload.example, payload.project)
+    background_tasks = BackgroundTasks()
+    incident = post_incident(incident_payload, background_tasks, auth=auth)
+    _run_background_tasks_immediately(background_tasks)
+    workflow = post_rca(str(incident.get("id") or incident_payload.incident_id), rca_payload, auth=auth)
+    incident_id = str(incident.get("id") or incident_payload.incident_id)
+    record_audit(
+        "console_guardrails_demo_created",
+        actor,
+        {
+            "example": payload.example,
+            "project": payload.project,
+            "incident_id": incident_id,
+        },
+        incident_id=incident_id,
+    )
+    state = _build_console_state(payload.project)
+    enriched_incident = next((item for item in state["incidents"] if item.get("id") == incident_id), None)
+    return {
+        "example": payload.example,
+        "incident": enriched_incident or (workflow.get("incident") if isinstance(workflow, dict) else None) or incident,
+        "workflow": workflow,
         "state": state,
     }
 

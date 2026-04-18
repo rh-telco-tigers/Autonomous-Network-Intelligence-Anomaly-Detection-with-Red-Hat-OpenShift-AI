@@ -237,6 +237,37 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: ani-trustyai
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "35"
+spec:
+  destination:
+    namespace: ani-datascience
+    server: https://kubernetes.default.svc
+  project: ani-demo
+  source:
+    path: k8s/overlays/gitops/trustyai
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 20
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: ani-observability
   namespace: openshift-gitops
   annotations:

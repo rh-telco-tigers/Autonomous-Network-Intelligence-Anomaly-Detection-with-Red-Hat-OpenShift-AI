@@ -6,11 +6,16 @@ import { useApiToken } from "@/components/providers/app-providers";
 import type {
   ConsoleState,
   DocumentResponse,
+  GuardrailsDemoExample,
+  GuardrailsDemoResponse,
   IncidentDebugTraceResponse,
   IncidentRecord,
   IncidentWorkflow,
   KnowledgeArticleResponse,
+  PlaybookGuardrailsDecision,
   RelatedRecords,
+  SafetyControlsStatus,
+  SafetyProbeResponse,
   ScenarioRunResponse,
   TicketLookupResponse,
 } from "@/lib/types";
@@ -28,6 +33,7 @@ type PlaybookInstructionPreviewResponse = {
   instruction: string;
   correlation_id: string;
   draft: boolean;
+  guardrails?: PlaybookGuardrailsDecision;
 };
 
 export type RequestOptions = RequestInit & {
@@ -86,6 +92,23 @@ export function useConsoleStateQuery(refetchInterval = 15_000) {
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     staleTime: Math.max(CONSOLE_STALE_TIME_MS, Math.floor(refetchInterval * 0.75)),
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 8_000),
+  });
+}
+
+export function useSafetyControlsStatusQuery(refetchInterval = 30_000) {
+  const { token } = useApiToken();
+  return useQuery({
+    queryKey: ["safety-controls-status", defaultProject, token],
+    queryFn: () =>
+      request<SafetyControlsStatus>(`/api/safety-controls/status?project=${encodeURIComponent(defaultProject)}`, token),
+    placeholderData: (previousData) => previousData,
+    refetchInterval,
+    refetchIntervalInBackground: false,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    staleTime: 5_000,
     retry: 2,
     retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 8_000),
   });
@@ -203,6 +226,7 @@ export function usePlaybookInstructionPreviewQuery(
     requestedBy: string;
     notes?: string;
     sourceUrl?: string;
+    instructionOverride?: string;
     enabled?: boolean;
   },
 ) {
@@ -215,6 +239,7 @@ export function usePlaybookInstructionPreviewQuery(
       options.requestedBy,
       options.notes ?? "",
       options.sourceUrl ?? "",
+      options.instructionOverride ?? "",
       token,
     ],
     queryFn: () =>
@@ -227,6 +252,7 @@ export function usePlaybookInstructionPreviewQuery(
             requested_by: options.requestedBy,
             notes: options.notes ?? "",
             source_url: options.sourceUrl ?? "",
+            instruction_override: options.instructionOverride ?? "",
           }),
         },
       ),
@@ -266,7 +292,41 @@ export function useScenarioRunner() {
     onSuccess: (payload) => {
       queryClient.setQueryData(["console-state", defaultProject, token], payload.state);
       queryClient.invalidateQueries({ queryKey: ["incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["safety-controls-status"] });
     },
+  });
+}
+
+export function useGuardrailsDemoRunner() {
+  const { token } = useApiToken();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (example: GuardrailsDemoExample) =>
+      request<GuardrailsDemoResponse>("/api/console/guardrails-demo", token, {
+        method: "POST",
+        body: JSON.stringify({ example, project: defaultProject }),
+        timeoutMs: LONG_RUNNING_REQUEST_TIMEOUT_MS,
+      }),
+    onSuccess: (payload) => {
+      queryClient.setQueryData(["console-state", defaultProject, token], payload.state);
+      queryClient.invalidateQueries({ queryKey: ["incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["safety-controls-status"] });
+      if (payload.incident?.id) {
+        queryClient.invalidateQueries({ queryKey: ["incident-workflow", payload.incident.id, token] });
+      }
+    },
+  });
+}
+
+export function useSafetyProbeRunner() {
+  const { token } = useApiToken();
+  return useMutation({
+    mutationFn: (prompt: string) =>
+      request<SafetyProbeResponse>("/api/safety-controls/probe", token, {
+        method: "POST",
+        body: JSON.stringify({ prompt, project: defaultProject }),
+        timeoutMs: LONG_RUNNING_REQUEST_TIMEOUT_MS,
+      }),
   });
 }
 
@@ -290,6 +350,7 @@ export function useWorkflowMutation<TBody extends object, TResult = unknown>(
       queryClient.invalidateQueries({ queryKey: ["incident-workflow", variables.incidentId, token] });
       queryClient.invalidateQueries({ queryKey: ["incidents"] });
       queryClient.invalidateQueries({ queryKey: ["console-state"] });
+      queryClient.invalidateQueries({ queryKey: ["safety-controls-status"] });
     },
   });
 }

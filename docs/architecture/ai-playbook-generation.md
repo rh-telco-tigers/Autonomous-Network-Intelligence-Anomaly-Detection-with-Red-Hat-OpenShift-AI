@@ -18,20 +18,24 @@ Use this file when you need to know:
 This flow is implemented on the platform side:
 
 1. The incident UI exposes `Generate AI Ansible playbook` after RCA and remediations exist.
-2. The UI calls `POST /incidents/{incident_id}/remediation/{remediation_id}/generate-playbook`.
-3. The control-plane publishes one plain-text instruction to Kafka topic `aiops-ansible-playbook-generate-instruction`.
-4. An external generator consumes that instruction and calls the control-plane callback endpoint with either:
+2. The UI previews the plain-text instruction through `POST /incidents/{incident_id}/remediation/{remediation_id}/playbook-instruction-preview`.
+3. The control-plane evaluates playbook-prompt guardrails on the operator-controlled text, especially the note and any full-text instruction override, and sanitizes the final Kafka instruction draft before publish.
+4. The UI calls `POST /incidents/{incident_id}/remediation/{remediation_id}/generate-playbook`.
+5. The control-plane does one of two things before Kafka publish:
+   - `allow`: publish the instruction immediately
+   - `block`: store the blocked result and never publish that draft
+6. An external generator consumes only allowed instructions and calls the control-plane callback endpoint with either:
    - `status=generated` and one YAML playbook
    - `status=failed` and an error
-5. On a successful callback, the control-plane converts the pending request remediation into a normal `ansible_playbook` remediation.
-6. The UI shows a new AI-generated remediation card with:
+7. On a successful callback, the control-plane converts the pending request remediation into a normal `ansible_playbook` remediation.
+8. The UI shows a new AI-generated remediation card with:
    - the same approval and execution controls as other remediations
    - a collapsed playbook editor by default
    - editable YAML before approval or execution
-7. The generated YAML is synced into a dedicated in-cluster Gitea repository on an incident-scoped draft branch.
-8. When the operator approves or executes that remediation, any edited YAML is re-synced to the same incident draft branch before approval is recorded.
-9. Approval creates or reuses the incident pull request from `draft/{incident_id}` to `main` and merges it.
-10. Execution launches the playbook through the AAP controller path from the incident draft branch, so the run appears in the AAP dashboard and continues through the normal approval, execution, verification, audit, and ticket-sync workflow.
+9. The generated YAML is synced into a dedicated in-cluster Gitea repository on an incident-scoped draft branch.
+10. When the operator approves or executes that remediation, any edited YAML is re-synced to the same incident draft branch before approval is recorded.
+11. Approval creates or reuses the incident pull request from `draft/{incident_id}` to `main` and merges it.
+12. Execution launches the playbook through the AAP controller path from the incident draft branch, so the run appears in the AAP dashboard and continues through the normal approval, execution, verification, audit, and ticket-sync workflow.
 
 ## Generated Playbook Git Workflow
 
@@ -55,23 +59,24 @@ Repository behavior:
 1. An operator opens an incident with RCA attached.
 2. The remediation section shows ranked remediations and the optional AI playbook request card.
 3. The operator clicks `Generate AI Ansible playbook`.
-4. The control-plane generates a `correlation_id`, builds a plain-text instruction, and publishes it to Kafka.
-5. The request remediation remains visible with generation status `requested`.
-6. The external generator returns one callback payload for the same `incident_id` and `correlation_id`.
-7. The control-plane updates that remediation in place:
+4. The control-plane builds the plain-text instruction draft and runs playbook-prompt guardrails on the note plus final prompt text.
+5. If the decision is `allow`, the control-plane generates a `correlation_id` and publishes the instruction to Kafka.
+6. If the decision is `block`, the remediation remains visible with generation status `blocked` and Kafka publish does not happen.
+7. The external generator returns one callback payload for the same `incident_id` and `correlation_id` only for the published cases.
+8. The control-plane updates that remediation in place:
    - `suggestion_type` becomes `ansible_playbook`
    - `generation_kind` becomes `generated`
    - returned YAML is stored in `playbook_yaml`
    - the same YAML is committed to `playbooks/{incident_id}/playbook.yaml` on `draft/{incident_id}`
-8. The UI refresh shows the generated remediation card with an `AI generated` badge and draft Git metadata.
-9. The operator can expand the YAML, review it, optionally edit it, and then approve or approve-and-execute it.
-10. Approval syncs the latest YAML to Gitea again, creates or reuses the incident PR, and merges `draft/{incident_id}` to `main`.
-11. Execution enters the standard workflow path:
+9. The UI refresh shows the generated remediation card with an `AI generated` badge and draft Git metadata.
+10. The operator can expand the YAML, review it, optionally edit it, and then approve or approve-and-execute it.
+11. Approval syncs the latest YAML to Gitea again, creates or reuses the incident PR, and merges `draft/{incident_id}` to `main`.
+12. Execution enters the standard workflow path:
     - `APPROVED`
     - `EXECUTING`
     - `EXECUTED` or `EXECUTION_FAILED`
     - verification and closure as normal
-12. The AAP job is visible in the controller dashboard because the controller launches the incident-scoped playbook from the draft branch.
+13. The AAP job is visible in the controller dashboard because the controller launches the incident-scoped playbook from the draft branch.
 
 ## Workflow Diagram
 
@@ -90,10 +95,16 @@ sequenceDiagram
     Operator->>UI: Open incident with RCA and remediations
     Operator->>UI: Click Generate AI Ansible playbook
     UI->>CP: POST generate-playbook
-    CP->>Kafka: Publish plain-text instruction + correlation_id
-    UI-->>Operator: Show generation requested state
-    Gen->>Kafka: Consume instruction
-    Gen->>CP: POST callback with incident_id + correlation_id
+    CP->>CP: Evaluate playbook-prompt guardrails
+
+    alt Guardrails = allow
+        CP->>Kafka: Publish plain-text instruction + correlation_id
+        UI-->>Operator: Show generation requested state
+        Gen->>Kafka: Consume instruction
+        Gen->>CP: POST callback with incident_id + correlation_id
+    else Guardrails = block
+        CP-->>UI: Store blocked state and do not publish
+    end
 
     alt Callback status = generated
         CP->>CP: Convert pending request into ansible_playbook remediation
@@ -162,6 +173,77 @@ The external generator should treat:
 - `callback_url` as authoritative
 - `correlation_id` as required
 - the rest of the text as generation context
+
+## Playbook Prompt Guardrails
+
+This flow now has a dedicated prompt guardrail boundary before Kafka publish. The primary trust boundary is the operator-controlled text:
+
+- `notes` on the AI playbook request card
+- any full-text `instruction_override`
+
+The full instruction assembled by the control-plane still exists and is what gets published to Kafka, but TrustyAI evaluation for this feature is intentionally anchored on the operator-controlled prompt surface rather than the full system-generated instruction bundle.
+
+This guardrail layer is implemented on the platform side, not in AAP Controller and not in the generated playbook itself.
+The control-plane now uses TrustyAI Guardrails standalone detections before Kafka publish:
+
+- Regex-based prompt-injection and destructive-operation checks use the TrustyAI built-in regex detector through the Orchestrator API.
+- ANI still owns the final workflow mapping from TrustyAI detector findings to `allow` or `block` for this edit surface.
+
+### Decision Model
+
+- `allow`: the instruction can be published to Kafka immediately
+- `block`: the request is stored as blocked and is never published as written
+
+### Current Policy
+
+Implemented policy examples:
+
+- `allow`
+  - reversible, diagnostic, or smoke-marker style playbooks
+  - requests grounded to the incident RCA and current remediation context
+- `block`
+  - prompt-injection language such as `ignore previous instructions`
+  - destructive requests to delete or wipe live components
+  - requests to scale critical workloads to zero
+  - attempts to bypass approval or request cluster-admin style privilege
+  - attempts to wipe remediation state or delete persistent workload data
+
+### Persisted Metadata
+
+The request remediation now stores a `playbook_guardrails` envelope in remediation metadata, including:
+
+- `status`
+- `reason`
+- `provider`
+- `trustyai_used`
+- `policy_version`
+- `contract_version`
+- `violations`
+- `detectors`
+- `sanitized_instruction`
+
+This lets the UI explain why a draft was allowed or blocked before Kafka publish.
+
+Operational note:
+
+- the UI lets the operator edit the full generated instruction directly
+- once edited, the draft becomes dirty and the UI shows `Revalidate with TrustyAI`
+- the edited prompt is re-evaluated through TrustyAI before publish
+- a manual edit no longer forces review by itself; safe edits remain `allow`
+- destructive or prompt-injection edits return `block` and Kafka publish stays closed
+
+### Demo Prompts
+
+The incident UI includes preset prompts for demo purposes:
+
+- `Allow demo`
+  - generates a reversible smoke-marker or diagnostics playbook
+- `Block delete demo`
+  - uses prompt-injection plus destructive delete language
+- `Block scale demo`
+  - asks to scale a critical IMS workload to zero and bypass review
+- `Block data demo`
+  - asks to wipe remediation state or related persistent data
 
 ## Callback Endpoint
 

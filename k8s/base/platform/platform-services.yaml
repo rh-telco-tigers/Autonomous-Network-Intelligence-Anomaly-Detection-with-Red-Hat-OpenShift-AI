@@ -38,7 +38,12 @@ metadata:
 data:
   LLM_ENDPOINT: ""
   LLM_MODEL: ""
+  LLM_REQUEST_HOST_HEADER: ""
   LLM_REQUEST_TIMEOUT_SECONDS: "20"
+  TRUSTYAI_ORCHESTRATOR_ENDPOINT: ""
+  TRUSTYAI_ORCHESTRATOR_VERIFY_TLS: "true"
+  ANI_PLAYBOOK_GUARDRAILS_TRUSTYAI_ENABLED: "true"
+  ANI_PLAYBOOK_GUARDRAILS_TIMEOUT_SECONDS: "8"
 ---
 apiVersion: v1
 kind: Secret
@@ -104,10 +109,83 @@ spec:
                 secretKeyRef:
                   name: demo-api-auth
                   key: API_KEYS_JSON
+            - name: LLM_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_ENDPOINT
+            - name: LLM_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_MODEL
+            - name: LLM_REQUEST_TIMEOUT_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_REQUEST_TIMEOUT_SECONDS
+            - name: LLM_REQUEST_HOST_HEADER
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_REQUEST_HOST_HEADER
+            - name: ANI_GUARDRAILS_POLICY_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_GUARDRAILS_POLICY_VERSION
+            - name: ANI_GUARDRAILS_CONTRACT_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_GUARDRAILS_CONTRACT_VERSION
+            - name: ANI_GUARDRAILS_CONFIDENCE_ALLOW_THRESHOLD
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_GUARDRAILS_CONFIDENCE_ALLOW_THRESHOLD
+            - name: ANI_GUARDRAILS_MIN_ALLOW_EVIDENCE_ITEMS
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_GUARDRAILS_MIN_ALLOW_EVIDENCE_ITEMS
+            - name: ANI_RCA_SCHEMA_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_RCA_SCHEMA_VERSION
+            - name: TRUSTYAI_ORCHESTRATOR_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: TRUSTYAI_ORCHESTRATOR_ENDPOINT
+            - name: TRUSTYAI_ORCHESTRATOR_VERIFY_TLS
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: TRUSTYAI_ORCHESTRATOR_VERIFY_TLS
+            - name: ANI_PLAYBOOK_GUARDRAILS_TRUSTYAI_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_PLAYBOOK_GUARDRAILS_TRUSTYAI_ENABLED
+            - name: ANI_PLAYBOOK_GUARDRAILS_TIMEOUT_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_PLAYBOOK_GUARDRAILS_TIMEOUT_SECONDS
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-provider-auth
+                  key: LLM_API_KEY
             - name: CONTROL_PLANE_DB_PATH
               value: /data/control-plane.db
             - name: INCIDENT_AUTO_RCA_SAMPLE_RATE
-              value: "1.0"
+              valueFrom:
+                configMapKeyRef:
+                  name: ani-platform-config
+                  key: INCIDENT_AUTO_RCA_SAMPLE_RATE
             - name: ENABLE_AUTOMATION
               value: "false"
             - name: AUTOMATION_MODE
@@ -450,6 +528,8 @@ kind: Route
 metadata:
   name: control-plane
   namespace: ani-demo-lab
+  annotations:
+    haproxy.router.openshift.io/timeout: 120s
 spec:
   to:
     kind: Service
@@ -683,6 +763,11 @@ spec:
                 configMapKeyRef:
                   name: llm-provider-config
                   key: LLM_REQUEST_TIMEOUT_SECONDS
+            - name: LLM_REQUEST_HOST_HEADER
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: LLM_REQUEST_HOST_HEADER
             - name: LLM_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -865,6 +950,8 @@ kind: Route
 metadata:
   name: demo-ui
   namespace: ani-demo-lab
+  annotations:
+    haproxy.router.openshift.io/timeout: 120s
 spec:
   to:
     kind: Service

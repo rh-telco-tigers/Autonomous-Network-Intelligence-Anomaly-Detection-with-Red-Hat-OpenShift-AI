@@ -277,6 +277,67 @@ class KnowledgeBundleTests(unittest.TestCase):
         self.assertIn("cite retrieved document titles or collections", prompt)
 
 
+class GuardrailsTraceTests(unittest.TestCase):
+    def test_generate_with_llm_trace_preserves_plain_text_guardrails_response(self) -> None:
+        class _PlainTextResponse:
+            status_code = 200
+            text = "Warning: Unsuitable input detected. Input Detections: prompt injection"
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> object:
+                raise json.JSONDecodeError("Expecting value", "", 0)
+
+        with (
+            patch.dict(
+                rag.os.environ,
+                {
+                    "LLM_ENDPOINT": "http://guardrails-gateway.ani-datascience.svc.cluster.local/rca",
+                    "LLM_MODEL": "llama-32-3b-instruct",
+                },
+                clear=False,
+            ),
+            patch.object(rag.requests, "post", return_value=_PlainTextResponse()),
+        ):
+            trace = rag.generate_with_llm_trace("prompt")
+
+        self.assertIsNotNone(trace)
+        self.assertIsNone(trace["parsed"])
+        self.assertIn("Unsuitable input detected", trace["raw_content"])
+        self.assertEqual(trace["response_payload"]["status_code"], 200)
+
+    def test_generate_with_llm_trace_applies_optional_host_header(self) -> None:
+        class _JsonResponse:
+            status_code = 200
+            text = '{"choices":[{"message":{"content":"{\\"root_cause\\":\\"ok\\"}"}}]}'
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> object:
+                return {"choices": [{"message": {"content": '{"root_cause":"ok"}'}}]}
+
+        with (
+            patch.dict(
+                rag.os.environ,
+                {
+                    "LLM_ENDPOINT": "http://guardrails-orchestrator-service.ani-datascience.svc.cluster.local:8090/rca",
+                    "LLM_MODEL": "llama-32-3b-instruct",
+                    "LLM_REQUEST_HOST_HEADER": "guardrails-orchestrator-gateway.example.test",
+                },
+                clear=False,
+            ),
+            patch.object(rag.requests, "post", return_value=_JsonResponse()) as post,
+        ):
+            trace = rag.generate_with_llm_trace("prompt")
+
+        self.assertIsNotNone(trace)
+        _, kwargs = post.call_args
+        self.assertEqual(kwargs["headers"]["Host"], "guardrails-orchestrator-gateway.example.test")
+        self.assertEqual(trace["parsed"], {"root_cause": "ok"})
+
+
 class MilvusRecoveryTests(unittest.TestCase):
     def setUp(self) -> None:
         rag._MILVUS_REPAIR_ATTEMPTS.clear()

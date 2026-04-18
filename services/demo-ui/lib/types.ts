@@ -126,6 +126,141 @@ export type ConsoleState = {
   }>;
 };
 
+export type GuardrailsDemoExample = "review" | "block";
+
+export type GuardrailsDemoResponse = {
+  example: GuardrailsDemoExample;
+  incident: IncidentRecord;
+  workflow: IncidentWorkflow;
+  state: ConsoleState;
+};
+
+export type SafetyControlsStatus = {
+  provider: {
+    key: string;
+    label: string;
+    family: string;
+  };
+  project: string;
+  configured: boolean;
+  endpoint: string;
+  chat_completions_url: string;
+  model_name: string;
+  policy_version: string;
+  contract_version: string;
+  rca_schema_version: string;
+  request_timeout_seconds: number;
+  summary: {
+    tracked_incidents: number;
+    allow_count: number;
+    review_count: number;
+    block_count: number;
+    error_count: number;
+  };
+  recent_incidents: Array<{
+    incident_id: string;
+    anomaly_type: string;
+    severity: string;
+    workflow_state: string;
+    created_at: string;
+    updated_at: string;
+    guardrail_status: string;
+    guardrail_reason: string;
+    rca_state: string;
+    generation_mode: string;
+    generation_source_label: string;
+    llm_used: boolean;
+    root_cause: string;
+    recommendation: string;
+  }>;
+  playbook_generation: {
+    provider: {
+      key: string;
+      label: string;
+      family: string;
+    };
+    uses_trustyai: boolean;
+    manual_instruction_override_requires_review: boolean;
+    summary: {
+      tracked_requests: number;
+      allow_count: number;
+      review_count: number;
+      block_count: number;
+      override_count: number;
+      published_count: number;
+    };
+    recent_requests: Array<{
+      incident_id: string;
+      remediation_id: number;
+      title: string;
+      anomaly_type: string;
+      severity: string;
+      workflow_state: string;
+      generation_status: string;
+      guardrail_status: string;
+      guardrail_reason: string;
+      provider: {
+        key: string;
+        label: string;
+        family: string;
+      };
+      trustyai_used: boolean;
+      override_requested: boolean;
+      override_applied: boolean;
+      instruction_override_used: boolean;
+      instruction_preview: string;
+      notes_preview: string;
+      updated_at: string;
+    }>;
+  };
+};
+
+export type SafetyProbeResponse = {
+  provider: {
+    key: string;
+    label: string;
+    family: string;
+  };
+  model_name: string;
+  request_endpoint: string;
+  response_time_ms: number;
+  warnings?: Array<Record<string, unknown>> | null;
+  detections?: Record<string, unknown> | null;
+  content?: string;
+  raw?: Record<string, unknown> | null;
+};
+
+export type GuardrailFinding = {
+  type: string;
+  severity: string;
+  result?: string;
+  message: string;
+};
+
+export type PlaybookGuardrailsDecision = {
+  surface?: string;
+  status: string;
+  reason: string;
+  provider?: {
+    key: string;
+    label: string;
+    family: string;
+  };
+  trustyai_used?: boolean;
+  policy_version?: string;
+  contract_version?: string;
+  override_requested?: boolean;
+  override_allowed?: boolean;
+  override_applied?: boolean;
+  instruction_override_used?: boolean;
+  sanitized_instruction?: string;
+  sanitized_notes?: string;
+  instruction_preview?: string;
+  notes_preview?: string;
+  violations?: GuardrailFinding[];
+  detectors?: GuardrailFinding[];
+};
+
 export type ClassifierProfile = {
   key: string;
   label: string;
@@ -187,12 +322,16 @@ export type RcaRecord = {
 export type RcaPayload = Record<string, unknown> & {
   root_cause?: string;
   explanation?: string;
+  rca_request_id?: string;
+  trace_id?: string;
+  rca_state?: string;
   generation_mode?: string;
   generation_source_label?: string;
   llm_used?: boolean;
   llm_configured?: boolean;
   llm_model?: string | null;
   llm_runtime?: string | null;
+  guardrails?: Record<string, unknown>;
   recommendation?: string;
   retrieved_documents?: Array<Record<string, unknown>>;
 };
