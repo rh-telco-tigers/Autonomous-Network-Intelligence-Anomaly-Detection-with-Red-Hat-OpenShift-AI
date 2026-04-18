@@ -40,6 +40,9 @@ data:
   LLM_MODEL: ""
   LLM_REQUEST_HOST_HEADER: ""
   LLM_REQUEST_TIMEOUT_SECONDS: "20"
+  TRUSTYAI_ORCHESTRATOR_ENDPOINT: ""
+  ANI_PLAYBOOK_GUARDRAILS_TRUSTYAI_ENABLED: "true"
+  ANI_PLAYBOOK_GUARDRAILS_TIMEOUT_SECONDS: "8"
 ---
 apiVersion: v1
 kind: Secret
@@ -150,6 +153,21 @@ spec:
                 configMapKeyRef:
                   name: llm-provider-config
                   key: ANI_RCA_SCHEMA_VERSION
+            - name: TRUSTYAI_ORCHESTRATOR_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: TRUSTYAI_ORCHESTRATOR_ENDPOINT
+            - name: ANI_PLAYBOOK_GUARDRAILS_TRUSTYAI_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_PLAYBOOK_GUARDRAILS_TRUSTYAI_ENABLED
+            - name: ANI_PLAYBOOK_GUARDRAILS_TIMEOUT_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_PLAYBOOK_GUARDRAILS_TIMEOUT_SECONDS
             - name: LLM_API_KEY
               valueFrom:
                 secretKeyRef:

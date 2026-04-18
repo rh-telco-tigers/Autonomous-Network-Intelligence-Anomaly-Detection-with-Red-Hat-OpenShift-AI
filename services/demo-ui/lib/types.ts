@@ -199,6 +199,12 @@ export type SafetyControlsStatus = {
       generation_status: string;
       guardrail_status: string;
       guardrail_reason: string;
+      provider: {
+        key: string;
+        label: string;
+        family: string;
+      };
+      trustyai_used: boolean;
       override_requested: boolean;
       override_applied: boolean;
       instruction_override_used: boolean;
@@ -235,6 +241,12 @@ export type PlaybookGuardrailsDecision = {
   surface?: string;
   status: string;
   reason: string;
+  provider?: {
+    key: string;
+    label: string;
+    family: string;
+  };
+  trustyai_used?: boolean;
   policy_version?: string;
   contract_version?: string;
   override_requested?: boolean;

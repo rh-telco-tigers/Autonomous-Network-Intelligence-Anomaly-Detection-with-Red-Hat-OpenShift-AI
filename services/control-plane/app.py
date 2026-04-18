@@ -62,7 +62,10 @@ from shared.guardrails import (
     REQUIRE_REVIEW,
     evaluate_ai_playbook_generation_guardrails,
     guardrail_status,
+    playbook_guardrails_provider,
     remediation_unlock_allowed,
+    trustyai_orchestrator_endpoint,
+    trustyai_playbook_guardrails_enabled,
 )
 from shared.db import (
     attach_rca,
@@ -510,11 +513,9 @@ def _safety_controls_provider(endpoint: str) -> Dict[str, str]:
 
 
 def _playbook_request_safety_provider() -> Dict[str, str]:
-    return {
-        "key": "control_plane_policy",
-        "label": "Control-plane policy adapter",
-        "family": "Local policy",
-    }
+    return playbook_guardrails_provider(
+        trustyai_playbook_guardrails_enabled() and bool(trustyai_orchestrator_endpoint())
+    )
 
 
 def _llm_chat_completions_url(endpoint: str) -> str:
@@ -577,6 +578,10 @@ def _safety_controls_status(project: str) -> Dict[str, object]:
             )
             if not playbook_guardrails:
                 continue
+            request_provider = (
+                playbook_guardrails.get("provider") if isinstance(playbook_guardrails.get("provider"), dict) else {}
+            )
+            request_provider = request_provider if request_provider else _playbook_request_safety_provider()
             status = str(playbook_guardrails.get("status") or "").strip() or "untracked"
             if status not in playbook_counts:
                 playbook_counts["untracked"] += 1
@@ -609,6 +614,9 @@ def _safety_controls_status(project: str) -> Dict[str, object]:
                     "generation_status": generation_status,
                     "guardrail_status": status,
                     "guardrail_reason": str(playbook_guardrails.get("reason") or "").strip(),
+                    "provider": request_provider,
+                    "trustyai_used": bool(playbook_guardrails.get("trustyai_used"))
+                    or str(request_provider.get("key") or "").strip() == "trustyai",
                     "override_requested": bool(playbook_guardrails.get("override_requested")),
                     "override_applied": bool(playbook_guardrails.get("override_applied")),
                     "instruction_override_used": bool(playbook_guardrails.get("instruction_override_used")),
@@ -641,8 +649,8 @@ def _safety_controls_status(project: str) -> Dict[str, object]:
         "recent_incidents": recent_items[:10],
         "playbook_generation": {
             "provider": _playbook_request_safety_provider(),
-            "uses_trustyai": False,
-            "manual_instruction_override_requires_review": True,
+            "uses_trustyai": str(_playbook_request_safety_provider().get("key") or "") == "trustyai",
+            "manual_instruction_override_requires_review": False,
             "summary": {
                 "tracked_requests": len(playbook_items),
                 "allow_count": playbook_counts["allow"],

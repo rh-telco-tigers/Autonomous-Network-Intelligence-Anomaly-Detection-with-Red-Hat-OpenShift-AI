@@ -2043,6 +2043,8 @@ function AiPlaybookGenerationCard({
     latestGuardrails ??
     (generationStatus === "requested" ? storedGuardrails : previewGuardrails ?? storedGuardrails);
   const guardrailStatus = String(activeGuardrails?.status || "").trim().toLowerCase();
+  const guardrailProvider = activeGuardrails?.provider;
+  const trustyaiMarked = Boolean(activeGuardrails?.trustyai_used) || guardrailProvider?.key === "trustyai";
   const guardrailViolations = Array.isArray(activeGuardrails?.violations) ? activeGuardrails.violations : [];
   const exactInstruction = asStringValue(publishedInstruction) || asStringValue(metadata.generation_instruction);
   const draftInstruction =
@@ -2169,6 +2171,16 @@ function AiPlaybookGenerationCard({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Playbook prompt guardrails</div>
+            {guardrailProvider?.label ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
+                <span>{guardrailProvider.label}</span>
+                {trustyaiMarked ? (
+                  <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-100">
+                    TrustyAI
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
             <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{guardrailMessage}</p>
           </div>
           <div className={cn("inline-flex rounded-full border px-3 py-1 text-xs font-semibold", playbookGuardrailTone(guardrailStatus))}>

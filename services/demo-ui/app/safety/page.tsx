@@ -331,8 +331,8 @@ export default function SafetyControlsPage() {
               </div>
               <div className="mt-4 space-y-3 text-sm text-[var(--text-secondary)]">
                 <p>
-                  This surface is enforced in the control-plane before Kafka publish. It is not currently a TrustyAI
-                  decision.
+                  This surface is enforced in the control-plane before Kafka publish, but the content detections now run
+                  through {playbookUsesTrustyAI ? " TrustyAI Guardrails" : " the local fallback policy"}.
                 </p>
                 {manualOverrideRequiresReview ? (
                   <p>
@@ -340,7 +340,12 @@ export default function SafetyControlsPage() {
                     Current policy treats that as <code>require_review</code> so operators can still proceed, but only
                     through an explicit override.
                   </p>
-                ) : null}
+                ) : (
+                  <p>
+                    Editing the full playbook instruction no longer forces review by itself. The final outcome depends on
+                    the TrustyAI findings for the edited prompt.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -353,7 +358,7 @@ export default function SafetyControlsPage() {
                 </div>
                 <div>
                   <span className="font-medium text-[var(--text-strong)]">Require review:</span> restart, patch,
-                  scale-change, or any full-text instruction edit.
+                  or scale-change requests that TrustyAI flags as live-change operations.
                 </div>
                 <div>
                   <span className="font-medium text-[var(--text-strong)]">Block:</span> prompt injection, delete or
@@ -418,6 +423,7 @@ export default function SafetyControlsPage() {
                       </Link>
                       <StatusBadge value={titleize(item.guardrail_status || "untracked")} />
                       <StatusBadge value={titleize(item.generation_status || "stored")} />
+                      {item.trustyai_used ? <StatusBadge value="TrustyAI" /> : null}
                       {item.override_applied ? <StatusBadge value="Override applied" /> : null}
                     </div>
                     <div className="mt-2 text-sm text-[var(--text-secondary)]">
@@ -437,6 +443,7 @@ export default function SafetyControlsPage() {
                   </div>
                   <div className="text-right text-xs text-[var(--text-subtle)]">
                     <div>Updated {formatTime(item.updated_at)}</div>
+                    <div className="mt-1">{item.provider.label}</div>
                     {item.guardrail_reason ? <div className="mt-1">{titleize(item.guardrail_reason)}</div> : null}
                     {item.instruction_override_used ? <div className="mt-1">Full instruction edited</div> : null}
                     {item.override_requested && !item.override_applied ? (

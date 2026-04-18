@@ -4,7 +4,10 @@ import copy
 import os
 import re
 import uuid
+from urllib.parse import urlparse, urlunparse
 from typing import Any, Dict, Iterable, List, Tuple
+
+import requests
 
 
 DEFAULT_GUARDRAILS_CONTRACT_VERSION = "ani.guardrails.v1"
@@ -12,6 +15,7 @@ DEFAULT_GUARDRAILS_POLICY_VERSION = "v1"
 DEFAULT_RCA_SCHEMA_VERSION = "ani.rca.v1"
 DEFAULT_CONFIDENCE_ALLOW_THRESHOLD = 0.60
 DEFAULT_MIN_ALLOW_EVIDENCE_ITEMS = 2
+DEFAULT_TRUSTYAI_PLAYBOOK_TIMEOUT_SECONDS = 8.0
 
 ALLOW = "allow"
 REQUIRE_REVIEW = "require_review"
@@ -113,6 +117,18 @@ _PLAYBOOK_BLOCK_RULES = (
     ),
 )
 
+_TRUSTYAI_PROVIDER = {
+    "key": "trustyai",
+    "label": "TrustyAI Guardrails",
+    "family": "Guardrails",
+}
+
+_LOCAL_POLICY_PROVIDER = {
+    "key": "local_policy",
+    "label": "Local control-plane policy",
+    "family": "Guardrails",
+}
+
 
 def guardrails_contract_version() -> str:
     return str(os.getenv("ANI_GUARDRAILS_CONTRACT_VERSION", DEFAULT_GUARDRAILS_CONTRACT_VERSION)).strip() or DEFAULT_GUARDRAILS_CONTRACT_VERSION
@@ -140,6 +156,44 @@ def guardrails_min_allow_evidence_items() -> int:
         return max(1, int(raw))
     except ValueError:
         return DEFAULT_MIN_ALLOW_EVIDENCE_ITEMS
+
+
+def playbook_guardrails_provider(trustyai_used: bool) -> Dict[str, str]:
+    return dict(_TRUSTYAI_PROVIDER if trustyai_used else _LOCAL_POLICY_PROVIDER)
+
+
+def trustyai_playbook_guardrails_enabled() -> bool:
+    raw = str(os.getenv("ANI_PLAYBOOK_GUARDRAILS_TRUSTYAI_ENABLED", "true")).strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def trustyai_orchestrator_endpoint() -> str:
+    explicit = str(os.getenv("TRUSTYAI_ORCHESTRATOR_ENDPOINT", "")).strip()
+    if explicit:
+        return explicit.rstrip("/")
+    llm_endpoint = str(os.getenv("LLM_ENDPOINT", "")).strip()
+    if not llm_endpoint:
+        return ""
+    parsed = urlparse(llm_endpoint)
+    if not parsed.scheme or not parsed.hostname:
+        return ""
+    target_port = 8032
+    if parsed.scheme == "https" and (parsed.port in {None, 443}):
+        netloc = parsed.hostname
+    else:
+        netloc = f"{parsed.hostname}:{target_port}"
+    return urlunparse((parsed.scheme, netloc, "", "", "", "")).rstrip("/")
+
+
+def trustyai_playbook_timeout_seconds() -> float:
+    raw = str(
+        os.getenv("ANI_PLAYBOOK_GUARDRAILS_TIMEOUT_SECONDS", str(DEFAULT_TRUSTYAI_PLAYBOOK_TIMEOUT_SECONDS))
+    ).strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_TRUSTYAI_PLAYBOOK_TIMEOUT_SECONDS
+    return max(1.0, min(value, 20.0))
 
 
 def new_rca_request_id() -> str:
@@ -217,7 +271,12 @@ def recommendation_is_unsafe(text: str) -> bool:
     return any(pattern.search(normalized) for pattern in _UNSAFE_RECOMMENDATION_PATTERNS)
 
 
-def _sanitize_string(value: str, path: str) -> Tuple[str, List[Dict[str, str]], List[Dict[str, str]], bool]:
+def _sanitize_string(
+    value: str,
+    path: str,
+    *,
+    strip_prompt_injection: bool = True,
+) -> Tuple[str, List[Dict[str, str]], List[Dict[str, str]], bool]:
     sanitized = str(value or "")
     detectors: List[Dict[str, str]] = []
     violations: List[Dict[str, str]] = []
@@ -245,35 +304,41 @@ def _sanitize_string(value: str, path: str) -> Tuple[str, List[Dict[str, str]], 
             )
         )
 
-    filtered_lines: List[str] = []
-    removed_prompt_injection = False
-    for line in sanitized.splitlines() or [sanitized]:
-        if any(pattern.search(line) for pattern in _PROMPT_INJECTION_PATTERNS):
-            removed_prompt_injection = True
-            changed = True
-            continue
-        filtered_lines.append(line)
-    if removed_prompt_injection:
-        detectors.append(
-            detector_result(
-                "prompt_injection",
-                "high",
-                "warn",
-                f"Instruction-like text was removed from {path}.",
+    if strip_prompt_injection:
+        filtered_lines: List[str] = []
+        removed_prompt_injection = False
+        for line in sanitized.splitlines() or [sanitized]:
+            if any(pattern.search(line) for pattern in _PROMPT_INJECTION_PATTERNS):
+                removed_prompt_injection = True
+                changed = True
+                continue
+            filtered_lines.append(line)
+        if removed_prompt_injection:
+            detectors.append(
+                detector_result(
+                    "prompt_injection",
+                    "high",
+                    "warn",
+                    f"Instruction-like text was removed from {path}.",
+                )
             )
-        )
-        violations.append(
-            violation(
-                "retrieval_instruction_removed",
-                "medium",
-                f"Instruction-like text was stripped from {path} before prompt assembly.",
+            violations.append(
+                violation(
+                    "retrieval_instruction_removed",
+                    "medium",
+                    f"Instruction-like text was stripped from {path} before prompt assembly.",
+                )
             )
-        )
-        sanitized = "\n".join(filtered_lines).strip()
+            sanitized = "\n".join(filtered_lines).strip()
     return sanitized, detectors, violations, changed
 
 
-def sanitize_json_like(value: Any, *, path: str = "context") -> Tuple[Any, Dict[str, Any]]:
+def sanitize_json_like(
+    value: Any,
+    *,
+    path: str = "context",
+    strip_prompt_injection: bool = True,
+) -> Tuple[Any, Dict[str, Any]]:
     detectors: List[Dict[str, str]] = []
     violations: List[Dict[str, str]] = []
     modified_paths: List[str] = []
@@ -285,7 +350,11 @@ def sanitize_json_like(value: Any, *, path: str = "context") -> Tuple[Any, Dict[
         if isinstance(current, list):
             return [_sanitize(item, f"{current_path}[{index}]") for index, item in enumerate(current)]
         if isinstance(current, str):
-            sanitized, current_detectors, current_violations, changed = _sanitize_string(current, current_path)
+            sanitized, current_detectors, current_violations, changed = _sanitize_string(
+                current,
+                current_path,
+                strip_prompt_injection=strip_prompt_injection,
+            )
             detectors.extend(current_detectors)
             violations.extend(current_violations)
             if changed:
@@ -363,6 +432,126 @@ def _append_unique_findings(items: List[Dict[str, str]], candidate: Dict[str, st
     items.append(candidate)
 
 
+def _trustyai_text_detection(content: str, detectors: Dict[str, Any]) -> List[Dict[str, Any]]:
+    endpoint = trustyai_orchestrator_endpoint()
+    if not endpoint or not trustyai_playbook_guardrails_enabled():
+        return []
+    response = requests.post(
+        f"{endpoint}/api/v2/text/detection/content",
+        json={
+            "detectors": detectors,
+            "content": str(content or ""),
+        },
+        timeout=trustyai_playbook_timeout_seconds(),
+    )
+    response.raise_for_status()
+    payload = response.json()
+    detections = payload.get("detections") if isinstance(payload, dict) else []
+    return detections if isinstance(detections, list) else []
+
+
+def _playbook_rule_detection_hits(
+    content: str,
+) -> Tuple[List[Tuple[str, str, str]], List[Tuple[str, str, str]], List[Dict[str, str]], bool]:
+    raw_content = str(content or "").strip()
+    detectors: List[Dict[str, str]] = []
+    review_hits: List[Tuple[str, str, str]] = []
+    block_hits: List[Tuple[str, str, str]] = []
+    trustyai_used = False
+    if not raw_content:
+        return review_hits, block_hits, detectors, trustyai_used
+
+    try:
+        prompt_detections = _trustyai_text_detection(raw_content, {"prompt_injection": {}})
+        if prompt_detections or trustyai_orchestrator_endpoint():
+            trustyai_used = True
+        if prompt_detections:
+            block_hits.append(
+                (
+                    _PLAYBOOK_BLOCK_RULES[0][0],
+                    _PLAYBOOK_BLOCK_RULES[0][1],
+                    _PLAYBOOK_BLOCK_RULES[0][2],
+                )
+            )
+            _append_unique_findings(
+                detectors,
+                detector_result(
+                    "prompt_injection",
+                    "high",
+                    "fail",
+                    "TrustyAI Guardrails detected prompt-injection language in the AI playbook request.",
+                ),
+            )
+
+        lowered_content = raw_content.lower()
+        review_patterns = [pattern.pattern for _, _, _, pattern in _PLAYBOOK_REVIEW_RULES[1:] if pattern]
+        review_detections = _trustyai_text_detection(lowered_content, {"pii_regex": {"regex": review_patterns}})
+        if review_detections:
+            trustyai_used = True
+        for detection in review_detections:
+            matched_text = str(detection.get("text") or "").strip()
+            for rule_type, severity, message, pattern in _PLAYBOOK_REVIEW_RULES[1:]:
+                if pattern and matched_text and pattern.search(matched_text):
+                    review_hits.append((rule_type, severity, message))
+
+        block_patterns = [pattern.pattern for _, _, _, pattern in _PLAYBOOK_BLOCK_RULES[1:] if pattern]
+        block_detections = _trustyai_text_detection(lowered_content, {"pii_regex": {"regex": block_patterns}})
+        if block_detections:
+            trustyai_used = True
+        for detection in block_detections:
+            matched_text = str(detection.get("text") or "").strip()
+            for rule_type, severity, message, pattern in _PLAYBOOK_BLOCK_RULES[1:]:
+                if pattern and matched_text and pattern.search(matched_text):
+                    block_hits.append((rule_type, severity, message))
+
+        for rule_type, severity, message in review_hits:
+            _append_unique_findings(detectors, detector_result(f"trustyai_{rule_type}", severity, "warn", message))
+        for rule_type, severity, message in block_hits:
+            _append_unique_findings(detectors, detector_result(f"trustyai_{rule_type}", severity, "fail", message))
+        return review_hits, block_hits, detectors, trustyai_used
+    except requests.RequestException as exc:
+        _append_unique_findings(
+            detectors,
+            detector_result(
+                "trustyai_guardrails_unavailable",
+                "medium",
+                "warn",
+                f"TrustyAI Guardrails was unavailable for playbook prompt validation and local fallback policy was used: {exc}",
+            ),
+        )
+
+    prompt_injection_detected = any(pattern.search(raw_content) for pattern in _PROMPT_INJECTION_PATTERNS)
+    if prompt_injection_detected:
+        block_hits.append(
+            (
+                _PLAYBOOK_BLOCK_RULES[0][0],
+                _PLAYBOOK_BLOCK_RULES[0][1],
+                _PLAYBOOK_BLOCK_RULES[0][2],
+            )
+        )
+        _append_unique_findings(
+            detectors,
+            detector_result(
+                "prompt_injection_local_fallback",
+                "high",
+                "fail",
+                "Local fallback policy detected prompt-injection language in the AI playbook request.",
+            ),
+        )
+    for rule_type, severity, message, pattern in _PLAYBOOK_REVIEW_RULES[1:]:
+        if pattern and pattern.search(raw_content):
+            review_hits.append((rule_type, severity, message))
+    for rule_type, severity, message, pattern in _PLAYBOOK_BLOCK_RULES[1:]:
+        if pattern and pattern.search(raw_content):
+            block_hits.append((rule_type, severity, message))
+
+    for rule_type, severity, message in review_hits:
+        _append_unique_findings(detectors, detector_result(f"local_{rule_type}", severity, "warn", message))
+    for rule_type, severity, message in block_hits:
+        _append_unique_findings(detectors, detector_result(f"local_{rule_type}", severity, "fail", message))
+    return review_hits, block_hits, detectors, trustyai_used
+
+
 def evaluate_ai_playbook_generation_guardrails(
     instruction: str,
     *,
@@ -384,53 +573,32 @@ def evaluate_ai_playbook_generation_guardrails(
             "instruction_override": raw_override,
         },
         path="ai_playbook_generation",
+        strip_prompt_injection=False,
     )
     sanitized_bundle = sanitized_bundle if isinstance(sanitized_bundle, dict) else {}
     sanitized_instruction = str(sanitized_bundle.get("instruction") or raw_instruction).strip()
     sanitized_notes = str(sanitized_bundle.get("notes") or raw_notes).strip()
     detectors = list(summary.get("detector_results") or [])
     violations = list(summary.get("violations") or [])
-
-    controlled_text = "\n".join(value for value in (raw_notes, raw_override) if str(value or "").strip())
-    if treat_instruction_as_operator_text and not controlled_text:
-        controlled_text = raw_instruction
-
-    prompt_injection_detected = any(
-        str(item.get("type") or "").strip() == "prompt_injection"
-        for item in detectors
-    )
+    evaluation_text = raw_instruction if treat_instruction_as_operator_text else (raw_override or raw_instruction)
     secret_exposure_detected = any(
         str(item.get("type") or "").strip() == "secret_exposure"
         for item in detectors
     )
 
-    review_hits: List[Tuple[str, str, str]] = []
-    block_hits: List[Tuple[str, str, str]] = []
+    review_hits, block_hits, trustyai_detectors, trustyai_used = _playbook_rule_detection_hits(evaluation_text)
+    detectors.extend(trustyai_detectors)
 
     if raw_override:
-        review_hits.append(
-            (
-                _PLAYBOOK_REVIEW_RULES[0][0],
-                _PLAYBOOK_REVIEW_RULES[0][1],
-                _PLAYBOOK_REVIEW_RULES[0][2],
-            )
+        _append_unique_findings(
+            detectors,
+            detector_result(
+                "manual_instruction_override",
+                "low",
+                "info",
+                "A manual full-text instruction override was supplied for AI playbook generation.",
+            ),
         )
-
-    for rule_type, severity, message, pattern in _PLAYBOOK_REVIEW_RULES[1:]:
-        if pattern and pattern.search(controlled_text):
-            review_hits.append((rule_type, severity, message))
-
-    if prompt_injection_detected:
-        block_hits.append(
-            (
-                _PLAYBOOK_BLOCK_RULES[0][0],
-                _PLAYBOOK_BLOCK_RULES[0][1],
-                _PLAYBOOK_BLOCK_RULES[0][2],
-            )
-        )
-    for rule_type, severity, message, pattern in _PLAYBOOK_BLOCK_RULES[1:]:
-        if pattern and pattern.search(controlled_text):
-            block_hits.append((rule_type, severity, message))
 
     if secret_exposure_detected:
         review_hits.append(
@@ -468,6 +636,8 @@ def evaluate_ai_playbook_generation_guardrails(
         "surface": "ai_playbook_generation",
         "status": status,
         "reason": reason,
+        "provider": playbook_guardrails_provider(trustyai_used),
+        "trustyai_used": trustyai_used,
         "policy_version": guardrails_policy_version(),
         "contract_version": guardrails_contract_version(),
         "override_requested": bool(override_requested),
@@ -483,7 +653,7 @@ def evaluate_ai_playbook_generation_guardrails(
             "block": [item[0] for item in block_hits],
         },
         "summary": {
-            "has_prompt_injection": prompt_injection_detected,
+            "has_prompt_injection": any(item[0] == "prompt_injection_detected" for item in block_hits),
             "has_secret_exposure": secret_exposure_detected,
             "raw_instruction_length": len(raw_instruction),
             "sanitized_instruction_length": len(sanitized_instruction),

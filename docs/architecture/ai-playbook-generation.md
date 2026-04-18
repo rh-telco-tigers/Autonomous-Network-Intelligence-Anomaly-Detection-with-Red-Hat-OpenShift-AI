@@ -192,7 +192,11 @@ This flow now has a dedicated prompt guardrail boundary before Kafka publish. Th
 - the final plain-text instruction assembled by the control-plane, which is sanitized before publish
 
 This guardrail layer is implemented on the platform side, not in AAP Controller and not in the generated playbook itself.
-It is also separate from the current TrustyAI-backed RCA path. Today the playbook request boundary is a control-plane policy adapter that evaluates and stores the request decision before Kafka publish.
+The control-plane now uses TrustyAI Guardrails standalone detections before Kafka publish:
+
+- Prompt Injection detection uses the TrustyAI Prompt Injection detector.
+- Regex-based live-change and destructive-operation checks use the TrustyAI built-in regex detector through the Orchestrator API.
+- ANI still owns the final workflow mapping from detector findings to `allow`, `require_review`, and `block`.
 
 ### Decision Model
 
@@ -211,7 +215,7 @@ Implemented policy examples:
   - live restart requests
   - workload patch or edit requests
   - scale-change requests
-  - any manual full-text instruction override
+  - other live-change requests that TrustyAI flags as risky but not outright destructive
 - `block`
   - prompt-injection language such as `ignore previous instructions`
   - destructive requests to delete or wipe live components
@@ -224,6 +228,8 @@ The request remediation now stores a `playbook_guardrails` envelope in remediati
 
 - `status`
 - `reason`
+- `provider`
+- `trustyai_used`
 - `policy_version`
 - `contract_version`
 - `violations`
@@ -235,8 +241,9 @@ This lets the UI explain why a draft was allowed, flagged for review, or blocked
 Operational note:
 
 - editing the full generated instruction in the UI creates an explicit `instruction_override`
-- current policy intentionally treats any `instruction_override` as `require_review`
-- the operator can still proceed, but only through an explicit override action that is stored in metadata and audit events
+- the edited prompt is re-evaluated through TrustyAI before publish
+- a manual edit no longer forces `require_review` by itself; the final outcome depends on the TrustyAI findings for the edited prompt
+- override actions are still stored in metadata and audit events when a `require_review` result is explicitly published
 
 ### Demo Prompts
 
