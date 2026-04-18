@@ -709,6 +709,19 @@ class IncidentEvidenceSourceTests(unittest.TestCase):
 
 
 class AiPlaybookGenerationTests(unittest.TestCase):
+    def test_playbook_generation_callback_url_includes_remediation_id_when_available(self) -> None:
+        with mock.patch.object(
+            control_plane_app,
+            "_public_control_plane_base_url",
+            return_value="https://control-plane.example.com",
+        ):
+            callback_url = control_plane_app._playbook_generation_callback_url("inc-ai-1", 17)
+
+        self.assertEqual(
+            callback_url,
+            "https://control-plane.example.com/incidents/inc-ai-1/playbook-generation/callback?remediation_id=17",
+        )
+
     def test_playbook_instruction_override_delta_ignores_static_scaffold(self) -> None:
         base_instruction = "\n".join(
             [
@@ -1248,6 +1261,93 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         self.assertEqual(captured["metadata"]["gitea_draft_branch"], "draft/inc-ai-1")
         self.assertEqual(updated["generation_status"], "generated")
         record_audit.assert_called_once()
+
+    def test_callback_uses_remediation_id_when_provider_reports_stale_correlation(self) -> None:
+        incident = {
+            "id": "inc-ai-stale-1",
+            "project": "ani-demo",
+            "status": control_plane_app.REMEDIATION_SUGGESTED,
+            "workflow_revision": 5,
+            "anomaly_type": "routing_error",
+        }
+        remediation = {
+            "id": 77,
+            "action_ref": control_plane_app.AI_PLAYBOOK_GENERATION_ACTION,
+            "title": "Generate AI Ansible playbook",
+            "description": "Ask the external generator to draft a playbook.",
+            "status": "available",
+            "risk_level": "low",
+            "confidence": 0.42,
+            "expected_outcome": "A reviewable AI-generated playbook is attached.",
+            "preconditions": ["RCA is attached"],
+            "based_on_revision": 4,
+            "metadata": {
+                "ai_generated": True,
+                "generation_kind": "request",
+                "generation_status": "requested",
+                "generation_correlation_id": "corr-123",
+            },
+        }
+        captured: dict[str, object] = {}
+
+        def update_remediation(incident_id: str, remediation_id: int, **kwargs: object) -> dict[str, object]:
+            captured["incident_id"] = incident_id
+            captured["remediation_id"] = remediation_id
+            captured.update(kwargs)
+            return remediation | {
+                "title": kwargs["title"],
+                "suggestion_type": kwargs["suggestion_type"],
+                "action_ref": kwargs["action_ref"],
+                "playbook_ref": kwargs["playbook_ref"],
+                "playbook_yaml": kwargs["playbook_yaml"],
+                "metadata": kwargs["metadata"],
+                "generation_status": str((kwargs["metadata"] or {}).get("generation_status") or ""),
+            }
+
+        payload = control_plane_app.PlaybookGenerationCallbackRequest(
+            correlation_id=control_plane_app.AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
+            status="generated",
+            title="Validate route data and policy for IMS incident inc-ai-stale-1",
+            description="Inspect route policy before broader action.",
+            playbook_yaml="---\n- hosts: localhost\n  gather_facts: false\n  tasks: []\n",
+        )
+
+        with (
+            mock.patch.object(control_plane_app, "get_incident", return_value=incident),
+            mock.patch.object(control_plane_app, "get_incident_remediation", return_value=remediation),
+            mock.patch.object(
+                control_plane_app,
+                "_sync_ai_generated_playbook_to_gitea",
+                return_value={
+                    "gitea_repo_owner": "gitadmin",
+                    "gitea_repo_name": "ani-ai-generated-playbooks",
+                    "gitea_draft_branch": "draft/inc-ai-stale-1",
+                    "gitea_main_branch": "main",
+                    "gitea_playbook_path": "playbooks/inc-ai-stale-1/playbook.yaml",
+                    "gitea_draft_commit_sha": "stale123",
+                    "gitea_sync_status": "drafted",
+                },
+            ),
+            mock.patch.object(control_plane_app, "update_incident_remediation", side_effect=update_remediation),
+            mock.patch.object(control_plane_app, "record_audit"),
+        ):
+            updated = control_plane_app._apply_ai_playbook_generation_callback(
+                "inc-ai-stale-1",
+                payload,
+                remediation_id=77,
+            )
+
+        self.assertEqual(captured["incident_id"], "inc-ai-stale-1")
+        self.assertEqual(captured["remediation_id"], 77)
+        self.assertEqual(captured["action_ref"], "ai_generated_playbook_corr-123")
+        self.assertEqual(captured["playbook_ref"], "ai_generated_playbook_corr-123")
+        self.assertEqual(captured["metadata"]["generation_correlation_id"], "corr-123")
+        self.assertEqual(
+            captured["metadata"]["provider_reported_correlation_id"],
+            control_plane_app.AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
+        )
+        self.assertTrue(captured["metadata"]["provider_reported_correlation_mismatch"])
+        self.assertEqual(updated["generation_status"], "generated")
 
     def test_callback_normalizes_generated_playbook_to_supported_rate_limit_template(self) -> None:
         incident = {

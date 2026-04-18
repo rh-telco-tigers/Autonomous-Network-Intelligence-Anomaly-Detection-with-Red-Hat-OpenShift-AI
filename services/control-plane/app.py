@@ -15,6 +15,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
+from urllib.parse import urlencode
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -1414,7 +1415,12 @@ def _request_ai_playbook_generation(
         evaluation_text=_playbook_guardrails_evaluation_text(sanitized_notes, source_url, evaluation_override),
     )
     instruction = str(playbook_guardrails.get("sanitized_instruction") or instruction).strip()
-    instruction = _finalize_playbook_generation_instruction(str(incident.get("id") or ""), instruction, correlation_id)
+    instruction = _finalize_playbook_generation_instruction(
+        str(incident.get("id") or ""),
+        int(remediation.get("id") or 0),
+        instruction,
+        correlation_id,
+    )
     try:
         publish_result = _publish_playbook_generation_instruction(correlation_id, instruction)
     except Exception as exc:  # noqa: BLE001
@@ -1520,16 +1526,87 @@ def _preview_ai_playbook_generation_instruction(
     }
 
 
+def _effective_callback_correlation_id(
+    remediation: Dict[str, object],
+    payload_correlation_id: str,
+) -> tuple[str, Dict[str, object]]:
+    metadata = _remediation_metadata(remediation)
+    requested_correlation_id = str(metadata.get("generation_correlation_id") or "").strip()
+    provider_correlation_id = str(payload_correlation_id or "").strip()
+    effective_correlation_id = requested_correlation_id or provider_correlation_id
+    callback_metadata: Dict[str, object] = {}
+    if provider_correlation_id:
+        callback_metadata["provider_reported_correlation_id"] = provider_correlation_id
+        callback_metadata["provider_reported_correlation_mismatch"] = (
+            bool(requested_correlation_id) and provider_correlation_id != requested_correlation_id
+        )
+    return effective_correlation_id, callback_metadata
+
+
+def _fallback_ai_playbook_generation_remediation(
+    incident_id: str,
+    correlation_id: str,
+) -> Dict[str, object] | None:
+    normalized_correlation_id = str(correlation_id or "").strip()
+    pending_candidates: list[Dict[str, object]] = []
+    generated_candidates: list[Dict[str, object]] = []
+
+    for remediation in list_incident_remediations(incident_id):
+        metadata = _remediation_metadata(remediation)
+        generation_kind = str(metadata.get("generation_kind") or "").strip().lower()
+        generation_status = str(metadata.get("generation_status") or remediation.get("generation_status") or "").strip().lower()
+        if not (
+            _is_ai_playbook_generation_request(remediation)
+            or generation_kind in {"request", "generated"}
+            or bool(metadata.get("ai_generated"))
+        ):
+            continue
+        if generation_status == "requested":
+            pending_candidates.append(remediation)
+        elif generation_status in {"generated", "failed"}:
+            generated_candidates.append(remediation)
+
+    if len(pending_candidates) == 1:
+        return pending_candidates[0]
+    if normalized_correlation_id in {"", AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID} and len(generated_candidates) == 1:
+        return generated_candidates[0]
+    return None
+
+
+def _find_ai_playbook_generation_remediation_for_callback(
+    incident_id: str,
+    correlation_id: str,
+    remediation_id: int | None = None,
+) -> Dict[str, object] | None:
+    if remediation_id is not None and remediation_id > 0:
+        remediation = get_incident_remediation(incident_id, remediation_id)
+        if remediation and (
+            _is_ai_playbook_generation_request(remediation)
+            or str(_remediation_metadata(remediation).get("generation_kind") or "").strip().lower() in {"request", "generated"}
+            or bool(_remediation_metadata(remediation).get("ai_generated"))
+        ):
+            return remediation
+
+    remediation = _find_ai_playbook_generation_remediation(incident_id, correlation_id)
+    if remediation is not None:
+        return remediation
+
+    return _fallback_ai_playbook_generation_remediation(incident_id, correlation_id)
+
+
 def _apply_ai_playbook_generation_callback(
     incident_id: str,
     payload: PlaybookGenerationCallbackRequest,
+    remediation_id: int | None = None,
 ) -> Dict[str, object]:
     incident = get_incident(incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
-    remediation = _find_ai_playbook_generation_remediation(incident_id, payload.correlation_id)
+    remediation = _find_ai_playbook_generation_remediation_for_callback(incident_id, payload.correlation_id, remediation_id)
     if remediation is None:
         raise HTTPException(status_code=404, detail="No AI playbook generation request matches this correlation id")
+    effective_correlation_id, callback_correlation_metadata = _effective_callback_correlation_id(remediation, payload.correlation_id)
+    payload = payload.model_copy(update={"correlation_id": effective_correlation_id})
 
     provider_name = str(payload.provider_name or AI_PLAYBOOK_GENERATION_PROVIDER).strip() or AI_PLAYBOOK_GENERATION_PROVIDER
     normalized_status = str(payload.status or "generated").strip().lower() or "generated"
@@ -1542,7 +1619,8 @@ def _apply_ai_playbook_generation_callback(
             "generation_correlation_id": payload.correlation_id,
             "generation_updated_at": _now_iso(),
             "provider_run_id": str(payload.provider_run_id or "").strip(),
-        },
+        }
+        | callback_correlation_metadata,
     )
 
     if normalized_status == "failed":
@@ -1850,8 +1928,11 @@ def _public_control_plane_base_url() -> str:
     ).rstrip("/")
 
 
-def _playbook_generation_callback_url(incident_id: str) -> str:
-    return f"{_public_control_plane_base_url()}/incidents/{incident_id}/playbook-generation/callback"
+def _playbook_generation_callback_url(incident_id: str, remediation_id: int | None = None) -> str:
+    base_url = f"{_public_control_plane_base_url()}/incidents/{incident_id}/playbook-generation/callback"
+    if remediation_id is None or remediation_id <= 0:
+        return base_url
+    return f"{base_url}?{urlencode({'remediation_id': remediation_id})}"
 
 
 def _remediation_metadata(remediation: Dict[str, object] | None) -> Dict[str, object]:
@@ -2381,7 +2462,7 @@ def _build_playbook_generation_instruction(
         if isinstance(item, dict)
     ]
     candidate_titles = _candidate_remediation_titles(incident_id, ignored_id=int(remediation.get("id") or 0))
-    callback_url = _playbook_generation_callback_url(incident_id)
+    callback_url = _playbook_generation_callback_url(incident_id, int(remediation.get("id") or 0))
     lines = [
         f"Generate a reviewable Ansible playbook for IMS incident {incident_id}.",
         "",
@@ -2458,12 +2539,17 @@ def _replace_or_append_playbook_contract_field(instruction: str, field_name: str
     return replacement
 
 
-def _finalize_playbook_generation_instruction(incident_id: str, instruction: str, correlation_id: str) -> str:
+def _finalize_playbook_generation_instruction(
+    incident_id: str,
+    remediation_id: int,
+    instruction: str,
+    correlation_id: str,
+) -> str:
     finalized = str(instruction or "").strip()
     finalized = _replace_or_append_playbook_contract_field(
         finalized,
         "callback_url",
-        _playbook_generation_callback_url(incident_id),
+        _playbook_generation_callback_url(incident_id, remediation_id),
     )
     finalized = _replace_or_append_playbook_contract_field(finalized, "correlation_id", correlation_id)
     return finalized
@@ -4767,6 +4853,7 @@ def preview_incident_ai_playbook_instruction(
 def ai_playbook_generation_callback(
     incident_id: str,
     payload: PlaybookGenerationCallbackRequest,
+    remediation_id: int | None = None,
     auth: AuthContext | None = Depends(require_api_key),
 ):
     ensure_role(auth, "automation")
@@ -4774,7 +4861,7 @@ def ai_playbook_generation_callback(
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
     ensure_project_access(auth, incident["project"])
-    updated_remediation = _apply_ai_playbook_generation_callback(incident_id, payload)
+    updated_remediation = _apply_ai_playbook_generation_callback(incident_id, payload, remediation_id)
     updated_incident = get_incident(incident_id) or incident
     actor = str(payload.provider_name or AI_PLAYBOOK_GENERATION_PROVIDER).strip() or AI_PLAYBOOK_GENERATION_PROVIDER
     _sync_current_ticket_best_effort(
