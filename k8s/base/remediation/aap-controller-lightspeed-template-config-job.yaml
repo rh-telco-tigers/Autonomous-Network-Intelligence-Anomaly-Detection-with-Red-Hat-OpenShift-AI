@@ -122,10 +122,13 @@ spec:
             - name: AAP_LIGHTSPEED_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: aap-lightspeed-chatbot-api-key
-                  key: api_key
+                  name: lightspeed-secret
+                  key: chatbot_token
             - name: AAP_LIGHTSPEED_MODEL
-              value: ""
+              valueFrom:
+                secretKeyRef:
+                  name: lightspeed-secret
+                  key: chatbot_model
             - name: AAP_LIGHTSPEED_PROVIDER
               value: ""
             - name: AAP_LIGHTSPEED_VALIDATE_CERTS

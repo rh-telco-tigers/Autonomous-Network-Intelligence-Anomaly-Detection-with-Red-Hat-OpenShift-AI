@@ -37,6 +37,28 @@
       ansible.builtin.set_fact:
         request_body: "{{ request_payload | to_json }}"
 
+    - name: Resolve Lightspeed connection settings
+      ansible.builtin.set_fact:
+        effective_lightspeed_url: "{{ input_lightspeed_url | default('https://aap-lightspeed-chatbot-api.aap.svc.cluster.local:8443/v1/query') }}"
+        effective_lightspeed_token: "{{ lightspeed_token | default(lightspeed_wca_token | default('', true), true) | trim }}"
+
+    - name: Fail early when the Lightspeed token is missing
+      ansible.builtin.assert:
+        that:
+          - effective_lightspeed_token != ''
+        fail_msg: >-
+          Lightspeed token is empty. The Controller job template must provide lightspeed_token
+          from the AAP Lightspeed chatbot secret before this playbook can call the AI API.
+
+    - name: Debug Lightspeed connection settings
+      ansible.builtin.debug:
+        msg:
+          input_lightspeed_url: "{{ effective_lightspeed_url }}"
+          lightspeed_model: "{{ lightspeed_model | default('') }}"
+          lightspeed_provider: "{{ lightspeed_provider | default('') }}"
+          lightspeed_token_length: "{{ effective_lightspeed_token | length }}"
+      when: lightspeed_debug | default(false) | bool
+
     - name: Debug serialized body (compare this to your curl -d payload)
       ansible.builtin.debug:
         msg: "{{ request_body }}"
@@ -44,11 +66,11 @@
 
     - name: Send request to AI API
       ansible.builtin.uri:
-        url: "{{ input_lightspeed_url | default('https://aap-lightspeed-chatbot-api.aap.svc.cluster.local:8443/v1/query') }}"
+        url: "{{ effective_lightspeed_url }}"
         method: POST
         headers:
           Content-Type: "application/json"
-          Authorization: "Bearer {{ lightspeed_token | default(lightspeed_wca_token | default('', true), true) }}"
+          Authorization: "Bearer {{ effective_lightspeed_token }}"
         body: "{{ request_body }}"
         timeout: 300
         status_code: 200
@@ -139,11 +161,11 @@
 
         - name: Send repair request to AI API
           ansible.builtin.uri:
-            url: "{{ input_lightspeed_url | default('https://aap-lightspeed-chatbot-api.aap.svc.cluster.local:8443/v1/query') }}"
+            url: "{{ effective_lightspeed_url }}"
             method: POST
             headers:
               Content-Type: "application/json"
-              Authorization: "Bearer {{ lightspeed_token | default(lightspeed_wca_token | default('', true), true) }}"
+              Authorization: "Bearer {{ effective_lightspeed_token }}"
             body: "{{ repair_request_body }}"
             timeout: 300
             status_code: 200

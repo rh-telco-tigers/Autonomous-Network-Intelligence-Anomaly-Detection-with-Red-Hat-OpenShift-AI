@@ -359,7 +359,7 @@ spec:
   source:
     path: k8s/overlays/gitops/remediation
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: main
+    targetRevision: feat/trustyai-guardrails-gitops
   syncPolicy:
     automated:
       prune: true

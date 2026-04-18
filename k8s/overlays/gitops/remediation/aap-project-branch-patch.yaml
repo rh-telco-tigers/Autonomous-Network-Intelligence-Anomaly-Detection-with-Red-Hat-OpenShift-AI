@@ -1,0 +1,7 @@
+apiVersion: tower.ansible.com/v1alpha1
+kind: AnsibleProject
+metadata:
+  name: ani-remediation
+  namespace: aap
+spec:
+  scm_branch: feat/trustyai-guardrails-gitops
