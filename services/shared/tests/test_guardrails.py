@@ -58,7 +58,13 @@ class GuardrailsUnlockTests(unittest.TestCase):
 
 
 class AIPlaybookGuardrailsTests(unittest.TestCase):
-    def _mock_trustyai_post(self, url: str, json: dict[str, object], timeout: float) -> object:
+    def _mock_trustyai_post(
+        self,
+        url: str,
+        json: dict[str, object],
+        timeout: float,
+        verify: bool = True,
+    ) -> object:
         class _Response:
             def __init__(self, payload: dict[str, object]) -> None:
                 self._payload = payload
@@ -158,6 +164,14 @@ class AIPlaybookGuardrailsTests(unittest.TestCase):
         self.assertEqual(decision["status"], guardrails.ALLOW)
         self.assertTrue(decision["instruction_override_used"])
         self.assertFalse(any(item["type"] == "manual_instruction_override" for item in decision["violations"]))
+
+    def test_internal_service_endpoint_defaults_to_tls_verify_disabled(self) -> None:
+        with mock.patch.dict(
+            guardrails.os.environ,
+            {"TRUSTYAI_ORCHESTRATOR_ENDPOINT": "https://guardrails-orchestrator-service.ani-datascience.svc.cluster.local:8032"},
+            clear=False,
+        ):
+            self.assertFalse(guardrails.trustyai_orchestrator_verify_tls())
 
 
 if __name__ == "__main__":

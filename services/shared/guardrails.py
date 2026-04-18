@@ -4,10 +4,11 @@ import copy
 import os
 import re
 import uuid
-from urllib.parse import urlparse, urlunparse
 from typing import Any, Dict, Iterable, List, Tuple
+from urllib.parse import urlparse, urlunparse
 
 import requests
+import urllib3
 
 
 DEFAULT_GUARDRAILS_CONTRACT_VERSION = "ani.guardrails.v1"
@@ -178,11 +179,12 @@ def trustyai_orchestrator_endpoint() -> str:
     if not parsed.scheme or not parsed.hostname:
         return ""
     target_port = 8032
+    target_scheme = "https"
     if parsed.scheme == "https" and (parsed.port in {None, 443}):
         netloc = parsed.hostname
     else:
         netloc = f"{parsed.hostname}:{target_port}"
-    return urlunparse((parsed.scheme, netloc, "", "", "", "")).rstrip("/")
+    return urlunparse((target_scheme, netloc, "", "", "", "")).rstrip("/")
 
 
 def trustyai_playbook_timeout_seconds() -> float:
@@ -194,6 +196,17 @@ def trustyai_playbook_timeout_seconds() -> float:
     except ValueError:
         return DEFAULT_TRUSTYAI_PLAYBOOK_TIMEOUT_SECONDS
     return max(1.0, min(value, 20.0))
+
+
+def trustyai_orchestrator_verify_tls() -> bool:
+    raw = str(os.getenv("TRUSTYAI_ORCHESTRATOR_VERIFY_TLS", "")).strip().lower()
+    if raw:
+        return raw not in {"0", "false", "no", "off"}
+    endpoint = trustyai_orchestrator_endpoint()
+    hostname = str(urlparse(endpoint).hostname or "").strip().lower()
+    if hostname.endswith(".svc.cluster.local"):
+        return False
+    return True
 
 
 def new_rca_request_id() -> str:
@@ -436,6 +449,9 @@ def _trustyai_text_detection(content: str, detectors: Dict[str, Any]) -> List[Di
     endpoint = trustyai_orchestrator_endpoint()
     if not endpoint or not trustyai_playbook_guardrails_enabled():
         return []
+    verify_tls = trustyai_orchestrator_verify_tls()
+    if not verify_tls:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     response = requests.post(
         f"{endpoint}/api/v2/text/detection/content",
         json={
@@ -443,6 +459,7 @@ def _trustyai_text_detection(content: str, detectors: Dict[str, Any]) -> List[Di
             "content": str(content or ""),
         },
         timeout=trustyai_playbook_timeout_seconds(),
+        verify=verify_tls,
     )
     response.raise_for_status()
     payload = response.json()
