@@ -2041,16 +2041,20 @@ function AiPlaybookGenerationCard({
     sourceUrl: sourceUrl ?? "",
     enabled: canEditInstruction,
   });
-  const baseInstructionDraft =
+  const generatedInstructionDraft =
     (generationStatus === "requested" && exactInstruction) ||
     asStringValue(baseInstructionQuery.data?.instruction) ||
-    asStringValue(storedGuardrails?.sanitized_instruction) ||
-    asStringValue(storedGuardrails?.instruction_preview) ||
+    asStringValue(metadata.generation_instruction) ||
+    asStringValue(metadata.generation_instruction_preview) ||
     exactInstruction;
-  const [instructionValue, setInstructionValue] = React.useState(baseInstructionDraft);
+  const storedValidatedInstruction =
+    asStringValue(storedGuardrails?.sanitized_instruction) ||
+    asStringValue(storedGuardrails?.instruction_preview);
+  const persistedInstructionDraft = storedValidatedInstruction || generatedInstructionDraft;
+  const [instructionValue, setInstructionValue] = React.useState(persistedInstructionDraft);
   const [instructionCustomized, setInstructionCustomized] = React.useState(false);
   const [validatedPreview, setValidatedPreview] = React.useState<PlaybookInstructionPreviewPayload | null>(null);
-  const [validationAnchor, setValidationAnchor] = React.useState(baseInstructionDraft.trim());
+  const [validationAnchor, setValidationAnchor] = React.useState<string | null>(storedValidatedInstruction.trim() || null);
   const previewMutation = useMutation({
     mutationFn: async (instructionOverride: string) =>
       request<PlaybookInstructionPreviewPayload>(
@@ -2077,16 +2081,30 @@ function AiPlaybookGenerationCard({
     },
   });
   const customInstruction = instructionValue.trim();
-  const instructionDirty = canEditInstruction && instructionCustomized && customInstruction !== validationAnchor;
-  const previewGuardrails = validatedPreview?.guardrails ?? baseInstructionQuery.data?.guardrails;
-  const previewInstruction = asStringValue(validatedPreview?.instruction) || asStringValue(baseInstructionQuery.data?.instruction);
+  const generatedInstruction = generatedInstructionDraft.trim();
+  const latestSubmittedInstruction = asStringValue(publishedInstruction).trim();
+  const currentInstructionMatchesGenerated = Boolean(generatedInstruction) && customInstruction === generatedInstruction;
+  const resettable = canEditInstruction && Boolean(generatedInstruction) && customInstruction !== generatedInstruction;
+  const instructionDirty = canEditInstruction && (validationAnchor == null || customInstruction !== validationAnchor);
+  const validatedPreviewInstruction =
+    asStringValue(validatedPreview?.instruction) || asStringValue(validatedPreview?.guardrails?.sanitized_instruction);
+  const validatedPreviewMatchesCurrent = Boolean(validatedPreviewInstruction.trim()) && customInstruction === validatedPreviewInstruction.trim();
+  const storedGuardrailsMatchCurrent = Boolean(storedValidatedInstruction.trim()) && customInstruction === storedValidatedInstruction.trim();
+  const latestGuardrailsMatchCurrent =
+    Boolean(latestGuardrails) && Boolean(latestSubmittedInstruction) && customInstruction === latestSubmittedInstruction;
   const activeGuardrails =
-    latestGuardrails ??
+    (latestGuardrailsMatchCurrent ? latestGuardrails : undefined) ??
     (generationStatus === "requested"
       ? storedGuardrails
       : instructionDirty
         ? undefined
-        : validatedPreview?.guardrails ?? storedGuardrails ?? previewGuardrails);
+        : validatedPreviewMatchesCurrent
+          ? validatedPreview?.guardrails
+          : currentInstructionMatchesGenerated
+            ? baseInstructionQuery.data?.guardrails ?? (storedGuardrailsMatchCurrent ? storedGuardrails : undefined)
+            : storedGuardrailsMatchCurrent
+              ? storedGuardrails
+              : undefined);
   const activeGuardrailStatus =
     (instructionDirty ? "pending_revalidation" : "") ||
     String(activeGuardrails?.status || "").trim().toLowerCase() ||
@@ -2104,14 +2122,6 @@ function AiPlaybookGenerationCard({
     };
   const trustyaiMarked = Boolean(activeGuardrails?.trustyai_used) || guardrailProvider?.key === "trustyai";
   const guardrailViolations = Array.isArray(activeGuardrails?.violations) ? activeGuardrails.violations : [];
-  const displayedInstruction =
-    generationStatus === "requested" && exactInstruction
-      ? exactInstruction
-      : previewInstruction ||
-        asStringValue(activeGuardrails?.sanitized_instruction) ||
-        asStringValue(storedGuardrails?.sanitized_instruction) ||
-        baseInstructionDraft ||
-        exactInstruction;
   const correlationId = asStringValue(metadata.generation_correlation_id);
   const topic = asStringValue(metadata.generation_topic);
   const sectionTitle = generationStatus === "requested" && exactInstruction ? "Exact Kafka instruction" : "Kafka instruction draft";
@@ -2165,16 +2175,22 @@ function AiPlaybookGenerationCard({
   React.useEffect(() => {
     setInstructionCustomized(false);
     setValidatedPreview(null);
-    setValidationAnchor(baseInstructionDraft.trim());
-    setInstructionValue(baseInstructionDraft);
+    setValidationAnchor(storedValidatedInstruction.trim() || null);
+    setInstructionValue(persistedInstructionDraft);
   }, [remediation.id]);
 
   React.useEffect(() => {
     if (!instructionCustomized) {
-      setInstructionValue(displayedInstruction);
-      setValidationAnchor(displayedInstruction.trim());
+      setInstructionValue(persistedInstructionDraft);
+      setValidationAnchor(storedValidatedInstruction.trim() || (baseInstructionQuery.data?.guardrails && generatedInstruction ? generatedInstruction : null));
     }
-  }, [displayedInstruction, instructionCustomized]);
+  }, [
+    baseInstructionQuery.data?.guardrails,
+    generatedInstruction,
+    instructionCustomized,
+    persistedInstructionDraft,
+    storedValidatedInstruction,
+  ]);
 
   return (
     <div className="rounded-3xl border border-violet-400/25 bg-violet-500/8 p-5">
@@ -2263,7 +2279,7 @@ function AiPlaybookGenerationCard({
                 ))}
               </>
             )}
-            {canEditInstruction && instructionCustomized && displayedInstruction ? (
+            {resettable ? (
               <Button
                 type="button"
                 size="sm"
@@ -2271,9 +2287,14 @@ function AiPlaybookGenerationCard({
                 onClick={() => {
                   onFocus(remediation.id);
                   setInstructionCustomized(false);
-                  setInstructionValue(displayedInstruction);
-                  setValidatedPreview(null);
-                  setValidationAnchor(displayedInstruction.trim());
+                  setInstructionValue(generatedInstructionDraft);
+                  if (baseInstructionQuery.data?.guardrails && generatedInstruction) {
+                    setValidatedPreview(baseInstructionQuery.data);
+                    setValidationAnchor(generatedInstruction);
+                  } else {
+                    setValidatedPreview(null);
+                    setValidationAnchor(null);
+                  }
                 }}
               >
                 Reset to generated draft
@@ -2291,7 +2312,7 @@ function AiPlaybookGenerationCard({
                   setInstructionCustomized(true);
                   setInstructionValue(sanitizedInstruction);
                   setValidatedPreview(payload);
-                  setValidationAnchor(sanitizedInstruction.trim());
+                  setValidationAnchor(sanitizedInstruction.trim() || null);
                 }}
                 disabled={pending || previewMutation.isPending}
               >
@@ -2300,7 +2321,7 @@ function AiPlaybookGenerationCard({
             ) : null}
           </div>
         </div>
-        {displayedInstruction || instructionValue ? (
+        {persistedInstructionDraft || instructionValue ? (
           <div className="mt-4">
             <Label htmlFor={instructionId}>{sectionTitle}</Label>
             <Textarea
@@ -2320,7 +2341,7 @@ function AiPlaybookGenerationCard({
                 ? "This is the exact plain-text request most recently published to Kafka."
                 : instructionDirty
                   ? "You edited the generated draft. Run TrustyAI revalidation before Kafka publish."
-                  : instructionCustomized
+                  : !currentInstructionMatchesGenerated
                     ? "This custom draft was revalidated by TrustyAI and is ready for Kafka publish."
                     : "This draft comes from the control-plane builder and includes the current RCA, signals, and remediation context."}
             </div>
@@ -2348,16 +2369,28 @@ function AiPlaybookGenerationCard({
           size="sm"
           onClick={() => {
             onFocus(remediation.id);
-            onGenerate(remediation, canEditInstruction && instructionCustomized ? instructionValue : undefined, false);
+            onGenerate(remediation, canEditInstruction && !currentInstructionMatchesGenerated ? instructionValue : undefined, false);
           }}
-          disabled={pending || previewMutation.isPending || generationStatus === "requested" || instructionDirty || activeGuardrailStatus === "block"}
+          disabled={
+            pending ||
+            previewMutation.isPending ||
+            generationStatus === "requested" ||
+            instructionDirty ||
+            activeGuardrailStatus !== "allow"
+          }
         >
           {generationStatus === "failed"
             ? "Retry AI playbook generation"
             : instructionDirty
               ? "Revalidate first"
+              : activeGuardrailStatus === "require_review"
+                ? "Review required"
               : generationStatus === "blocked"
                 ? "Retry with safer prompt"
+                : activeGuardrailStatus === "block"
+                  ? "Blocked by TrustyAI"
+                  : activeGuardrailStatus !== "allow"
+                    ? "Waiting for TrustyAI"
                 : generationStatus === "requested"
                   ? "Waiting for callback..."
                   : "Generate AI playbook"}
