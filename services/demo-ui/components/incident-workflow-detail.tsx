@@ -2029,6 +2029,7 @@ function AiPlaybookGenerationCard({
   onGenerate: (remediation: RemediationRecord, instructionOverride?: string, guardrailsOverride?: boolean) => void;
 }) {
   const { token } = useApiToken();
+  const queryClient = useQueryClient();
   const instructionId = `ai-playbook-instruction-${remediation.id}`;
   const metadata = (remediation.metadata ?? {}) as Record<string, unknown>;
   const generationStatus = playbookGenerationStatus(remediation);
@@ -2066,6 +2067,14 @@ function AiPlaybookGenerationCard({
           timeoutMs: LONG_RUNNING_REQUEST_TIMEOUT_MS,
         },
       ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["incident-workflow", incidentId, token] }),
+        queryClient.invalidateQueries({ queryKey: ["incidents"] }),
+        queryClient.invalidateQueries({ queryKey: ["console-state"] }),
+        queryClient.invalidateQueries({ queryKey: ["safety-controls-status"] }),
+      ]);
+    },
   });
   const customInstruction = instructionValue.trim();
   const instructionDirty = canEditInstruction && instructionCustomized && customInstruction !== validationAnchor;

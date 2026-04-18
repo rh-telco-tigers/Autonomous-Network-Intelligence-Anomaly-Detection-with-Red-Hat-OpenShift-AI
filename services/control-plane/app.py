@@ -599,7 +599,8 @@ def _safety_controls_status(project: str) -> Dict[str, object]:
                 override_count += 1
 
             updated_at = str(
-                metadata.get("generation_updated_at")
+                metadata.get("playbook_guardrails_updated_at")
+                or metadata.get("generation_updated_at")
                 or metadata.get("generation_requested_at")
                 or incident.get("updated_at")
                 or remediation.get("created_at")
@@ -1486,6 +1487,7 @@ def _request_ai_playbook_generation(
 def _preview_ai_playbook_generation_instruction(
     incident: Dict[str, object],
     remediation: Dict[str, object],
+    requested_by: str,
     notes: str,
     source_url: str,
     instruction_override: str = "",
@@ -1518,6 +1520,25 @@ def _preview_ai_playbook_generation_instruction(
         treat_instruction_as_operator_text=False,
         evaluation_text=guardrails_evaluation_text,
     )
+    updated_metadata = _merge_remediation_metadata(
+        remediation,
+        {
+            "generation_requested_by": requested_by,
+            "generation_notes": str(playbook_guardrails.get("sanitized_notes") or notes).strip(),
+            "generation_source_url": source_url,
+            "generation_instruction_preview": str(playbook_guardrails.get("sanitized_instruction") or instruction).strip()[:400],
+            "playbook_guardrails": playbook_guardrails,
+            "playbook_guardrails_updated_at": _now_iso(),
+        },
+    )
+    updated = update_incident_remediation(
+        str(incident.get("id") or ""),
+        int(remediation.get("id") or 0),
+        status=str(remediation.get("status") or "available"),
+        metadata=updated_metadata,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to persist AI playbook generation preview state")
     return {
         "instruction": str(playbook_guardrails.get("sanitized_instruction") or instruction).strip(),
         "correlation_id": AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
@@ -4843,6 +4864,7 @@ def preview_incident_ai_playbook_instruction(
     return _preview_ai_playbook_generation_instruction(
         incident,
         remediation,
+        payload.requested_by,
         payload.notes,
         payload.source_url,
         payload.instruction_override,

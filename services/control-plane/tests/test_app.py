@@ -773,6 +773,13 @@ class AiPlaybookGenerationTests(unittest.TestCase):
             "action_ref": control_plane_app.AI_PLAYBOOK_GENERATION_ACTION,
             "metadata": {"generation_kind": "request", "generation_status": "not_requested"},
         }
+        captured: dict[str, object] = {}
+
+        def update_remediation(incident_id: str, remediation_id: int, **kwargs: object) -> dict[str, object]:
+            captured["incident_id"] = incident_id
+            captured["remediation_id"] = remediation_id
+            captured["metadata"] = kwargs["metadata"]
+            return remediation | {"metadata": kwargs["metadata"]}
 
         with (
             mock.patch.object(control_plane_app, "_build_playbook_generation_instruction", return_value="draft instruction") as build,
@@ -791,10 +798,12 @@ class AiPlaybookGenerationTests(unittest.TestCase):
                     "detectors": [],
                 },
             ),
+            mock.patch.object(control_plane_app, "update_incident_remediation", side_effect=update_remediation),
         ):
             preview = control_plane_app._preview_ai_playbook_generation_instruction(
                 incident,
                 remediation,
+                "demo-ui",
                 "Prefer a low-risk ingress guardrail first.",
                 "https://demo-ui.example.com/incidents/inc-ai-1",
             )
@@ -810,6 +819,15 @@ class AiPlaybookGenerationTests(unittest.TestCase):
         self.assertEqual(preview["correlation_id"], control_plane_app.AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID)
         self.assertTrue(preview["draft"])
         self.assertEqual(preview["guardrails"]["status"], "allow")
+        metadata = captured["metadata"]
+        assert isinstance(metadata, dict)
+        self.assertEqual(captured["incident_id"], "inc-ai-1")
+        self.assertEqual(captured["remediation_id"], 17)
+        self.assertEqual(metadata["generation_requested_by"], "demo-ui")
+        self.assertEqual(metadata["generation_notes"], "Prefer a low-risk ingress guardrail first.")
+        self.assertEqual(metadata["generation_source_url"], "https://demo-ui.example.com/incidents/inc-ai-1")
+        self.assertEqual(metadata["playbook_guardrails"]["status"], "allow")
+        self.assertIn("playbook_guardrails_updated_at", metadata)
 
     def test_request_ai_playbook_generation_uses_instruction_override_when_provided(self) -> None:
         incident = {
