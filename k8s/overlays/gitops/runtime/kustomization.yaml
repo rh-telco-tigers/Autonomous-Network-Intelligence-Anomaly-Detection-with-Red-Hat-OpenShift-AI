@@ -116,4 +116,4 @@ images:
     newTag: guardrails-fix-efba4b1
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/demo-ui
     newName: quay.io/autonomousnetworkintelligence/demo-ui
-    newTag: trustyai-playbook-dd45ba0
+    newTag: safety-refresh-58b94b6
