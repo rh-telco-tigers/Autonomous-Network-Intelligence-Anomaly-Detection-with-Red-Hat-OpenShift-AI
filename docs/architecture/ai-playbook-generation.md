@@ -192,6 +192,7 @@ This flow now has a dedicated prompt guardrail boundary before Kafka publish. Th
 - the final plain-text instruction assembled by the control-plane, which is sanitized before publish
 
 This guardrail layer is implemented on the platform side, not in AAP Controller and not in the generated playbook itself.
+It is also separate from the current TrustyAI-backed RCA path. Today the playbook request boundary is a control-plane policy adapter that evaluates and stores the request decision before Kafka publish.
 
 ### Decision Model
 
@@ -230,6 +231,12 @@ The request remediation now stores a `playbook_guardrails` envelope in remediati
 - `sanitized_instruction`
 
 This lets the UI explain why a draft was allowed, flagged for review, or blocked before Kafka publish.
+
+Operational note:
+
+- editing the full generated instruction in the UI creates an explicit `instruction_override`
+- current policy intentionally treats any `instruction_override` as `require_review`
+- the operator can still proceed, but only through an explicit override action that is stored in metadata and audit events
 
 ### Demo Prompts
 

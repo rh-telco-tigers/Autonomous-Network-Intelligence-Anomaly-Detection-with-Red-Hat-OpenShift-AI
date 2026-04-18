@@ -509,6 +509,14 @@ def _safety_controls_provider(endpoint: str) -> Dict[str, str]:
     }
 
 
+def _playbook_request_safety_provider() -> Dict[str, str]:
+    return {
+        "key": "control_plane_policy",
+        "label": "Control-plane policy adapter",
+        "family": "Local policy",
+    }
+
+
 def _llm_chat_completions_url(endpoint: str) -> str:
     base = endpoint.rstrip("/")
     if base.endswith("/chat/completions"):
@@ -525,37 +533,93 @@ def _safety_controls_status(project: str) -> Dict[str, object]:
     incidents = list_incidents(project=project)
     recent_items: List[Dict[str, object]] = []
     counts = {"allow": 0, "require_review": 0, "block": 0, "error": 0, "untracked": 0}
+    playbook_items: List[Dict[str, object]] = []
+    playbook_counts = {"allow": 0, "require_review": 0, "block": 0, "untracked": 0}
+    override_count = 0
+    published_count = 0
 
     for incident in incidents:
         rca_payload = incident.get("rca_payload")
         if not isinstance(rca_payload, dict) or not rca_payload:
-            continue
-        guardrail_summary = _rca_guardrails_summary(rca_payload)
-        status = str(guardrail_summary.get("status") or "").strip() or "untracked"
-        if status not in counts:
-            counts["untracked"] += 1
+            pass
         else:
-            counts[status] += 1
-        recent_items.append(
-            {
-                "incident_id": str(incident.get("id") or ""),
-                "anomaly_type": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
-                "severity": _incident_severity_label(incident),
-                "workflow_state": normalize_workflow_state(str(incident.get("status") or NEW)),
-                "created_at": str(incident.get("created_at") or ""),
-                "updated_at": str(incident.get("updated_at") or incident.get("created_at") or ""),
-                "guardrail_status": status,
-                "guardrail_reason": str(guardrail_summary.get("reason") or "").strip(),
-                "rca_state": str(guardrail_summary.get("state") or "").strip(),
-                "generation_mode": str(rca_payload.get("generation_mode") or "").strip(),
-                "generation_source_label": str(rca_payload.get("generation_source_label") or "").strip(),
-                "llm_used": bool(rca_payload.get("llm_used")),
-                "root_cause": str(rca_payload.get("root_cause") or ""),
-                "recommendation": str(rca_payload.get("recommendation") or ""),
-            }
-        )
+            guardrail_summary = _rca_guardrails_summary(rca_payload)
+            status = str(guardrail_summary.get("status") or "").strip() or "untracked"
+            if status not in counts:
+                counts["untracked"] += 1
+            else:
+                counts[status] += 1
+            recent_items.append(
+                {
+                    "incident_id": str(incident.get("id") or ""),
+                    "anomaly_type": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
+                    "severity": _incident_severity_label(incident),
+                    "workflow_state": normalize_workflow_state(str(incident.get("status") or NEW)),
+                    "created_at": str(incident.get("created_at") or ""),
+                    "updated_at": str(incident.get("updated_at") or incident.get("created_at") or ""),
+                    "guardrail_status": status,
+                    "guardrail_reason": str(guardrail_summary.get("reason") or "").strip(),
+                    "rca_state": str(guardrail_summary.get("state") or "").strip(),
+                    "generation_mode": str(rca_payload.get("generation_mode") or "").strip(),
+                    "generation_source_label": str(rca_payload.get("generation_source_label") or "").strip(),
+                    "llm_used": bool(rca_payload.get("llm_used")),
+                    "root_cause": str(rca_payload.get("root_cause") or ""),
+                    "recommendation": str(rca_payload.get("recommendation") or ""),
+                }
+            )
+
+        for remediation in list_incident_remediations(str(incident.get("id") or "")):
+            metadata = remediation.get("metadata") if isinstance(remediation.get("metadata"), dict) else {}
+            if not metadata:
+                continue
+            playbook_guardrails = (
+                metadata.get("playbook_guardrails") if isinstance(metadata.get("playbook_guardrails"), dict) else {}
+            )
+            if not playbook_guardrails:
+                continue
+            status = str(playbook_guardrails.get("status") or "").strip() or "untracked"
+            if status not in playbook_counts:
+                playbook_counts["untracked"] += 1
+            else:
+                playbook_counts[status] += 1
+
+            generation_status = str(
+                metadata.get("generation_status") or remediation.get("generation_status") or ""
+            ).strip()
+            if generation_status in {"requested", "generated"}:
+                published_count += 1
+            if bool(playbook_guardrails.get("override_applied")):
+                override_count += 1
+
+            updated_at = str(
+                metadata.get("generation_updated_at")
+                or metadata.get("generation_requested_at")
+                or incident.get("updated_at")
+                or remediation.get("created_at")
+                or ""
+            )
+            playbook_items.append(
+                {
+                    "incident_id": str(incident.get("id") or ""),
+                    "remediation_id": int(remediation.get("id") or 0),
+                    "title": str(remediation.get("title") or ""),
+                    "anomaly_type": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
+                    "severity": _incident_severity_label(incident),
+                    "workflow_state": normalize_workflow_state(str(incident.get("status") or NEW)),
+                    "generation_status": generation_status,
+                    "guardrail_status": status,
+                    "guardrail_reason": str(playbook_guardrails.get("reason") or "").strip(),
+                    "override_requested": bool(playbook_guardrails.get("override_requested")),
+                    "override_applied": bool(playbook_guardrails.get("override_applied")),
+                    "instruction_override_used": bool(playbook_guardrails.get("instruction_override_used")),
+                    "instruction_preview": str(playbook_guardrails.get("instruction_preview") or "").strip(),
+                    "notes_preview": str(playbook_guardrails.get("notes_preview") or "").strip(),
+                    "updated_at": updated_at,
+                }
+            )
 
     recent_items.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""), reverse=True)
+    playbook_items.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
     return {
         "provider": provider,
         "project": project,
@@ -575,6 +639,20 @@ def _safety_controls_status(project: str) -> Dict[str, object]:
             "error_count": counts["error"],
         },
         "recent_incidents": recent_items[:10],
+        "playbook_generation": {
+            "provider": _playbook_request_safety_provider(),
+            "uses_trustyai": False,
+            "manual_instruction_override_requires_review": True,
+            "summary": {
+                "tracked_requests": len(playbook_items),
+                "allow_count": playbook_counts["allow"],
+                "review_count": playbook_counts["require_review"],
+                "block_count": playbook_counts["block"],
+                "override_count": override_count,
+                "published_count": published_count,
+            },
+            "recent_requests": playbook_items[:10],
+        },
     }
 
 

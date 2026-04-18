@@ -173,6 +173,40 @@ export type SafetyControlsStatus = {
     root_cause: string;
     recommendation: string;
   }>;
+  playbook_generation: {
+    provider: {
+      key: string;
+      label: string;
+      family: string;
+    };
+    uses_trustyai: boolean;
+    manual_instruction_override_requires_review: boolean;
+    summary: {
+      tracked_requests: number;
+      allow_count: number;
+      review_count: number;
+      block_count: number;
+      override_count: number;
+      published_count: number;
+    };
+    recent_requests: Array<{
+      incident_id: string;
+      remediation_id: number;
+      title: string;
+      anomaly_type: string;
+      severity: string;
+      workflow_state: string;
+      generation_status: string;
+      guardrail_status: string;
+      guardrail_reason: string;
+      override_requested: boolean;
+      override_applied: boolean;
+      instruction_override_used: boolean;
+      instruction_preview: string;
+      notes_preview: string;
+      updated_at: string;
+    }>;
+  };
 };
 
 export type SafetyProbeResponse = {
