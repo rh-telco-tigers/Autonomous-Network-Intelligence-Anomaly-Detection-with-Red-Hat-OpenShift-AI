@@ -1403,6 +1403,7 @@ def _request_ai_playbook_generation(
         evaluation_text=_playbook_guardrails_evaluation_text(sanitized_notes, source_url, normalized_override),
     )
     instruction = str(playbook_guardrails.get("sanitized_instruction") or instruction).strip()
+    instruction = _finalize_playbook_generation_instruction(str(incident.get("id") or ""), instruction, correlation_id)
     try:
         publish_result = _publish_playbook_generation_instruction(correlation_id, instruction)
     except Exception as exc:  # noqa: BLE001
@@ -2426,6 +2427,27 @@ def _build_playbook_generation_instruction(
         ]
     )
     return "\n".join(lines).strip()
+
+
+def _replace_or_append_playbook_contract_field(instruction: str, field_name: str, value: str) -> str:
+    replacement = f"- {field_name}: {value}"
+    pattern = re.compile(rf"(?m)^- {re.escape(field_name)}:\s*.*$")
+    if pattern.search(instruction):
+        return pattern.sub(replacement, instruction, count=1)
+    if instruction.strip():
+        return f"{instruction.rstrip()}\n{replacement}"
+    return replacement
+
+
+def _finalize_playbook_generation_instruction(incident_id: str, instruction: str, correlation_id: str) -> str:
+    finalized = str(instruction or "").strip()
+    finalized = _replace_or_append_playbook_contract_field(
+        finalized,
+        "callback_url",
+        _playbook_generation_callback_url(incident_id),
+    )
+    finalized = _replace_or_append_playbook_contract_field(finalized, "correlation_id", correlation_id)
+    return finalized
 
 
 def _publish_playbook_generation_instruction(correlation_id: str, instruction: str) -> Dict[str, object]:

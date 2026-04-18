@@ -783,6 +783,26 @@ class AiPlaybookGenerationTests(unittest.TestCase):
             "metadata": {"generation_kind": "request", "generation_status": "not_requested"},
         }
         captured: dict[str, object] = {}
+        override_instruction = "\n".join(
+            [
+                "Generate a reviewable Ansible playbook for IMS incident inc-ai-1.",
+                "",
+                "Callback contract:",
+                "- callback_url: http://control-plane.ani-runtime.svc.cluster.local:8080/incidents/inc-ai-1/playbook-generation/callback",
+                f"- correlation_id: {control_plane_app.AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID}",
+                "- use status=generated on success or status=failed with error details on failure",
+            ]
+        )
+        finalized_instruction = "\n".join(
+            [
+                "Generate a reviewable Ansible playbook for IMS incident inc-ai-1.",
+                "",
+                "Callback contract:",
+                "- callback_url: http://control-plane.ani-runtime.svc.cluster.local:8080/incidents/inc-ai-1/playbook-generation/callback",
+                "- correlation_id: corr-456",
+                "- use status=generated on success or status=failed with error details on failure",
+            ]
+        )
 
         def update_remediation(incident_id: str, remediation_id: int, **kwargs: object) -> dict[str, object]:
             captured["incident_id"] = incident_id
@@ -807,13 +827,18 @@ class AiPlaybookGenerationTests(unittest.TestCase):
                     "trustyai_used": True,
                     "override_requested": True,
                     "override_applied": True,
-                    "sanitized_instruction": "Use this exact draft",
+                    "sanitized_instruction": override_instruction,
                     "sanitized_notes": "Prefer a low-risk ingress guardrail first.",
                     "instruction_override_used": True,
-                    "instruction_preview": "Use this exact draft",
+                    "instruction_preview": override_instruction,
                     "violations": [],
                     "detectors": [],
                 },
+            ),
+            mock.patch.object(
+                control_plane_app,
+                "_playbook_generation_callback_url",
+                return_value="http://control-plane.ani-runtime.svc.cluster.local:8080/incidents/inc-ai-1/playbook-generation/callback",
             ),
             mock.patch.object(
                 control_plane_app,
@@ -822,8 +847,8 @@ class AiPlaybookGenerationTests(unittest.TestCase):
                     "topic": control_plane_app.AI_PLAYBOOK_GENERATION_TOPIC,
                     "correlation_id": "corr-456",
                     "bootstrap_servers": ["kafka:9092"],
-                    "instruction": "Use this exact draft",
-                    "instruction_preview": "Use this exact draft",
+                    "instruction": finalized_instruction,
+                    "instruction_preview": finalized_instruction,
                 },
             ) as publish_instruction,
             mock.patch.object(control_plane_app, "update_incident_remediation", side_effect=update_remediation),
@@ -835,15 +860,15 @@ class AiPlaybookGenerationTests(unittest.TestCase):
                 "demo-operator",
                 "Prefer a low-risk ingress guardrail first.",
                 "https://demo-ui.example.com/incidents/inc-ai-1",
-                "Use this exact draft",
+                override_instruction,
                 True,
             )
 
         build_instruction.assert_not_called()
-        publish_instruction.assert_called_once_with("corr-456", "Use this exact draft")
+        publish_instruction.assert_called_once_with("corr-456", finalized_instruction)
         metadata = captured["metadata"]
         assert isinstance(metadata, dict)
-        self.assertEqual(metadata["generation_instruction"], "Use this exact draft")
+        self.assertEqual(metadata["generation_instruction"], finalized_instruction)
         self.assertEqual(metadata["playbook_guardrails"]["status"], "require_review")
         self.assertTrue(metadata["playbook_guardrails"]["override_applied"])
 
