@@ -319,6 +319,7 @@ export function IncidentWorkflowDetail() {
       queryClient.invalidateQueries({ queryKey: ["related-records", incidentId] }),
       queryClient.invalidateQueries({ queryKey: ["incidents"] }),
       queryClient.invalidateQueries({ queryKey: ["console-state"] }),
+      queryClient.invalidateQueries({ queryKey: ["safety-controls-status"] }),
     ]);
   }, [incidentId, queryClient, token]);
 

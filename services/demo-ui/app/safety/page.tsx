@@ -111,17 +111,17 @@ export default function SafetyControlsPage() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          label="Allow decisions"
+          label="RCA allow"
           value={formatInteger(data.summary.allow_count)}
           detail="Incidents whose RCA passed the current safety policy."
         />
         <MetricCard
-          label="Review decisions"
+          label="RCA review"
           value={formatInteger(data.summary.review_count)}
           detail="Incidents that kept RCA visible but blocked automation unlock."
         />
         <MetricCard
-          label="Blocked decisions"
+          label="RCA blocked"
           value={formatInteger(data.summary.block_count)}
           detail="Incidents where guardrails replaced RCA with a safe blocked result."
         />
@@ -314,7 +314,8 @@ export default function SafetyControlsPage() {
         <CardHeader>
           <CardTitle>AI playbook prompt guardrails</CardTitle>
           <CardDescription>
-            A second safety boundary runs before Kafka publish on the AI playbook request card in each incident.
+            A second safety boundary runs before Kafka publish on the AI playbook request card in each incident. These
+            counts are separate from the RCA metrics above.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -358,7 +359,7 @@ export default function SafetyControlsPage() {
                 </div>
                 <div>
                   <span className="font-medium text-[var(--text-strong)]">Require review:</span> restart, patch,
-                  or scale-change requests that TrustyAI flags as live-change operations.
+                  or scale-change requests that the current policy flags as live-change operations.
                 </div>
                 <div>
                   <span className="font-medium text-[var(--text-strong)]">Block:</span> prompt injection, delete or
@@ -405,7 +406,7 @@ export default function SafetyControlsPage() {
           <CardTitle>Recent AI playbook request decisions</CardTitle>
           <CardDescription>
             Stored request-side guardrail outcomes from the playbook generation card, including override behavior and
-            sanitized instruction previews.
+            sanitized instruction previews. These are TrustyAI-backed request validations, not RCA decisions.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

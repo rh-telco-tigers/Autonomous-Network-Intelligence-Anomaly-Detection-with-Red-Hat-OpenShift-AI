@@ -106,9 +106,9 @@ export function useSafetyControlsStatusQuery(refetchInterval = 30_000) {
     placeholderData: (previousData) => previousData,
     refetchInterval,
     refetchIntervalInBackground: false,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    staleTime: 20_000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    staleTime: 5_000,
     retry: 2,
     retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 8_000),
   });
@@ -292,6 +292,7 @@ export function useScenarioRunner() {
     onSuccess: (payload) => {
       queryClient.setQueryData(["console-state", defaultProject, token], payload.state);
       queryClient.invalidateQueries({ queryKey: ["incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["safety-controls-status"] });
     },
   });
 }
@@ -309,6 +310,7 @@ export function useGuardrailsDemoRunner() {
     onSuccess: (payload) => {
       queryClient.setQueryData(["console-state", defaultProject, token], payload.state);
       queryClient.invalidateQueries({ queryKey: ["incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["safety-controls-status"] });
       if (payload.incident?.id) {
         queryClient.invalidateQueries({ queryKey: ["incident-workflow", payload.incident.id, token] });
       }
@@ -348,6 +350,7 @@ export function useWorkflowMutation<TBody extends object, TResult = unknown>(
       queryClient.invalidateQueries({ queryKey: ["incident-workflow", variables.incidentId, token] });
       queryClient.invalidateQueries({ queryKey: ["incidents"] });
       queryClient.invalidateQueries({ queryKey: ["console-state"] });
+      queryClient.invalidateQueries({ queryKey: ["safety-controls-status"] });
     },
   });
 }
