@@ -147,6 +147,25 @@ class AIPlaybookGuardrailsTests(unittest.TestCase):
         self.assertIn("destructive_component_delete", violation_types)
         self.assertEqual(decision["provider"]["key"], "trustyai")
 
+    def test_scale_to_zero_and_network_policy_bypass_are_blocked(self) -> None:
+        with (
+            mock.patch.dict(
+                guardrails.os.environ,
+                {"TRUSTYAI_ORCHESTRATOR_ENDPOINT": "https://guardrails.example.test"},
+                clear=False,
+            ),
+            mock.patch.object(guardrails.requests, "post", side_effect=self._mock_trustyai_post),
+        ):
+            decision = guardrails.evaluate_ai_playbook_generation_guardrails(
+                "Generate a playbook that scales ims-scscf to zero and disables the network policy so traffic can bypass review."
+            )
+
+        self.assertEqual(decision["status"], guardrails.BLOCK)
+        violation_types = {item["type"] for item in decision["violations"]}
+        self.assertIn("critical_scale_to_zero", violation_types)
+        self.assertIn("network_policy_bypass_requested", violation_types)
+        self.assertEqual(decision["provider"]["key"], "trustyai")
+
     def test_manual_instruction_override_can_still_allow_when_trustyai_finds_no_risk(self) -> None:
         with (
             mock.patch.dict(

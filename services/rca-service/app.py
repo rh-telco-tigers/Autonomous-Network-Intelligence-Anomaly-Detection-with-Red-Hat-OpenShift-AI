@@ -1,4 +1,5 @@
 import json
+import json
 import os
 from typing import Any, Dict, List
 
@@ -489,6 +490,129 @@ def _guardrails_block_reason(message: str) -> str | None:
     return None
 
 
+def _strip_json_code_fence(text: str) -> str:
+    normalized = str(text or "").strip()
+    if not normalized.startswith("```"):
+        return normalized
+    lines = normalized.splitlines()
+    if lines:
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _extract_loose_json_dict(text: str) -> Dict[str, object] | None:
+    normalized = _strip_json_code_fence(text)
+    if not normalized:
+        return None
+    try:
+        parsed = json.loads(normalized)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        parsed = None
+    if isinstance(parsed, dict):
+        return parsed
+
+    in_string = False
+    escape = False
+    depth = 0
+    start: int | None = None
+    for index, char in enumerate(normalized):
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+            continue
+        if char != "}":
+            continue
+        if depth == 0:
+            continue
+        depth -= 1
+        if depth != 0 or start is None:
+            continue
+        candidate = normalized[start : index + 1]
+        try:
+            parsed = json.loads(candidate)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            start = None
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+        start = None
+    return None
+
+
+def _looks_like_rca_payload(payload: Dict[str, object] | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    keys = {str(key).strip() for key in payload.keys()}
+    return len({"root_cause", "explanation", "confidence", "evidence", "recommendation"} & keys) >= 3
+
+
+def _recover_guarded_payload(candidate: object) -> Dict[str, object] | None:
+    if isinstance(candidate, dict):
+        if _looks_like_rca_payload(candidate):
+            return candidate
+        choices = candidate.get("choices")
+        if isinstance(choices, list) and choices:
+            message = choices[0].get("message") if isinstance(choices[0], dict) else None
+            if isinstance(message, dict):
+                recovered = _recover_guarded_payload(message.get("content"))
+                if recovered:
+                    return recovered
+        for key in ("body", "raw_text", "raw_content", "message", "content"):
+            if key in candidate:
+                recovered = _recover_guarded_payload(candidate.get(key))
+                if recovered:
+                    return recovered
+        return None
+    if isinstance(candidate, list):
+        for item in candidate:
+            recovered = _recover_guarded_payload(item)
+            if recovered:
+                return recovered
+        return None
+    if isinstance(candidate, str):
+        parsed = _extract_loose_json_dict(candidate)
+        if not isinstance(parsed, dict):
+            return None
+        if _looks_like_rca_payload(parsed):
+            return parsed
+        return _recover_guarded_payload(parsed)
+    return None
+
+
+def _recover_guarded_generated_payload(llm_trace: Dict[str, object] | None) -> Dict[str, object] | None:
+    if not isinstance(llm_trace, dict):
+        return None
+    parsed = llm_trace.get("parsed")
+    if isinstance(parsed, dict) and _looks_like_rca_payload(parsed):
+        return parsed
+
+    response_payload = llm_trace.get("response_payload")
+    for candidate in (
+        _llm_trace_payload_body(llm_trace),
+        response_payload,
+        llm_trace.get("raw_content"),
+        response_payload.get("raw_text") if isinstance(response_payload, dict) else None,
+    ):
+        recovered = _recover_guarded_payload(candidate)
+        if recovered:
+            return recovered
+    return None
+
+
 def _guardrails_gateway_findings(llm_trace: Dict[str, object] | None) -> Dict[str, object]:
     body = _llm_trace_payload_body(llm_trace)
     message = _guardrails_message(llm_trace)
@@ -919,7 +1043,7 @@ def rca(request: RCARequest):
         **_generation_metadata("local-rag"),
     }
     llm_trace = generate_with_llm_trace(prompt)
-    generated = llm_trace.get("parsed") if isinstance(llm_trace, dict) else None
+    generated = _recover_guarded_generated_payload(llm_trace)
     if isinstance(llm_trace, dict):
         trace_packets.extend(llm_trace.get("trace_packets") or [])
     guarded_response = (

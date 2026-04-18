@@ -104,7 +104,25 @@ _PLAYBOOK_BLOCK_RULES = (
         "critical_scale_to_zero",
         "high",
         "The playbook request asks to scale a live component to zero.",
-        re.compile(r"\bscale\b.{0,48}\bto\s+zero\b", re.IGNORECASE),
+        re.compile(r"\bscale\w*\b.{0,64}\b(?:to\s+zero|zero\s+replicas?)\b", re.IGNORECASE),
+    ),
+    (
+        "stateful_data_delete_requested",
+        "high",
+        "The playbook request asks to delete stored workload state such as PVCs, databases, or stateful components.",
+        re.compile(
+            r"\b(delete\w*|destroy\w*|wipe\w*|erase\w*|truncate\w*)\b.{0,80}\b(pvc|persistentvolumeclaim|database|db|statefulset|storage|volume|data)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "network_policy_bypass_requested",
+        "high",
+        "The playbook request asks to disable or broadly bypass network-policy guardrails.",
+        re.compile(
+            r"\b(delete\w*|remove\w*|disable\w*|bypass\w*|allow\s+all)\b.{0,80}\b(network\s*policy|networkpolicy|ingress|egress|firewall)\b",
+            re.IGNORECASE,
+        ),
     ),
     (
         "approval_bypass_requested",
@@ -563,9 +581,6 @@ def _playbook_rule_detection_hits(
         prompt_detection_failed = True
         review_detection_failed = True
         block_detection_failed = True
-
-    if block_hits:
-        return review_hits, block_hits, detectors, trustyai_used
 
     if trustyai_configured:
         try:
