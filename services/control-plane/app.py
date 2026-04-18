@@ -1,3 +1,4 @@
+import difflib
 import logging
 import html
 import json
@@ -1388,10 +1389,20 @@ def _request_ai_playbook_generation(
         }
 
     correlation_id = uuid.uuid4().hex
+    preview_instruction = _build_playbook_generation_instruction(
+        incident,
+        remediation,
+        AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
+        sanitized_notes,
+        source_url,
+    )
     instruction = (
         normalized_override
         if normalized_override
         else _build_playbook_generation_instruction(incident, remediation, correlation_id, sanitized_notes, source_url)
+    )
+    evaluation_override = (
+        _playbook_instruction_override_delta(preview_instruction, normalized_override) if normalized_override else ""
     )
     playbook_guardrails = evaluate_ai_playbook_generation_guardrails(
         instruction,
@@ -1400,7 +1411,7 @@ def _request_ai_playbook_generation(
         instruction_override=normalized_override,
         override_requested=guardrails_override,
         treat_instruction_as_operator_text=False,
-        evaluation_text=_playbook_guardrails_evaluation_text(sanitized_notes, source_url, normalized_override),
+        evaluation_text=_playbook_guardrails_evaluation_text(sanitized_notes, source_url, evaluation_override),
     )
     instruction = str(playbook_guardrails.get("sanitized_instruction") or instruction).strip()
     instruction = _finalize_playbook_generation_instruction(str(incident.get("id") or ""), instruction, correlation_id)
@@ -1481,18 +1492,18 @@ def _preview_ai_playbook_generation_instruction(
     if not remediation_unlock_allowed(rca_payload):
         raise HTTPException(status_code=400, detail="RCA must pass guardrails before previewing AI playbook generation")
     normalized_override = str(instruction_override or "").strip()
-    guardrails_evaluation_text = _playbook_guardrails_evaluation_text(notes, source_url, normalized_override)
-    instruction = (
-        normalized_override
-        if normalized_override
-        else _build_playbook_generation_instruction(
-            incident,
-            remediation,
-            AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
-            notes,
-            source_url,
-        )
+    base_instruction = _build_playbook_generation_instruction(
+        incident,
+        remediation,
+        AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
+        notes,
+        source_url,
     )
+    evaluation_override = (
+        _playbook_instruction_override_delta(base_instruction, normalized_override) if normalized_override else ""
+    )
+    guardrails_evaluation_text = _playbook_guardrails_evaluation_text(notes, source_url, evaluation_override)
+    instruction = normalized_override if normalized_override else base_instruction
     playbook_guardrails = evaluate_ai_playbook_generation_guardrails(
         instruction,
         notes=notes,
@@ -2427,6 +2438,14 @@ def _build_playbook_generation_instruction(
         ]
     )
     return "\n".join(lines).strip()
+
+
+def _playbook_instruction_override_delta(base_instruction: str, override_instruction: str) -> str:
+    base_lines = str(base_instruction or "").splitlines()
+    override_lines = str(override_instruction or "").splitlines()
+    delta_lines = [line[2:].strip() for line in difflib.ndiff(base_lines, override_lines) if line.startswith("+ ")]
+    delta = "\n".join(line for line in delta_lines if line).strip()
+    return delta or str(override_instruction or "").strip()
 
 
 def _replace_or_append_playbook_contract_field(instruction: str, field_name: str, value: str) -> str:

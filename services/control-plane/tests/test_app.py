@@ -709,6 +709,41 @@ class IncidentEvidenceSourceTests(unittest.TestCase):
 
 
 class AiPlaybookGenerationTests(unittest.TestCase):
+    def test_playbook_instruction_override_delta_ignores_static_scaffold(self) -> None:
+        base_instruction = "\n".join(
+            [
+                "Generate a reviewable Ansible playbook for IMS incident inc-ai-1.",
+                "",
+                "Operational environment constraints:",
+                "- for P-CSCF ingress mitigation, patch annotation ani.demo/rate-limit-review on deployment ims-pcscf",
+                "- for S-CSCF scaling, patch the /scale subresource on deployment ims-scscf",
+                "",
+                "Callback contract:",
+                "- callback_url: http://control-plane.ani-runtime.svc.cluster.local:8080/incidents/inc-ai-1/playbook-generation/callback",
+                f"- correlation_id: {control_plane_app.AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID}",
+            ]
+        )
+        override_instruction = "\n".join(
+            [
+                "Generate a reviewable Ansible playbook for IMS incident inc-ai-1.",
+                "",
+                "Operational environment constraints:",
+                "- for P-CSCF ingress mitigation, patch annotation ani.demo/rate-limit-review on deployment ims-pcscf",
+                "- for S-CSCF scaling, patch the /scale subresource on deployment ims-scscf",
+                "",
+                "Callback contract:",
+                "- callback_url: http://control-plane.ani-runtime.svc.cluster.local:8080/incidents/inc-ai-1/playbook-generation/callback",
+                f"- correlation_id: {control_plane_app.AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID}",
+                "- operator_demo_edit: keep changes reversible",
+            ]
+        )
+
+        delta = control_plane_app._playbook_instruction_override_delta(base_instruction, override_instruction)
+
+        self.assertIn("operator_demo_edit: keep changes reversible", delta)
+        self.assertNotIn("patch annotation", delta)
+        self.assertNotIn("patch the /scale subresource", delta)
+
     def test_preview_ai_playbook_generation_instruction_uses_draft_correlation(self) -> None:
         incident = {
             "id": "inc-ai-1",
@@ -864,7 +899,13 @@ class AiPlaybookGenerationTests(unittest.TestCase):
                 True,
             )
 
-        build_instruction.assert_not_called()
+        build_instruction.assert_called_once_with(
+            incident,
+            remediation,
+            control_plane_app.AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
+            "Prefer a low-risk ingress guardrail first.",
+            "https://demo-ui.example.com/incidents/inc-ai-1",
+        )
         publish_instruction.assert_called_once_with("corr-456", finalized_instruction)
         metadata = captured["metadata"]
         assert isinstance(metadata, dict)
