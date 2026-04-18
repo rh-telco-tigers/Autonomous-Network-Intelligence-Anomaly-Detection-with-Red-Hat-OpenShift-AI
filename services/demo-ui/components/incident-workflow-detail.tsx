@@ -351,6 +351,7 @@ export function IncidentWorkflowDetail() {
         token,
         {
           method: "POST",
+          timeoutMs: LONG_RUNNING_REQUEST_TIMEOUT_MS,
         },
       );
     },
@@ -364,6 +365,7 @@ export function IncidentWorkflowDetail() {
         token,
         {
           method: "POST",
+          timeoutMs: LONG_RUNNING_REQUEST_TIMEOUT_MS,
         },
       );
     },

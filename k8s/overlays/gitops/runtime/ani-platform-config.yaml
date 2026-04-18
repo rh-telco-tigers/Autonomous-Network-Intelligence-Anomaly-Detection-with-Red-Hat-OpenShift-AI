@@ -31,7 +31,7 @@ data:
   PREDICTIVE_ENDPOINT_MODELCAR: http://ani-predictive-backfill-modelcar-predictor.ani-datascience.svc.cluster.local:8080
   PREDICTIVE_MODEL_NAME_MODELCAR: ani-predictive-backfill-modelcar
   PREDICTIVE_MODEL_VERSION_LABEL_MODELCAR: ani-predictive-backfill-modelcar
-  INCIDENT_AUTO_RCA_SAMPLE_RATE: "1.0"
+  INCIDENT_AUTO_RCA_SAMPLE_RATE: "0.5"
   AI_PLAYBOOK_GENERATION_ENABLED: "true"
   AI_PLAYBOOK_GENERATION_KAFKA_BOOTSTRAP_SERVERS: ani-release-kafka-kafka-bootstrap.ani-data.svc.cluster.local:9092
   AI_PLAYBOOK_GENERATION_KAFKA_TOPIC: aiops-ansible-playbook-generate-instruction
