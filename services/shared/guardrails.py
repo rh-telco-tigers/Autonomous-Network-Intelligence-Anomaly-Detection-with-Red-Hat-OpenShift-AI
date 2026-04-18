@@ -17,6 +17,7 @@ DEFAULT_RCA_SCHEMA_VERSION = "ani.rca.v1"
 DEFAULT_CONFIDENCE_ALLOW_THRESHOLD = 0.60
 DEFAULT_MIN_ALLOW_EVIDENCE_ITEMS = 2
 DEFAULT_TRUSTYAI_PLAYBOOK_TIMEOUT_SECONDS = 8.0
+DEFAULT_TRUSTYAI_PROMPT_INJECTION_MAX_CHARS = 400
 
 ALLOW = "allow"
 REQUIRE_REVIEW = "require_review"
@@ -197,6 +198,15 @@ def trustyai_playbook_timeout_seconds() -> float:
     except ValueError:
         return DEFAULT_TRUSTYAI_PLAYBOOK_TIMEOUT_SECONDS
     return max(1.0, min(value, 20.0))
+
+
+def trustyai_prompt_injection_content(content: str) -> str:
+    normalized = str(content or "").strip()
+    if len(normalized) <= DEFAULT_TRUSTYAI_PROMPT_INJECTION_MAX_CHARS:
+        return normalized
+    head = normalized[:220].rstrip()
+    tail = normalized[-160:].lstrip()
+    return f"{head}\n...\n{tail}"
 
 
 def trustyai_orchestrator_verify_tls() -> bool:
@@ -496,7 +506,7 @@ def _playbook_rule_detection_hits(
 
     if trustyai_configured:
         try:
-            prompt_detections = _trustyai_text_detection(raw_content, {"prompt_injection": {}})
+            prompt_detections = _trustyai_text_detection(trustyai_prompt_injection_content(raw_content), {"prompt_injection": {}})
             if prompt_detections or trustyai_orchestrator_endpoint():
                 trustyai_used = True
             if prompt_detections:
