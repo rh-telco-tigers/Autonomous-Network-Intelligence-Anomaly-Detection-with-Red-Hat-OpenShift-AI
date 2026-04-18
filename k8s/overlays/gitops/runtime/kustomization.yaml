@@ -104,7 +104,7 @@ images:
     newTag: guardrails-fix-efba4b1
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/control-plane
     newName: quay.io/autonomousnetworkintelligence/control-plane
-    newTag: callback-anchor-f38e4c6
+    newTag: preview-persist-580002c
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/feature-gateway
     newName: quay.io/autonomousnetworkintelligence/feature-gateway
     newTag: latest
@@ -116,4 +116,4 @@ images:
     newTag: guardrails-fix-efba4b1
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/demo-ui
     newName: quay.io/autonomousnetworkintelligence/demo-ui
-    newTag: safety-refresh-58b94b6
+    newTag: preview-persist-580002c
