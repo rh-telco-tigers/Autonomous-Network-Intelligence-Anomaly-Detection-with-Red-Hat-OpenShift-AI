@@ -4,4 +4,4 @@ metadata:
   name: ani-remediation
   namespace: aap
 spec:
-  scm_branch: feat/trustyai-guardrails-gitops
+  scm_branch: main
