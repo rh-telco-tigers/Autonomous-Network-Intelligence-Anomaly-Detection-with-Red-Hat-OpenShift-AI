@@ -503,6 +503,7 @@ def _playbook_rule_detection_hits(
     prompt_detection_failed = False
     review_detection_failed = False
     block_detection_failed = False
+    lowered_content = raw_content.lower()
 
     if trustyai_configured:
         try:
@@ -521,7 +522,6 @@ def _playbook_rule_detection_hits(
                     ),
                 )
         except requests.RequestException as exc:
-            prompt_detection_failed = True
             _append_unique_findings(
                 detectors,
                 detector_result(
@@ -531,6 +531,34 @@ def _playbook_rule_detection_hits(
                     f"TrustyAI prompt-injection detection was unavailable for playbook prompt validation and local fallback policy was used: {exc}",
                 ),
             )
+
+        if not block_hits:
+            try:
+                prompt_patterns = [pattern.pattern for pattern in _PROMPT_INJECTION_PATTERNS]
+                prompt_regex_detections = _trustyai_text_detection(lowered_content, {"pii_regex": {"regex": prompt_patterns}})
+                if prompt_regex_detections:
+                    trustyai_used = True
+                    add_block_hit(_PLAYBOOK_BLOCK_RULES[0][0], _PLAYBOOK_BLOCK_RULES[0][1], _PLAYBOOK_BLOCK_RULES[0][2])
+                    _append_unique_findings(
+                        detectors,
+                        detector_result(
+                            "trustyai_prompt_injection_regex",
+                            "high",
+                            "fail",
+                            "TrustyAI Guardrails regex detection matched prompt-injection language in the AI playbook request.",
+                        ),
+                    )
+            except requests.RequestException as exc:
+                prompt_detection_failed = True
+                _append_unique_findings(
+                    detectors,
+                    detector_result(
+                        "trustyai_prompt_injection_regex_unavailable",
+                        "medium",
+                        "warn",
+                        f"TrustyAI prompt-injection regex detection was unavailable for playbook prompt validation and local fallback policy was used: {exc}",
+                    ),
+                )
     else:
         prompt_detection_failed = True
         review_detection_failed = True
@@ -539,7 +567,6 @@ def _playbook_rule_detection_hits(
     if block_hits:
         return review_hits, block_hits, detectors, trustyai_used
 
-    lowered_content = raw_content.lower()
     if trustyai_configured:
         try:
             review_patterns = [pattern.pattern for _, _, _, pattern in _PLAYBOOK_REVIEW_RULES[1:] if pattern]
