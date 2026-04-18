@@ -641,7 +641,12 @@ class AIPlaybookGenerationRetryTests(unittest.TestCase):
         self.assertEqual(task_args[1], 17)
         self.assertIsInstance(task_args[2], str)
         self.assertTrue(task_args[2])
-        self.assertEqual(task_args[3], "instruction")
+        self.assertIn("instruction", task_args[3])
+        self.assertIn(
+            "playbook-generation/callback?remediation_id=17",
+            task_args[3],
+        )
+        self.assertIn(f"- correlation_id: {task_args[2]}", task_args[3])
 
     def test_retry_ai_playbook_generation_republishes_pending_request(self) -> None:
         remediation = {
