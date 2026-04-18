@@ -19,7 +19,7 @@ This flow is implemented on the platform side:
 
 1. The incident UI exposes `Generate AI Ansible playbook` after RCA and remediations exist.
 2. The UI previews the plain-text instruction through `POST /incidents/{incident_id}/remediation/{remediation_id}/playbook-instruction-preview`.
-3. The control-plane evaluates playbook-prompt guardrails on the operator note, any full-text instruction override, and the final Kafka instruction draft.
+3. The control-plane evaluates playbook-prompt guardrails on the operator-controlled text, especially the note and any full-text instruction override, and sanitizes the final Kafka instruction draft before publish.
 4. The UI calls `POST /incidents/{incident_id}/remediation/{remediation_id}/generate-playbook`.
 5. The control-plane does one of three things before Kafka publish:
    - `allow`: publish the instruction immediately
@@ -185,11 +185,11 @@ The external generator should treat:
 
 ## Playbook Prompt Guardrails
 
-This flow now has a dedicated prompt guardrail boundary before Kafka publish. The trust boundary is the operator-controlled text:
+This flow now has a dedicated prompt guardrail boundary before Kafka publish. The primary trust boundary is the operator-controlled text:
 
 - `notes` on the AI playbook request card
 - any full-text `instruction_override`
-- the final plain-text instruction assembled by the control-plane
+- the final plain-text instruction assembled by the control-plane, which is sanitized before publish
 
 This guardrail layer is implemented on the platform side, not in AAP Controller and not in the generated playbook itself.
 

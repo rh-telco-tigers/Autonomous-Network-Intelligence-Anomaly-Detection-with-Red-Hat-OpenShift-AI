@@ -1197,6 +1197,7 @@ def _request_ai_playbook_generation(
         source_url=source_url,
         instruction_override=normalized_override,
         override_requested=guardrails_override,
+        treat_instruction_as_operator_text=False,
     )
     sanitized_instruction = str(playbook_guardrails.get("sanitized_instruction") or draft_instruction).strip()
     sanitized_notes = str(playbook_guardrails.get("sanitized_notes") or notes).strip()
@@ -1310,6 +1311,7 @@ def _request_ai_playbook_generation(
         source_url=source_url,
         instruction_override=normalized_override,
         override_requested=guardrails_override,
+        treat_instruction_as_operator_text=False,
     )
     instruction = str(playbook_guardrails.get("sanitized_instruction") or instruction).strip()
     try:
@@ -1405,6 +1407,7 @@ def _preview_ai_playbook_generation_instruction(
         notes=notes,
         source_url=source_url,
         instruction_override=normalized_override,
+        treat_instruction_as_operator_text=False,
     )
     return {
         "instruction": str(playbook_guardrails.get("sanitized_instruction") or instruction).strip(),

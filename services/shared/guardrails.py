@@ -370,6 +370,7 @@ def evaluate_ai_playbook_generation_guardrails(
     source_url: str = "",
     instruction_override: str = "",
     override_requested: bool = False,
+    treat_instruction_as_operator_text: bool = True,
 ) -> Dict[str, Any]:
     raw_instruction = str(instruction or "").strip()
     raw_notes = str(notes or "").strip()
@@ -390,11 +391,9 @@ def evaluate_ai_playbook_generation_guardrails(
     detectors = list(summary.get("detector_results") or [])
     violations = list(summary.get("violations") or [])
 
-    combined_text = "\n".join(
-        value
-        for value in (raw_instruction, raw_notes, raw_override)
-        if str(value or "").strip()
-    )
+    controlled_text = "\n".join(value for value in (raw_notes, raw_override) if str(value or "").strip())
+    if treat_instruction_as_operator_text and not controlled_text:
+        controlled_text = raw_instruction
 
     prompt_injection_detected = any(
         str(item.get("type") or "").strip() == "prompt_injection"
@@ -418,7 +417,7 @@ def evaluate_ai_playbook_generation_guardrails(
         )
 
     for rule_type, severity, message, pattern in _PLAYBOOK_REVIEW_RULES[1:]:
-        if pattern and pattern.search(combined_text):
+        if pattern and pattern.search(controlled_text):
             review_hits.append((rule_type, severity, message))
 
     if prompt_injection_detected:
@@ -430,7 +429,7 @@ def evaluate_ai_playbook_generation_guardrails(
             )
         )
     for rule_type, severity, message, pattern in _PLAYBOOK_BLOCK_RULES[1:]:
-        if pattern and pattern.search(combined_text):
+        if pattern and pattern.search(controlled_text):
             block_hits.append((rule_type, severity, message))
 
     if secret_exposure_detected:
