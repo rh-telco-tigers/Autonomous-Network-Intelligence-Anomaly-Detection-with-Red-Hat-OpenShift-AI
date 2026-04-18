@@ -21,11 +21,10 @@ This flow is implemented on the platform side:
 2. The UI previews the plain-text instruction through `POST /incidents/{incident_id}/remediation/{remediation_id}/playbook-instruction-preview`.
 3. The control-plane evaluates playbook-prompt guardrails on the operator-controlled text, especially the note and any full-text instruction override, and sanitizes the final Kafka instruction draft before publish.
 4. The UI calls `POST /incidents/{incident_id}/remediation/{remediation_id}/generate-playbook`.
-5. The control-plane does one of three things before Kafka publish:
+5. The control-plane does one of two things before Kafka publish:
    - `allow`: publish the instruction immediately
-   - `require_review`: store the request as review-required and keep Kafka closed until an explicit operator override
    - `block`: store the blocked result and never publish that draft
-6. An external generator consumes only allowed or explicitly overridden instructions and calls the control-plane callback endpoint with either:
+6. An external generator consumes only allowed instructions and calls the control-plane callback endpoint with either:
    - `status=generated` and one YAML playbook
    - `status=failed` and an error
 7. On a successful callback, the control-plane converts the pending request remediation into a normal `ansible_playbook` remediation.
@@ -62,23 +61,22 @@ Repository behavior:
 3. The operator clicks `Generate AI Ansible playbook`.
 4. The control-plane builds the plain-text instruction draft and runs playbook-prompt guardrails on the note plus final prompt text.
 5. If the decision is `allow`, the control-plane generates a `correlation_id` and publishes the instruction to Kafka.
-6. If the decision is `require_review`, the remediation remains visible with generation status `review_required` until the operator explicitly overrides the guardrail.
-7. If the decision is `block`, the remediation remains visible with generation status `blocked` and Kafka publish does not happen.
-8. The external generator returns one callback payload for the same `incident_id` and `correlation_id` only for the published cases.
-9. The control-plane updates that remediation in place:
+6. If the decision is `block`, the remediation remains visible with generation status `blocked` and Kafka publish does not happen.
+7. The external generator returns one callback payload for the same `incident_id` and `correlation_id` only for the published cases.
+8. The control-plane updates that remediation in place:
    - `suggestion_type` becomes `ansible_playbook`
    - `generation_kind` becomes `generated`
    - returned YAML is stored in `playbook_yaml`
    - the same YAML is committed to `playbooks/{incident_id}/playbook.yaml` on `draft/{incident_id}`
-10. The UI refresh shows the generated remediation card with an `AI generated` badge and draft Git metadata.
-11. The operator can expand the YAML, review it, optionally edit it, and then approve or approve-and-execute it.
-12. Approval syncs the latest YAML to Gitea again, creates or reuses the incident PR, and merges `draft/{incident_id}` to `main`.
-13. Execution enters the standard workflow path:
+9. The UI refresh shows the generated remediation card with an `AI generated` badge and draft Git metadata.
+10. The operator can expand the YAML, review it, optionally edit it, and then approve or approve-and-execute it.
+11. Approval syncs the latest YAML to Gitea again, creates or reuses the incident PR, and merges `draft/{incident_id}` to `main`.
+12. Execution enters the standard workflow path:
     - `APPROVED`
     - `EXECUTING`
     - `EXECUTED` or `EXECUTION_FAILED`
     - verification and closure as normal
-14. The AAP job is visible in the controller dashboard because the controller launches the incident-scoped playbook from the draft branch.
+13. The AAP job is visible in the controller dashboard because the controller launches the incident-scoped playbook from the draft branch.
 
 ## Workflow Diagram
 
@@ -102,13 +100,6 @@ sequenceDiagram
     alt Guardrails = allow
         CP->>Kafka: Publish plain-text instruction + correlation_id
         UI-->>Operator: Show generation requested state
-        Gen->>Kafka: Consume instruction
-        Gen->>CP: POST callback with incident_id + correlation_id
-    else Guardrails = require_review
-        CP-->>UI: Store review-required state and keep Kafka closed
-        Operator->>UI: Review violations and optionally override
-        UI->>CP: Re-submit with explicit override
-        CP->>Kafka: Publish plain-text instruction + correlation_id
         Gen->>Kafka: Consume instruction
         Gen->>CP: POST callback with incident_id + correlation_id
     else Guardrails = block
@@ -195,14 +186,12 @@ The full instruction assembled by the control-plane still exists and is what get
 This guardrail layer is implemented on the platform side, not in AAP Controller and not in the generated playbook itself.
 The control-plane now uses TrustyAI Guardrails standalone detections before Kafka publish:
 
-- Prompt Injection detection uses the TrustyAI Prompt Injection detector.
-- Regex-based live-change and destructive-operation checks use the TrustyAI built-in regex detector through the Orchestrator API.
-- ANI still owns the final workflow mapping from detector findings to `allow`, `require_review`, and `block`.
+- Regex-based prompt-injection and destructive-operation checks use the TrustyAI built-in regex detector through the Orchestrator API.
+- ANI still owns the final workflow mapping from TrustyAI detector findings to `allow` or `block` for this edit surface.
 
 ### Decision Model
 
 - `allow`: the instruction can be published to Kafka immediately
-- `require_review`: the request is stored, Kafka stays closed, and the operator must explicitly override before publish
 - `block`: the request is stored as blocked and is never published as written
 
 ### Current Policy
@@ -212,16 +201,12 @@ Implemented policy examples:
 - `allow`
   - reversible, diagnostic, or smoke-marker style playbooks
   - requests grounded to the incident RCA and current remediation context
-- `require_review`
-  - live restart requests
-  - workload patch or edit requests
-  - scale-change requests
-  - other live-change requests that TrustyAI flags as risky but not outright destructive
 - `block`
   - prompt-injection language such as `ignore previous instructions`
   - destructive requests to delete or wipe live components
   - requests to scale critical workloads to zero
   - attempts to bypass approval or request cluster-admin style privilege
+  - attempts to wipe remediation state or delete persistent workload data
 
 ### Persisted Metadata
 
@@ -237,14 +222,15 @@ The request remediation now stores a `playbook_guardrails` envelope in remediati
 - `detectors`
 - `sanitized_instruction`
 
-This lets the UI explain why a draft was allowed, flagged for review, or blocked before Kafka publish.
+This lets the UI explain why a draft was allowed or blocked before Kafka publish.
 
 Operational note:
 
-- editing the full generated instruction in the UI creates an explicit `instruction_override`
+- the UI lets the operator edit the full generated instruction directly
+- once edited, the draft becomes dirty and the UI shows `Revalidate with TrustyAI`
 - the edited prompt is re-evaluated through TrustyAI before publish
-- a manual edit no longer forces `require_review` by itself; the final outcome depends on the TrustyAI findings for the edited prompt
-- override actions are still stored in metadata and audit events when a `require_review` result is explicitly published
+- a manual edit no longer forces review by itself; safe edits remain `allow`
+- destructive or prompt-injection edits return `block` and Kafka publish stays closed
 
 ### Demo Prompts
 
@@ -252,10 +238,12 @@ The incident UI includes preset prompts for demo purposes:
 
 - `Allow demo`
   - generates a reversible smoke-marker or diagnostics playbook
-- `Review demo`
-  - asks for a live restart after diagnostics
-- `Block demo`
+- `Block delete demo`
   - uses prompt-injection plus destructive delete language
+- `Block scale demo`
+  - asks to scale a critical IMS workload to zero and bypass review
+- `Block data demo`
+  - asks to wipe remediation state or related persistent data
 
 ## Callback Endpoint
 

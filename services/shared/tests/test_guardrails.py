@@ -110,7 +110,7 @@ class AIPlaybookGuardrailsTests(unittest.TestCase):
         self.assertEqual(decision["provider"]["key"], "trustyai")
         self.assertTrue(decision["trustyai_used"])
 
-    def test_risky_restart_prompt_requires_review(self) -> None:
+    def test_restart_prompt_without_destructive_language_is_allowed(self) -> None:
         with (
             mock.patch.dict(
                 guardrails.os.environ,
@@ -123,10 +123,10 @@ class AIPlaybookGuardrailsTests(unittest.TestCase):
                 "Generate a playbook to restart the affected deployment after collecting diagnostics."
             )
 
-        self.assertEqual(decision["status"], guardrails.REQUIRE_REVIEW)
-        violation_types = {item["type"] for item in decision["violations"]}
-        self.assertIn("live_component_restart", violation_types)
+        self.assertEqual(decision["status"], guardrails.ALLOW)
+        self.assertEqual(decision["reason"], "validated")
         self.assertEqual(decision["provider"]["key"], "trustyai")
+        self.assertTrue(decision["trustyai_used"])
 
     def test_prompt_injection_and_delete_request_is_blocked(self) -> None:
         with (
