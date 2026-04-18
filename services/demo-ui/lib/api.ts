@@ -12,6 +12,7 @@ import type {
   IncidentRecord,
   IncidentWorkflow,
   KnowledgeArticleResponse,
+  PlaybookGuardrailsDecision,
   RelatedRecords,
   SafetyControlsStatus,
   SafetyProbeResponse,
@@ -32,6 +33,7 @@ type PlaybookInstructionPreviewResponse = {
   instruction: string;
   correlation_id: string;
   draft: boolean;
+  guardrails?: PlaybookGuardrailsDecision;
 };
 
 export type RequestOptions = RequestInit & {
@@ -224,6 +226,7 @@ export function usePlaybookInstructionPreviewQuery(
     requestedBy: string;
     notes?: string;
     sourceUrl?: string;
+    instructionOverride?: string;
     enabled?: boolean;
   },
 ) {
@@ -236,6 +239,7 @@ export function usePlaybookInstructionPreviewQuery(
       options.requestedBy,
       options.notes ?? "",
       options.sourceUrl ?? "",
+      options.instructionOverride ?? "",
       token,
     ],
     queryFn: () =>
@@ -248,6 +252,7 @@ export function usePlaybookInstructionPreviewQuery(
             requested_by: options.requestedBy,
             notes: options.notes ?? "",
             source_url: options.sourceUrl ?? "",
+            instruction_override: options.instructionOverride ?? "",
           }),
         },
       ),

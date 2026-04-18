@@ -190,6 +190,31 @@ export type SafetyProbeResponse = {
   raw?: Record<string, unknown> | null;
 };
 
+export type GuardrailFinding = {
+  type: string;
+  severity: string;
+  result?: string;
+  message: string;
+};
+
+export type PlaybookGuardrailsDecision = {
+  surface?: string;
+  status: string;
+  reason: string;
+  policy_version?: string;
+  contract_version?: string;
+  override_requested?: boolean;
+  override_allowed?: boolean;
+  override_applied?: boolean;
+  instruction_override_used?: boolean;
+  sanitized_instruction?: string;
+  sanitized_notes?: string;
+  instruction_preview?: string;
+  notes_preview?: string;
+  violations?: GuardrailFinding[];
+  detectors?: GuardrailFinding[];
+};
+
 export type ClassifierProfile = {
   key: string;
   label: string;

@@ -56,7 +56,14 @@ from shared.gitea import (
     promote_generated_playbook,
     sync_generated_playbook_to_draft,
 )
-from shared.guardrails import guardrail_status, remediation_unlock_allowed
+from shared.guardrails import (
+    ALLOW,
+    BLOCK,
+    REQUIRE_REVIEW,
+    evaluate_ai_playbook_generation_guardrails,
+    guardrail_status,
+    remediation_unlock_allowed,
+)
 from shared.db import (
     attach_rca,
     create_ticket_resolution_extract,
@@ -715,6 +722,7 @@ class PlaybookGenerationRequest(BaseModel):
     notes: str = ""
     source_url: str = ""
     instruction_override: str = ""
+    guardrails_override: bool = False
 
 
 class PlaybookGenerationCallbackRequest(BaseModel):
@@ -1158,22 +1166,152 @@ def _request_ai_playbook_generation(
     notes: str,
     source_url: str,
     instruction_override: str = "",
+    guardrails_override: bool = False,
     background_tasks: BackgroundTasks | None = None,
 ) -> Dict[str, object]:
     if not _ai_playbook_generation_enabled():
         raise HTTPException(status_code=400, detail="AI playbook generation is disabled")
     if not _is_ai_playbook_generation_request(remediation):
         raise HTTPException(status_code=400, detail="Selected remediation is not an AI playbook generation request")
-    if not isinstance(incident.get("rca_payload"), dict) or not incident.get("rca_payload"):
+    rca_payload = incident.get("rca_payload") if isinstance(incident.get("rca_payload"), dict) else {}
+    if not rca_payload:
         raise HTTPException(status_code=400, detail="RCA must exist before requesting AI playbook generation")
+    if not remediation_unlock_allowed(rca_payload):
+        raise HTTPException(status_code=400, detail="RCA must pass guardrails before requesting AI playbook generation")
+
+    normalized_override = str(instruction_override or "").strip()
+    draft_instruction = (
+        normalized_override
+        if normalized_override
+        else _build_playbook_generation_instruction(
+            incident,
+            remediation,
+            AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
+            notes,
+            source_url,
+        )
+    )
+    playbook_guardrails = evaluate_ai_playbook_generation_guardrails(
+        draft_instruction,
+        notes=notes,
+        source_url=source_url,
+        instruction_override=normalized_override,
+        override_requested=guardrails_override,
+    )
+    sanitized_instruction = str(playbook_guardrails.get("sanitized_instruction") or draft_instruction).strip()
+    sanitized_notes = str(playbook_guardrails.get("sanitized_notes") or notes).strip()
+    status = str(playbook_guardrails.get("status") or "").strip().lower()
+
+    if status == BLOCK:
+        metadata = _merge_remediation_metadata(
+            remediation,
+            {
+                "ai_generated": True,
+                "generation_kind": "request",
+                "generation_provider": AI_PLAYBOOK_GENERATION_PROVIDER,
+                "generation_status": "blocked",
+                "generation_error": "AI playbook request blocked by guardrails before Kafka publish.",
+                "generation_requested_at": _now_iso(),
+                "generation_requested_by": requested_by,
+                "generation_notes": sanitized_notes,
+                "generation_source_url": source_url,
+                "generation_instruction_preview": sanitized_instruction,
+                "playbook_guardrails": playbook_guardrails,
+            },
+        )
+        updated_remediation = update_incident_remediation(
+            str(incident.get("id") or ""),
+            int(remediation.get("id") or 0),
+            status="available",
+            metadata=metadata,
+        )
+        if not updated_remediation:
+            raise HTTPException(status_code=500, detail="Failed to persist blocked AI playbook generation request")
+        record_audit(
+            "ai_playbook_generation_blocked",
+            requested_by,
+            {
+                "remediation_id": updated_remediation.get("id"),
+                "source_url": source_url,
+                "notes": sanitized_notes,
+                "guardrails": playbook_guardrails,
+            },
+            incident_id=str(incident.get("id") or ""),
+        )
+        return {
+            "remediation": updated_remediation,
+            "publish": {
+                "published": False,
+                "topic": "",
+                "correlation_id": "",
+                "instruction": sanitized_instruction,
+                "instruction_preview": sanitized_instruction[:400],
+            },
+            "guardrails": playbook_guardrails,
+        }
+
+    if status == REQUIRE_REVIEW and not guardrails_override:
+        metadata = _merge_remediation_metadata(
+            remediation,
+            {
+                "ai_generated": True,
+                "generation_kind": "request",
+                "generation_provider": AI_PLAYBOOK_GENERATION_PROVIDER,
+                "generation_status": "review_required",
+                "generation_error": "AI playbook request requires safety review before Kafka publish.",
+                "generation_requested_at": _now_iso(),
+                "generation_requested_by": requested_by,
+                "generation_notes": sanitized_notes,
+                "generation_source_url": source_url,
+                "generation_instruction_preview": sanitized_instruction,
+                "playbook_guardrails": playbook_guardrails,
+            },
+        )
+        updated_remediation = update_incident_remediation(
+            str(incident.get("id") or ""),
+            int(remediation.get("id") or 0),
+            status="available",
+            metadata=metadata,
+        )
+        if not updated_remediation:
+            raise HTTPException(status_code=500, detail="Failed to persist AI playbook generation review request")
+        record_audit(
+            "ai_playbook_generation_review_required",
+            requested_by,
+            {
+                "remediation_id": updated_remediation.get("id"),
+                "source_url": source_url,
+                "notes": sanitized_notes,
+                "guardrails": playbook_guardrails,
+            },
+            incident_id=str(incident.get("id") or ""),
+        )
+        return {
+            "remediation": updated_remediation,
+            "publish": {
+                "published": False,
+                "topic": "",
+                "correlation_id": "",
+                "instruction": sanitized_instruction,
+                "instruction_preview": sanitized_instruction[:400],
+            },
+            "guardrails": playbook_guardrails,
+        }
 
     correlation_id = uuid.uuid4().hex
-    normalized_override = str(instruction_override or "").strip()
     instruction = (
         normalized_override
         if normalized_override
-        else _build_playbook_generation_instruction(incident, remediation, correlation_id, notes, source_url)
+        else _build_playbook_generation_instruction(incident, remediation, correlation_id, sanitized_notes, source_url)
     )
+    playbook_guardrails = evaluate_ai_playbook_generation_guardrails(
+        instruction,
+        notes=sanitized_notes,
+        source_url=source_url,
+        instruction_override=normalized_override,
+        override_requested=guardrails_override,
+    )
+    instruction = str(playbook_guardrails.get("sanitized_instruction") or instruction).strip()
     try:
         publish_result = _publish_playbook_generation_instruction(correlation_id, instruction)
     except Exception as exc:  # noqa: BLE001
@@ -1190,10 +1328,12 @@ def _request_ai_playbook_generation(
             "generation_error": "",
             "generation_requested_at": _now_iso(),
             "generation_requested_by": requested_by,
-            "generation_notes": notes,
+            "generation_notes": sanitized_notes,
             "generation_source_url": source_url,
             "generation_topic": publish_result["topic"],
             "generation_instruction": instruction,
+            "generation_instruction_preview": instruction[:400],
+            "playbook_guardrails": playbook_guardrails,
         },
     )
     updated_remediation = update_incident_remediation(
@@ -1205,14 +1345,17 @@ def _request_ai_playbook_generation(
     if not updated_remediation:
         raise HTTPException(status_code=500, detail="Failed to persist AI playbook generation request")
     record_audit(
-        "ai_playbook_generation_requested",
+        "ai_playbook_generation_requested"
+        if status == ALLOW
+        else "ai_playbook_generation_override_published",
         requested_by,
         {
             "remediation_id": updated_remediation.get("id"),
             "correlation_id": correlation_id,
             "topic": publish_result["topic"],
             "source_url": source_url,
-            "notes": notes,
+            "notes": sanitized_notes,
+            "guardrails": playbook_guardrails,
         },
         incident_id=str(incident.get("id") or ""),
     )
@@ -1226,7 +1369,8 @@ def _request_ai_playbook_generation(
         )
     return {
         "remediation": updated_remediation,
-        "publish": publish_result,
+        "publish": {"published": True} | publish_result,
+        "guardrails": playbook_guardrails,
     }
 
 
@@ -1235,22 +1379,38 @@ def _preview_ai_playbook_generation_instruction(
     remediation: Dict[str, object],
     notes: str,
     source_url: str,
+    instruction_override: str = "",
 ) -> Dict[str, object]:
     if not _is_ai_playbook_generation_request(remediation):
         raise HTTPException(status_code=400, detail="Selected remediation is not an AI playbook generation request")
-    if not isinstance(incident.get("rca_payload"), dict) or not incident.get("rca_payload"):
+    rca_payload = incident.get("rca_payload") if isinstance(incident.get("rca_payload"), dict) else {}
+    if not rca_payload:
         raise HTTPException(status_code=400, detail="RCA must exist before previewing AI playbook generation")
-
-    return {
-        "instruction": _build_playbook_generation_instruction(
+    if not remediation_unlock_allowed(rca_payload):
+        raise HTTPException(status_code=400, detail="RCA must pass guardrails before previewing AI playbook generation")
+    normalized_override = str(instruction_override or "").strip()
+    instruction = (
+        normalized_override
+        if normalized_override
+        else _build_playbook_generation_instruction(
             incident,
             remediation,
             AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
             notes,
             source_url,
-        ),
+        )
+    )
+    playbook_guardrails = evaluate_ai_playbook_generation_guardrails(
+        instruction,
+        notes=notes,
+        source_url=source_url,
+        instruction_override=normalized_override,
+    )
+    return {
+        "instruction": str(playbook_guardrails.get("sanitized_instruction") or instruction).strip(),
         "correlation_id": AI_PLAYBOOK_GENERATION_PREVIEW_CORRELATION_ID,
         "draft": True,
+        "guardrails": playbook_guardrails,
     }
 
 
@@ -4420,6 +4580,7 @@ def generate_incident_ai_playbook(
         payload.notes,
         payload.source_url,
         payload.instruction_override,
+        payload.guardrails_override,
         background_tasks,
     )
     updated = get_incident(incident_id) or incident
@@ -4450,6 +4611,7 @@ def preview_incident_ai_playbook_instruction(
         remediation,
         payload.notes,
         payload.source_url,
+        payload.instruction_override,
     )
 
 

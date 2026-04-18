@@ -49,7 +49,7 @@ flowchart TD
 - `rca-remediation.md` is the primary deep dive for phases 6 to 8.
 - `trustyai-guardrails-for-rca.md` is the focused design for inserting TrustyAI Guardrails into the RCA path before remediation unlock.
 - `remediation-suggestions-and-playbooks.md` is the focused explainer for how Phase 8 ranks remediation actions and maps them to playbooks.
-- `ai-playbook-generation.md` is the focused contract for the Kafka request and callback flow that turns RCA into an AI-generated Ansible playbook.
+- `ai-playbook-generation.md` is the focused contract for the Kafka request and callback flow that turns RCA into an AI-generated Ansible playbook, including the prompt guardrail boundary before Kafka publish.
 - `event-driven-ansible.md` is the focused explainer for the EDA webhook and callback flow inside Phase 8.
 
 ## Which Docs To Keep
