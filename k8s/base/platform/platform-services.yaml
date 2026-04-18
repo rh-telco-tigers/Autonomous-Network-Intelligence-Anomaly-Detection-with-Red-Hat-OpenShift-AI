@@ -158,7 +158,10 @@ spec:
             - name: CONTROL_PLANE_DB_PATH
               value: /data/control-plane.db
             - name: INCIDENT_AUTO_RCA_SAMPLE_RATE
-              value: "1.0"
+              valueFrom:
+                configMapKeyRef:
+                  name: ani-platform-config
+                  key: INCIDENT_AUTO_RCA_SAMPLE_RATE
             - name: ENABLE_AUTOMATION
               value: "false"
             - name: AUTOMATION_MODE
