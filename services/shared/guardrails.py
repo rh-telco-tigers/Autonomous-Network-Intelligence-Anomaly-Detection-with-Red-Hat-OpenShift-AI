@@ -32,6 +32,7 @@ OVERRIDDEN = "OVERRIDDEN"
 _PROMPT_INJECTION_PATTERNS = (
     re.compile(r"ignore\s+previous\s+instructions?", re.IGNORECASE),
     re.compile(r"ignore\s+all\s+previous\s+instructions?", re.IGNORECASE),
+    re.compile(r"ignore\s+(below|above|earlier|prior)\s+instructions?", re.IGNORECASE),
     re.compile(r"disregard\s+previous\s+instructions?", re.IGNORECASE),
     re.compile(r"system\s+prompt", re.IGNORECASE),
     re.compile(r"act\s+as\s+", re.IGNORECASE),
@@ -478,94 +479,131 @@ def _playbook_rule_detection_hits(
     if not raw_content:
         return review_hits, block_hits, detectors, trustyai_used
 
-    try:
-        prompt_detections = _trustyai_text_detection(raw_content, {"prompt_injection": {}})
-        if prompt_detections or trustyai_orchestrator_endpoint():
-            trustyai_used = True
-        if prompt_detections:
-            block_hits.append(
-                (
-                    _PLAYBOOK_BLOCK_RULES[0][0],
-                    _PLAYBOOK_BLOCK_RULES[0][1],
-                    _PLAYBOOK_BLOCK_RULES[0][2],
+    def add_review_hit(rule_type: str, severity: str, message: str) -> None:
+        candidate = (rule_type, severity, message)
+        if candidate not in review_hits:
+            review_hits.append(candidate)
+
+    def add_block_hit(rule_type: str, severity: str, message: str) -> None:
+        candidate = (rule_type, severity, message)
+        if candidate not in block_hits:
+            block_hits.append(candidate)
+
+    trustyai_configured = trustyai_playbook_guardrails_enabled() and bool(trustyai_orchestrator_endpoint())
+    prompt_detection_failed = False
+    review_detection_failed = False
+    block_detection_failed = False
+
+    if trustyai_configured:
+        try:
+            prompt_detections = _trustyai_text_detection(raw_content, {"prompt_injection": {}})
+            if prompt_detections or trustyai_orchestrator_endpoint():
+                trustyai_used = True
+            if prompt_detections:
+                add_block_hit(_PLAYBOOK_BLOCK_RULES[0][0], _PLAYBOOK_BLOCK_RULES[0][1], _PLAYBOOK_BLOCK_RULES[0][2])
+                _append_unique_findings(
+                    detectors,
+                    detector_result(
+                        "prompt_injection",
+                        "high",
+                        "fail",
+                        "TrustyAI Guardrails detected prompt-injection language in the AI playbook request.",
+                    ),
                 )
-            )
+        except requests.RequestException as exc:
+            prompt_detection_failed = True
             _append_unique_findings(
                 detectors,
                 detector_result(
-                    "prompt_injection",
-                    "high",
-                    "fail",
-                    "TrustyAI Guardrails detected prompt-injection language in the AI playbook request.",
+                    "trustyai_prompt_injection_unavailable",
+                    "medium",
+                    "warn",
+                    f"TrustyAI prompt-injection detection was unavailable for playbook prompt validation and local fallback policy was used: {exc}",
+                ),
+            )
+    else:
+        prompt_detection_failed = True
+        review_detection_failed = True
+        block_detection_failed = True
+
+    if block_hits:
+        return review_hits, block_hits, detectors, trustyai_used
+
+    lowered_content = raw_content.lower()
+    if trustyai_configured:
+        try:
+            review_patterns = [pattern.pattern for _, _, _, pattern in _PLAYBOOK_REVIEW_RULES[1:] if pattern]
+            review_detections = _trustyai_text_detection(lowered_content, {"pii_regex": {"regex": review_patterns}})
+            if review_detections:
+                trustyai_used = True
+            for detection in review_detections:
+                matched_text = str(detection.get("text") or "").strip()
+                for rule_type, severity, message, pattern in _PLAYBOOK_REVIEW_RULES[1:]:
+                    if pattern and matched_text and pattern.search(matched_text):
+                        add_review_hit(rule_type, severity, message)
+                        _append_unique_findings(detectors, detector_result(f"trustyai_{rule_type}", severity, "warn", message))
+        except requests.RequestException as exc:
+            review_detection_failed = True
+            _append_unique_findings(
+                detectors,
+                detector_result(
+                    "trustyai_review_detection_unavailable",
+                    "medium",
+                    "warn",
+                    f"TrustyAI review-pattern detection was unavailable for playbook prompt validation and local fallback policy was used: {exc}",
                 ),
             )
 
-        lowered_content = raw_content.lower()
-        review_patterns = [pattern.pattern for _, _, _, pattern in _PLAYBOOK_REVIEW_RULES[1:] if pattern]
-        review_detections = _trustyai_text_detection(lowered_content, {"pii_regex": {"regex": review_patterns}})
-        if review_detections:
-            trustyai_used = True
-        for detection in review_detections:
-            matched_text = str(detection.get("text") or "").strip()
-            for rule_type, severity, message, pattern in _PLAYBOOK_REVIEW_RULES[1:]:
-                if pattern and matched_text and pattern.search(matched_text):
-                    review_hits.append((rule_type, severity, message))
-
-        block_patterns = [pattern.pattern for _, _, _, pattern in _PLAYBOOK_BLOCK_RULES[1:] if pattern]
-        block_detections = _trustyai_text_detection(lowered_content, {"pii_regex": {"regex": block_patterns}})
-        if block_detections:
-            trustyai_used = True
-        for detection in block_detections:
-            matched_text = str(detection.get("text") or "").strip()
-            for rule_type, severity, message, pattern in _PLAYBOOK_BLOCK_RULES[1:]:
-                if pattern and matched_text and pattern.search(matched_text):
-                    block_hits.append((rule_type, severity, message))
-
-        for rule_type, severity, message in review_hits:
-            _append_unique_findings(detectors, detector_result(f"trustyai_{rule_type}", severity, "warn", message))
-        for rule_type, severity, message in block_hits:
-            _append_unique_findings(detectors, detector_result(f"trustyai_{rule_type}", severity, "fail", message))
-        return review_hits, block_hits, detectors, trustyai_used
-    except requests.RequestException as exc:
-        _append_unique_findings(
-            detectors,
-            detector_result(
-                "trustyai_guardrails_unavailable",
-                "medium",
-                "warn",
-                f"TrustyAI Guardrails was unavailable for playbook prompt validation and local fallback policy was used: {exc}",
-            ),
-        )
-
-    prompt_injection_detected = any(pattern.search(raw_content) for pattern in _PROMPT_INJECTION_PATTERNS)
-    if prompt_injection_detected:
-        block_hits.append(
-            (
-                _PLAYBOOK_BLOCK_RULES[0][0],
-                _PLAYBOOK_BLOCK_RULES[0][1],
-                _PLAYBOOK_BLOCK_RULES[0][2],
+    if trustyai_configured:
+        try:
+            block_patterns = [pattern.pattern for _, _, _, pattern in _PLAYBOOK_BLOCK_RULES[1:] if pattern]
+            block_detections = _trustyai_text_detection(lowered_content, {"pii_regex": {"regex": block_patterns}})
+            if block_detections:
+                trustyai_used = True
+            for detection in block_detections:
+                matched_text = str(detection.get("text") or "").strip()
+                for rule_type, severity, message, pattern in _PLAYBOOK_BLOCK_RULES[1:]:
+                    if pattern and matched_text and pattern.search(matched_text):
+                        add_block_hit(rule_type, severity, message)
+                        _append_unique_findings(detectors, detector_result(f"trustyai_{rule_type}", severity, "fail", message))
+        except requests.RequestException as exc:
+            block_detection_failed = True
+            _append_unique_findings(
+                detectors,
+                detector_result(
+                    "trustyai_block_detection_unavailable",
+                    "medium",
+                    "warn",
+                    f"TrustyAI block-pattern detection was unavailable for playbook prompt validation and local fallback policy was used: {exc}",
+                ),
             )
-        )
-        _append_unique_findings(
-            detectors,
-            detector_result(
-                "prompt_injection_local_fallback",
-                "high",
-                "fail",
-                "Local fallback policy detected prompt-injection language in the AI playbook request.",
-            ),
-        )
-    for rule_type, severity, message, pattern in _PLAYBOOK_REVIEW_RULES[1:]:
-        if pattern and pattern.search(raw_content):
-            review_hits.append((rule_type, severity, message))
-    for rule_type, severity, message, pattern in _PLAYBOOK_BLOCK_RULES[1:]:
-        if pattern and pattern.search(raw_content):
-            block_hits.append((rule_type, severity, message))
 
-    for rule_type, severity, message in review_hits:
-        _append_unique_findings(detectors, detector_result(f"local_{rule_type}", severity, "warn", message))
-    for rule_type, severity, message in block_hits:
-        _append_unique_findings(detectors, detector_result(f"local_{rule_type}", severity, "fail", message))
+    if prompt_detection_failed:
+        prompt_injection_detected = any(pattern.search(raw_content) for pattern in _PROMPT_INJECTION_PATTERNS)
+        if prompt_injection_detected:
+            add_block_hit(_PLAYBOOK_BLOCK_RULES[0][0], _PLAYBOOK_BLOCK_RULES[0][1], _PLAYBOOK_BLOCK_RULES[0][2])
+            _append_unique_findings(
+                detectors,
+                detector_result(
+                    "prompt_injection_local_fallback",
+                    "high",
+                    "fail",
+                    "Local fallback policy detected prompt-injection language in the AI playbook request.",
+                ),
+            )
+
+    if review_detection_failed:
+        for rule_type, severity, message, pattern in _PLAYBOOK_REVIEW_RULES[1:]:
+            if pattern and pattern.search(raw_content):
+                add_review_hit(rule_type, severity, message)
+                _append_unique_findings(detectors, detector_result(f"local_{rule_type}", severity, "warn", message))
+
+    if block_detection_failed:
+        for rule_type, severity, message, pattern in _PLAYBOOK_BLOCK_RULES[1:]:
+            if pattern and pattern.search(raw_content):
+                add_block_hit(rule_type, severity, message)
+                _append_unique_findings(detectors, detector_result(f"local_{rule_type}", severity, "fail", message))
+
     return review_hits, block_hits, detectors, trustyai_used
 
 
