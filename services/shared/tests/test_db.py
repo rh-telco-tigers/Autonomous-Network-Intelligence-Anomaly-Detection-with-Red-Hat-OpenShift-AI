@@ -75,5 +75,50 @@ class IncidentRcaPersistenceTests(unittest.TestCase):
                 self.assertEqual(inactive[0]["request_id"], "rca-1")
 
 
+class IncidentExplainabilityPersistenceTests(unittest.TestCase):
+    def test_create_incident_persists_model_explanation_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "control-plane.db"
+            with mock.patch.dict(os.environ, {"CONTROL_PLANE_DB_PATH": str(db_path)}, clear=False):
+                db.init_db()
+                incident = db.create_incident(
+                    {
+                        "incident_id": "inc-explain-1",
+                        "project": "ani-demo",
+                        "anomaly_score": 0.88,
+                        "anomaly_type": "registration_storm",
+                        "predicted_confidence": 0.91,
+                        "model_version": "ani-predictive-fs",
+                        "feature_snapshot": {"register_rate": 15.0, "retransmission_count": 9.0},
+                        "model_explanation": {
+                            "provider": {
+                                "key": "trustyai",
+                                "label": "TrustyAI Explainability",
+                                "family": "Explainability",
+                            },
+                            "schema_version": "ani.explainability.v1",
+                            "status": "available",
+                            "pattern_insight": "Register Rate and Retransmission Count dominate the prediction.",
+                            "explanation_confidence": "high",
+                            "top_features": [
+                                {
+                                    "feature": "register_rate",
+                                    "label": "Register Rate",
+                                    "impact": 0.45,
+                                    "raw_impact": 0.45,
+                                    "direction": "increase",
+                                    "display_value": "15.0",
+                                    "tone": "rose",
+                                }
+                            ],
+                        },
+                    }
+                )
+
+                self.assertIsInstance(incident["model_explanation"], dict)
+                self.assertEqual(incident["model_explanation"]["provider"]["key"], "trustyai")
+                self.assertEqual(incident["model_explanation"]["top_features"][0]["feature"], "register_rate")
+
+
 if __name__ == "__main__":
     unittest.main()

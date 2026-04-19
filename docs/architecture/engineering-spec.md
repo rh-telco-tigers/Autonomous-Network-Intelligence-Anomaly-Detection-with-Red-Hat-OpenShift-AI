@@ -68,6 +68,7 @@ Deep-dive document mapping:
 - [Architecture by phase](./README.md) is the directory-level index.
 - [Incident release and offline training](./incident-release-corpus-and-offline-training.md) explains persisted source data, release packaging, and offline-training inputs.
 - [Feature store training path](./feature-store-training-path.md) explains phases 2 to 5 in detail.
+- [TrustyAI Explainability for Incident Scoring](./trustyai-explainability-for-incident-scoring.md) explains how feature attribution should be attached to live anomaly predictions in phase 7.
 - [RCA and remediation](./rca-remediation.md) explains phases 6 to 8 in detail.
 - [Event-Driven Ansible](./event-driven-ansible.md) explains the event-driven remediation path in Phase 8.
 

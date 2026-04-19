@@ -37,6 +37,43 @@ export type TopClassPrediction = {
   probability: number;
 };
 
+export type ExplainabilityFeature = {
+  feature: string;
+  label: string;
+  impact: number;
+  raw_impact?: number;
+  direction: string;
+  value?: number | string | boolean | null;
+  display_value?: string;
+  tone: string;
+};
+
+export type ModelExplanation = {
+  provider?: {
+    key: string;
+    label: string;
+    family: string;
+  };
+  schema_version?: string;
+  status: string;
+  message?: string;
+  prediction?: {
+    anomaly_type: string;
+    confidence: number;
+  };
+  model?: {
+    version?: string;
+    profile_key?: string;
+    profile_label?: string;
+    name?: string;
+    endpoint?: string;
+  };
+  pattern_insight?: string;
+  explanation_confidence?: string;
+  top_features: ExplainabilityFeature[];
+  generated_at?: string;
+};
+
 export type IncidentRecord = {
   id: string;
   project: string;
@@ -65,6 +102,7 @@ export type IncidentRecord = {
   evidence_sources?: EvidenceSource[];
   similar_incidents?: Array<{ title: string; detail: string }>;
   explainability?: Array<{ feature: string; weight: number; label: string; tone: string }>;
+  model_explanation?: ModelExplanation | null;
   topology?: string[];
   plane_workflow_state?: string;
   is_active?: boolean;

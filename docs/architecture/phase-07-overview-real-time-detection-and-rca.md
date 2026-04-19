@@ -88,4 +88,5 @@ This phase is where the platform moves beyond simple alerting. The value is not 
 
 - [Architecture by phase](./README.md)
 - [Engineering specification](./engineering-spec.md)
+- [TrustyAI Explainability for Incident Scoring](./trustyai-explainability-for-incident-scoring.md)
 - [RCA and remediation](./rca-remediation.md)

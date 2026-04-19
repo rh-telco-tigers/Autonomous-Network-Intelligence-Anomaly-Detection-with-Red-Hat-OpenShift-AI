@@ -301,6 +301,49 @@ class IncidentAutoRcaPolicyTests(unittest.TestCase):
         self.assertFalse(any(call.args[0] == "rca_auto_generation_deferred" for call in record_audit.call_args_list))
 
 
+class IncidentExplainabilityViewTests(unittest.TestCase):
+    def test_enrich_incident_prefers_persisted_model_explanation(self) -> None:
+        incident = {
+            "id": "inc-explain-1",
+            "project": "ani-demo",
+            "status": control_plane_app.NEW,
+            "workflow_state": control_plane_app.NEW,
+            "workflow_revision": 1,
+            "anomaly_score": 0.88,
+            "anomaly_type": "registration_storm",
+            "predicted_confidence": 0.91,
+            "model_version": "ani-predictive-fs",
+            "feature_snapshot": {"register_rate": 15.0, "retransmission_count": 9.0},
+            "model_explanation": {
+                "provider": {
+                    "key": "trustyai",
+                    "label": "TrustyAI Explainability",
+                    "family": "Explainability",
+                },
+                "schema_version": "ani.explainability.v1",
+                "status": "available",
+                "pattern_insight": "Register Rate and Retransmission Count dominate the prediction.",
+                "explanation_confidence": "high",
+                "top_features": [
+                    {
+                        "feature": "register_rate",
+                        "label": "Register Rate",
+                        "impact": 0.45,
+                        "raw_impact": 0.45,
+                        "direction": "increase",
+                        "display_value": "15.0",
+                        "tone": "rose",
+                    }
+                ],
+            },
+        }
+
+        enriched = control_plane_app._enrich_incident(incident, audit_events=[], incidents=[incident])
+
+        self.assertEqual(enriched["model_explanation"]["provider"]["key"], "trustyai")
+        self.assertEqual(enriched["explainability"][0]["feature"], "register_rate")
+
+
 class ConsoleScenarioFallbackTests(unittest.TestCase):
     def test_console_run_scenario_forces_incident_when_non_nominal_score_returns_no_incident(self) -> None:
         payload = control_plane_app.ConsoleScenarioRequest(scenario="malformed_invite", project="ani-demo")

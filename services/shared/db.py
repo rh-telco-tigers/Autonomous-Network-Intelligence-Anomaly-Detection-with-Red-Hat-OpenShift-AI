@@ -250,6 +250,7 @@ def init_db() -> None:
                 "class_probabilities_json": "TEXT",
                 "top_classes_json": "TEXT",
                 "is_anomaly": "INTEGER",
+                "model_explanation_json": "TEXT",
             },
         )
         _ensure_columns(
@@ -365,6 +366,7 @@ def create_incident(payload: Dict[str, Any]) -> Dict[str, Any]:
         "model_version": payload["model_version"],
         "feature_window_id": payload.get("feature_window_id"),
         "feature_snapshot": _json_dumps(payload.get("feature_snapshot", {})),
+        "model_explanation_json": _json_dumps(payload["model_explanation"]) if payload.get("model_explanation") else None,
         "rca_payload": None,
         "recommendation": payload.get("recommendation"),
         "created_at": payload.get("created_at") or _now(),
@@ -378,9 +380,9 @@ def create_incident(payload: Dict[str, Any]) -> Dict[str, Any]:
             INSERT INTO incidents (
               id, project, status, severity, source_system, anomaly_score, anomaly_type, model_version,
               predicted_confidence, class_probabilities_json, top_classes_json, is_anomaly,
-              feature_window_id, feature_snapshot, rca_payload, recommendation, created_at, updated_at,
+              feature_window_id, feature_snapshot, model_explanation_json, rca_payload, recommendation, created_at, updated_at,
               workflow_state, workflow_revision, duplicate_of_incident_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               project = excluded.project,
               status = excluded.status,
@@ -395,6 +397,7 @@ def create_incident(payload: Dict[str, Any]) -> Dict[str, Any]:
               model_version = excluded.model_version,
               feature_window_id = excluded.feature_window_id,
               feature_snapshot = excluded.feature_snapshot,
+              model_explanation_json = COALESCE(excluded.model_explanation_json, incidents.model_explanation_json),
               recommendation = COALESCE(incidents.recommendation, excluded.recommendation),
               updated_at = excluded.updated_at,
               workflow_state = excluded.workflow_state,
@@ -416,6 +419,7 @@ def create_incident(payload: Dict[str, Any]) -> Dict[str, Any]:
                 int(record["is_anomaly"]),
                 record["feature_window_id"],
                 record["feature_snapshot"],
+                record["model_explanation_json"],
                 record["rca_payload"],
                 record["recommendation"],
                 record["created_at"],
@@ -1312,6 +1316,7 @@ def _deserialize_incident(row: sqlite3.Row) -> Dict[str, Any]:
     record["workflow_state"] = state
     record["workflow_revision"] = int(record.get("workflow_revision") or 1)
     record["feature_snapshot"] = _json_loads(record.get("feature_snapshot"), {})
+    record["model_explanation"] = _json_loads(record.get("model_explanation_json"), None)
     record["rca_payload"] = _json_loads(record.get("rca_payload"), None)
     record["class_probabilities"] = _json_loads(record.get("class_probabilities_json"), {})
     record["top_classes"] = _json_loads(record.get("top_classes_json"), [])

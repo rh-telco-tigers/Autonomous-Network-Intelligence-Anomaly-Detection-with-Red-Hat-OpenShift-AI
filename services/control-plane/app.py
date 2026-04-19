@@ -58,6 +58,7 @@ from shared.gitea import (
     promote_generated_playbook,
     sync_generated_playbook_to_draft,
 )
+from shared.explainability import legacy_explainability_items, resolve_incident_model_explanation
 from shared.guardrails import (
     ALLOW,
     BLOCK,
@@ -114,7 +115,6 @@ from shared.incident_taxonomy import (
     canonical_anomaly_type,
     console_scenario_catalog,
     console_scenario_names,
-    metric_weights,
     normalize_scenario_name,
     scenario_definition,
 )
@@ -194,6 +194,7 @@ class IncidentCreate(BaseModel):
     model_version: str
     feature_window_id: Optional[str] = None
     feature_snapshot: Dict[str, object] = Field(default_factory=dict)
+    model_explanation: Dict[str, object] = Field(default_factory=dict)
     created_at: Optional[str] = None
     status: str = NEW
     severity: Optional[str] = None
@@ -3998,31 +3999,6 @@ def _incident_impact(incident: Dict[str, object]) -> str:
     )
 
 
-def _explainability_for(incident: Dict[str, object]) -> List[Dict[str, object]]:
-    anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type", NORMAL_ANOMALY_TYPE)))
-    palettes = ["sky", "amber", "rose", "emerald"]
-    weights = metric_weights(anomaly_type)
-    if not weights:
-        weights = {
-            "latency_p95": 0.35,
-            "error_5xx_ratio": 0.25,
-            "retransmission_count": 0.2,
-            "register_rate": 0.2,
-        }
-
-    result = []
-    for index, (feature, weight) in enumerate(weights.items()):
-        result.append(
-            {
-                "feature": feature,
-                "weight": weight,
-                "label": _titleize(feature),
-                "tone": palettes[index % len(palettes)],
-            }
-        )
-    return result
-
-
 def _timeline_title(event_type: str) -> str:
     mapping = {
         "scenario_executed": "Scenario executed",
@@ -4352,6 +4328,7 @@ def _payload_view(incident: Dict[str, object]) -> str:
         "model_version": incident.get("model_version"),
         "feature_window_id": incident.get("feature_window_id"),
         "features": incident.get("feature_snapshot", {}),
+        "model_explanation": incident.get("model_explanation", {}),
         "rca": incident.get("rca_payload", {}),
     }
     return json.dumps(payload, indent=2)
@@ -4371,6 +4348,7 @@ def _enrich_incident(
     feature_snapshot = incident.get("feature_snapshot")
     if not isinstance(feature_snapshot, dict):
         feature_snapshot = {}
+    model_explanation = resolve_incident_model_explanation(incident)
     return summary | {
         "feature_window_id": incident.get("feature_window_id"),
         "feature_snapshot": feature_snapshot,
@@ -4379,7 +4357,8 @@ def _enrich_incident(
         "timeline": _timeline_for_incident(incident, audit_events),
         "evidence_sources": _evidence_sources(incident),
         "similar_incidents": _similar_incidents(incident, incidents),
-        "explainability": _explainability_for(incident),
+        "model_explanation": model_explanation,
+        "explainability": legacy_explainability_items(model_explanation),
         "payload_pretty": _payload_view(incident),
         "topology": _topology_for(anomaly_type),
     }

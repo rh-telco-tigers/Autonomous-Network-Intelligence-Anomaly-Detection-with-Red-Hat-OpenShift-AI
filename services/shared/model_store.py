@@ -165,6 +165,25 @@ def current_model_status() -> Dict[str, object]:
     }
 
 
+def current_predictive_profile() -> Dict[str, object]:
+    active_key, profile, catalog, requested_profile = _active_predictive_profile()
+    selected = profile or {}
+    return {
+        "profile_key": active_key,
+        "requested_profile": requested_profile,
+        "profile_label": str(selected.get("label") or active_key or ""),
+        "endpoint": str(selected.get("endpoint") or "").rstrip("/"),
+        "model_name": str(selected.get("model_name") or ""),
+        "model_version_label": str(selected.get("model_version_label") or ""),
+        "configured": bool(selected.get("configured")),
+        "profiles": classifier_profile_payloads(
+            requested_profile,
+            active_profile=active_key,
+            profiles=catalog,
+        ),
+    }
+
+
 def _resolve_artifact_path(model: Dict[str, object]) -> Path:
     artifact_path = Path(str(model.get("artifact") or ""))
     if not artifact_path.is_absolute():

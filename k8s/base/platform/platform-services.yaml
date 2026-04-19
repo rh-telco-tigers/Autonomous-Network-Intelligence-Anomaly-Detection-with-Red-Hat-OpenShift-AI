@@ -42,8 +42,13 @@ data:
   LLM_REQUEST_TIMEOUT_SECONDS: "20"
   TRUSTYAI_ORCHESTRATOR_ENDPOINT: ""
   TRUSTYAI_ORCHESTRATOR_VERIFY_TLS: "true"
+  TRUSTYAI_EXPLAINABILITY_ENDPOINT: ""
+  TRUSTYAI_EXPLAINABILITY_VERIFY_TLS: "true"
   ANI_PLAYBOOK_GUARDRAILS_TRUSTYAI_ENABLED: "true"
   ANI_PLAYBOOK_GUARDRAILS_TIMEOUT_SECONDS: "8"
+  ANI_INCIDENT_EXPLAINABILITY_TRUSTYAI_ENABLED: "true"
+  ANI_INCIDENT_EXPLAINABILITY_TIMEOUT_SECONDS: "8"
+  ANI_EXPLAINABILITY_SCHEMA_VERSION: ani.explainability.v1
 ---
 apiVersion: v1
 kind: Secret
@@ -666,6 +671,31 @@ spec:
                   key: API_KEYS_JSON
             - name: MODEL_REGISTRY_PATH
               value: /app/ai/registry/model_registry.json
+            - name: TRUSTYAI_EXPLAINABILITY_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: TRUSTYAI_EXPLAINABILITY_ENDPOINT
+            - name: TRUSTYAI_EXPLAINABILITY_VERIFY_TLS
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: TRUSTYAI_EXPLAINABILITY_VERIFY_TLS
+            - name: ANI_INCIDENT_EXPLAINABILITY_TRUSTYAI_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_INCIDENT_EXPLAINABILITY_TRUSTYAI_ENABLED
+            - name: ANI_INCIDENT_EXPLAINABILITY_TIMEOUT_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_INCIDENT_EXPLAINABILITY_TIMEOUT_SECONDS
+            - name: ANI_EXPLAINABILITY_SCHEMA_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-provider-config
+                  key: ANI_EXPLAINABILITY_SCHEMA_VERSION
           readinessProbe:
             httpGet:
               path: /healthz
