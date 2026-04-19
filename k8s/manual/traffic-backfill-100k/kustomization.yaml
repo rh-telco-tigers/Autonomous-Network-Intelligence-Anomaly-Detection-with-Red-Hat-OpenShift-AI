@@ -7,3 +7,7 @@ labels:
     includeTemplates: true
 resources:
   - jobs.yaml
+images:
+  - name: image-registry.openshift-image-registry.svc:5000/ani-sipp/sipp-runner
+    newName: quay.io/autonomousnetworkintelligence/sipp-runner
+    newTag: latest
