@@ -55,9 +55,7 @@ spec:
           - --model_name
           - ani-predictive-backfill-modelcar
           - --predictor_host
-          - ani-predictive-backfill-modelcar-predictor.$(POD_NAMESPACE).svc.cluster.local:8080
-          - --http_port
-          - "8080"
+          - ani-predictive-backfill-modelcar-predictor.$(POD_NAMESPACE).svc.cluster.local:8081
         env:
           - name: POD_NAMESPACE
             valueFrom:
