@@ -937,6 +937,8 @@ export function IncidentWorkflowDetail() {
   const commandCenterSummary = headlineRemediation ? buildRemediationPreview(headlineRemediation) : latestRcaRecommendation;
   const decisionRisk = titleize(headlineRemediation?.risk_level ?? (incident.severity === "Critical" ? "medium" : "low"));
   const rcaConfidenceLabel = hasRca ? `${Math.round(Number(latestRca?.confidence ?? 0) * 100)}%` : "Pending";
+  const predictionConfidence = Number(incident.model_explanation?.prediction?.confidence ?? incident.predicted_confidence ?? 0);
+  const predictionConfidenceLabel = formatPredictionConfidencePercent(predictionConfidence);
   const modelExplanation = incident.model_explanation ?? null;
   const alternativeRemediations = actionableRemediations.filter((item) => item.id !== primaryRemediation?.id);
   const incidentViewSteps = buildIncidentViewSteps(incident.status);
@@ -1095,7 +1097,7 @@ export function IncidentWorkflowDetail() {
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <SummaryItem label="Operational impact" value={incident.impact ?? incident.subtitle ?? "Assessing impact"} />
                 <SummaryItem label="Blast radius" value={incident.blast_radius ?? "Not yet mapped"} />
-                <SummaryItem label="AI confidence" value={rcaConfidenceLabel} />
+                <SummaryItem label="Prediction confidence" value={predictionConfidenceLabel} />
                 <SummaryItem label="Decision risk" value={decisionRisk} />
               </div>
               <ModelExplanationCard explanation={modelExplanation} />
@@ -3105,6 +3107,16 @@ function formatTopClassPredictions(topClasses: Array<{ anomaly_type: string; pro
     .slice(0, 3)
     .map((item) => `${titleize(item.anomaly_type)} ${Math.round(Number(item.probability ?? 0) * 100)}%`)
     .join(" · ");
+}
+
+function formatPredictionConfidencePercent(value: number): string {
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) {
+    return "0%";
+  }
+  const percent = normalized * 100;
+  const rounded = percent >= 99.5 ? Math.round(percent) : Math.round(percent * 10) / 10;
+  return `${rounded.toFixed(rounded % 1 === 0 ? 0 : 1)}%`;
 }
 
 function asStringValue(value: unknown): string {
