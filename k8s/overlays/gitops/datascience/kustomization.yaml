@@ -22,4 +22,4 @@ patches:
     patch: |-
       - op: replace
         path: /spec/containers/0/image
-        value: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer@sha256:5098f7c7a87384c4d5afc2b322b79ee4d6a7ece0fbc3a0cd6cf07657b4a6d892
+        value: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer@sha256:3282fc2fc51c38975276a4ff94e899e715198c1801b64a147fcd693c160dc6eb
