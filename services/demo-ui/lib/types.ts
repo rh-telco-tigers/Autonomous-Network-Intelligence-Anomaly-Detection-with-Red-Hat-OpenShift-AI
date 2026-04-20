@@ -392,6 +392,7 @@ export type ClassifierProfile = {
   label: string;
   description: string;
   endpoint: string;
+  explainability_endpoint: string;
   model_name: string;
   model_version_label: string;
   configured: boolean;
