@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Any, Iterable, List, Mapping, Sequence
 
 import requests
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, HTTPException
 
 from ai.training.train_and_register import FEATURES
 
@@ -69,15 +68,6 @@ def _instances_from_payload(payload: object) -> List[List[float]]:
     if not isinstance(raw_instances, list) or not raw_instances:
         raise ValueError("Request body must include a non-empty 'instances' payload")
     return [_coerce_row(row) for row in raw_instances]
-
-
-def _parse_request_payload(body: bytes) -> object:
-    if not body:
-        raise ValueError("Request body was empty")
-    try:
-        return json.loads(body)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Request body was not valid JSON: {exc.msg}") from exc
 
 
 def _v2_infer_payload(instances: List[List[float]]) -> Mapping[str, Any]:
@@ -143,13 +133,11 @@ def healthz() -> Mapping[str, str]:
 
 
 @app.post("/v1/models/{model_name}:predict")
-async def predict_v1(model_name: str, request: Request) -> Mapping[str, Any]:
-    raw_body = await request.body()
+def predict_v1(model_name: str, payload: object = Body(...)) -> Mapping[str, Any]:
     try:
-        payload = _parse_request_payload(raw_body)
         instances = _instances_from_payload(payload)
     except ValueError as exc:
-        preview = raw_body.decode("utf-8", errors="replace")[:240] if raw_body else ""
+        preview = str(payload)[:240]
         logger.warning("Rejected TrustyAI v1 payload for %s: %s body=%s", model_name, exc, preview)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

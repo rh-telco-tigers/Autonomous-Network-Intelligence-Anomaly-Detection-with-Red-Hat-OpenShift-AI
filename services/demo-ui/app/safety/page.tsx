@@ -202,7 +202,7 @@ export default function SafetyControlsPage() {
   );
 
   if (isLoading && !data) {
-    return <div className="text-sm text-[var(--text-muted)]">Loading safety controls...</div>;
+    return <div className="text-sm text-[var(--text-muted)]">Loading AI Safety &amp; Trust...</div>;
   }
   if (!data) {
     return <div className="text-sm text-[var(--danger-fg)]">Could not load safety control status.</div>;

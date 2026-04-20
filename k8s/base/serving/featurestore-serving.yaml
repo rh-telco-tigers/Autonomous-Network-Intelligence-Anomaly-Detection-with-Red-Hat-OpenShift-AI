@@ -46,6 +46,16 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
+          - name: EXPLAINER_TYPE
+            value: LIME
+          - name: LIME_SAMPLES
+            value: "8"
+          - name: LIME_RETRIES
+            value: "1"
+          - name: LIME_WLR
+            value: "false"
+          - name: LIME_NORMALIZE_WEIGHTS
+            value: "false"
         resources:
           requests:
             cpu: 100m
