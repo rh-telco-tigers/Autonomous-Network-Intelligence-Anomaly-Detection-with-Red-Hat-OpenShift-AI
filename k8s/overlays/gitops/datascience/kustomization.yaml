@@ -13,3 +13,13 @@ resources:
   - ../../../base/kfp
   - ../../../base/feature-store
   - ../../../base/serving
+patches:
+  - target:
+      group: serving.kserve.io
+      version: v1alpha1
+      kind: ServingRuntime
+      name: ani-autogluon-mlserver-runtime
+    patch: |-
+      - op: replace
+        path: /spec/containers/0/image
+        value: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer@sha256:5098f7c7a87384c4d5afc2b322b79ee4d6a7ece0fbc3a0cd6cf07657b4a6d892
