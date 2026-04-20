@@ -29,13 +29,13 @@ spec:
   multiModel: false
   containers:
     - name: kserve-container
-      image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+      image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:trustyai-explainability-c2c154f
       imagePullPolicy: Always
       workingDir: /tmp
       command:
         - /bin/sh
         - -lc
-        - mkdir -p /tmp/mlserver-metrics /tmp/mlserver-envs && exec mlserver start /mnt/models
+        - mkdir -p /tmp/mlserver-metrics /tmp/mlserver-envs && uvicorn ai.featurestore.trustyai_v1_adapter:app --host 0.0.0.0 --port 8081 --http h11 --workers 4 --timeout-keep-alive 30 & exec mlserver start /mnt/models
       args: []
       env:
         - name: HOME
@@ -58,8 +58,15 @@ spec:
           value: /tmp/mlserver-metrics
         - name: MODELS_DIR
           value: /mnt/models
+        - name: TRUSTYAI_ADAPTER_UPSTREAM_URL
+          value: http://127.0.0.1:8080
+        - name: TRUSTYAI_ADAPTER_TIMEOUT_SECONDS
+          value: "30"
       ports:
         - containerPort: 8080
+          protocol: TCP
+        - name: trustyai-v1
+          containerPort: 8081
           protocol: TCP
         - name: grpc
           containerPort: 9000

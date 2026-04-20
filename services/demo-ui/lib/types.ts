@@ -37,6 +37,43 @@ export type TopClassPrediction = {
   probability: number;
 };
 
+export type ExplainabilityFeature = {
+  feature: string;
+  label: string;
+  impact: number;
+  raw_impact?: number;
+  direction: string;
+  value?: number | string | boolean | null;
+  display_value?: string;
+  tone: string;
+};
+
+export type ModelExplanation = {
+  provider?: {
+    key: string;
+    label: string;
+    family: string;
+  };
+  schema_version?: string;
+  status: string;
+  message?: string;
+  prediction?: {
+    anomaly_type: string;
+    confidence: number;
+  };
+  model?: {
+    version?: string;
+    profile_key?: string;
+    profile_label?: string;
+    name?: string;
+    endpoint?: string;
+  };
+  pattern_insight?: string;
+  explanation_confidence?: string;
+  top_features: ExplainabilityFeature[];
+  generated_at?: string;
+};
+
 export type IncidentRecord = {
   id: string;
   project: string;
@@ -65,6 +102,7 @@ export type IncidentRecord = {
   evidence_sources?: EvidenceSource[];
   similar_incidents?: Array<{ title: string; detail: string }>;
   explainability?: Array<{ feature: string; weight: number; label: string; tone: string }>;
+  model_explanation?: ModelExplanation | null;
   topology?: string[];
   plane_workflow_state?: string;
   is_active?: boolean;
@@ -173,6 +211,94 @@ export type SafetyControlsStatus = {
     root_cause: string;
     recommendation: string;
   }>;
+  explainability: {
+    provider: {
+      key: string;
+      label: string;
+      family: string;
+    };
+    summary: {
+      tracked_incidents: number;
+      trustyai_count: number;
+      fallback_count: number;
+      other_count: number;
+    };
+    top_features: Array<{
+      feature: string;
+      label: string;
+      tone: string;
+      count: number;
+      avg_impact: number;
+    }>;
+    recent_explanations: Array<{
+      incident_id: string;
+      anomaly_type: string;
+      provider: {
+        key: string;
+        label: string;
+        family: string;
+      };
+      status: string;
+      pattern_insight: string;
+      explanation_confidence: string;
+      generated_at: string;
+      top_features: ExplainabilityFeature[];
+    }>;
+  };
+  monitoring: {
+    summary: {
+      trust_metadata_coverage: number;
+      trust_metadata_coverage_rate: number;
+      explanation_fallback_rate: number;
+      rca_allow_rate: number;
+      playbook_block_rate: number;
+      prompt_injection_detections: number;
+      approval_count: number;
+      action_execution_count: number;
+    };
+    timeline: Array<{
+      title: string;
+      detail: string;
+      severity: string;
+      timestamp: string;
+      source: string;
+      incident_id?: string;
+    }>;
+  };
+  governance: {
+    summary: {
+      tracked_decisions: number;
+      approval_count: number;
+      override_count: number;
+      executed_action_count: number;
+      audited_incident_count: number;
+    };
+    lineage: {
+      active_model_version: string;
+      active_model_label: string;
+      active_profile_key: string;
+      feature_service: string;
+      explainability_provider: string;
+      rca_guardrails_provider: string;
+      playbook_guardrails_provider: string;
+      llm_model: string;
+      guardrail_policy: string;
+    };
+    sample_trace: {
+      incident_id: string;
+      anomaly_type: string;
+      severity: string;
+      workflow_state: string;
+      stages: Array<{
+        key: string;
+        title: string;
+        status: string;
+        timestamp: string;
+        provider: string;
+        detail: string;
+      }>;
+    } | null;
+  };
   playbook_generation: {
     provider: {
       key: string;
@@ -266,6 +392,7 @@ export type ClassifierProfile = {
   label: string;
   description: string;
   endpoint: string;
+  explainability_endpoint: string;
   model_name: string;
   model_version_label: string;
   configured: boolean;

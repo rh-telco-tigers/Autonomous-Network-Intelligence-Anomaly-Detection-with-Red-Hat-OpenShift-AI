@@ -31,6 +31,7 @@ import type {
   IncidentActionRecord,
   IncidentRecord,
   IncidentWorkflow,
+  ModelExplanation,
   PlaybookGuardrailsDecision,
   RcaPayload,
   RcaRecord,
@@ -936,6 +937,7 @@ export function IncidentWorkflowDetail() {
   const commandCenterSummary = headlineRemediation ? buildRemediationPreview(headlineRemediation) : latestRcaRecommendation;
   const decisionRisk = titleize(headlineRemediation?.risk_level ?? (incident.severity === "Critical" ? "medium" : "low"));
   const rcaConfidenceLabel = hasRca ? `${Math.round(Number(latestRca?.confidence ?? 0) * 100)}%` : "Pending";
+  const modelExplanation = incident.model_explanation ?? null;
   const alternativeRemediations = actionableRemediations.filter((item) => item.id !== primaryRemediation?.id);
   const incidentViewSteps = buildIncidentViewSteps(incident.status);
   const currentIncidentStep =
@@ -1096,6 +1098,7 @@ export function IncidentWorkflowDetail() {
                 <SummaryItem label="AI confidence" value={rcaConfidenceLabel} />
                 <SummaryItem label="Decision risk" value={decisionRisk} />
               </div>
+              <ModelExplanationCard explanation={modelExplanation} />
             </CardContent>
           </Card>
 
@@ -2543,6 +2546,108 @@ function SummaryItem({
         {meta}
       </div>
       <div className="mt-2 min-w-0 text-sm text-[var(--text-strong)] [overflow-wrap:anywhere]">{value}</div>
+    </div>
+  );
+}
+
+function ModelExplanationCard({ explanation }: { explanation: ModelExplanation | null | undefined }) {
+  if (!explanation || !Array.isArray(explanation.top_features) || !explanation.top_features.length) {
+    return null;
+  }
+
+  const providerLabel = explanation.provider?.key === "trustyai" ? "TrustyAI" : "Fallback";
+  const explanationConfidence = titleize(explanation.explanation_confidence ?? "medium");
+  const patternInsight = explanation.pattern_insight || explanation.message || "Model explanation is being prepared.";
+
+  return (
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="max-w-3xl">
+          <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
+            <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" aria-hidden="true" />
+            <span>Model explanation</span>
+            <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-1 text-[10px] font-medium tracking-[0.16em] text-[var(--text-secondary)]">
+              {providerLabel}
+            </div>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{patternInsight}</p>
+          {explanation.message && explanation.status !== "available" ? (
+            <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">{explanation.message}</p>
+          ) : null}
+        </div>
+        <div className="grid min-w-[240px] grid-cols-2 gap-3">
+          <SummaryItem label="Provider" value={explanation.provider?.label ?? "Unavailable"} />
+          <SummaryItem label="Explanation confidence" value={<StatusBadge value={explanationConfidence} />} />
+          <SummaryItem
+            label="Predicted class"
+            value={titleize(explanation.prediction?.anomaly_type ?? "unknown")}
+          />
+          <SummaryItem
+            label="Model"
+            value={
+              explanation.model?.version ||
+              explanation.model?.profile_label ||
+              explanation.model?.name ||
+              "Predictive model"
+            }
+          />
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {explanation.top_features.slice(0, 5).map((item, index) => (
+          <ExplainabilitySignalBar
+            key={`${item.feature}-${index}`}
+            label={item.label}
+            value={item.display_value ?? "n/a"}
+            impact={item.impact}
+            rawImpact={item.raw_impact ?? item.impact}
+            tone={item.tone}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExplainabilitySignalBar({
+  label,
+  value,
+  impact,
+  rawImpact,
+  tone,
+}: {
+  label: string;
+  value: string;
+  impact: number;
+  rawImpact: number;
+  tone: string;
+}) {
+  const percent = `${Math.max(8, Math.min(100, Math.round(impact * 100)))}%`;
+  const barClass =
+    tone === "rose"
+      ? "from-rose-400/80 to-rose-500/30"
+      : tone === "amber"
+        ? "from-amber-300/80 to-amber-500/30"
+        : tone === "emerald"
+          ? "from-emerald-300/80 to-emerald-500/30"
+          : tone === "violet"
+            ? "from-violet-300/80 to-violet-500/30"
+            : "from-sky-300/80 to-sky-500/30";
+  return (
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-[var(--text-strong)]">{label}</div>
+          <div className="mt-1 text-xs text-[var(--text-muted)]">Observed value: {value}</div>
+        </div>
+        <div className="text-sm font-semibold text-[var(--text-strong)]">
+          {rawImpact >= 0 ? "+" : ""}
+          {rawImpact.toFixed(2)}
+        </div>
+      </div>
+      <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[var(--surface-subtle)]">
+        <div className={cn("h-full rounded-full bg-gradient-to-r", barClass)} style={{ width: percent }} />
+      </div>
     </div>
   );
 }

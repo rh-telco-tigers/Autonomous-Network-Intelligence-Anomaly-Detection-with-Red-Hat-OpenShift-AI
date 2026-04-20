@@ -1,0 +1,252 @@
+import importlib.util
+import os
+import sys
+import unittest
+from pathlib import Path
+from unittest import mock
+
+
+SERVICES_ROOT = Path(__file__).resolve().parents[2]
+if str(SERVICES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICES_ROOT))
+
+MODULE_PATH = Path(__file__).resolve().parents[1] / "explainability.py"
+SPEC = importlib.util.spec_from_file_location("shared_explainability", MODULE_PATH)
+assert SPEC and SPEC.loader
+explainability = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(explainability)
+
+
+class ExplainabilityFallbackTests(unittest.TestCase):
+    def test_build_model_explanation_falls_back_to_heuristic_shape(self) -> None:
+        with mock.patch.dict(os.environ, {"ANI_INCIDENT_EXPLAINABILITY_TRUSTYAI_ENABLED": "false"}, clear=False):
+            payload = explainability.build_model_explanation(
+                {
+                    "register_rate": 15.0,
+                    "retransmission_count": 9.0,
+                    "latency_p95": 180.0,
+                    "error_4xx_ratio": 0.12,
+                },
+                anomaly_type="registration_storm",
+                predicted_confidence=0.91,
+                model_version="ani-predictive-fs",
+            )
+
+        self.assertEqual(payload["provider"]["key"], "local_heuristic")
+        self.assertEqual(payload["status"], "fallback")
+        self.assertTrue(payload["top_features"])
+        self.assertEqual(payload["prediction"]["anomaly_type"], "registration_storm")
+        self.assertIn("dominant signals", payload["pattern_insight"].lower())
+
+    def test_legacy_explainability_items_uses_top_features(self) -> None:
+        legacy_items = explainability.legacy_explainability_items(
+            {
+                "top_features": [
+                    {
+                        "feature": "register_rate",
+                        "label": "Register Rate",
+                        "impact": 0.45,
+                        "tone": "rose",
+                    }
+                ]
+            }
+        )
+        self.assertEqual(legacy_items[0]["feature"], "register_rate")
+        self.assertEqual(legacy_items[0]["weight"], 0.45)
+
+
+class ExplainabilityTrustyAITests(unittest.TestCase):
+    def test_trustyai_payload_variants_only_emit_numeric_instance_arrays(self) -> None:
+        variants = explainability._trustyai_payload_variants(
+            {
+                "register_rate": 15.0,
+                "invite_rate": 0.0,
+                "bye_rate": 1.0,
+                "error_4xx_ratio": 0.12,
+                "error_5xx_ratio": 0.0,
+                "latency_p95": 120.0,
+                "retransmission_count": 9.0,
+                "inter_arrival_mean": 0.5,
+                "payload_variance": 0.0,
+                "scenario_name": "registration_storm",
+            }
+        )
+
+        self.assertEqual(
+            variants,
+            [
+                {
+                    "instances": [
+                        [15.0, 0.0, 1.0, 0.12, 0.0, 120.0, 9.0, 0.5, 0.0],
+                    ]
+                }
+            ],
+        )
+
+    def test_model_context_explainability_endpoint_overrides_predictor_endpoint(self) -> None:
+        endpoint = explainability.trustyai_explainability_endpoint(
+            {
+                "endpoint": "http://ani-predictive-fs-predictor.ani-datascience.svc.cluster.local:8080",
+                "explainability_endpoint": "http://ani-predictive-fs-explainer.ani-datascience.svc.cluster.local:8080",
+                "model_name": "ani-predictive-fs",
+            }
+        )
+
+        self.assertEqual(
+            endpoint,
+            "http://ani-predictive-fs-explainer.ani-datascience.svc.cluster.local:8080/v1/models/ani-predictive-fs:explain",
+        )
+
+    def test_build_model_explanation_marks_trustyai_when_attributions_are_returned(self) -> None:
+        class _Response:
+            ok = True
+            status_code = 200
+            text = '{"explanations":[{"feature":"register_rate","impact":0.41},{"feature":"retransmission_count","impact":0.27}]}'
+
+            def json(self):
+                return {
+                    "explanations": [
+                        {"feature": "register_rate", "impact": 0.41},
+                        {"feature": "retransmission_count", "impact": 0.27},
+                    ]
+                }
+
+        with (
+            mock.patch.dict(
+                os.environ,
+                {
+                    "ANI_INCIDENT_EXPLAINABILITY_TRUSTYAI_ENABLED": "true",
+                    "TRUSTYAI_EXPLAINABILITY_ENDPOINT": "https://trustyai.example.com/explain",
+                    "TRUSTYAI_EXPLAINABILITY_VERIFY_TLS": "false",
+                },
+                clear=False,
+            ),
+            mock.patch.object(explainability.requests, "post", return_value=_Response()),
+        ):
+            payload = explainability.build_model_explanation(
+                {"register_rate": 15.0, "retransmission_count": 9.0},
+                anomaly_type="registration_storm",
+                predicted_confidence=0.9,
+                model_version="ani-predictive-fs",
+            )
+
+        self.assertEqual(payload["provider"]["key"], "trustyai")
+        self.assertEqual(payload["status"], "available")
+        self.assertEqual(payload["top_features"][0]["feature"], "register_rate")
+
+    def test_build_model_explanation_parses_kserve_saliency_payload(self) -> None:
+        class _Response:
+            ok = True
+            status_code = 200
+            text = (
+                '{"saliencies":{"outputs-0":['
+                '{"name":"inputs-0","score":0.37,"confidence":0.0},'
+                '{"name":"inputs-6","score":0.22,"confidence":0.0}'
+                "]}}"
+            )
+
+            def json(self):
+                return {
+                    "saliencies": {
+                        "outputs-0": [
+                            {"name": "inputs-0", "score": 0.37, "confidence": 0.0},
+                            {"name": "inputs-6", "score": 0.22, "confidence": 0.0},
+                        ]
+                    }
+                }
+
+        with (
+            mock.patch.dict(
+                os.environ,
+                {
+                    "ANI_INCIDENT_EXPLAINABILITY_TRUSTYAI_ENABLED": "true",
+                    "TRUSTYAI_EXPLAINABILITY_ENDPOINT": "https://trustyai.example.com/explain",
+                    "TRUSTYAI_EXPLAINABILITY_VERIFY_TLS": "false",
+                },
+                clear=False,
+            ),
+            mock.patch.object(explainability.requests, "post", return_value=_Response()),
+        ):
+            payload = explainability.build_model_explanation(
+                {
+                    "register_rate": 15.0,
+                    "invite_rate": 0.0,
+                    "bye_rate": 0.0,
+                    "error_4xx_ratio": 0.12,
+                    "error_5xx_ratio": 0.0,
+                    "latency_p95": 120.0,
+                    "retransmission_count": 9.0,
+                    "payload_variance": 0.0,
+                },
+                anomaly_type="registration_storm",
+                predicted_confidence=0.9,
+                model_version="ani-predictive-fs",
+            )
+
+        self.assertEqual(payload["provider"]["key"], "trustyai")
+        self.assertEqual(payload["top_features"][0]["feature"], "register_rate")
+        self.assertEqual(payload["top_features"][1]["feature"], "retransmission_count")
+
+    def test_build_model_explanation_parses_nested_per_feature_importance_payload(self) -> None:
+        class _Response:
+            ok = True
+            status_code = 200
+            text = (
+                '{"saliencies":{"outputs-0":{"perFeatureImportance":['
+                '{"feature":{"name":"inputs-7"},"score":3.89},'
+                '{"feature":{"name":"inputs-0"},"score":6.00},'
+                '{"feature":{"name":"inputs-5"},"score":-2.25}'
+                "]}}}"
+            )
+
+            def json(self):
+                return {
+                    "saliencies": {
+                        "outputs-0": {
+                            "perFeatureImportance": [
+                                {"feature": {"name": "inputs-7"}, "score": 3.89},
+                                {"feature": {"name": "inputs-0"}, "score": 6.00},
+                                {"feature": {"name": "inputs-5"}, "score": -2.25},
+                            ]
+                        }
+                    }
+                }
+
+        with (
+            mock.patch.dict(
+                os.environ,
+                {
+                    "ANI_INCIDENT_EXPLAINABILITY_TRUSTYAI_ENABLED": "true",
+                    "TRUSTYAI_EXPLAINABILITY_ENDPOINT": "https://trustyai.example.com/explain",
+                    "TRUSTYAI_EXPLAINABILITY_VERIFY_TLS": "false",
+                },
+                clear=False,
+            ),
+            mock.patch.object(explainability.requests, "post", return_value=_Response()),
+        ):
+            payload = explainability.build_model_explanation(
+                {
+                    "register_rate": 0.5,
+                    "invite_rate": 5.0,
+                    "bye_rate": 0.4,
+                    "error_4xx_ratio": 0.01,
+                    "error_5xx_ratio": 0.01,
+                    "latency_p95": 180.0,
+                    "retransmission_count": 6.0,
+                    "inter_arrival_mean": 0.8,
+                    "payload_variance": 55.0,
+                },
+                anomaly_type="busy_destination",
+                predicted_confidence=0.91,
+                model_version="ani-predictive-backfill-modelcar",
+            )
+
+        self.assertEqual(payload["provider"]["key"], "trustyai")
+        self.assertEqual(payload["status"], "available")
+        self.assertEqual(payload["top_features"][0]["feature"], "register_rate")
+        self.assertEqual(payload["top_features"][1]["feature"], "inter_arrival_mean")
+        self.assertEqual(payload["top_features"][2]["feature"], "latency_p95")
+
+
+if __name__ == "__main__":
+    unittest.main()

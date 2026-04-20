@@ -41,7 +41,7 @@ This separation keeps data generation, model lifecycle management, and operator 
 
 ### 1.4 Phase Breakdown
 
-The same platform is also easier to reason about as eight connected phases:
+The same platform is also easier to reason about as nine connected phases:
 
 1. Phase 1: Data Generation
 2. Phase 2: Feature Store
@@ -51,6 +51,7 @@ The same platform is also easier to reason about as eight connected phases:
 6. Phase 6: Custom Services
 7. Phase 7: Real-Time Detection and RCA
 8. Phase 8: Remediation
+9. Phase 9: TrustyAI Integration
 
 ```mermaid
 flowchart TD
@@ -61,6 +62,8 @@ flowchart TD
   P5 --> P6["Phase 6<br/>Custom Services"]
   P6 --> P7["Phase 7<br/>Real-Time Detection + RCA"]
   P7 --> P8["Phase 8<br/>Remediation"]
+  P7 --> P9["Phase 9<br/>TrustyAI Integration"]
+  P8 --> P9
 ```
 
 Deep-dive document mapping:
@@ -68,6 +71,9 @@ Deep-dive document mapping:
 - [Architecture by phase](./README.md) is the directory-level index.
 - [Incident release and offline training](./incident-release-corpus-and-offline-training.md) explains persisted source data, release packaging, and offline-training inputs.
 - [Feature store training path](./feature-store-training-path.md) explains phases 2 to 5 in detail.
+- [TrustyAI Explainability for Incident Scoring](./trustyai-explainability-for-incident-scoring.md) explains how feature attribution should be attached to live anomaly predictions in phase 7.
+- [Phase 09 Overview — TrustyAI Integration](./phase-09-overview-trustyai-integration.md) summarizes how TrustyAI explainability, guardrails, monitoring, and governance fit together as a cross-cutting trust layer.
+- [AI Safety And Trust](./ai-safety-and-trust.md) explains how explainability, guardrails, monitoring, and governance should be unified across phases 7 and 8.
 - [RCA and remediation](./rca-remediation.md) explains phases 6 to 8 in detail.
 - [Event-Driven Ansible](./event-driven-ansible.md) explains the event-driven remediation path in Phase 8.
 
@@ -82,7 +88,7 @@ Use this file when you need:
 - repository-to-runtime mapping
 - cross-cutting system boundaries, service relationships, and deployment context
 
-Use the `phase-01-overview` through `phase-08-overview` files for fast stage-by-stage reading. They are summaries, not replacements for this deeper reference.
+Use the `phase-01-overview` through `phase-09-overview` files for fast stage-by-stage reading. They are summaries, not replacements for this deeper reference.
 
 ## 2. Goals and Non-Goals
 

@@ -15,7 +15,7 @@ export const navItems = [
   },
   {
     href: "/safety",
-    label: "Safety Controls",
+    label: "AI Safety & Trust",
     description: "Guardrails, policy status, and probes",
     icon: ShieldCheck,
   },

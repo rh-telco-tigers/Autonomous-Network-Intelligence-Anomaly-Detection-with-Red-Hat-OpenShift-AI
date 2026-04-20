@@ -8,8 +8,14 @@ from pydantic import BaseModel, Field
 from shared.control_plane_client import create_incident
 from shared.cors import install_cors
 from shared.debug_trace import interaction_trace_packets, trace_now
+from shared.explainability import build_model_explanation
 from shared.metrics import install_metrics
-from shared.model_store import ModelUnavailableError, current_model_status, score_features_detailed
+from shared.model_store import (
+    ModelUnavailableError,
+    current_model_status,
+    current_predictive_profile,
+    score_features_detailed,
+)
 from shared.security import AuthContext, ensure_project_access, ensure_role, require_api_key
 
 
@@ -72,6 +78,14 @@ def score(request: ScoreRequest, auth: AuthContext | None = Depends(require_api_
     anomaly_type = str(result["predicted_anomaly_type"])
     predicted_confidence = float(result.get("predicted_confidence") or 0.0)
     model_version = str(result["model_version"])
+    predictive_profile = current_predictive_profile()
+    model_explanation = build_model_explanation(
+        stored_features,
+        anomaly_type=anomaly_type,
+        predicted_confidence=predicted_confidence,
+        model_version=model_version,
+        model_context=predictive_profile,
+    )
     incident_id = str(uuid.uuid4()) if is_anomaly else None
     created_at = datetime.now(tz=timezone.utc).isoformat()
     score_response_payload = {
@@ -85,6 +99,7 @@ def score(request: ScoreRequest, auth: AuthContext | None = Depends(require_api_
         "top_classes": result.get("top_classes", []),
         "model_version": model_version,
         "scoring_mode": result["scoring_mode"],
+        "model_explanation": model_explanation,
         "created_at": created_at,
     }
     debug_trace_packets = list(result.get("debug_trace") or [])
@@ -119,6 +134,7 @@ def score(request: ScoreRequest, auth: AuthContext | None = Depends(require_api_
                 "is_anomaly": is_anomaly,
                 "model_version": model_version,
                 "feature_snapshot": stored_features,
+                "model_explanation": model_explanation,
                 "created_at": created_at,
                 "debug_trace": debug_trace_packets,
             }

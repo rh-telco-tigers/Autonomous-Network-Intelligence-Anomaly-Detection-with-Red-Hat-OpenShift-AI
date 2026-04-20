@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import Any, Dict
+from urllib.parse import urlparse, urlunparse
 
 
 DEFAULT_ACTIVE_CLASSIFIER_PROFILE = "live"
@@ -11,6 +12,30 @@ PREFERRED_CLASSIFIER_PROFILE_ORDER = ("live", "backfill", "modelcar")
 def normalize_classifier_profile(value: str | None) -> str:
     normalized = str(value or "").strip().lower()
     return normalized or DEFAULT_ACTIVE_CLASSIFIER_PROFILE
+
+
+def _derive_explainability_endpoint(endpoint: str) -> str:
+    normalized = str(endpoint or "").strip().rstrip("/")
+    if not normalized:
+        return ""
+    parsed = urlparse(normalized)
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+
+    hostname = parsed.hostname or ""
+    if not hostname or "-predictor" not in hostname:
+        return ""
+
+    explain_hostname = hostname.replace("-predictor", "-explainer", 1)
+    port = parsed.port or 8080
+    userinfo = ""
+    if parsed.username:
+        userinfo = parsed.username
+        if parsed.password:
+            userinfo = f"{userinfo}:{parsed.password}"
+        userinfo = f"{userinfo}@"
+    netloc = f"{userinfo}{explain_hostname}:{port}"
+    return urlunparse((parsed.scheme, netloc, "", "", "", "")).rstrip("/")
 
 
 def classifier_profile_catalog() -> Dict[str, Dict[str, Any]]:
@@ -29,6 +54,11 @@ def classifier_profile_catalog() -> Dict[str, Dict[str, Any]]:
         or os.getenv("PREDICTIVE_MODEL_VERSION_LABEL", "").strip()
         or live_model_name
     )
+    live_explainability_endpoint = (
+        os.getenv("PREDICTIVE_EXPLAINABILITY_ENDPOINT_LIVE", "").strip()
+        or os.getenv("PREDICTIVE_EXPLAINABILITY_ENDPOINT", "").strip()
+        or _derive_explainability_endpoint(live_endpoint)
+    ).rstrip("/")
 
     backfill_endpoint = (
         os.getenv("PREDICTIVE_ENDPOINT_BACKFILL", "").strip()
@@ -39,6 +69,10 @@ def classifier_profile_catalog() -> Dict[str, Dict[str, Any]]:
         os.getenv("PREDICTIVE_MODEL_VERSION_LABEL_BACKFILL", "").strip()
         or backfill_model_name
     )
+    backfill_explainability_endpoint = (
+        os.getenv("PREDICTIVE_EXPLAINABILITY_ENDPOINT_BACKFILL", "").strip()
+        or _derive_explainability_endpoint(backfill_endpoint)
+    ).rstrip("/")
     modelcar_endpoint = (
         os.getenv("PREDICTIVE_ENDPOINT_MODELCAR", "").strip()
         or os.getenv("PREDICTIVE_MODELCAR_SERVICE_URL", "").strip()
@@ -48,6 +82,10 @@ def classifier_profile_catalog() -> Dict[str, Dict[str, Any]]:
         os.getenv("PREDICTIVE_MODEL_VERSION_LABEL_MODELCAR", "").strip()
         or modelcar_model_name
     )
+    modelcar_explainability_endpoint = (
+        os.getenv("PREDICTIVE_EXPLAINABILITY_ENDPOINT_MODELCAR", "").strip()
+        or _derive_explainability_endpoint(modelcar_endpoint)
+    ).rstrip("/")
 
     return {
         "live": {
@@ -57,6 +95,7 @@ def classifier_profile_catalog() -> Dict[str, Dict[str, Any]]:
             "endpoint": live_endpoint,
             "model_name": live_model_name,
             "model_version_label": live_version_label,
+            "explainability_endpoint": live_explainability_endpoint,
             "configured": bool(live_endpoint and live_model_name),
             "allow_local_fallback": True,
         },
@@ -67,6 +106,7 @@ def classifier_profile_catalog() -> Dict[str, Dict[str, Any]]:
             "endpoint": backfill_endpoint,
             "model_name": backfill_model_name,
             "model_version_label": backfill_version_label,
+            "explainability_endpoint": backfill_explainability_endpoint,
             "configured": bool(backfill_endpoint and backfill_model_name),
             "allow_local_fallback": False,
         },
@@ -77,6 +117,7 @@ def classifier_profile_catalog() -> Dict[str, Dict[str, Any]]:
             "endpoint": modelcar_endpoint,
             "model_name": modelcar_model_name,
             "model_version_label": modelcar_version_label,
+            "explainability_endpoint": modelcar_explainability_endpoint,
             "configured": bool(modelcar_endpoint and modelcar_model_name),
             "allow_local_fallback": False,
         },
@@ -130,6 +171,7 @@ def classifier_profile_payloads(
                 "label": str(profile.get("label") or key.title()),
                 "description": str(profile.get("description") or ""),
                 "endpoint": str(profile.get("endpoint") or ""),
+                "explainability_endpoint": str(profile.get("explainability_endpoint") or ""),
                 "model_name": str(profile.get("model_name") or ""),
                 "model_version_label": str(profile.get("model_version_label") or ""),
                 "configured": bool(profile.get("configured")),

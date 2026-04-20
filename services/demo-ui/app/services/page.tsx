@@ -8,7 +8,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { TransientDataWarning } from "@/components/transient-data-warning";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useConsoleStateQuery } from "@/lib/api";
+import { useConsoleStateQuery, useSafetyControlsStatusQuery } from "@/lib/api";
+import type { ClassifierProfile, SafetyControlsStatus } from "@/lib/types";
 import { formatInteger, isExternalUrl, titleize } from "@/lib/utils";
 
 type IntegrationStatus = Record<string, unknown>;
@@ -46,7 +47,11 @@ function pickPreferredUrl(...values: Array<string | undefined>) {
   return "";
 }
 
-function buildRouteLinks(origin: string, integrations: Record<string, IntegrationStatus>) {
+function buildRouteLinks(
+  origin: string,
+  integrations: Record<string, IntegrationStatus>,
+  safetyStatus?: SafetyControlsStatus,
+) {
   const aapIntegration = integrations.aap ?? {};
   const edaIntegration = integrations.eda ?? {};
   const planeIntegration = integrations.plane ?? {};
@@ -79,6 +84,18 @@ function buildRouteLinks(origin: string, integrations: Record<string, Integratio
         ? pickPreferredUrl(String(planeIntegration.app_url ?? ""), process.env.NEXT_PUBLIC_PLANE_URL, clusterRouteUrl(origin, "plane"))
         : "",
     },
+    {
+      label: "TrustyAI Guardrails",
+      url: safetyStatus?.configured ? clusterRouteUrl(origin, "guardrails-orchestrator", "ani-datascience") : "",
+    },
+    {
+      label: "TrustyAI Gateway",
+      url: safetyStatus?.configured ? clusterRouteUrl(origin, "guardrails-orchestrator-gateway", "ani-datascience") : "",
+    },
+    {
+      label: "TrustyAI Health",
+      url: safetyStatus?.configured ? clusterRouteUrl(origin, "guardrails-orchestrator-health", "ani-datascience") : "",
+    },
   ];
   const uniqueLinks = new Map<string, RouteLink>();
   for (const item of links) {
@@ -91,6 +108,7 @@ function buildRouteLinks(origin: string, integrations: Record<string, Integratio
 
 export default function ServicesPage() {
   const { data, isLoading, error } = useConsoleStateQuery(30_000);
+  const safetyQuery = useSafetyControlsStatusQuery(30_000);
   const [origin, setOrigin] = React.useState("");
 
   React.useEffect(() => {
@@ -103,14 +121,23 @@ export default function ServicesPage() {
   if (!data) {
     return <div className="text-sm text-[var(--danger-fg)]">Could not load service data.</div>;
   }
-  const showRefreshWarning = Boolean(error);
+  const showRefreshWarning = Boolean(error || safetyQuery.error);
 
-  const routeLinks = buildRouteLinks(origin, data.integrations);
+  const routeLinks = buildRouteLinks(origin, data.integrations, safetyQuery.data);
   const configuredLinks = routeLinks.filter((item) => isExternalUrl(item.url));
   const aapIntegration = (data.integrations.aap ?? {}) as IntegrationStatus;
   const edaIntegration = (data.integrations.eda ?? {}) as IntegrationStatus;
   const controllerActions = asIntegrationItems(aapIntegration.actions);
   const edaPolicies = asIntegrationItems(edaIntegration.policies);
+  const classifierProfiles = data.models?.classifier_profiles?.profiles ?? [];
+  const explainabilityProfiles = classifierProfiles.filter((profile) => Boolean(profile.explainability_endpoint));
+  const activeExplainabilityProfile =
+    explainabilityProfiles.find((profile) => profile.active) ?? explainabilityProfiles[0] ?? null;
+  const guardrailsLinks = [
+    { label: "Provider route", url: clusterRouteUrl(origin, "guardrails-orchestrator", "ani-datascience") },
+    { label: "Gateway route", url: clusterRouteUrl(origin, "guardrails-orchestrator-gateway", "ani-datascience") },
+    { label: "Health route", url: clusterRouteUrl(origin, "guardrails-orchestrator-health", "ani-datascience") },
+  ].filter((item) => isExternalUrl(item.url));
 
   return (
     <div className="space-y-8">
@@ -147,6 +174,67 @@ export default function ServicesPage() {
               <div className="mt-3 text-sm text-[var(--text-secondary)]">{service.endpoint}</div>
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>TrustyAI services</CardTitle>
+          <CardDescription>
+            Guardrails and explainability runtimes are shown separately because they expose provider-specific APIs rather than the standard
+            platform health probe contract.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+          <TrustyAiServiceCard
+            title="TrustyAI guardrails"
+            status={safetyQuery.data?.configured ? "Configured" : "Not configured"}
+            endpoint={safetyQuery.data?.endpoint || "No guardrails endpoint is configured."}
+            detail={
+              safetyQuery.data
+                ? `${safetyQuery.data.provider.label} · Model ${safetyQuery.data.model_name} · Policy ${safetyQuery.data.policy_version}`
+                : "Guardrails status is not available yet."
+            }
+            secondaryDetail={
+              safetyQuery.data?.chat_completions_url
+                ? `Chat path: ${safetyQuery.data.chat_completions_url}`
+                : "No public chat-completions URL is configured."
+            }
+            links={guardrailsLinks}
+          />
+          <TrustyAiServiceCard
+            title="TrustyAI explainability"
+            status={
+              safetyQuery.data?.explainability.provider.label ??
+              (activeExplainabilityProfile ? "Configured" : "Not configured")
+            }
+            endpoint={
+              activeExplainabilityProfile?.explainability_endpoint ||
+              "No explainability endpoint is configured for the active classifier profile."
+            }
+            detail={
+              safetyQuery.data
+                ? `${safetyQuery.data.explainability.provider.label} · ${formatInteger(
+                    safetyQuery.data.explainability.summary.trustyai_count,
+                  )} TrustyAI explanations stored`
+                : "Explainability status is not available yet."
+            }
+            secondaryDetail={
+              activeExplainabilityProfile
+                ? `${activeExplainabilityProfile.label} · ${activeExplainabilityProfile.model_version_label}`
+                : "No classifier profile with an explainability endpoint is active."
+            }
+          >
+            {explainabilityProfiles.length ? (
+              <div className="space-y-3">
+                {explainabilityProfiles.map((profile) => (
+                  <ClassifierProfileCard key={profile.key} profile={profile} />
+                ))}
+              </div>
+            ) : (
+              <div className="text-sm text-[var(--text-subtle)]">No TrustyAI explainability runtimes are configured for the classifier profiles.</div>
+            )}
+          </TrustyAiServiceCard>
         </CardContent>
       </Card>
 
@@ -275,6 +363,67 @@ function ServiceMetric({ label, value }: { label: string; value: string }) {
         <CardTitle className="text-3xl">{value}</CardTitle>
       </CardHeader>
     </Card>
+  );
+}
+
+function TrustyAiServiceCard({
+  title,
+  status,
+  endpoint,
+  detail,
+  secondaryDetail,
+  links = [],
+  children,
+}: {
+  title: string;
+  status: string;
+  endpoint: string;
+  detail: string;
+  secondaryDetail: string;
+  links?: RouteLink[];
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-medium text-[var(--text-strong)]">{title}</div>
+          <div className="mt-2 break-all text-sm text-[var(--text-secondary)]">{endpoint}</div>
+        </div>
+        <StatusBadge value={status} />
+      </div>
+      <div className="mt-4 text-sm text-[var(--text-secondary)]">{detail}</div>
+      <div className="mt-2 text-sm text-[var(--text-subtle)]">{secondaryDetail}</div>
+      {links.length ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {links.map((link) => (
+            <Button key={link.label} asChild variant="secondary" size="sm">
+              <a href={link.url} target="_blank" rel="noreferrer">
+                <ExternalLink className="mr-2 h-4 w-4" />
+                {link.label}
+              </a>
+            </Button>
+          ))}
+        </div>
+      ) : null}
+      {children ? <div className="mt-4">{children}</div> : null}
+    </div>
+  );
+}
+
+function ClassifierProfileCard({ profile }: { profile: ClassifierProfile }) {
+  const status = profile.active ? "Active" : profile.configured ? "Configured" : "Not configured";
+  return (
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[color:rgba(8,15,32,0.3)] p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="font-medium text-[var(--text-strong)]">{profile.label}</div>
+        <StatusBadge value={status} />
+      </div>
+      <div className="mt-2 text-sm text-[var(--text-secondary)]">{profile.model_version_label}</div>
+      <div className="mt-2 break-all text-xs text-[var(--text-subtle)]">
+        {profile.explainability_endpoint || "No explainability endpoint"}
+      </div>
+    </div>
   );
 }
 
