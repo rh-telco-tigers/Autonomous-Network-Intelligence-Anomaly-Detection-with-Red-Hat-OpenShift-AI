@@ -330,7 +330,12 @@ def _normalize_saliency_group(raw_items: Iterable[object], feature_values: Mappi
     for index, item in enumerate(raw_items):
         if not isinstance(item, Mapping):
             continue
-        feature = _saliency_feature_name(str(item.get("feature") or item.get("name") or item.get("label") or ""), feature_values)
+        feature_candidate = item.get("feature")
+        if isinstance(feature_candidate, Mapping):
+            feature_candidate = feature_candidate.get("name") or feature_candidate.get("label")
+        if feature_candidate is None:
+            feature_candidate = item.get("name") or item.get("label")
+        feature = _saliency_feature_name(str(feature_candidate or ""), feature_values)
         if not feature:
             continue
         raw_impact = _coerce_float(
@@ -353,6 +358,55 @@ def _normalize_saliency_group(raw_items: Iterable[object], feature_values: Mappi
     return items
 
 
+def _extract_trustyai_items(candidate: object, feature_values: Mapping[str, object]) -> List[Dict[str, object]]:
+    if isinstance(candidate, list):
+        items = _normalize_saliency_group(candidate, feature_values)
+        if items:
+            return items
+        items = _normalize_named_items(candidate, feature_values)
+        if items:
+            return items
+        numeric_items = _normalize_numeric_items(candidate, feature_values)
+        if numeric_items:
+            return numeric_items
+        for nested in candidate:
+            items = _extract_trustyai_items(nested, feature_values)
+            if items:
+                return items
+        return []
+
+    if not isinstance(candidate, Mapping):
+        return []
+
+    for key in (
+        "perFeatureImportance",
+        "featureImportances",
+        "feature_importances",
+        "saliencies",
+        "attributions",
+        "explanations",
+        "items",
+        "features",
+        "data",
+    ):
+        nested = candidate.get(key)
+        if nested is None:
+            continue
+        items = _extract_trustyai_items(nested, feature_values)
+        if items:
+            return items
+
+    items = _normalize_mapping_items(candidate, feature_values)
+    if items:
+        return items
+
+    for nested in candidate.values():
+        items = _extract_trustyai_items(nested, feature_values)
+        if items:
+            return items
+    return []
+
+
 def _trustyai_response_items(payload: Mapping[str, object], feature_values: Mapping[str, object]) -> List[Dict[str, object]]:
     outputs = payload.get("outputs")
     if isinstance(outputs, list):
@@ -369,25 +423,9 @@ def _trustyai_response_items(payload: Mapping[str, object], feature_values: Mapp
 
     for key in ("explanations", "saliencies", "attributions", "explanation"):
         candidate = payload.get(key)
-        if isinstance(candidate, Mapping):
-            for nested_items in candidate.values():
-                if isinstance(nested_items, list):
-                    items = _normalize_saliency_group(nested_items, feature_values)
-                    if items:
-                        return items
-            items = _normalize_mapping_items(candidate, feature_values)
-            if items:
-                return items
-        if isinstance(candidate, list):
-            items = _normalize_saliency_group(candidate, feature_values)
-            if items:
-                return items
-            items = _normalize_named_items(candidate, feature_values)
-            if items:
-                return items
-            numeric_items = _normalize_numeric_items(candidate, feature_values)
-            if numeric_items:
-                return numeric_items
+        items = _extract_trustyai_items(candidate, feature_values)
+        if items:
+            return items
 
     result = payload.get("result")
     if isinstance(result, Mapping):

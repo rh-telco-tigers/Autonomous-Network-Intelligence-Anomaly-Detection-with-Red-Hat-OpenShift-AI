@@ -187,6 +187,66 @@ class ExplainabilityTrustyAITests(unittest.TestCase):
         self.assertEqual(payload["top_features"][0]["feature"], "register_rate")
         self.assertEqual(payload["top_features"][1]["feature"], "retransmission_count")
 
+    def test_build_model_explanation_parses_nested_per_feature_importance_payload(self) -> None:
+        class _Response:
+            ok = True
+            status_code = 200
+            text = (
+                '{"saliencies":{"outputs-0":{"perFeatureImportance":['
+                '{"feature":{"name":"inputs-7"},"score":3.89},'
+                '{"feature":{"name":"inputs-0"},"score":6.00},'
+                '{"feature":{"name":"inputs-5"},"score":-2.25}'
+                "]}}}"
+            )
+
+            def json(self):
+                return {
+                    "saliencies": {
+                        "outputs-0": {
+                            "perFeatureImportance": [
+                                {"feature": {"name": "inputs-7"}, "score": 3.89},
+                                {"feature": {"name": "inputs-0"}, "score": 6.00},
+                                {"feature": {"name": "inputs-5"}, "score": -2.25},
+                            ]
+                        }
+                    }
+                }
+
+        with (
+            mock.patch.dict(
+                os.environ,
+                {
+                    "ANI_INCIDENT_EXPLAINABILITY_TRUSTYAI_ENABLED": "true",
+                    "TRUSTYAI_EXPLAINABILITY_ENDPOINT": "https://trustyai.example.com/explain",
+                    "TRUSTYAI_EXPLAINABILITY_VERIFY_TLS": "false",
+                },
+                clear=False,
+            ),
+            mock.patch.object(explainability.requests, "post", return_value=_Response()),
+        ):
+            payload = explainability.build_model_explanation(
+                {
+                    "register_rate": 0.5,
+                    "invite_rate": 5.0,
+                    "bye_rate": 0.4,
+                    "error_4xx_ratio": 0.01,
+                    "error_5xx_ratio": 0.01,
+                    "latency_p95": 180.0,
+                    "retransmission_count": 6.0,
+                    "inter_arrival_mean": 0.8,
+                    "payload_variance": 55.0,
+                },
+                anomaly_type="busy_destination",
+                predicted_confidence=0.91,
+                model_version="ani-predictive-backfill-modelcar",
+            )
+
+        self.assertEqual(payload["provider"]["key"], "trustyai")
+        self.assertEqual(payload["status"], "available")
+        self.assertEqual(payload["top_features"][0]["feature"], "register_rate")
+        self.assertEqual(payload["top_features"][1]["feature"], "inter_arrival_mean")
+        self.assertEqual(payload["top_features"][2]["feature"], "latency_p95")
+
 
 if __name__ == "__main__":
     unittest.main()
