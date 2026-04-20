@@ -28,7 +28,7 @@ metadata:
     serving.kserve.io/deploymentMode: RawDeployment
     serving.kserve.io/enable-prometheus-scraping: "true"
     ani.redhat.com/serving-alias: current
-    ani-demo/runtime-fix-ts: trustyai-explainability-370fe9f
+    ani-demo/runtime-fix-ts: trustyai-explainability-v2-c927aa5
 spec:
   predictor:
     serviceAccountName: model-storage-sa
@@ -56,7 +56,9 @@ spec:
           - --model_name
           - ani-predictive-backfill-modelcar
           - --predictor_host
-          - ani-predictive-backfill-modelcar-predictor.$(POD_NAMESPACE).svc.cluster.local:8081
+          - ani-predictive-backfill-modelcar-predictor.$(POD_NAMESPACE).svc.cluster.local:80
+          - --predictor_protocol
+          - v2
         env:
           - name: POD_NAMESPACE
             valueFrom:
