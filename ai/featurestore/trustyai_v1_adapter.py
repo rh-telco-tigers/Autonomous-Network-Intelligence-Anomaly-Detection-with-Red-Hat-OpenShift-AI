@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import json
+import logging
 import os
 from typing import Any, Iterable, List, Mapping, Sequence
 
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 
 from ai.training.train_and_register import FEATURES
 
 
 app = FastAPI(title="trustyai-v1-adapter", version="0.1.0")
+logger = logging.getLogger("trustyai_v1_adapter")
 
 
 def _upstream_url() -> str:
@@ -32,13 +35,38 @@ def _coerce_row(row: object) -> List[float]:
     raise ValueError("Each instance must be an object or a numeric sequence")
 
 
-def _instances_from_payload(payload: Mapping[str, Any]) -> List[List[float]]:
-    raw_instances = payload.get("instances")
-    if raw_instances is None:
-        raw_instances = payload.get("inputs")
+def _instances_from_payload(payload: object) -> List[List[float]]:
+    raw_instances: object = None
+    if isinstance(payload, Mapping):
+        raw_instances = payload.get("instances")
+        if raw_instances is None:
+            raw_inputs = payload.get("inputs")
+            if isinstance(raw_inputs, list) and raw_inputs:
+                first_input = raw_inputs[0]
+                if isinstance(first_input, Mapping):
+                    raw_instances = first_input.get("data")
+                else:
+                    raw_instances = raw_inputs
+        if raw_instances is None:
+            raw_instances = payload.get("data")
+    else:
+        raw_instances = payload
+
+    if isinstance(raw_instances, list) and raw_instances and not isinstance(raw_instances[0], (list, Mapping)):
+        raw_instances = [raw_instances]
+
     if not isinstance(raw_instances, list) or not raw_instances:
-        raise ValueError("Request body must include a non-empty 'instances' list")
+        raise ValueError("Request body must include a non-empty 'instances' payload")
     return [_coerce_row(row) for row in raw_instances]
+
+
+def _parse_request_payload(body: bytes) -> object:
+    if not body:
+        raise ValueError("Request body was empty")
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Request body was not valid JSON: {exc.msg}") from exc
 
 
 def _v2_infer_payload(instances: List[List[float]]) -> Mapping[str, Any]:
@@ -104,10 +132,14 @@ def healthz() -> Mapping[str, str]:
 
 
 @app.post("/v1/models/{model_name}:predict")
-def predict_v1(model_name: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+async def predict_v1(model_name: str, request: Request) -> Mapping[str, Any]:
+    raw_body = await request.body()
     try:
+        payload = _parse_request_payload(raw_body)
         instances = _instances_from_payload(payload)
     except ValueError as exc:
+        preview = raw_body.decode("utf-8", errors="replace")[:240] if raw_body else ""
+        logger.warning("Rejected TrustyAI v1 payload for %s: %s body=%s", model_name, exc, preview)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     request_payload = _v2_infer_payload(instances)
