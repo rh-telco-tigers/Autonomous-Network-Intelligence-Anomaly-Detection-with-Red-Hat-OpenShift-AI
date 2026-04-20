@@ -46,6 +46,18 @@ spec:
         limits:
           cpu: 500m
           memory: 2Gi
+  explainer:
+    containers:
+      - name: explainer
+        image: quay.io/trustyai/trustyai-kserve-explainer:latest
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor

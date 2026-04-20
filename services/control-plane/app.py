@@ -530,32 +530,365 @@ def _llm_chat_completions_url(endpoint: str) -> str:
     return f"{base}/v1/chat/completions"
 
 
+def _ratio(count: int, total: int) -> float:
+    if total <= 0:
+        return 0.0
+    return round(count / total, 4)
+
+
+def _guardrails_have_prompt_injection_finding(guardrails: Dict[str, object] | None) -> bool:
+    if not isinstance(guardrails, dict):
+        return False
+
+    reason = str(guardrails.get("reason") or "").strip().lower()
+    if "prompt" in reason and "inject" in reason:
+        return True
+
+    summary = guardrails.get("summary")
+    if isinstance(summary, dict) and bool(summary.get("has_prompt_injection")):
+        return True
+
+    matches = guardrails.get("matches")
+    if isinstance(matches, dict):
+        for values in matches.values():
+            if not isinstance(values, list):
+                continue
+            for item in values:
+                lowered = str(item or "").strip().lower()
+                if "prompt" in lowered and "inject" in lowered:
+                    return True
+
+    for key in ("violations", "detectors"):
+        items = guardrails.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            lowered = " ".join(
+                str(item.get(field) or "").strip().lower()
+                for field in ("type", "name", "message", "result")
+            )
+            if "prompt" in lowered and "inject" in lowered:
+                return True
+    return False
+
+
+def _safety_controls_timeline_event(
+    *,
+    title: str,
+    detail: str,
+    severity: str,
+    timestamp: str,
+    source: str,
+    incident_id: str = "",
+) -> Dict[str, object]:
+    return {
+        "title": title,
+        "detail": detail,
+        "severity": severity,
+        "timestamp": timestamp,
+        "source": source,
+        "incident_id": incident_id,
+    }
+
+
+def _active_classifier_profile_lineage() -> Dict[str, str]:
+    classifier_status = _classifier_profile_status()
+    active_profile_key = str(classifier_status.get("active_profile") or "").strip()
+    profiles = classifier_status.get("profiles")
+    active_profile: Dict[str, object] = {}
+    if isinstance(profiles, list):
+        active_profile = next(
+            (
+                item
+                for item in profiles
+                if isinstance(item, dict) and str(item.get("key") or "").strip() == active_profile_key
+            ),
+            {},
+        )
+    return {
+        "profile_key": active_profile_key,
+        "profile_label": str(active_profile.get("label") or active_profile_key or "Unknown profile").strip(),
+        "model_name": str(active_profile.get("model_name") or "").strip(),
+        "model_version": str(active_profile.get("model_version_label") or active_profile.get("model_name") or "").strip(),
+        "feature_service": str(os.getenv("FEATURE_SERVICE_NAME", "ani_anomaly_scoring_v1")).strip()
+        or "ani_anomaly_scoring_v1",
+    }
+
+
+def _build_governance_trace(
+    incidents: List[Dict[str, object]],
+    explainability_by_incident: Dict[str, Dict[str, object]],
+    playbook_items_by_incident: Dict[str, List[Dict[str, object]]],
+    approvals_by_incident: Dict[str, List[Dict[str, object]]],
+    audit_events_by_incident: Dict[str, List[Dict[str, object]]],
+    guardrails_provider_label: str,
+    playbook_provider_label: str,
+) -> Dict[str, object] | None:
+    chosen_incident: Dict[str, object] | None = None
+    chosen_score = -1
+
+    for incident in incidents:
+        incident_id = str(incident.get("id") or "")
+        if not incident_id:
+            continue
+        score = 1
+        if incident_id in explainability_by_incident:
+            score += 1
+        if isinstance(incident.get("rca_payload"), dict) and incident.get("rca_payload"):
+            score += 1
+        if playbook_items_by_incident.get(incident_id):
+            score += 1
+        if approvals_by_incident.get(incident_id):
+            score += 1
+        if any(
+            str(event.get("event_type") or "").strip() == "action_executed"
+            for event in audit_events_by_incident.get(incident_id, [])
+        ):
+            score += 1
+
+        if score > chosen_score:
+            chosen_incident = incident
+            chosen_score = score
+            continue
+        if score == chosen_score and chosen_incident is not None:
+            current_updated = str(incident.get("updated_at") or incident.get("created_at") or "")
+            chosen_updated = str(chosen_incident.get("updated_at") or chosen_incident.get("created_at") or "")
+            if current_updated > chosen_updated:
+                chosen_incident = incident
+
+    if chosen_incident is None:
+        return None
+
+    incident_id = str(chosen_incident.get("id") or "")
+    anomaly_type = canonical_anomaly_type(str(chosen_incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE))
+    explanation = explainability_by_incident.get(incident_id, {})
+    rca_payload = chosen_incident.get("rca_payload") if isinstance(chosen_incident.get("rca_payload"), dict) else {}
+    playbook_items = playbook_items_by_incident.get(incident_id, [])
+    latest_playbook = playbook_items[0] if playbook_items else {}
+    approvals = approvals_by_incident.get(incident_id, [])
+    latest_approval = approvals[0] if approvals else {}
+    action_event = next(
+        (
+            event
+            for event in audit_events_by_incident.get(incident_id, [])
+            if str(event.get("event_type") or "").strip() == "action_executed"
+        ),
+        {},
+    )
+
+    stages: List[Dict[str, object]] = [
+        {
+            "key": "prediction",
+            "title": "Prediction created",
+            "status": "recorded",
+            "timestamp": str(chosen_incident.get("created_at") or ""),
+            "provider": str(chosen_incident.get("model_version") or ""),
+            "detail": (
+                f"Model {chosen_incident.get('model_version') or 'unknown'} classified the incident as "
+                f"{_titleize(anomaly_type)} with confidence {round(_coerce_float(chosen_incident.get('predicted_confidence')) * 100)}%."
+            ),
+        }
+    ]
+
+    if explanation:
+        top_features = explanation.get("top_features") if isinstance(explanation.get("top_features"), list) else []
+        labels = [
+            str(item.get("label") or item.get("feature") or "").strip()
+            for item in top_features[:2]
+            if isinstance(item, dict)
+        ]
+        provider = explanation.get("provider") if isinstance(explanation.get("provider"), dict) else {}
+        detail = "Trust explanation was attached to the incident."
+        if labels:
+            detail = f"{str(provider.get('label') or 'Explainability').strip()} identified {', '.join(labels)} as the dominant signals."
+        stages.append(
+            {
+                "key": "explainability",
+                "title": "Explainability attached",
+                "status": str(explanation.get("status") or "recorded"),
+                "timestamp": str(explanation.get("generated_at") or chosen_incident.get("updated_at") or ""),
+                "provider": str(provider.get("label") or "Explainability"),
+                "detail": detail,
+            }
+        )
+
+    if rca_payload:
+        guardrails = rca_payload.get("guardrails") if isinstance(rca_payload.get("guardrails"), dict) else {}
+        stages.append(
+            {
+                "key": "rca_guardrails",
+                "title": "RCA validated",
+                "status": guardrail_status(rca_payload) or "untracked",
+                "timestamp": str(chosen_incident.get("updated_at") or ""),
+                "provider": guardrails_provider_label,
+                "detail": (
+                    f"{guardrails_provider_label} evaluated the RCA and returned "
+                    f"{_titleize(guardrail_status(rca_payload) or 'untracked')}."
+                ),
+            }
+        )
+
+    if latest_playbook:
+        stages.append(
+            {
+                "key": "playbook_guardrails",
+                "title": "Playbook request evaluated",
+                "status": str(latest_playbook.get("guardrail_status") or "untracked"),
+                "timestamp": str(latest_playbook.get("updated_at") or ""),
+                "provider": str(((latest_playbook.get("provider") if isinstance(latest_playbook.get("provider"), dict) else {}) or {}).get("label") or playbook_provider_label),
+                "detail": (
+                    f"{playbook_provider_label} evaluated the AI playbook request and returned "
+                    f"{_titleize(str(latest_playbook.get('guardrail_status') or 'untracked'))}."
+                ),
+            }
+        )
+
+    if latest_approval:
+        stages.append(
+            {
+                "key": "approval",
+                "title": "Human approval recorded",
+                "status": str(latest_approval.get("status") or "recorded"),
+                "timestamp": str(latest_approval.get("created_at") or ""),
+                "provider": str(latest_approval.get("approved_by") or ""),
+                "detail": (
+                    f"Operator {latest_approval.get('approved_by') or 'unknown'} approved "
+                    f"{latest_approval.get('action') or 'the current action'}."
+                ),
+            }
+        )
+
+    if action_event:
+        payload = action_event.get("payload") if isinstance(action_event.get("payload"), dict) else {}
+        stages.append(
+            {
+                "key": "action",
+                "title": "Action execution recorded",
+                "status": str(payload.get("execution_status") or "recorded"),
+                "timestamp": str(action_event.get("created_at") or ""),
+                "provider": str(action_event.get("actor") or ""),
+                "detail": (
+                    f"Action {payload.get('action_ref') or 'unknown'} completed with "
+                    f"status {_titleize(str(payload.get('execution_status') or 'unknown'))}."
+                ),
+            }
+        )
+
+    return {
+        "incident_id": incident_id,
+        "anomaly_type": anomaly_type,
+        "severity": _incident_severity_label(chosen_incident),
+        "workflow_state": normalize_workflow_state(str(chosen_incident.get("status") or NEW)),
+        "stages": stages,
+    }
+
+
 def _safety_controls_status(project: str) -> Dict[str, object]:
     endpoint = str(os.getenv("LLM_ENDPOINT", "")).strip()
     model_name = str(os.getenv("LLM_MODEL", "llama-32-3b-instruct")).strip()
     provider = _safety_controls_provider(endpoint)
     incidents = list_incidents(project=project)
+    incident_map = {str(incident.get("id") or ""): incident for incident in incidents if str(incident.get("id") or "")}
+    incident_ids = set(incident_map.keys())
+    approvals = [approval for approval in list_approvals(limit=500) if str(approval.get("incident_id") or "") in incident_ids]
+    approvals_by_incident: Dict[str, List[Dict[str, object]]] = {}
+    for approval in approvals:
+        approvals_by_incident.setdefault(str(approval.get("incident_id") or ""), []).append(approval)
+    for incident_approvals in approvals_by_incident.values():
+        incident_approvals.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+
+    audit_events = [
+        event for event in list_audit_events(limit=1200) if str(event.get("incident_id") or "") in incident_ids
+    ]
+    audit_events_by_incident: Dict[str, List[Dict[str, object]]] = {}
+    for event in audit_events:
+        audit_events_by_incident.setdefault(str(event.get("incident_id") or ""), []).append(event)
+    for incident_events in audit_events_by_incident.values():
+        incident_events.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+
     recent_items: List[Dict[str, object]] = []
     counts = {"allow": 0, "require_review": 0, "block": 0, "error": 0, "untracked": 0}
     playbook_items: List[Dict[str, object]] = []
+    playbook_items_by_incident: Dict[str, List[Dict[str, object]]] = {}
     playbook_counts = {"allow": 0, "require_review": 0, "block": 0, "untracked": 0}
     override_count = 0
     published_count = 0
+    trust_metadata_coverage = 0
+    prompt_injection_detections = 0
+    explanation_counts = {"trustyai": 0, "fallback": 0, "other": 0}
+    explainability_rollups: Dict[str, Dict[str, object]] = {}
+    recent_explanations: List[Dict[str, object]] = []
+    explainability_by_incident: Dict[str, Dict[str, object]] = {}
 
     for incident in incidents:
+        incident_id = str(incident.get("id") or "")
+        trust_metadata_present = False
+        model_explanation = incident.get("model_explanation") if isinstance(incident.get("model_explanation"), dict) else {}
+        top_features = model_explanation.get("top_features") if isinstance(model_explanation.get("top_features"), list) else []
+        if model_explanation and top_features:
+            trust_metadata_present = True
+            explainability_by_incident[incident_id] = model_explanation
+            provider_info = model_explanation.get("provider") if isinstance(model_explanation.get("provider"), dict) else {}
+            provider_key = str(provider_info.get("key") or "").strip()
+            status = str(model_explanation.get("status") or "").strip()
+            if provider_key == "trustyai":
+                explanation_counts["trustyai"] += 1
+            elif status == "fallback" or provider_key == "local_heuristic":
+                explanation_counts["fallback"] += 1
+            else:
+                explanation_counts["other"] += 1
+            recent_explanations.append(
+                {
+                    "incident_id": incident_id,
+                    "anomaly_type": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
+                    "provider": provider_info if provider_info else {"key": "unknown", "label": "Unknown provider", "family": "Explainability"},
+                    "status": status or "untracked",
+                    "pattern_insight": str(model_explanation.get("pattern_insight") or "").strip(),
+                    "explanation_confidence": str(model_explanation.get("explanation_confidence") or "").strip(),
+                    "generated_at": str(model_explanation.get("generated_at") or incident.get("updated_at") or incident.get("created_at") or ""),
+                    "top_features": top_features[:4],
+                }
+            )
+            for feature in top_features:
+                if not isinstance(feature, dict):
+                    continue
+                feature_key = str(feature.get("feature") or "").strip()
+                if not feature_key:
+                    continue
+                entry = explainability_rollups.setdefault(
+                    feature_key,
+                    {
+                        "feature": feature_key,
+                        "label": str(feature.get("label") or feature_key).strip(),
+                        "tone": str(feature.get("tone") or "sky").strip() or "sky",
+                        "count": 0,
+                        "total_impact": 0.0,
+                    },
+                )
+                entry["count"] = int(entry.get("count") or 0) + 1
+                entry["total_impact"] = float(entry.get("total_impact") or 0.0) + abs(
+                    _coerce_float(feature.get("impact") if feature.get("impact") is not None else feature.get("raw_impact"))
+                )
+
         rca_payload = incident.get("rca_payload")
         if not isinstance(rca_payload, dict) or not rca_payload:
             pass
         else:
+            trust_metadata_present = True
             guardrail_summary = _rca_guardrails_summary(rca_payload)
             status = str(guardrail_summary.get("status") or "").strip() or "untracked"
             if status not in counts:
                 counts["untracked"] += 1
             else:
                 counts[status] += 1
+            rca_guardrails = rca_payload.get("guardrails") if isinstance(rca_payload.get("guardrails"), dict) else {}
+            if _guardrails_have_prompt_injection_finding(rca_guardrails):
+                prompt_injection_detections += 1
             recent_items.append(
                 {
-                    "incident_id": str(incident.get("id") or ""),
+                    "incident_id": incident_id,
                     "anomaly_type": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
                     "severity": _incident_severity_label(incident),
                     "workflow_state": normalize_workflow_state(str(incident.get("status") or NEW)),
@@ -572,7 +905,7 @@ def _safety_controls_status(project: str) -> Dict[str, object]:
                 }
             )
 
-        for remediation in list_incident_remediations(str(incident.get("id") or "")):
+        for remediation in list_incident_remediations(incident_id):
             metadata = remediation.get("metadata") if isinstance(remediation.get("metadata"), dict) else {}
             if not metadata:
                 continue
@@ -581,6 +914,7 @@ def _safety_controls_status(project: str) -> Dict[str, object]:
             )
             if not playbook_guardrails:
                 continue
+            trust_metadata_present = True
             request_provider = (
                 playbook_guardrails.get("provider") if isinstance(playbook_guardrails.get("provider"), dict) else {}
             )
@@ -598,6 +932,8 @@ def _safety_controls_status(project: str) -> Dict[str, object]:
                 published_count += 1
             if bool(playbook_guardrails.get("override_applied")):
                 override_count += 1
+            if _guardrails_have_prompt_injection_finding(playbook_guardrails):
+                prompt_injection_detections += 1
 
             updated_at = str(
                 metadata.get("playbook_guardrails_updated_at")
@@ -609,7 +945,7 @@ def _safety_controls_status(project: str) -> Dict[str, object]:
             )
             playbook_items.append(
                 {
-                    "incident_id": str(incident.get("id") or ""),
+                    "incident_id": incident_id,
                     "remediation_id": int(remediation.get("id") or 0),
                     "title": str(remediation.get("title") or ""),
                     "anomaly_type": canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE)),
@@ -629,9 +965,180 @@ def _safety_controls_status(project: str) -> Dict[str, object]:
                     "updated_at": updated_at,
                 }
             )
+            playbook_items_by_incident.setdefault(incident_id, []).append(playbook_items[-1])
+
+        if trust_metadata_present:
+            trust_metadata_coverage += 1
 
     recent_items.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""), reverse=True)
     playbook_items.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+    for items in playbook_items_by_incident.values():
+        items.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+
+    recent_explanations.sort(key=lambda item: str(item.get("generated_at") or ""), reverse=True)
+    explainability_features = [
+        {
+            "feature": item["feature"],
+            "label": item["label"],
+            "tone": item["tone"],
+            "count": int(item["count"]),
+            "avg_impact": round(float(item["total_impact"]) / max(int(item["count"]), 1), 4),
+        }
+        for item in explainability_rollups.values()
+    ]
+    explainability_features.sort(
+        key=lambda item: (-int(item["count"]), -float(item["avg_impact"]), str(item["label"]))
+    )
+
+    explainability_provider: Dict[str, str]
+    if explanation_counts["trustyai"]:
+        explainability_provider = {
+            "key": "trustyai",
+            "label": "TrustyAI Explainability",
+            "family": "Explainability",
+        }
+    elif explanation_counts["fallback"] or explanation_counts["other"]:
+        explainability_provider = {
+            "key": "local_heuristic",
+            "label": "Fallback incident explanation",
+            "family": "Explainability",
+        }
+    else:
+        explainability_provider = {
+            "key": "none",
+            "label": "No explanation provider recorded",
+            "family": "Explainability",
+        }
+
+    timeline_events: List[Dict[str, object]] = []
+    for explanation in recent_explanations[:12]:
+        provider_info = explanation.get("provider") if isinstance(explanation.get("provider"), dict) else {}
+        provider_label = str(provider_info.get("label") or "Explainability").strip()
+        status = str(explanation.get("status") or "").strip()
+        if status == "fallback":
+            timeline_events.append(
+                _safety_controls_timeline_event(
+                    title="Explainability fallback recorded",
+                    detail=(
+                        f"{provider_label} was unavailable for {_titleize(str(explanation.get('anomaly_type') or 'incident'))}; "
+                        "the persisted fallback explanation is shown instead."
+                    ),
+                    severity="warning",
+                    timestamp=str(explanation.get("generated_at") or ""),
+                    source="explainability",
+                    incident_id=str(explanation.get("incident_id") or ""),
+                )
+            )
+        elif str(provider_info.get("key") or "").strip() == "trustyai":
+            timeline_events.append(
+                _safety_controls_timeline_event(
+                    title="TrustyAI explanation attached",
+                    detail=str(explanation.get("pattern_insight") or "TrustyAI attached a feature attribution summary."),
+                    severity="success",
+                    timestamp=str(explanation.get("generated_at") or ""),
+                    source="explainability",
+                    incident_id=str(explanation.get("incident_id") or ""),
+                )
+            )
+
+    for item in recent_items[:12]:
+        status = str(item.get("guardrail_status") or "").strip()
+        if status not in {BLOCK, REQUIRE_REVIEW}:
+            continue
+        timeline_events.append(
+            _safety_controls_timeline_event(
+                title=(
+                    "RCA blocked by TrustyAI"
+                    if status == BLOCK
+                    else "RCA requires review"
+                ),
+                detail=(
+                    f"{_titleize(str(item.get('anomaly_type') or 'incident'))} RCA returned "
+                    f"{_titleize(status)} because {_titleize(str(item.get('guardrail_reason') or 'policy rules'))}."
+                ),
+                severity="danger" if status == BLOCK else "warning",
+                timestamp=str(item.get("updated_at") or item.get("created_at") or ""),
+                source="rca_guardrails",
+                incident_id=str(item.get("incident_id") or ""),
+            )
+        )
+
+    for item in playbook_items[:12]:
+        status = str(item.get("guardrail_status") or "").strip()
+        if status == BLOCK:
+            title = "Playbook request blocked"
+            severity = "danger"
+        elif status == REQUIRE_REVIEW:
+            title = "Playbook request held for review"
+            severity = "warning"
+        elif bool(item.get("override_applied")):
+            title = "Playbook override applied"
+            severity = "info"
+        else:
+            continue
+        timeline_events.append(
+            _safety_controls_timeline_event(
+                title=title,
+                detail=(
+                    f"{str(((item.get('provider') if isinstance(item.get('provider'), dict) else {}) or {}).get('label') or 'Guardrails')} "
+                    f"returned {_titleize(status or 'stored')} for the AI playbook request."
+                    + (" An operator override was later applied." if bool(item.get("override_applied")) else "")
+                ),
+                severity=severity,
+                timestamp=str(item.get("updated_at") or ""),
+                source="playbook_guardrails",
+                incident_id=str(item.get("incident_id") or ""),
+            )
+        )
+
+    for approval in approvals[:12]:
+        timeline_events.append(
+            _safety_controls_timeline_event(
+                title="Human approval recorded",
+                detail=(
+                    f"{approval.get('approved_by') or 'Operator'} approved "
+                    f"{approval.get('action') or 'the current workflow action'}."
+                ),
+                severity="success",
+                timestamp=str(approval.get("created_at") or ""),
+                source="governance",
+                incident_id=str(approval.get("incident_id") or ""),
+            )
+        )
+
+    action_execution_count = 0
+    for event in audit_events:
+        event_type = str(event.get("event_type") or "").strip()
+        if event_type != "action_executed":
+            continue
+        action_execution_count += 1
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        timeline_events.append(
+            _safety_controls_timeline_event(
+                title="Action execution recorded",
+                detail=(
+                    f"Action {payload.get('action_ref') or 'unknown'} completed with "
+                    f"status {_titleize(str(payload.get('execution_status') or 'unknown'))}."
+                ),
+                severity="info",
+                timestamp=str(event.get("created_at") or ""),
+                source="governance",
+                incident_id=str(event.get("incident_id") or ""),
+            )
+        )
+
+    timeline_events.sort(key=lambda item: str(item.get("timestamp") or ""), reverse=True)
+
+    lineage = _active_classifier_profile_lineage()
+    governance_trace = _build_governance_trace(
+        incidents=incidents,
+        explainability_by_incident=explainability_by_incident,
+        playbook_items_by_incident=playbook_items_by_incident,
+        approvals_by_incident=approvals_by_incident,
+        audit_events_by_incident=audit_events_by_incident,
+        guardrails_provider_label=str(provider.get("label") or "Guardrails"),
+        playbook_provider_label=str(_playbook_request_safety_provider().get("label") or "Guardrails"),
+    )
     return {
         "provider": provider,
         "project": project,
@@ -651,6 +1158,51 @@ def _safety_controls_status(project: str) -> Dict[str, object]:
             "error_count": counts["error"],
         },
         "recent_incidents": recent_items[:10],
+        "explainability": {
+            "provider": explainability_provider,
+            "summary": {
+                "tracked_incidents": len(recent_explanations),
+                "trustyai_count": explanation_counts["trustyai"],
+                "fallback_count": explanation_counts["fallback"],
+                "other_count": explanation_counts["other"],
+            },
+            "top_features": explainability_features[:6],
+            "recent_explanations": recent_explanations[:8],
+        },
+        "monitoring": {
+            "summary": {
+                "trust_metadata_coverage": trust_metadata_coverage,
+                "trust_metadata_coverage_rate": _ratio(trust_metadata_coverage, len(incidents)),
+                "explanation_fallback_rate": _ratio(explanation_counts["fallback"], len(recent_explanations)),
+                "rca_allow_rate": _ratio(counts["allow"], len(recent_items)),
+                "playbook_block_rate": _ratio(playbook_counts["block"], len(playbook_items)),
+                "prompt_injection_detections": prompt_injection_detections,
+                "approval_count": len(approvals),
+                "action_execution_count": action_execution_count,
+            },
+            "timeline": timeline_events[:10],
+        },
+        "governance": {
+            "summary": {
+                "tracked_decisions": trust_metadata_coverage,
+                "approval_count": len(approvals),
+                "override_count": override_count,
+                "executed_action_count": action_execution_count,
+                "audited_incident_count": len({str(event.get("incident_id") or "") for event in audit_events if str(event.get("incident_id") or "")}),
+            },
+            "lineage": {
+                "active_model_version": str(lineage.get("model_version") or model_name),
+                "active_model_label": str(lineage.get("profile_label") or "Active classifier profile"),
+                "active_profile_key": str(lineage.get("profile_key") or ""),
+                "feature_service": str(lineage.get("feature_service") or "ani_anomaly_scoring_v1"),
+                "explainability_provider": str(explainability_provider.get("label") or "Explainability"),
+                "rca_guardrails_provider": str(provider.get("label") or "Guardrails"),
+                "playbook_guardrails_provider": str(_playbook_request_safety_provider().get("label") or "Guardrails"),
+                "llm_model": model_name,
+                "guardrail_policy": str(os.getenv("ANI_GUARDRAILS_POLICY_VERSION", "v1")).strip(),
+            },
+            "sample_trace": governance_trace,
+        },
         "playbook_generation": {
             "provider": _playbook_request_safety_provider(),
             "uses_trustyai": str(_playbook_request_safety_provider().get("key") or "") == "trustyai",

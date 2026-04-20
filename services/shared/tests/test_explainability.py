@@ -93,6 +93,59 @@ class ExplainabilityTrustyAITests(unittest.TestCase):
         self.assertEqual(payload["status"], "available")
         self.assertEqual(payload["top_features"][0]["feature"], "register_rate")
 
+    def test_build_model_explanation_parses_kserve_saliency_payload(self) -> None:
+        class _Response:
+            ok = True
+            status_code = 200
+            text = (
+                '{"saliencies":{"outputs-0":['
+                '{"name":"inputs-0","score":0.37,"confidence":0.0},'
+                '{"name":"inputs-6","score":0.22,"confidence":0.0}'
+                "]}}"
+            )
+
+            def json(self):
+                return {
+                    "saliencies": {
+                        "outputs-0": [
+                            {"name": "inputs-0", "score": 0.37, "confidence": 0.0},
+                            {"name": "inputs-6", "score": 0.22, "confidence": 0.0},
+                        ]
+                    }
+                }
+
+        with (
+            mock.patch.dict(
+                os.environ,
+                {
+                    "ANI_INCIDENT_EXPLAINABILITY_TRUSTYAI_ENABLED": "true",
+                    "TRUSTYAI_EXPLAINABILITY_ENDPOINT": "https://trustyai.example.com/explain",
+                    "TRUSTYAI_EXPLAINABILITY_VERIFY_TLS": "false",
+                },
+                clear=False,
+            ),
+            mock.patch.object(explainability.requests, "post", return_value=_Response()),
+        ):
+            payload = explainability.build_model_explanation(
+                {
+                    "register_rate": 15.0,
+                    "invite_rate": 0.0,
+                    "bye_rate": 0.0,
+                    "error_4xx_ratio": 0.12,
+                    "error_5xx_ratio": 0.0,
+                    "latency_p95": 120.0,
+                    "retransmission_count": 9.0,
+                    "payload_variance": 0.0,
+                },
+                anomaly_type="registration_storm",
+                predicted_confidence=0.9,
+                model_version="ani-predictive-fs",
+            )
+
+        self.assertEqual(payload["provider"]["key"], "trustyai")
+        self.assertEqual(payload["top_features"][0]["feature"], "register_rate")
+        self.assertEqual(payload["top_features"][1]["feature"], "retransmission_count")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -35,6 +35,17 @@ _LOCAL_PROVIDER = {
 }
 
 _TONE_SEQUENCE = ("rose", "amber", "sky", "emerald", "violet")
+_NUMERIC_FEATURE_ORDER = (
+    "register_rate",
+    "invite_rate",
+    "bye_rate",
+    "error_4xx_ratio",
+    "error_5xx_ratio",
+    "latency_p95",
+    "retransmission_count",
+    "inter_arrival_mean",
+    "payload_variance",
+)
 
 
 def explainability_schema_version() -> str:
@@ -121,6 +132,16 @@ def _normalize_feature_map(features: Mapping[str, object] | None) -> Dict[str, o
     if not isinstance(features, Mapping):
         return {}
     return {str(key): value for key, value in features.items()}
+
+
+def _ordered_numeric_feature_names(feature_values: Mapping[str, object]) -> List[str]:
+    ordered = list(_NUMERIC_FEATURE_ORDER)
+    for name, value in feature_values.items():
+        if name in ordered:
+            continue
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            ordered.append(name)
+    return ordered
 
 
 def _feature_display_value(value: object) -> str:
@@ -259,7 +280,7 @@ def _normalize_mapping_items(raw_mapping: Mapping[str, object], feature_values: 
 
 def _normalize_numeric_items(raw_items: Sequence[object], feature_values: Mapping[str, object]) -> List[Dict[str, object]]:
     items: List[Dict[str, object]] = []
-    feature_names = list(feature_values.keys())
+    feature_names = _ordered_numeric_feature_names(feature_values)
     if len(raw_items) != len(feature_names):
         return []
     for index, feature in enumerate(feature_names):
@@ -267,6 +288,59 @@ def _normalize_numeric_items(raw_items: Sequence[object], feature_values: Mappin
             _feature_item(
                 feature,
                 _coerce_float(raw_items[index]),
+                value=feature_values.get(feature),
+                index=index,
+            )
+        )
+    return items
+
+
+def _saliency_feature_name(name: str, feature_values: Mapping[str, object]) -> str:
+    raw_name = str(name or "").strip()
+    if not raw_name:
+        return ""
+    if raw_name in feature_values:
+        return raw_name
+
+    lowered = raw_name.lower()
+    if lowered in feature_values:
+        return lowered
+
+    for prefix in ("inputs-", "input-", "feature-", "features-"):
+        if lowered.startswith(prefix):
+            suffix = lowered[len(prefix) :]
+            try:
+                index = int(suffix)
+            except ValueError:
+                continue
+            feature_names = _ordered_numeric_feature_names(feature_values)
+            if 0 <= index < len(feature_names):
+                return feature_names[index]
+
+    return raw_name
+
+
+def _normalize_saliency_group(raw_items: Iterable[object], feature_values: Mapping[str, object]) -> List[Dict[str, object]]:
+    items: List[Dict[str, object]] = []
+    for index, item in enumerate(raw_items):
+        if not isinstance(item, Mapping):
+            continue
+        feature = _saliency_feature_name(str(item.get("feature") or item.get("name") or item.get("label") or ""), feature_values)
+        if not feature:
+            continue
+        raw_impact = _coerce_float(
+            item.get("score")
+            if item.get("score") is not None
+            else item.get("impact")
+            if item.get("impact") is not None
+            else item.get("saliency")
+            if item.get("saliency") is not None
+            else item.get("value")
+        )
+        items.append(
+            _feature_item(
+                feature,
+                raw_impact,
                 value=feature_values.get(feature),
                 index=index,
             )
@@ -291,10 +365,18 @@ def _trustyai_response_items(payload: Mapping[str, object], feature_values: Mapp
     for key in ("explanations", "saliencies", "attributions", "explanation"):
         candidate = payload.get(key)
         if isinstance(candidate, Mapping):
+            for nested_items in candidate.values():
+                if isinstance(nested_items, list):
+                    items = _normalize_saliency_group(nested_items, feature_values)
+                    if items:
+                        return items
             items = _normalize_mapping_items(candidate, feature_values)
             if items:
                 return items
         if isinstance(candidate, list):
+            items = _normalize_saliency_group(candidate, feature_values)
+            if items:
+                return items
             items = _normalize_named_items(candidate, feature_values)
             if items:
                 return items
@@ -310,10 +392,19 @@ def _trustyai_response_items(payload: Mapping[str, object], feature_values: Mapp
 
 
 def _trustyai_payload_variants(features: Mapping[str, object]) -> List[Dict[str, object]]:
-    numeric_items = {name: _coerce_float(value) for name, value in features.items() if isinstance(value, (int, float))}
+    feature_names = _ordered_numeric_feature_names(features)
+    numeric_items = {
+        name: _coerce_float(features.get(name)) for name in feature_names if name in _NUMERIC_FEATURE_ORDER
+    }
+    for name, value in features.items():
+        if name in numeric_items:
+            continue
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            numeric_items[name] = _coerce_float(value)
     feature_names = list(numeric_items.keys())
     numeric_values = [[numeric_items[name] for name in feature_names]]
     payloads = [
+        {"instances": numeric_values},
         {"instances": [dict(numeric_items)]},
         {"inputs": [dict(numeric_items)]},
     ]

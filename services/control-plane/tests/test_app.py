@@ -581,6 +581,49 @@ class SafetyControlsTests(unittest.TestCase):
                 "list_incident_remediations",
                 side_effect=lambda incident_id: remediations_by_incident.get(incident_id, []),
             ),
+            mock.patch.object(
+                control_plane_app,
+                "list_approvals",
+                return_value=[
+                    {
+                        "incident_id": "inc-review",
+                        "created_at": "2026-04-17T21:05:30+00:00",
+                        "action": "approve",
+                        "requested_by": "demo-operator",
+                    }
+                ],
+            ),
+            mock.patch.object(
+                control_plane_app,
+                "list_audit_events",
+                return_value=[
+                    {
+                        "incident_id": "inc-allow",
+                        "event_type": "action_executed",
+                        "created_at": "2026-04-17T21:06:00+00:00",
+                        "details": {"action_ref": "scale_scscf"},
+                    }
+                ],
+            ),
+            mock.patch.object(
+                control_plane_app,
+                "_classifier_profile_status",
+                return_value={
+                    "active_profile": "live",
+                    "requested_profile": "live",
+                    "profiles": [
+                        {
+                            "key": "live",
+                            "label": "Live model",
+                            "model_name": "ani-predictive-fs",
+                            "model_version_label": "ani-predictive-fs",
+                            "endpoint": "http://ani-predictive-fs-predictor.ani-datascience.svc.cluster.local:8080",
+                            "active": True,
+                            "configured": True,
+                        }
+                    ],
+                },
+            ),
         ):
             response = control_plane_app._safety_controls_status("ani-demo")
 
@@ -601,6 +644,10 @@ class SafetyControlsTests(unittest.TestCase):
         self.assertEqual(response["playbook_generation"]["recent_requests"][0]["remediation_id"], 12)
         self.assertTrue(response["playbook_generation"]["recent_requests"][0]["override_applied"])
         self.assertTrue(response["playbook_generation"]["recent_requests"][0]["trustyai_used"])
+        self.assertEqual(response["monitoring"]["summary"]["approval_count"], 1)
+        self.assertEqual(response["monitoring"]["summary"]["action_execution_count"], 1)
+        self.assertEqual(response["governance"]["summary"]["approval_count"], 1)
+        self.assertEqual(response["governance"]["summary"]["executed_action_count"], 1)
 
     def test_safety_controls_probe_reports_detections(self) -> None:
         class _Response:
