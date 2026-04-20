@@ -99,7 +99,7 @@ spec:
   source:
     path: k8s/overlays/gitops/tekton
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: feat/trustyai-explainability-scoring
+    targetRevision: main
   syncPolicy:
     automated:
       prune: true
@@ -177,7 +177,7 @@ spec:
   source:
     path: k8s/overlays/gitops/runtime
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: feat/trustyai-explainability-scoring
+    targetRevision: main
   syncPolicy:
     automated:
       prune: true
@@ -218,7 +218,7 @@ spec:
   source:
     path: k8s/overlays/gitops/datascience
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: feat/trustyai-explainability-scoring
+    targetRevision: main
   syncPolicy:
     automated:
       prune: true
@@ -249,7 +249,7 @@ spec:
   source:
     path: k8s/overlays/gitops/trustyai
     repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
-    targetRevision: feat/trustyai-explainability-scoring
+    targetRevision: main
   syncPolicy:
     automated:
       prune: true
