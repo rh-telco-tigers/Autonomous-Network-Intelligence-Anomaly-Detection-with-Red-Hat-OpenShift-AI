@@ -49,7 +49,7 @@ spec:
           memory: 2Gi
   explainer:
     containers:
-      - name: explainer
+      - name: kserve-container
         image: quay.io/trustyai/trustyai-kserve-explainer:latest
         imagePullPolicy: IfNotPresent
         args:
