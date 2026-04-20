@@ -28,7 +28,7 @@ metadata:
     serving.kserve.io/deploymentMode: RawDeployment
     serving.kserve.io/enable-prometheus-scraping: "true"
     ani.redhat.com/serving-alias: current
-    ani-demo/runtime-fix-ts: trustyai-explainability-bcefa0f
+    ani-demo/runtime-fix-ts: trustyai-explainability-5f66574
 spec:
   predictor:
     serviceAccountName: model-storage-sa
