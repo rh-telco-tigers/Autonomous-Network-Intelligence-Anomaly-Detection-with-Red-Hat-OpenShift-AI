@@ -133,6 +133,7 @@ def current_model_status() -> Dict[str, object]:
     registry = load_registry()
     active_profile, profile, catalog, requested_profile = _active_predictive_profile()
     endpoint = str((profile or {}).get("endpoint") or "").rstrip("/")
+    explainability_endpoint = str((profile or {}).get("explainability_endpoint") or "").rstrip("/")
     registry_deployed = registry.get("deployed_model_version") if registry else None
     deployed = _reported_remote_model_version(registry_deployed)
     artifact_path = None
@@ -149,6 +150,7 @@ def current_model_status() -> Dict[str, object]:
         "deployed_model_version": deployed,
         "predictive_model_name": str((profile or {}).get("model_name") or "") if endpoint else None,
         "predictive_endpoint": endpoint or None,
+        "predictive_explainability_endpoint": explainability_endpoint or None,
         "artifact_present": bool(artifact_path and artifact_path.exists()),
         "scoring_modes": (
             ["remote-kserve-v2", "local-artifact"]
@@ -173,6 +175,7 @@ def current_predictive_profile() -> Dict[str, object]:
         "requested_profile": requested_profile,
         "profile_label": str(selected.get("label") or active_key or ""),
         "endpoint": str(selected.get("endpoint") or "").rstrip("/"),
+        "explainability_endpoint": str(selected.get("explainability_endpoint") or "").rstrip("/"),
         "model_name": str(selected.get("model_name") or ""),
         "model_version_label": str(selected.get("model_version_label") or ""),
         "configured": bool(selected.get("configured")),

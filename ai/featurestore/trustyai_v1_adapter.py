@@ -73,6 +73,8 @@ def _predictions_from_v2_response(payload: Mapping[str, Any]) -> List[Any]:
     data = probabilities.get("data")
     if not isinstance(data, list) or not data:
         raise ValueError("Upstream class probabilities were empty")
+    if data and not isinstance(data[0], list):
+        return [data]
     return data
 
 

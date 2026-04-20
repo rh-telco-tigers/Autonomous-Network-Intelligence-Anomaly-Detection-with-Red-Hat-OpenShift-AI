@@ -256,6 +256,28 @@ class ModelStoreTests(unittest.TestCase):
             "http://predictive-modelcar.example.com/v2/models/ani-predictive-backfill-modelcar/infer",
         )
 
+    def test_current_predictive_profile_includes_explainability_endpoint(self) -> None:
+        with mock.patch.dict(
+            model_store.os.environ,
+            {
+                "PREDICTIVE_ACTIVE_PROFILE": "modelcar",
+                "PREDICTIVE_ENDPOINT_MODELCAR": "http://predictive-modelcar.example.com",
+                "PREDICTIVE_EXPLAINABILITY_ENDPOINT_MODELCAR": "http://predictive-modelcar-explainer.example.com",
+                "PREDICTIVE_MODEL_NAME_MODELCAR": "ani-predictive-backfill-modelcar",
+                "PREDICTIVE_MODEL_VERSION_LABEL_MODELCAR": "ani-predictive-backfill-modelcar",
+                "CONTROL_PLANE_URL": "",
+            },
+            clear=False,
+        ):
+            profile = model_store.current_predictive_profile()
+
+        self.assertEqual(profile["profile_key"], "modelcar")
+        self.assertEqual(profile["endpoint"], "http://predictive-modelcar.example.com")
+        self.assertEqual(
+            profile["explainability_endpoint"],
+            "http://predictive-modelcar-explainer.example.com",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
