@@ -51,6 +51,18 @@ spec:
       - name: explainer
         image: quay.io/trustyai/trustyai-kserve-explainer:latest
         imagePullPolicy: IfNotPresent
+        args:
+          - --model_name
+          - ani-predictive-backfill-modelcar
+          - --predictor_host
+          - ani-predictive-backfill-modelcar-predictor.$(POD_NAMESPACE).svc.cluster.local:8080
+          - --http_port
+          - "8080"
+        env:
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
         resources:
           requests:
             cpu: 100m

@@ -84,19 +84,24 @@ def trustyai_explainability_verify_tls() -> bool:
 def trustyai_explainability_endpoint(model_context: Mapping[str, Any] | None = None) -> str:
     explicit = str(os.getenv("TRUSTYAI_EXPLAINABILITY_ENDPOINT", "")).strip()
     if explicit:
-        return explicit.rstrip("/")
+        normalized = explicit.rstrip("/")
+        if normalized.endswith(":explain") or normalized.endswith("/explain"):
+            return normalized
+        return normalized
 
     context = model_context or {}
-    endpoint = str(context.get("endpoint") or "").strip().rstrip("/")
+    endpoint = str(context.get("explainability_endpoint") or context.get("endpoint") or "").strip().rstrip("/")
     model_name = str(context.get("model_name") or "").strip()
     if not endpoint or not model_name:
         requested = normalize_classifier_profile(os.getenv("PREDICTIVE_ACTIVE_PROFILE", DEFAULT_ACTIVE_CLASSIFIER_PROFILE))
         active_key, profile = resolve_active_classifier_profile(requested, classifier_profile_catalog())
         context = profile or {}
-        endpoint = str(context.get("endpoint") or "").strip().rstrip("/")
+        endpoint = str(context.get("explainability_endpoint") or context.get("endpoint") or "").strip().rstrip("/")
         model_name = str(context.get("model_name") or active_key or "").strip()
     if not endpoint or not model_name:
         return ""
+    if endpoint.endswith(":explain") or endpoint.endswith("/explain"):
+        return endpoint
     return f"{endpoint}/v1/models/{model_name}:explain"
 
 
@@ -500,6 +505,7 @@ def _model_metadata(model_version: str, model_context: Mapping[str, object] | No
         "profile_label": str(context.get("profile_label") or "").strip(),
         "name": str(context.get("model_name") or "").strip(),
         "endpoint": str(context.get("endpoint") or "").strip(),
+        "explainability_endpoint": str(context.get("explainability_endpoint") or "").strip(),
     }
 
 

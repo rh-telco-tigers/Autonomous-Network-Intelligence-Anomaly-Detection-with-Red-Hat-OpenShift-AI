@@ -56,6 +56,20 @@ class ExplainabilityFallbackTests(unittest.TestCase):
 
 
 class ExplainabilityTrustyAITests(unittest.TestCase):
+    def test_model_context_explainability_endpoint_overrides_predictor_endpoint(self) -> None:
+        endpoint = explainability.trustyai_explainability_endpoint(
+            {
+                "endpoint": "http://ani-predictive-fs-predictor.ani-datascience.svc.cluster.local:8080",
+                "explainability_endpoint": "http://ani-predictive-fs-explainer.ani-datascience.svc.cluster.local:8080",
+                "model_name": "ani-predictive-fs",
+            }
+        )
+
+        self.assertEqual(
+            endpoint,
+            "http://ani-predictive-fs-explainer.ani-datascience.svc.cluster.local:8080/v1/models/ani-predictive-fs:explain",
+        )
+
     def test_build_model_explanation_marks_trustyai_when_attributions_are_returned(self) -> None:
         class _Response:
             ok = True
