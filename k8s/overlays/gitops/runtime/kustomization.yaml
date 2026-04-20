@@ -98,22 +98,22 @@ images:
     newTag: latest
   - name: anomaly-service
     newName: quay.io/autonomousnetworkintelligence/anomaly-service
-    newTag: trustyai-explainability-ca07c4a
+    newTag: trustyai-explainability-fc5237b
   - name: rca-service
     newName: quay.io/autonomousnetworkintelligence/rca-service
     newTag: guardrails-fix-efba4b1
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/control-plane
     newName: quay.io/autonomousnetworkintelligence/control-plane
-    newTag: trustyai-explainability-ca07c4a
+    newTag: trustyai-explainability-fc5237b
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/feature-gateway
     newName: quay.io/autonomousnetworkintelligence/feature-gateway
     newTag: latest
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/anomaly-service
     newName: quay.io/autonomousnetworkintelligence/anomaly-service
-    newTag: trustyai-explainability-ca07c4a
+    newTag: trustyai-explainability-fc5237b
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/rca-service
     newName: quay.io/autonomousnetworkintelligence/rca-service
     newTag: guardrails-fix-efba4b1
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/demo-ui
     newName: quay.io/autonomousnetworkintelligence/demo-ui
-    newTag: trustyai-explainability-ca07c4a
+    newTag: trustyai-explainability-fc5237b
