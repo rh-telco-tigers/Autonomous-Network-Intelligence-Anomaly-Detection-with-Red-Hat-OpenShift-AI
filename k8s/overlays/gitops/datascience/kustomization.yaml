@@ -22,4 +22,4 @@ patches:
     patch: |-
       - op: replace
         path: /spec/containers/0/image
-        value: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-ai-featurestore-trainer:latest
+        value: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
