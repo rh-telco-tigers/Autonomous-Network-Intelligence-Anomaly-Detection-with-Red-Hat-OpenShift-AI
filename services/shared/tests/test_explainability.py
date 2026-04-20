@@ -56,6 +56,33 @@ class ExplainabilityFallbackTests(unittest.TestCase):
 
 
 class ExplainabilityTrustyAITests(unittest.TestCase):
+    def test_trustyai_payload_variants_only_emit_numeric_instance_arrays(self) -> None:
+        variants = explainability._trustyai_payload_variants(
+            {
+                "register_rate": 15.0,
+                "invite_rate": 0.0,
+                "bye_rate": 1.0,
+                "error_4xx_ratio": 0.12,
+                "error_5xx_ratio": 0.0,
+                "latency_p95": 120.0,
+                "retransmission_count": 9.0,
+                "inter_arrival_mean": 0.5,
+                "payload_variance": 0.0,
+                "scenario_name": "registration_storm",
+            }
+        )
+
+        self.assertEqual(
+            variants,
+            [
+                {
+                    "instances": [
+                        [15.0, 0.0, 1.0, 0.12, 0.0, 120.0, 9.0, 0.5, 0.0],
+                    ]
+                }
+            ],
+        )
+
     def test_model_context_explainability_endpoint_overrides_predictor_endpoint(self) -> None:
         endpoint = explainability.trustyai_explainability_endpoint(
             {

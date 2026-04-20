@@ -408,25 +408,7 @@ def _trustyai_payload_variants(features: Mapping[str, object]) -> List[Dict[str,
             numeric_items[name] = _coerce_float(value)
     feature_names = list(numeric_items.keys())
     numeric_values = [[numeric_items[name] for name in feature_names]]
-    payloads = [
-        {"instances": numeric_values},
-        {"instances": [dict(numeric_items)]},
-        {"inputs": [dict(numeric_items)]},
-    ]
-    if feature_names:
-        payloads.append(
-            {
-                "inputs": [
-                    {
-                        "name": "predict",
-                        "shape": [1, len(feature_names)],
-                        "datatype": "FP32",
-                        "data": numeric_values,
-                    }
-                ]
-            }
-        )
-    return payloads
+    return [{"instances": numeric_values}] if feature_names else []
 
 
 def _trustyai_explanation(
