@@ -4435,7 +4435,34 @@ def _severity_tone(severity: str) -> Dict[str, str]:
 
 
 def _incident_confidence(incident: Dict[str, object]) -> float:
-    return _coerce_float(incident.get("predicted_confidence"))
+    model_explanation = incident.get("model_explanation")
+    if isinstance(model_explanation, dict):
+        prediction = model_explanation.get("prediction")
+        if isinstance(prediction, dict) and prediction.get("confidence") is not None:
+            return _coerce_float(prediction.get("confidence"))
+
+    predicted_confidence = incident.get("predicted_confidence")
+    if predicted_confidence is not None:
+        return _coerce_float(predicted_confidence)
+
+    anomaly_type = canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE))
+    top_classes = incident.get("top_classes")
+    if isinstance(top_classes, list):
+        for item in top_classes:
+            if not isinstance(item, dict):
+                continue
+            if canonical_anomaly_type(str(item.get("anomaly_type") or "")) == anomaly_type:
+                return _coerce_float(item.get("probability"))
+        if top_classes:
+            first = top_classes[0]
+            if isinstance(first, dict):
+                return _coerce_float(first.get("probability"))
+
+    class_probabilities = incident.get("class_probabilities")
+    if isinstance(class_probabilities, dict):
+        return _coerce_float(class_probabilities.get(anomaly_type))
+
+    return 0.0
 
 
 def _incident_severity_label(incident: Dict[str, object]) -> str:
@@ -4844,6 +4871,7 @@ def _incident_summary_view(
             include_search_text=include_ticket_search,
         )
     workflow_state = normalize_workflow_state(str(incident.get("status") or incident.get("workflow_state") or NEW))
+    model_explanation = resolve_incident_model_explanation(incident)
 
     return {
         "id": str(incident.get("id") or ""),
@@ -4866,6 +4894,7 @@ def _incident_summary_view(
         "impact": _incident_impact(incident),
         "plane_workflow_state": plane_state_for_workflow(workflow_state),
         "is_active": is_active_state(workflow_state),
+        "model_explanation": model_explanation,
         "current_ticket_summary": current_ticket_summary,
         "ticket_search_text": ticket_search_text,
         "ticket_count": ticket_count,

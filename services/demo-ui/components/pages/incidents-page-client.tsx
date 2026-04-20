@@ -10,6 +10,7 @@ import { PaginationControls } from "@/components/pagination-controls";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { TransientDataWarning } from "@/components/transient-data-warning";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -139,9 +140,33 @@ export function IncidentsPageClient({ initialFilters }: { initialFilters: Filter
         cell: ({ row }) => <StatusBadge value={row.original.status} />,
       },
       {
-        accessorKey: "predicted_confidence",
-        header: "Confidence",
-        cell: ({ row }) => formatRelativeNumber(row.original.predicted_confidence),
+        id: "prediction",
+        header: "Prediction",
+        cell: ({ row }) => {
+          const confidence = incidentPredictionConfidence(row.original);
+          return (
+            <div>
+              <div className="font-medium text-[var(--text-strong)]">{formatConfidencePercent(confidence)}</div>
+              <div className="mt-1 text-xs text-[var(--text-subtle)]">
+                Stored value {formatRelativeNumber(confidence)}
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        id: "trust",
+        header: "Trust layer",
+        cell: ({ row }) => {
+          const provider = incidentExplainabilityProvider(row.original);
+          const detail = incidentTrustDetail(row.original);
+          return (
+            <div>
+              <Badge variant={provider.variant}>{provider.label}</Badge>
+              <div className="mt-1 max-w-[16rem] text-xs leading-5 text-[var(--text-subtle)]">{detail}</div>
+            </div>
+          );
+        },
       },
       {
         accessorKey: "updated_at",
@@ -283,4 +308,54 @@ function normalizePageSize(value: string | null, fallback: number) {
   const allowed = new Set([5, 10, 20, 50]);
   const parsed = parsePositiveInt(value, fallback);
   return allowed.has(parsed) ? parsed : fallback;
+}
+
+function incidentPredictionConfidence(incident: IncidentRecord) {
+  return Number(incident.model_explanation?.prediction?.confidence ?? incident.predicted_confidence ?? 0);
+}
+
+function formatConfidencePercent(value: number) {
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) {
+    return "0%";
+  }
+  const percent = normalized * 100;
+  const rounded = percent >= 99.5 ? Math.round(percent) : Math.round(percent * 10) / 10;
+  return `${rounded.toFixed(rounded % 1 === 0 ? 0 : 1)}%`;
+}
+
+function incidentExplainabilityProvider(incident: IncidentRecord) {
+  const providerKey = incident.model_explanation?.provider?.key ?? "none";
+  if (providerKey === "trustyai") {
+    return { label: "TrustyAI", variant: "success" as const };
+  }
+  if (incident.model_explanation?.status === "fallback") {
+    return { label: "Fallback", variant: "warning" as const };
+  }
+  return { label: "Unavailable", variant: "default" as const };
+}
+
+function incidentTrustDetail(incident: IncidentRecord) {
+  const explanation = incident.model_explanation;
+  if (!explanation) {
+    return "No explainability envelope is attached to this incident yet.";
+  }
+  const featureSummary = explanation.top_features
+    ?.slice(0, 2)
+    .map((item) => item.label)
+    .filter(Boolean)
+    .join(" · ");
+
+  if ((explanation.provider?.key ?? "") === "trustyai") {
+    const explanationConfidence = titleize(explanation.explanation_confidence ?? "medium");
+    return featureSummary
+      ? `${explanationConfidence} explanation confidence · ${featureSummary}`
+      : `${explanationConfidence} explanation confidence`;
+  }
+
+  if (explanation.status === "fallback") {
+    return "Stored heuristic envelope. Re-open the incident detail view to inspect the latest explanation state.";
+  }
+
+  return featureSummary || "Explainability metadata is not available for this incident.";
 }

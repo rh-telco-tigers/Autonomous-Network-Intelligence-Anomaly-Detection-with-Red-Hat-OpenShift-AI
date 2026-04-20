@@ -343,6 +343,52 @@ class IncidentExplainabilityViewTests(unittest.TestCase):
         self.assertEqual(enriched["model_explanation"]["provider"]["key"], "trustyai")
         self.assertEqual(enriched["explainability"][0]["feature"], "register_rate")
 
+    def test_incident_summary_prefers_model_explanation_prediction_confidence(self) -> None:
+        incident = {
+            "id": "inc-summary-1",
+            "project": "ani-demo",
+            "status": control_plane_app.NEW,
+            "workflow_state": control_plane_app.NEW,
+            "workflow_revision": 1,
+            "anomaly_score": 0.88,
+            "anomaly_type": "registration_storm",
+            "predicted_confidence": 0.44,
+            "top_classes": [
+                {"anomaly_type": "registration_storm", "probability": 0.91},
+            ],
+            "class_probabilities": {"registration_storm": 0.91},
+            "model_version": "ani-predictive-fs",
+            "model_explanation": {
+                "provider": {
+                    "key": "trustyai",
+                    "label": "TrustyAI Explainability",
+                    "family": "Explainability",
+                },
+                "schema_version": "ani.explainability.v1",
+                "status": "available",
+                "prediction": {
+                    "anomaly_type": "registration_storm",
+                    "confidence": 0.91,
+                },
+                "top_features": [
+                    {
+                        "feature": "register_rate",
+                        "label": "Register Rate",
+                        "impact": 0.45,
+                        "raw_impact": 0.45,
+                        "direction": "increase",
+                        "display_value": "15.0",
+                        "tone": "rose",
+                    }
+                ],
+            },
+        }
+
+        summary = control_plane_app._incident_summary_view(incident)
+
+        self.assertEqual(summary["predicted_confidence"], 0.91)
+        self.assertEqual(summary["model_explanation"]["provider"]["key"], "trustyai")
+
 
 class ConsoleScenarioFallbackTests(unittest.TestCase):
     def test_console_run_scenario_forces_incident_when_non_nominal_score_returns_no_incident(self) -> None:
