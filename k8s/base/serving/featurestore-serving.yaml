@@ -12,7 +12,7 @@ metadata:
     serving.kserve.io/deploymentMode: RawDeployment
     serving.kserve.io/enable-prometheus-scraping: "true"
     ani.redhat.com/serving-alias: current
-    ani-demo/runtime-fix-ts: trustyai-explainability-fc5237b
+    ani-demo/runtime-fix-ts: trustyai-explainability-bcefa0f
 spec:
   predictor:
     serviceAccountName: model-storage-sa

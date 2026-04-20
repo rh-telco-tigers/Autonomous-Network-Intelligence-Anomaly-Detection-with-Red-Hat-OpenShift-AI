@@ -98,7 +98,7 @@ images:
     newTag: latest
   - name: anomaly-service
     newName: quay.io/autonomousnetworkintelligence/anomaly-service
-    newTag: trustyai-explainability-fc5237b
+    newTag: trustyai-explainability-bcefa0f
   - name: rca-service
     newName: quay.io/autonomousnetworkintelligence/rca-service
     newTag: guardrails-fix-efba4b1
@@ -110,7 +110,7 @@ images:
     newTag: latest
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/anomaly-service
     newName: quay.io/autonomousnetworkintelligence/anomaly-service
-    newTag: trustyai-explainability-fc5237b
+    newTag: trustyai-explainability-bcefa0f
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/rca-service
     newName: quay.io/autonomousnetworkintelligence/rca-service
     newTag: guardrails-fix-efba4b1
