@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Iterable, List, Mapping
+from typing import Any, Iterable, List, Mapping, Sequence
 
 import requests
 from fastapi import FastAPI, HTTPException
@@ -56,7 +56,20 @@ def _v2_infer_payload(instances: List[List[float]]) -> Mapping[str, Any]:
     }
 
 
-def _predictions_from_v2_response(payload: Mapping[str, Any]) -> List[Any]:
+def _normalize_rows(data: Sequence[Any]) -> List[List[float]]:
+    if not isinstance(data, Sequence) or not data:
+        raise ValueError("Upstream prediction data was empty")
+    if data and not isinstance(data[0], list):
+        return [[float(value or 0.0) for value in data]]
+    rows: List[List[float]] = []
+    for row in data:
+        if not isinstance(row, Sequence) or isinstance(row, (str, bytes, bytearray)):
+            raise ValueError("Upstream prediction rows were malformed")
+        rows.append([float(value or 0.0) for value in row])
+    return rows
+
+
+def _scalar_predictions_from_v2_response(payload: Mapping[str, Any]) -> List[Any]:
     outputs = payload.get("outputs")
     if not isinstance(outputs, list):
         raise ValueError("Upstream v2 response did not include outputs")
@@ -66,6 +79,14 @@ def _predictions_from_v2_response(payload: Mapping[str, Any]) -> List[Any]:
         for output in outputs
         if isinstance(output, Mapping)
     }
+    anomaly_score = outputs_by_name.get("anomaly_score")
+    if isinstance(anomaly_score, Mapping):
+        data = anomaly_score.get("data")
+        if isinstance(data, list) and data:
+            rows = _normalize_rows(data)
+            if rows and len(rows[0]) == 1:
+                return [float(row[0]) for row in rows]
+
     probabilities = outputs_by_name.get("class_probabilities") or outputs_by_name.get("predict_proba")
     if not isinstance(probabilities, Mapping):
         raise ValueError("Upstream v2 response did not include class probabilities")
@@ -73,9 +94,8 @@ def _predictions_from_v2_response(payload: Mapping[str, Any]) -> List[Any]:
     data = probabilities.get("data")
     if not isinstance(data, list) or not data:
         raise ValueError("Upstream class probabilities were empty")
-    if data and not isinstance(data[0], list):
-        return [data]
-    return data
+    rows = _normalize_rows(data)
+    return [max(range(len(row)), key=row.__getitem__) for row in rows]
 
 
 @app.get("/healthz")
@@ -114,7 +134,9 @@ def predict_v1(model_name: str, payload: Mapping[str, Any]) -> Mapping[str, Any]
         )
 
     try:
-        predictions = _predictions_from_v2_response(response_payload if isinstance(response_payload, Mapping) else {})
+        predictions = _scalar_predictions_from_v2_response(
+            response_payload if isinstance(response_payload, Mapping) else {}
+        )
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
