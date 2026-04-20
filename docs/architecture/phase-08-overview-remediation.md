@@ -12,6 +12,8 @@ Current live coverage:
 
 - manual UI execution through AAP Controller for `scale_scscf`, `rate_limit_pcscf`, and `quarantine_imsi`
 - optional AI playbook generation after remediation suggestions, using Kafka request delivery and a control-plane callback
+- TrustyAI RCA guardrail decisions that determine whether remediation can unlock without an additional manual hold
+- TrustyAI playbook draft validation that gates preview, publish, and execute behavior for AI-generated playbooks
 - controller callback templates for event-driven incident transitions and event-driven action execution
 - EDA policy `ANI Critical Incident Escalation` for critical RCA-attached incidents that should move to `ESCALATED` and sync Plane
 - EDA policy `ANI Critical Signal Guardrail` for selected critical signaling incidents that can auto-apply `rate_limit_pcscf`
@@ -20,7 +22,9 @@ Current live coverage:
 ## What This Phase Covers
 
 - generate remediation suggestions from RCA and prior knowledge
+- respect TrustyAI RCA guardrail outcomes before remediation is unlocked
 - keep high-impact approval explicitly human-controlled while allowing selected low-risk policy automation
+- validate AI-generated playbook drafts with TrustyAI before publish or execution
 - execute the chosen action through manual, ticketing, or automation paths
 - sync relevant status into Plane and other workflow surfaces
 - record verification results and reusable knowledge
@@ -29,11 +33,19 @@ Current live coverage:
 
 ```mermaid
 flowchart TD
-  RCA["RCA result"] --> Suggest["rank remediation options"]
+  RCA["RCA result"] --> RCAGuard["TrustyAI RCA guardrails"]
+  RCAGuard --> Unlock{"remediation unlocked?"}
+  Unlock -->|allow / review| Suggest["rank remediation options"]
+  Unlock -->|block| Hold["manual hold / no remediation unlock"]
   Suggest --> Human["operator review in platform UI"]
+  Suggest --> Draft["AI playbook draft"]
+  Draft --> PlaybookGuard["TrustyAI playbook guardrails"]
+  PlaybookGuard --> Publish{"publish / execute allowed?"}
   Suggest --> Event["control-plane publishes EDA event"]
   Human -->|reject| Backlog["ticket or follow-up workflow"]
   Human -->|approve + execute| JT["AAP controller job template"]
+  Publish -->|allow| JT
+  Publish -->|review / block| Human
   Event --> Policy{"EDA policy match"}
   Policy -->|critical escalation| Ticket["callback template: transition incident + Plane sync"]
   Policy -->|low-risk guardrail| Callback["callback template: execute incident action"]
@@ -48,7 +60,9 @@ flowchart TD
 ## Inputs
 
 - RCA payloads
+- RCA guardrail decisions
 - remediation ranking logic
+- AI playbook draft guardrail decisions
 - operator approval and notes
 - automation bootstrap configuration, AAP/EDA project sync, and callback templates
 - OpenShift RBAC and dynamic Kubernetes credentials for controller execution
@@ -57,6 +71,7 @@ flowchart TD
 
 - remediation suggestions
 - approvals, action records, and AAP job identifiers
+- playbook guardrail outcomes and publish decisions
 - execution status, Plane comments, and verification results
 - updated incident workflow state
 - reusable resolution knowledge
@@ -64,6 +79,7 @@ flowchart TD
 ## Current Repo Touchpoints
 
 - `services/control-plane/`
+- `services/shared/guardrails.py`
 - `services/shared/aap.py`
 - `services/shared/eda.py`
 - `services/shared/tickets.py`
@@ -88,7 +104,9 @@ This phase closes the loop. It is where the platform proves that its analysis ca
 - [Architecture by phase](./README.md)
 - [Engineering specification](./engineering-spec.md)
 - [AI Safety And Trust](./ai-safety-and-trust.md)
+- [Phase 09 Overview — TrustyAI Integration](./phase-09-overview-trustyai-integration.md)
 - [RCA and remediation](./rca-remediation.md)
+- [TrustyAI Guardrails for RCA](./trustyai-guardrails-for-rca.md)
 - [Remediation suggestions and playbooks](./remediation-suggestions-and-playbooks.md)
 - [AI playbook generation](./ai-playbook-generation.md)
 - [Event-Driven Ansible](./event-driven-ansible.md)
