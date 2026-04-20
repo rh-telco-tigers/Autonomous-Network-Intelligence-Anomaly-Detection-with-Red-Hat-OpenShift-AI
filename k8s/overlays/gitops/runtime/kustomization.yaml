@@ -115,5 +115,5 @@ images:
     newName: quay.io/autonomousnetworkintelligence/rca-service
     newTag: guardrails-fix-efba4b1
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/demo-ui
-    newName: quay.io/autonomousnetworkintelligence/demo-ui
-    newTag: trustyai-explainability-fc5237b
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/demo-ui
+    newTag: latest

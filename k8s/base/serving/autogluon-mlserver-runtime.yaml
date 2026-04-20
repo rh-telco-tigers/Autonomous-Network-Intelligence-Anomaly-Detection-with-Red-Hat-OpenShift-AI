@@ -29,7 +29,7 @@ spec:
   multiModel: false
   containers:
     - name: kserve-container
-      image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:trustyai-explainability-bcefa0f
+      image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:trustyai-explainability-c2c154f
       imagePullPolicy: Always
       workingDir: /tmp
       command:
