@@ -35,7 +35,7 @@ spec:
       command:
         - /bin/sh
         - -lc
-        - mkdir -p /tmp/mlserver-metrics /tmp/mlserver-envs && uvicorn ai.featurestore.trustyai_v1_adapter:app --host 0.0.0.0 --port 8081 & exec mlserver start /mnt/models
+        - mkdir -p /tmp/mlserver-metrics /tmp/mlserver-envs && uvicorn ai.featurestore.trustyai_v1_adapter:app --host 0.0.0.0 --port 8081 --http h11 & exec mlserver start /mnt/models
       args: []
       env:
         - name: HOME
