@@ -13,6 +13,7 @@ from ai.training.train_and_register import FEATURES
 
 app = FastAPI(title="trustyai-v1-adapter", version="0.1.0")
 logger = logging.getLogger("trustyai_v1_adapter")
+_FEATURE_WIDTH = len(FEATURES)
 
 
 def _upstream_url() -> str:
@@ -31,7 +32,17 @@ def _coerce_row(row: object) -> List[float]:
     if isinstance(row, Mapping):
         return [float(row.get(feature, 0.0) or 0.0) for feature in FEATURES]
     if isinstance(row, Iterable) and not isinstance(row, (str, bytes, bytearray)):
-        return [float(value or 0.0) for value in row]
+        values = [float(value or 0.0) for value in row]
+        if len(values) > _FEATURE_WIDTH:
+            logger.warning(
+                "Trimming TrustyAI input row from %s values down to the declared model width %s",
+                len(values),
+                _FEATURE_WIDTH,
+            )
+            values = values[:_FEATURE_WIDTH]
+        if len(values) < _FEATURE_WIDTH:
+            values.extend([0.0] * (_FEATURE_WIDTH - len(values)))
+        return values
     raise ValueError("Each instance must be an object or a numeric sequence")
 
 
@@ -70,8 +81,8 @@ def _parse_request_payload(body: bytes) -> object:
 
 
 def _v2_infer_payload(instances: List[List[float]]) -> Mapping[str, Any]:
-    width = max((len(row) for row in instances), default=len(FEATURES))
-    normalized = [row + ([0.0] * max(0, width - len(row))) for row in instances]
+    width = _FEATURE_WIDTH
+    normalized = [(row[:width] + ([0.0] * max(0, width - len(row)))) for row in instances]
     return {
         "inputs": [
             {
