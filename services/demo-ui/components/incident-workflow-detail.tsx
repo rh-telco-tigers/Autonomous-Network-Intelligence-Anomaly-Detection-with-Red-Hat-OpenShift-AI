@@ -560,8 +560,16 @@ export function IncidentWorkflowDetail() {
     [displayedRemediations],
   );
 
+  const ticketCoordinationRemediation = React.useMemo(
+    () => displayedRemediations.find((item) => isTicketEscalationRemediation(item)),
+    [displayedRemediations],
+  );
+
   const actionableRemediations = React.useMemo(
-    () => displayedRemediations.filter((item) => !isAiPlaybookGenerationRemediation(item)),
+    () =>
+      displayedRemediations.filter(
+        (item) => !isAiPlaybookGenerationRemediation(item) && !isTicketEscalationRemediation(item),
+      ),
     [displayedRemediations],
   );
 
@@ -1428,6 +1436,11 @@ export function IncidentWorkflowDetail() {
                       )}
                     </div>
                   </>
+                ) : ticketCoordinationRemediation ? (
+                  <InlineEmptyState
+                    title="Ticket coordination moved to the incident rail"
+                    description="Use the Incident ticket section in the left column to create or sync Plane collaboration tickets. This remediation list now shows only runtime fix actions."
+                  />
                 ) : hasRca ? (
                   <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
                     <div className="text-sm font-semibold text-[var(--text-strong)]">Generate ranked remediations</div>
@@ -3558,6 +3571,13 @@ function isAiPlaybookGenerationRemediation(remediation?: RemediationRecord) {
     return false;
   }
   return remediation.action_ref === AI_PLAYBOOK_GENERATION_ACTION || remediation.generation_kind === "request";
+}
+
+function isTicketEscalationRemediation(remediation?: RemediationRecord) {
+  if (!remediation) {
+    return false;
+  }
+  return remediation.action_ref === "open_plane_escalation";
 }
 
 function isAiGeneratedRemediation(remediation?: RemediationRecord) {
