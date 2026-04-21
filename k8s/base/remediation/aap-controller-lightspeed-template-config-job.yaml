@@ -24,6 +24,7 @@ spec:
               import base64
               import json
               import os
+              import ssl
               import urllib.error
               import urllib.parse
               import urllib.request
@@ -35,6 +36,11 @@ spec:
                   os.getenv("AAP_JOB_TEMPLATE_NAME", "IMS Remediation - Lightspeed Playbook Generator").strip()
                   or "IMS Remediation - Lightspeed Playbook Generator"
               )
+              k8s_job_template_name = (
+                  os.getenv("AAP_K8S_JOB_TEMPLATE_NAME", "ani-remediation").strip()
+                  or "ani-remediation"
+              )
+              namespace = os.getenv("POD_NAMESPACE", "aap").strip() or "aap"
               lightspeed_url = (
                   os.getenv(
                       "AAP_LIGHTSPEED_URL",
@@ -50,34 +56,64 @@ spec:
                   "0",
                   "no",
               }
+              kubernetes_host = os.environ["KUBERNETES_SERVICE_HOST"].strip()
+              kubernetes_port = os.getenv("KUBERNETES_SERVICE_PORT_HTTPS", "443").strip() or "443"
+              kubernetes_api = f"https://{kubernetes_host}:{kubernetes_port}"
+              service_account_dir = "/var/run/secrets/kubernetes.io/serviceaccount"
+              with open(f"{service_account_dir}/token", "r", encoding="utf-8") as handle:
+                  kubernetes_token = handle.read().strip()
+              kubernetes_ssl_context = ssl.create_default_context(
+                  cafile=f"{service_account_dir}/ca.crt"
+              )
 
               basic_auth = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
 
-              def request_json(method: str, path: str, payload: dict | None = None) -> dict:
-                  url = f"{host}{path}"
+              def request_json(
+                  method: str,
+                  url: str,
+                  headers: dict[str, str],
+                  payload: dict | None = None,
+                  ssl_context: ssl.SSLContext | None = None,
+              ) -> dict:
                   body = json.dumps(payload).encode("utf-8") if payload is not None else None
                   request = urllib.request.Request(
                       url,
                       data=body,
                       method=method,
-                      headers={
+                      headers=headers,
+                  )
+                  with urllib.request.urlopen(request, timeout=30, context=ssl_context) as response:
+                      return json.loads(response.read().decode("utf-8") or "{}")
+
+              def request_controller_json(method: str, path: str, payload: dict | None = None) -> dict:
+                  return request_json(
+                      method,
+                      f"{host}{path}",
+                      {
                           "Authorization": f"Basic {basic_auth}",
                           "Accept": "application/json",
                           "Content-Type": "application/json",
                       },
+                      payload=payload,
                   )
-                  with urllib.request.urlopen(request, timeout=30) as response:
-                      return json.loads(response.read().decode("utf-8") or "{}")
 
-              query_path = "/api/v2/job_templates/?page_size=200&name=" + urllib.parse.quote(template_name)
-              payload = request_json("GET", query_path)
-              results = payload.get("results", [])
-              template = next(
-                  (item for item in results if isinstance(item, dict) and str(item.get("name") or "") == template_name),
-                  None,
-              )
-              if template is None:
-                  raise SystemExit(f"Controller job template '{template_name}' was not found.")
+              def request_kubernetes_json(
+                  method: str,
+                  path: str,
+                  payload: dict | None = None,
+                  content_type: str = "application/json",
+              ) -> dict:
+                  return request_json(
+                      method,
+                      f"{kubernetes_api}{path}",
+                      {
+                          "Authorization": f"Bearer {kubernetes_token}",
+                          "Accept": "application/json",
+                          "Content-Type": content_type,
+                      },
+                      payload=payload,
+                      ssl_context=kubernetes_ssl_context,
+                  )
 
               extra_vars = {
                   "input_lightspeed_url": lightspeed_url,
@@ -87,10 +123,44 @@ spec:
                   "lightspeed_prompt": "",
                   "lightspeed_validate_certs": validate_certs,
               }
-              request_json("PATCH", f"/api/v2/job_templates/{int(template['id'])}/", {"extra_vars": json.dumps(extra_vars)})
+
+              request_kubernetes_json(
+                  "PATCH",
+                  "/apis/tower.ansible.com/v1alpha1/namespaces/"
+                  + urllib.parse.quote(namespace)
+                  + "/jobtemplates/"
+                  + urllib.parse.quote(k8s_job_template_name),
+                  {"spec": {"extra_vars": json.dumps(extra_vars)}},
+                  content_type="application/merge-patch+json",
+              )
+
+              query_path = "/api/v2/job_templates/?page_size=200&name=" + urllib.parse.quote(template_name)
+              payload = request_controller_json("GET", query_path)
+              results = payload.get("results", [])
+              template = next(
+                  (item for item in results if isinstance(item, dict) and str(item.get("name") or "") == template_name),
+                  None,
+              )
+              if template is None:
+                  raise SystemExit(f"Controller job template '{template_name}' was not found.")
+
+              controller_patch_applied = False
+              controller_patch_error = ""
+              try:
+                  request_controller_json(
+                      "PATCH",
+                      f"/api/v2/job_templates/{int(template['id'])}/",
+                      {"extra_vars": json.dumps(extra_vars)},
+                  )
+                  controller_patch_applied = True
+              except Exception as exc:  # pragma: no cover - best-effort fast path
+                  controller_patch_error = str(exc)
+
               print(
                   json.dumps(
                       {
+                          "k8s_job_template_name": k8s_job_template_name,
+                          "namespace": namespace,
                           "template_id": int(template["id"]),
                           "template_name": template_name,
                           "input_lightspeed_url": lightspeed_url,
@@ -98,6 +168,8 @@ spec:
                           "lightspeed_provider": lightspeed_provider,
                           "lightspeed_validate_certs": validate_certs,
                           "lightspeed_token_length": len(lightspeed_token),
+                          "controller_patch_applied": controller_patch_applied,
+                          "controller_patch_error": controller_patch_error,
                       }
                   )
               )
@@ -117,6 +189,8 @@ spec:
               value: "admin"
             - name: AAP_JOB_TEMPLATE_NAME
               value: "IMS Remediation - Lightspeed Playbook Generator"
+            - name: AAP_K8S_JOB_TEMPLATE_NAME
+              value: "ani-remediation"
             - name: AAP_LIGHTSPEED_URL
               value: "https://aap-lightspeed-chatbot-api.aap.svc.cluster.local:8443/v1/query"
             - name: AAP_LIGHTSPEED_TOKEN
@@ -130,6 +204,10 @@ spec:
               value: ""
             - name: AAP_LIGHTSPEED_VALIDATE_CERTS
               value: "false"
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           resources:
             requests:
               cpu: 50m

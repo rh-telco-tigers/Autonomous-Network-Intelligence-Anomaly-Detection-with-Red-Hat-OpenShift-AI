@@ -19,6 +19,11 @@
     template_name:     "{{ lookup('env', 'AAP_JOB_TEMPLATE_NAME') | default('IMS Remediation - Lightspeed Playbook Generator', true) }}"
     scm_url:           "{{ lookup('env', 'AAP_PROJECT_SCM_URL')   | default('http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git', true) }}"
     scm_branch:        "{{ lookup('env', 'AAP_PROJECT_BRANCH')    | default('main', true) }}"
+    lightspeed_url:    "{{ lookup('env', 'AAP_LIGHTSPEED_URL') | default('https://aap-lightspeed-chatbot-api.aap.svc.cluster.local:8443/v1/query', true) }}"
+    lightspeed_token:  "{{ lookup('env', 'AAP_LIGHTSPEED_TOKEN') | default('', true) }}"
+    lightspeed_model:  "{{ lookup('env', 'AAP_LIGHTSPEED_MODEL') | default('', true) }}"
+    lightspeed_provider: "{{ lookup('env', 'AAP_LIGHTSPEED_PROVIDER') | default('', true) }}"
+    lightspeed_validate_certs: "{{ lookup('env', 'AAP_LIGHTSPEED_VALIDATE_CERTS') | default('false', true) | bool }}"
 
   tasks:
     - name: Ensure IMS Remediation SCM project exists in Controller
@@ -74,9 +79,12 @@
           a generated playbook. Triggered by Kafka EDA events.
         ask_variables_on_launch: true
         extra_vars:
-          input_lightspeed_url: https://c.ai.ansible.redhat.com/api/v0/ai/generations/
-          lightspeed_wca_token: ""
-          lightspeed_prompt:    ""
+          input_lightspeed_url: "{{ lightspeed_url }}"
+          lightspeed_model: "{{ lightspeed_model }}"
+          lightspeed_provider: "{{ lightspeed_provider }}"
+          lightspeed_token: "{{ lightspeed_token }}"
+          lightspeed_prompt: ""
+          lightspeed_validate_certs: "{{ lightspeed_validate_certs }}"
         verbosity:             1
         state:                 present
         controller_host:       "{{ controller_host }}"
@@ -110,6 +118,8 @@
     template_name:       "{{ lookup('env', 'AAP_JOB_TEMPLATE_NAME') | default('IMS Remediation - Lightspeed Playbook Generator', true) }}"
     scm_url:             "{{ lookup('env', 'AAP_PROJECT_SCM_URL') | default('http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git', true) }}"
     scm_branch:          "{{ lookup('env', 'AAP_PROJECT_BRANCH') | default('main', true) }}"
+    lightspeed_url:      "{{ lookup('env', 'AAP_LIGHTSPEED_URL') | default('https://aap-lightspeed-chatbot-api.aap.svc.cluster.local:8443/v1/query', true) }}"
+    lightspeed_token:    "{{ lookup('env', 'AAP_LIGHTSPEED_TOKEN') | default('', true) }}"
 
   tasks:
     - name: Ensure EDA project exists (points to IMS-Anomaly repo)
@@ -151,8 +161,8 @@
         variables:
           controller_job_template_name: "{{ template_name }}"
           controller_organization_name: "{{ organization_name }}"
-          lightspeed_wca_token:         ""
-          input_lightspeed_url:         https://c.ai.ansible.redhat.com/api/v0/ai/generations/
+          lightspeed_token:             "{{ lightspeed_token }}"
+          input_lightspeed_url:         "{{ lightspeed_url }}"
         restart_policy: always
         enabled:        true
         state:          present

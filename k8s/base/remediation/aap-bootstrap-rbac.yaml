@@ -21,6 +21,12 @@ rules:
       - aap-controller-admin-password
       - aap-eda-admin-password
     verbs: ["get"]
+  # Persist secret-backed Lightspeed settings into the operator-managed JobTemplate CR
+  - apiGroups: ["tower.ansible.com"]
+    resources: ["jobtemplates"]
+    resourceNames:
+      - ani-remediation
+    verbs: ["get", "patch", "update"]
   # Create/update the connection secret used by tower.ansible.com CRDs
   - apiGroups: [""]
     resources: ["secrets"]
