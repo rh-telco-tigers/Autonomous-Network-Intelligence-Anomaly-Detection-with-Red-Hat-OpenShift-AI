@@ -287,6 +287,7 @@ export function IncidentWorkflowDetail() {
   const [knowledgeGuidanceExpanded, setKnowledgeGuidanceExpanded] = React.useState(false);
   const [focusedRemediationId, setFocusedRemediationId] = React.useState<number | null>(null);
   const [remediationNotes, setRemediationNotes] = React.useState<Record<number, string>>({});
+  const [activityDrawerOpen, setActivityDrawerOpen] = React.useState(false);
 
   const rcaRef = React.useRef<HTMLDivElement>(null);
   const remediationRef = React.useRef<HTMLDivElement>(null);
@@ -308,6 +309,24 @@ export function IncidentWorkflowDetail() {
       setCurrentPageUrl(window.location.href);
     }
   }, [incidentId]);
+
+  React.useEffect(() => {
+    if (!activityDrawerOpen || typeof window === "undefined" || typeof document === "undefined") {
+      return;
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setActivityDrawerOpen(false);
+      }
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [activityDrawerOpen]);
 
   const refreshWorkflow = React.useCallback(async () => {
     await Promise.all([
@@ -331,6 +350,15 @@ export function IncidentWorkflowDetail() {
   const scrollToSection = React.useCallback((ref: React.RefObject<HTMLDivElement | null>) => {
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
+
+  const openActivityDrawer = React.useCallback(() => {
+    setActivityDrawerOpen(true);
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => {
+        timelineRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 60);
+    }
+  }, [timelineRef]);
 
   const verificationForm = useForm<z.input<typeof verificationSchema>, unknown, z.output<typeof verificationSchema>>({
     resolver: zodResolver(verificationSchema),
@@ -846,7 +874,7 @@ export function IncidentWorkflowDetail() {
           scrollToSection(ticketRef);
           break;
         case "focusTimeline":
-          scrollToSection(timelineRef);
+          openActivityDrawer();
           break;
         case "focusKnowledge":
           scrollToSection(knowledgeRef);
@@ -870,7 +898,7 @@ export function IncidentWorkflowDetail() {
       scrollToSection,
       selectedRemediation,
       ticketRef,
-      timelineRef,
+      openActivityDrawer,
       verificationRef,
     ],
   );
@@ -931,6 +959,10 @@ export function IncidentWorkflowDetail() {
   const currentIncidentStep =
     incidentViewSteps.find((step) => step.status === "current" || step.status === "attention") ??
     incidentViewSteps[incidentViewSteps.length - 1];
+  const timelineEntries = incident.timeline ?? [];
+  const ticketCommentCount = currentTicket?.comments?.length ?? 0;
+  const activityEventCount = timelineEntries.length;
+  const latestTimelineEntry = timelineEntries[0];
 
   return (
     <div className="space-y-6">
@@ -988,6 +1020,9 @@ export function IncidentWorkflowDetail() {
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="secondary" onClick={() => void refreshWorkflow()} disabled={pending}>
               Refresh
+            </Button>
+            <Button variant="outline" onClick={openActivityDrawer}>
+              View activity
             </Button>
             {currentTicketHref ? (
               <Button asChild>
@@ -1063,6 +1098,35 @@ export function IncidentWorkflowDetail() {
                   {ticketAutoSyncHint}
                 </div>
 
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">Activity</div>
+                    <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">{activityEventCount}</div>
+                    <div className="mt-1 text-sm text-[var(--text-secondary)]">
+                      {activityEventCount === 1 ? "workflow event" : "workflow events"}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">Ticket updates</div>
+                    <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">{ticketCommentCount}</div>
+                    <div className="mt-1 text-sm text-[var(--text-secondary)]">
+                      {ticketCommentCount === 1 ? "comment synced" : "comments synced"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">Latest activity</div>
+                  <div className="mt-2 text-sm font-medium text-[var(--text-strong)]">
+                    {latestTimelineEntry?.title ?? "No workflow activity recorded yet."}
+                  </div>
+                  <div className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+                    {latestTimelineEntry?.detail
+                      ? truncateText(latestTimelineEntry.detail, 120)
+                      : "Generate RCA, choose a remediation, and record verification to build the incident story."}
+                  </div>
+                </div>
+
                 <div className="grid gap-2">
                   <Button
                     className="w-full"
@@ -1102,48 +1166,12 @@ export function IncidentWorkflowDetail() {
                         </a>
                       </Button>
                     ) : null}
+                    <Button variant="outline" className="w-full" onClick={openActivityDrawer}>
+                      View activity drawer
+                    </Button>
                     <Button variant="outline" className="w-full" onClick={() => void refreshWorkflow()}>
                       Refresh ticket context
                     </Button>
-                  </div>
-                </div>
-
-                {currentTicket?.comments?.length ? (
-                  <div className="space-y-3">
-                    <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Recent ticket updates</div>
-                    {currentTicket.comments.slice(0, 3).map((comment) => (
-                      <div key={comment.external_comment_id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-3">
-                        <div className="text-sm font-medium text-[var(--text-strong)]">
-                          {comment.author ?? "IMS Platform"} · {formatTime(comment.updated_at)}
-                        </div>
-                        <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[var(--text-secondary)]">
-                          {comment.body ?? "No comment body recorded."}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-
-                <div ref={timelineRef} className="space-y-4 border-t border-[var(--border-subtle)] pt-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Ticket and workflow timeline</div>
-                  <div className="space-y-4 border-l-2 border-[var(--border-subtle)] pl-5">
-                    {incident.timeline?.length ? (
-                      incident.timeline.map((entry, index) => (
-                        <div key={`${entry.time}-${entry.title}`} className="relative">
-                          <span className="absolute -left-[29px] top-1.5 h-3 w-3 rounded-full bg-sky-400 ring-4 ring-[var(--surface-raised)]" />
-                          <div className={cn(index > 1 && "opacity-80")}>
-                            <div className="text-sm font-semibold text-[var(--text-strong)]">{entry.title}</div>
-                            <div className="mt-1 text-xs text-[var(--text-muted)]">{formatTime(entry.time)}</div>
-                            <div className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{entry.detail}</div>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <InlineEmptyState
-                        title="No timeline entries yet"
-                        description="Generate RCA, choose a remediation, and record verification to build the incident story."
-                      />
-                    )}
                   </div>
                 </div>
               </CardContent>
@@ -1679,6 +1707,125 @@ export function IncidentWorkflowDetail() {
         </section>
 
       </div>
+
+      {activityDrawerOpen ? (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <button
+            type="button"
+            aria-label="Close activity drawer"
+            className="absolute inset-0 bg-slate-950/55 backdrop-blur-sm"
+            onClick={() => setActivityDrawerOpen(false)}
+          />
+          <div className="relative z-10 flex h-full w-full max-w-[500px] flex-col border-l border-[var(--border-subtle)] bg-[var(--surface-raised)] shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] px-5 py-4">
+              <div className="min-w-0">
+                <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Incident activity</div>
+                <div className="mt-2 text-xl font-semibold text-[var(--text-strong)]">Timeline and trace context</div>
+                <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                  Open the detailed activity stream only when you need ticket updates, workflow events, or raw trace packets.
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setActivityDrawerOpen(false)}>
+                Close
+              </Button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-5">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">Workflow events</div>
+                  <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">{activityEventCount}</div>
+                </div>
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">Ticket comments</div>
+                  <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">{ticketCommentCount}</div>
+                </div>
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">Last event</div>
+                  <div className="mt-2 text-sm font-medium text-[var(--text-strong)]">
+                    {latestTimelineEntry ? formatTime(latestTimelineEntry.time) : "Not recorded"}
+                  </div>
+                </div>
+              </div>
+
+              <div ref={timelineRef} className="mt-6">
+                <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Workflow timeline</div>
+                <div className="mt-4 space-y-4 border-l-2 border-[var(--border-subtle)] pl-5">
+                  {timelineEntries.length ? (
+                    timelineEntries.map((entry) => (
+                      <div key={`${entry.time}-${entry.title}`} className="relative">
+                        <span className="absolute -left-[29px] top-1.5 h-3 w-3 rounded-full bg-sky-400 ring-4 ring-[var(--surface-raised)]" />
+                        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                          <div className="text-sm font-semibold text-[var(--text-strong)]">{entry.title}</div>
+                          <div className="mt-1 text-xs text-[var(--text-muted)]">{formatTime(entry.time)}</div>
+                          {shouldCollapseActivityDetail(entry.detail) ? (
+                            <details className="mt-3 group">
+                              <summary className="cursor-pointer list-none text-sm leading-6 text-[var(--text-secondary)]">
+                                {truncateText(entry.detail, 180)}
+                                <span className="ml-2 text-xs font-medium uppercase tracking-[0.16em] text-sky-300">
+                                  Expand packet
+                                </span>
+                              </summary>
+                              <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-3 text-xs leading-6 text-[var(--text-secondary)]">
+                                {entry.detail}
+                              </pre>
+                            </details>
+                          ) : (
+                            <div className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{entry.detail}</div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <InlineEmptyState
+                      title="No timeline entries yet"
+                      description="Generate RCA, choose a remediation, and record verification to build the incident story."
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Recent ticket updates</div>
+                <div className="mt-4 space-y-3">
+                  {currentTicket?.comments?.length ? (
+                    currentTicket.comments.slice(0, 4).map((comment) => (
+                      <div key={comment.external_comment_id} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                        <div className="text-sm font-medium text-[var(--text-strong)]">
+                          {comment.author ?? "IMS Platform"} · {formatTime(comment.updated_at)}
+                        </div>
+                        <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--text-secondary)]">
+                          {comment.body ?? "No comment body recorded."}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <InlineEmptyState
+                      title="No ticket comments yet"
+                      description="Ticket sync updates will appear here after the incident is mirrored into Plane."
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Deep trace</div>
+                <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                  Use the detailed execution trace page when you need the exact request bodies, model payloads, and workflow event packets.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button asChild>
+                    <Link href={`/incidents/${encodeURIComponent(incident.id)}/debug`}>View Detailed Execution Trace</Link>
+                  </Button>
+                  <Button variant="outline" onClick={() => void refreshWorkflow()}>
+                    Refresh activity
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3632,6 +3779,11 @@ function truncateText(value: string | null | undefined, limit: number) {
     return text;
   }
   return `${text.slice(0, limit - 1)}...`;
+}
+
+function shouldCollapseActivityDetail(value: string | null | undefined) {
+  const text = String(value ?? "").trim();
+  return text.length > 180 || text.startsWith("{") || text.includes('":') || text.includes("http://") || text.includes("https://");
 }
 
 function evidenceDocumentHref(incidentId: string, collection: string, reference: string) {
