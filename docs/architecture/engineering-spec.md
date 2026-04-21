@@ -714,7 +714,8 @@ Decision:
 flowchart TD
   KFP["feature-store KFP pipeline"] --> ExportS3["MLServer bundle export"]
   ExportS3 --> BackfillS3["ani-predictive-backfill<br/>S3-backed MLServer InferenceService"]
-  ExportS3 --> ModelcarPublish["Tekton modelcar publish"]
+  ExportS3 --> ModelcarBuild["Tekton modelcar build<br/>internal registry"]
+  ModelcarBuild --> ModelcarPublish["Optional Quay publish<br/>skip cleanly without Quay auth"]
   ModelcarPublish --> ModelcarISVC["ani-predictive-backfill-modelcar<br/>OCI-backed MLServer InferenceService"]
   Client["anomaly-service / control-plane"] --> Adapter["score adapter"]
   Adapter --> BackfillS3
@@ -734,7 +735,7 @@ s3://ani-models/predictive-featurestore/ani-predictive-backfill/current/
     model-settings.json
     predictor/
 
-oci://image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar:current
+oci://quay.io/autonomousnetworkintelligence/ani-predictive-backfill-modelcar:latest
   /models/serving-metadata.json
   /models/ani-predictive-backfill-modelcar/model-settings.json
   /models/ani-predictive-backfill-modelcar/predictor/
@@ -773,6 +774,7 @@ Deployment notes:
 - `ani-predictive-fs` is the current default MLServer-backed remote-scoring endpoint
 - `ani-predictive-backfill` remains the MinIO-backed backfill path produced by the current backfill workflow
 - `ani-predictive-backfill-modelcar` is the OCI-packaged variant meant for reuse across demo clusters after one training run
+- the Tekton modelcar branch builds in the internal registry first, then attempts a non-blocking publish to Quay so fresh clusters can serve from `quay.io/...:latest`
 
 ##### Implemented Repo Changes And Remaining Hardening
 

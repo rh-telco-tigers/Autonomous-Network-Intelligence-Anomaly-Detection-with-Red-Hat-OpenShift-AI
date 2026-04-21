@@ -22,11 +22,17 @@ BACKFILL_SERVING_RUNTIME_NAME ?= ani-autogluon-mlserver-runtime
 BACKFILL_SERVING_PREFIX ?= predictive-featurestore
 BACKFILL_MODELCAR_MODEL_NAME ?= ani-anomaly-featurestore-backfill-modelcar
 BACKFILL_MODELCAR_MODEL_VERSION_NAME ?= ani-anomaly-featurestore-backfill-modelcar-v1
-BACKFILL_MODELCAR_IMAGE_REPOSITORY ?= image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar
+BACKFILL_MODELCAR_BUILD_IMAGE_REPOSITORY ?= image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar
+BACKFILL_MODELCAR_IMAGE_REPOSITORY ?= quay.io/$(QUAY_ORGANIZATION)/ani-predictive-backfill-modelcar
+BACKFILL_MODELCAR_BUILD_STABLE_IMAGE_TAG ?= current
+BACKFILL_MODELCAR_STABLE_IMAGE_TAG ?= latest
 BACKFILL_MODELCAR_SERVING_MODEL_NAME ?= ani-predictive-backfill-modelcar
 BACKFILL_MODELCAR_SERVING_RUNTIME_NAME ?= ani-autogluon-mlserver-runtime
 BACKFILL_MODELCAR_GIT_URL ?= http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
 BACKFILL_MODELCAR_GIT_REVISION ?= main
+BACKFILL_MODELCAR_PUBLISH_TO_QUAY ?= auto
+BACKFILL_MODELCAR_QUAY_IMAGE_TAG ?=
+BACKFILL_MODELCAR_QUAY_PROMOTE_LATEST ?= true
 INCIDENT_RELEASE_VERSION ?=
 INCIDENT_RELEASE_MODE ?= draft-replacement
 INCIDENT_RELEASE_PUBLIC_RECORD_TARGET ?= 10000
@@ -325,13 +331,56 @@ backfill-step-3-train-and-register-classifier: ## Backfill Step 3: Train the bes
 	MODEL_REGISTRY_SERVICE="$(MODEL_REGISTRY_SERVICE)" \
 	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/backfill-featurestore-run-job.yaml").read_text(); replacements = {"__BACKFILL_BUNDLE_VERSION__": os.environ["BACKFILL_BUNDLE_VERSION"], "__BACKFILL_FEATURE_SERVICE_NAME__": os.environ["BACKFILL_FEATURE_SERVICE_NAME"], "__BACKFILL_CANDIDATE_VERSION__": os.environ["BACKFILL_CANDIDATE_VERSION"], "__BACKFILL_MODEL_NAME__": os.environ["BACKFILL_MODEL_NAME"], "__BACKFILL_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODEL_VERSION_NAME"], "__BACKFILL_SERVING_MODEL_NAME__": os.environ["BACKFILL_SERVING_MODEL_NAME"], "__BACKFILL_SERVING_RUNTIME_NAME__": os.environ["BACKFILL_SERVING_RUNTIME_NAME"], "__BACKFILL_SERVING_PREFIX__": os.environ["BACKFILL_SERVING_PREFIX"], "__MODEL_REGISTRY_ENDPOINT__": os.environ["MODEL_REGISTRY_ENDPOINT"], "__MODEL_REGISTRY_NAMESPACE__": os.environ["MODEL_REGISTRY_NAMESPACE"], "__MODEL_REGISTRY_SERVICE__": os.environ["MODEL_REGISTRY_SERVICE"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -
 
-backfill-modelcar-step-1-publish-image: ## Backfill Modelcar Step 1: Package the registered backfill model as an OCI modelcar image in the internal registry
-	@printf "Waiting for Tekton modelcar assets in %s before publishing the image\n" "$(TEKTON_NAMESPACE)"; \
+backfill-modelcar-step-1-publish-image: ## Backfill Modelcar Step 1: Package the registered backfill model as an OCI modelcar image and optionally publish it to Quay
+	@publish_to_quay="$(BACKFILL_MODELCAR_PUBLISH_TO_QUAY)"; \
+	quay_image_tag="$(BACKFILL_MODELCAR_QUAY_IMAGE_TAG)"; \
+	if [ -z "$$quay_image_tag" ]; then \
+	  quay_image_tag="$(BACKFILL_MODELCAR_MODEL_VERSION_NAME)"; \
+	fi; \
+	print_modelcar_help() { \
+	  printf "backfill-modelcar-step-1-publish-image options:\n"; \
+	  printf "  make backfill-modelcar-step-1-publish-image [BACKFILL_MODELCAR_PUBLISH_TO_QUAY=auto|true|false] [BACKFILL_MODELCAR_QUAY_IMAGE_TAG=<tag>] [BACKFILL_MODELCAR_QUAY_PROMOTE_LATEST=true|false]\n"; \
+	  printf "\n"; \
+	  printf "  Build repository: %s\n" "$(BACKFILL_MODELCAR_BUILD_IMAGE_REPOSITORY)"; \
+	  printf "  Quay repository: %s\n" "$(BACKFILL_MODELCAR_IMAGE_REPOSITORY)"; \
+	  printf "  Default Quay tag for this run: %s\n" "$$quay_image_tag"; \
+	  printf "\n"; \
+	}; \
+	if [ -z "$$publish_to_quay" ] || [ "$$publish_to_quay" = "auto" ]; then \
+	  print_modelcar_help; \
+	  if oc get secret "$(QUAY_PUSH_SECRET_NAME)" -n "$(TEKTON_NAMESPACE)" >/dev/null 2>&1; then \
+	    publish_to_quay=true; \
+	    printf "Auto-detected Quay secret %s in %s. Quay publish is enabled.\n" "$(QUAY_PUSH_SECRET_NAME)" "$(TEKTON_NAMESPACE)"; \
+	  else \
+	    publish_to_quay=false; \
+	    printf "Secret %s is not present in %s. Quay publish is disabled for this run.\n" "$(QUAY_PUSH_SECRET_NAME)" "$(TEKTON_NAMESPACE)"; \
+	  fi; \
+	else \
+	  case "$$publish_to_quay" in \
+	    true|false) ;; \
+	    *) \
+	      echo "BACKFILL_MODELCAR_PUBLISH_TO_QUAY must be one of: auto, true, false"; \
+	      exit 1; \
+	      ;; \
+	  esac; \
+	fi; \
+	case "$(BACKFILL_MODELCAR_QUAY_PROMOTE_LATEST)" in \
+	  true|false) ;; \
+	  *) \
+	    echo "BACKFILL_MODELCAR_QUAY_PROMOTE_LATEST must be true or false"; \
+	    exit 1; \
+	    ;; \
+	esac; \
+	if [ "$$publish_to_quay" = "true" ] && ! oc get secret "$(QUAY_PUSH_SECRET_NAME)" -n "$(TEKTON_NAMESPACE)" >/dev/null 2>&1; then \
+	  printf "Warning: BACKFILL_MODELCAR_PUBLISH_TO_QUAY=true but secret %s is missing in %s. The Tekton publish stage will skip cleanly.\n" "$(QUAY_PUSH_SECRET_NAME)" "$(TEKTON_NAMESPACE)"; \
+	fi; \
+	printf "Waiting for Tekton modelcar assets in %s before publishing the image\n" "$(TEKTON_NAMESPACE)"; \
 	for resource in \
 	  "pipelines.tekton.dev/ani-backfill-modelcar-publish" \
 	  "tasks.tekton.dev/prepare-modelcar-context" \
 	  "tasks.tekton.dev/buildah-lite" \
 	  "tasks.tekton.dev/copy-image-lite" \
+	  "tasks.tekton.dev/publish-image-if-authenticated" \
 	  "tasks.tekton.dev/register-modelcar-version"; do \
 	  for attempt in $$(seq 1 60); do \
 	    if oc get "$$resource" -n "$(TEKTON_NAMESPACE)" >/dev/null 2>&1; then \
@@ -351,14 +400,20 @@ backfill-modelcar-step-1-publish-image: ## Backfill Modelcar Step 1: Package the
 	BACKFILL_MODELCAR_MODEL_NAME="$(BACKFILL_MODELCAR_MODEL_NAME)" \
 	BACKFILL_MODELCAR_MODEL_VERSION_NAME="$(BACKFILL_MODELCAR_MODEL_VERSION_NAME)" \
 	BACKFILL_FEATURE_SERVICE_NAME="$(BACKFILL_FEATURE_SERVICE_NAME)" \
+	BACKFILL_MODELCAR_BUILD_IMAGE_REPOSITORY="$(BACKFILL_MODELCAR_BUILD_IMAGE_REPOSITORY)" \
 	BACKFILL_MODELCAR_IMAGE_REPOSITORY="$(BACKFILL_MODELCAR_IMAGE_REPOSITORY)" \
+	BACKFILL_MODELCAR_BUILD_STABLE_IMAGE_TAG="$(BACKFILL_MODELCAR_BUILD_STABLE_IMAGE_TAG)" \
+	BACKFILL_MODELCAR_STABLE_IMAGE_TAG="$(BACKFILL_MODELCAR_STABLE_IMAGE_TAG)" \
 	BACKFILL_MODELCAR_SERVING_MODEL_NAME="$(BACKFILL_MODELCAR_SERVING_MODEL_NAME)" \
 	BACKFILL_MODELCAR_SERVING_RUNTIME_NAME="$(BACKFILL_MODELCAR_SERVING_RUNTIME_NAME)" \
 	BACKFILL_MODELCAR_GIT_URL="$(BACKFILL_MODELCAR_GIT_URL)" \
 	BACKFILL_MODELCAR_GIT_REVISION="$(BACKFILL_MODELCAR_GIT_REVISION)" \
+	BACKFILL_MODELCAR_PUBLISH_TO_QUAY="$$publish_to_quay" \
+	BACKFILL_MODELCAR_QUAY_IMAGE_TAG="$$quay_image_tag" \
+	BACKFILL_MODELCAR_QUAY_PROMOTE_LATEST="$(BACKFILL_MODELCAR_QUAY_PROMOTE_LATEST)" \
 	MODEL_REGISTRY_ENDPOINT="$(MODEL_REGISTRY_ENDPOINT)" \
 	TEKTON_NAMESPACE="$(TEKTON_NAMESPACE)" \
-	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/backfill-modelcar-pipelinerun.yaml").read_text(); replacements = {"__TEKTON_NAMESPACE__": os.environ["TEKTON_NAMESPACE"], "__BACKFILL_MODELCAR_GIT_URL__": os.environ["BACKFILL_MODELCAR_GIT_URL"], "__BACKFILL_MODELCAR_GIT_REVISION__": os.environ["BACKFILL_MODELCAR_GIT_REVISION"], "__BACKFILL_MODEL_NAME__": os.environ["BACKFILL_MODEL_NAME"], "__BACKFILL_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODEL_VERSION_NAME"], "__BACKFILL_MODELCAR_MODEL_NAME__": os.environ["BACKFILL_MODELCAR_MODEL_NAME"], "__BACKFILL_MODELCAR_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODELCAR_MODEL_VERSION_NAME"], "__BACKFILL_FEATURE_SERVICE_NAME__": os.environ["BACKFILL_FEATURE_SERVICE_NAME"], "__BACKFILL_MODELCAR_IMAGE_REPOSITORY__": os.environ["BACKFILL_MODELCAR_IMAGE_REPOSITORY"], "__BACKFILL_MODELCAR_SERVING_MODEL_NAME__": os.environ["BACKFILL_MODELCAR_SERVING_MODEL_NAME"], "__BACKFILL_MODELCAR_SERVING_RUNTIME_NAME__": os.environ["BACKFILL_MODELCAR_SERVING_RUNTIME_NAME"], "__MODEL_REGISTRY_ENDPOINT__": os.environ["MODEL_REGISTRY_ENDPOINT"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -; \
+	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/backfill-modelcar-pipelinerun.yaml").read_text(); replacements = {"__TEKTON_NAMESPACE__": os.environ["TEKTON_NAMESPACE"], "__BACKFILL_MODELCAR_GIT_URL__": os.environ["BACKFILL_MODELCAR_GIT_URL"], "__BACKFILL_MODELCAR_GIT_REVISION__": os.environ["BACKFILL_MODELCAR_GIT_REVISION"], "__BACKFILL_MODEL_NAME__": os.environ["BACKFILL_MODEL_NAME"], "__BACKFILL_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODEL_VERSION_NAME"], "__BACKFILL_MODELCAR_MODEL_NAME__": os.environ["BACKFILL_MODELCAR_MODEL_NAME"], "__BACKFILL_MODELCAR_MODEL_VERSION_NAME__": os.environ["BACKFILL_MODELCAR_MODEL_VERSION_NAME"], "__BACKFILL_FEATURE_SERVICE_NAME__": os.environ["BACKFILL_FEATURE_SERVICE_NAME"], "__BACKFILL_MODELCAR_BUILD_IMAGE_REPOSITORY__": os.environ["BACKFILL_MODELCAR_BUILD_IMAGE_REPOSITORY"], "__BACKFILL_MODELCAR_IMAGE_REPOSITORY__": os.environ["BACKFILL_MODELCAR_IMAGE_REPOSITORY"], "__BACKFILL_MODELCAR_BUILD_STABLE_IMAGE_TAG__": os.environ["BACKFILL_MODELCAR_BUILD_STABLE_IMAGE_TAG"], "__BACKFILL_MODELCAR_STABLE_IMAGE_TAG__": os.environ["BACKFILL_MODELCAR_STABLE_IMAGE_TAG"], "__BACKFILL_MODELCAR_PUBLISH_TO_QUAY__": os.environ["BACKFILL_MODELCAR_PUBLISH_TO_QUAY"], "__BACKFILL_MODELCAR_QUAY_IMAGE_TAG__": os.environ["BACKFILL_MODELCAR_QUAY_IMAGE_TAG"], "__BACKFILL_MODELCAR_QUAY_PROMOTE_LATEST__": os.environ["BACKFILL_MODELCAR_QUAY_PROMOTE_LATEST"], "__BACKFILL_MODELCAR_SERVING_MODEL_NAME__": os.environ["BACKFILL_MODELCAR_SERVING_MODEL_NAME"], "__BACKFILL_MODELCAR_SERVING_RUNTIME_NAME__": os.environ["BACKFILL_MODELCAR_SERVING_RUNTIME_NAME"], "__MODEL_REGISTRY_ENDPOINT__": os.environ["MODEL_REGISTRY_ENDPOINT"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -; \
 	printf "Watch PipelineRuns: oc get pipelinerun -n %s | rg 'ani-backfill-modelcar'\n" "$(TEKTON_NAMESPACE)"; \
 	printf "Next modelcar step: make backfill-modelcar-step-2-smoke-check-serving\n"
 

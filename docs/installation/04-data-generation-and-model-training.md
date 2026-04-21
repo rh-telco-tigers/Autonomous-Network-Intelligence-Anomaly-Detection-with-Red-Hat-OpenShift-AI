@@ -269,9 +269,10 @@ oc get pipelinerun -n ani-tekton | rg 'ani-backfill-modelcar'
 
 Expected result:
 
-- the modelcar image is pushed to `image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar`
+- the Tekton build packages the modelcar image in the internal registry and then attempts to publish `quay.io/autonomousnetworkintelligence/ani-predictive-backfill-modelcar`
+- if the Quay secret `autonomousnetworkintelligence-ocpani-pull-secret` is missing or does not contain `quay.io` credentials, the publish stage skips cleanly without failing the PipelineRun
 - the OCI artifact is registered in the model registry under the modelcar model name
-- the GitOps-managed `ani-predictive-backfill-modelcar` endpoint can resolve the `current` tag without rerunning backfill generation
+- the GitOps-managed `ani-predictive-backfill-modelcar` endpoint can resolve the Quay `latest` tag without rerunning backfill generation
 
 ### 7. Optional: Smoke-Check The Modelcar Predictor
 
@@ -299,5 +300,5 @@ Changing that selector updates the control-plane classifier profile. New classif
 ## Notes
 
 - `legacy-train-and-deploy-classifier` is the older compatibility path. Do not use it for the preferred demo flow.
-- The modelcar branch assumes the serving service account can resolve and pull `oci://image-registry.openshift-image-registry.svc:5000/...` from the same cluster. If your cluster blocks that path, add the required registry pull secret to `model-storage-sa` before switching the UI profile to `modelcar`.
+- The modelcar branch serves from `oci://quay.io/autonomousnetworkintelligence/ani-predictive-backfill-modelcar:latest`. If you want `make backfill-modelcar-step-1-publish-image` to refresh that artifact, create the Tekton secret `autonomousnetworkintelligence-ocpani-pull-secret` with Quay push credentials first. Without that secret, the build still succeeds but the Quay publish stage is skipped.
 - If the live incident generation step starts returning `502` after the serving smoke check, check [Troubleshooting](./troubleshooting.md), especially the sections around image drift and serving readiness.

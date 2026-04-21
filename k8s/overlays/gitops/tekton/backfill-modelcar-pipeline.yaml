@@ -25,12 +25,27 @@ spec:
     - name: feature-service-name
       type: string
       default: ani_anomaly_scoring_v1
-    - name: image-repository
+    - name: build-image-repository
       type: string
       default: image-registry.openshift-image-registry.svc:5000/ani-datascience/ani-predictive-backfill-modelcar
-    - name: stable-image-tag
+    - name: image-repository
+      type: string
+      default: quay.io/autonomousnetworkintelligence/ani-predictive-backfill-modelcar
+    - name: build-stable-image-tag
       type: string
       default: current
+    - name: stable-image-tag
+      type: string
+      default: latest
+    - name: publish-to-quay
+      type: string
+      default: "false"
+    - name: quay-image-tag
+      type: string
+      default: ""
+    - name: quay-promote-latest
+      type: string
+      default: "true"
     - name: modelcar-serving-model-name
       type: string
       default: ani-predictive-backfill-modelcar
@@ -88,7 +103,7 @@ spec:
         name: buildah-lite
       params:
         - name: IMAGE
-          value: $(params.image-repository):$(params.target-model-version-name)
+          value: $(params.build-image-repository):$(params.target-model-version-name)
         - name: CONTEXT
           value: ./modelcar
         - name: DOCKERFILE
@@ -103,12 +118,30 @@ spec:
         name: copy-image-lite
       params:
         - name: SOURCE_IMAGE
-          value: $(params.image-repository):$(params.target-model-version-name)
+          value: $(params.build-image-repository):$(params.target-model-version-name)
         - name: DEST_IMAGE
-          value: $(params.image-repository):$(params.stable-image-tag)
-    - name: register-modelcar-version
+          value: $(params.build-image-repository):$(params.build-stable-image-tag)
+    - name: publish-modelcar-to-quay
       runAfter:
         - promote-modelcar-stable-tag
+      taskRef:
+        name: publish-image-if-authenticated
+      params:
+        - name: SOURCE_IMAGE
+          value: $(tasks.build-modelcar-image.results.IMAGE_URL)
+        - name: DEST_IMAGE_REPO
+          value: $(params.image-repository)
+        - name: IMAGE_TAG
+          value: $(params.quay-image-tag)
+        - name: FALLBACK_IMAGE_TAG
+          value: $(params.target-model-version-name)
+        - name: PUBLISH_ENABLED
+          value: $(params.publish-to-quay)
+        - name: PROMOTE_LATEST
+          value: $(params.quay-promote-latest)
+    - name: register-modelcar-version
+      runAfter:
+        - publish-modelcar-to-quay
       taskRef:
         name: register-modelcar-version
       params:

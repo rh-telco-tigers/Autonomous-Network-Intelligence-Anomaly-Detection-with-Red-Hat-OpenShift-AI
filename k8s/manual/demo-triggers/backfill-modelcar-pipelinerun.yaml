@@ -21,8 +21,20 @@ spec:
       value: __BACKFILL_MODELCAR_MODEL_VERSION_NAME__
     - name: feature-service-name
       value: __BACKFILL_FEATURE_SERVICE_NAME__
+    - name: build-image-repository
+      value: __BACKFILL_MODELCAR_BUILD_IMAGE_REPOSITORY__
     - name: image-repository
       value: __BACKFILL_MODELCAR_IMAGE_REPOSITORY__
+    - name: build-stable-image-tag
+      value: __BACKFILL_MODELCAR_BUILD_STABLE_IMAGE_TAG__
+    - name: stable-image-tag
+      value: __BACKFILL_MODELCAR_STABLE_IMAGE_TAG__
+    - name: publish-to-quay
+      value: "__BACKFILL_MODELCAR_PUBLISH_TO_QUAY__"
+    - name: quay-image-tag
+      value: "__BACKFILL_MODELCAR_QUAY_IMAGE_TAG__"
+    - name: quay-promote-latest
+      value: "__BACKFILL_MODELCAR_QUAY_PROMOTE_LATEST__"
     - name: modelcar-serving-model-name
       value: __BACKFILL_MODELCAR_SERVING_MODEL_NAME__
     - name: modelcar-serving-runtime-name

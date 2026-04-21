@@ -46,7 +46,7 @@ make backfill-step-4-activate-serving-endpoint
 make backfill-step-5-smoke-check-serving
 ```
 
-7. Optional: publish the trained backfill model as an OCI modelcar image in the internal registry:
+7. Optional: publish the trained backfill model as an OCI modelcar image for Quay-backed reuse across clusters:
 
 ```sh
 make backfill-modelcar-step-1-publish-image
