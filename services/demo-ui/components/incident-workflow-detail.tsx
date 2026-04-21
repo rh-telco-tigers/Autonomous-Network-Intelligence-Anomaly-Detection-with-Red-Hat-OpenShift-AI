@@ -52,11 +52,6 @@ const verificationSchema = z.object({
   close_after_verify: z.boolean().default(false),
 });
 
-const ticketSchema = z.object({
-  note: z.string().optional(),
-  force: z.boolean().default(false),
-});
-
 type Notice = {
   kind: "success" | "warning" | "error";
   message: string;
@@ -350,14 +345,6 @@ export function IncidentWorkflowDetail() {
     },
   });
 
-  const ticketForm = useForm<z.input<typeof ticketSchema>, unknown, z.output<typeof ticketSchema>>({
-    resolver: zodResolver(ticketSchema),
-    defaultValues: {
-      note: "",
-      force: false,
-    },
-  });
-
   const generateRcaMutation = useMutation({
     mutationFn: async () => {
       return request<{ rca: RcaPayload; workflow: IncidentWorkflow }>(
@@ -485,7 +472,7 @@ export function IncidentWorkflowDetail() {
   });
 
   const ticketMutation = useMutation({
-    mutationFn: async (values: z.output<typeof ticketSchema>) => {
+    mutationFn: async (values: { note?: string; force?: boolean }) => {
       return request<{ ticket: TicketRecord }>(`/api/incidents/${encodeURIComponent(incidentId)}/tickets/plane`, token, {
         method: "POST",
         body: JSON.stringify({ ...values, source_url: currentPageUrl }),
@@ -496,7 +483,6 @@ export function IncidentWorkflowDetail() {
       const opened = openTicket(payload.ticket);
       const operationStatus = String(payload.ticket.operation?.status ?? "").trim().toLowerCase();
       const ticketAction = operationStatus === "created" ? "Plane ticket created" : "Plane ticket synced";
-      ticketForm.reset({ note: "", force: false });
       setNotice({
         kind: "success",
         message: opened ? `${ticketAction} with RCA context and incident link, then opened in a new tab.` : `${ticketAction} with RCA context and incident link.`,
@@ -945,11 +931,6 @@ export function IncidentWorkflowDetail() {
   const currentIncidentStep =
     incidentViewSteps.find((step) => step.status === "current" || step.status === "attention") ??
     incidentViewSteps[incidentViewSteps.length - 1];
-  const ticketDraftNote = ticketForm.watch("note");
-  const plannedTicketNote = truncateText(
-    ticketDraftNote?.trim() || latestRcaAnalysis || flowGuide.subtext || "Ticket updates will appear here once you add a note.",
-    220,
-  );
 
   return (
     <div className="space-y-6">
@@ -1023,8 +1004,8 @@ export function IncidentWorkflowDetail() {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)_360px]">
-        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
+      <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
+        <aside className="space-y-4 xl:self-start">
           <Card>
             <CardContent className="space-y-4 p-5">
               <div>
@@ -1058,6 +1039,116 @@ export function IncidentWorkflowDetail() {
             </CardContent>
           </Card>
 
+          <div ref={ticketRef}>
+            <Card className={cn(!ticketUnlocked && !hasTicket && "opacity-70")}>
+              <CardContent className="space-y-6 p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Incident ticket</div>
+                    <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">
+                      {currentTicket?.external_key ?? currentTicket?.external_id ?? "Ticket not created"}
+                    </div>
+                  </div>
+                  <StatusBadge value={currentTicket?.sync_state ?? (currentTicket ? "synced" : "pending")} />
+                </div>
+
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <div className="text-sm font-medium text-[var(--text-strong)]">
+                    {currentTicket?.title ?? "This incident has not been synced to a collaboration ticket yet."}
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{flowGuide.ticketHint}</p>
+                </div>
+
+                <div className="rounded-2xl border border-sky-400/20 bg-sky-500/8 p-4 text-sm leading-6 text-[var(--text-secondary)]">
+                  {ticketAutoSyncHint}
+                </div>
+
+                <div className="grid gap-2">
+                  <Button
+                    className="w-full"
+                    disabled={!ticketUnlocked || ticketMutation.isPending || ticketSyncMutation.isPending}
+                    onClick={() => {
+                      if (!ticketUnlocked) {
+                        return;
+                      }
+                      if (currentTicket) {
+                        void ticketSyncMutation.mutateAsync(currentTicket.id);
+                        return;
+                      }
+                      void ticketMutation.mutateAsync({ note: "", force: false });
+                    }}
+                  >
+                    {ticketMutation.isPending || ticketSyncMutation.isPending
+                      ? "Syncing..."
+                      : currentTicket
+                        ? "Sync Plane ticket with latest RCA"
+                        : ticketUnlocked
+                          ? "Create Plane ticket with RCA"
+                          : "Ticket waits for RCA"}
+                  </Button>
+
+                  <div className="flex flex-wrap gap-2">
+                    {currentTicketHref ? (
+                      <Button asChild variant="secondary" className="flex-1">
+                        <a href={currentTicketHref} target="_blank" rel="noreferrer">
+                          Open ticket
+                        </a>
+                      </Button>
+                    ) : null}
+                    {incidentWorkspaceHref ? (
+                      <Button asChild variant="outline" className="flex-1">
+                        <a href={incidentWorkspaceHref} target="_blank" rel="noreferrer">
+                          Open incident page
+                        </a>
+                      </Button>
+                    ) : null}
+                    <Button variant="outline" className="w-full" onClick={() => void refreshWorkflow()}>
+                      Refresh ticket context
+                    </Button>
+                  </div>
+                </div>
+
+                {currentTicket?.comments?.length ? (
+                  <div className="space-y-3">
+                    <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Recent ticket updates</div>
+                    {currentTicket.comments.slice(0, 3).map((comment) => (
+                      <div key={comment.external_comment_id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-3">
+                        <div className="text-sm font-medium text-[var(--text-strong)]">
+                          {comment.author ?? "IMS Platform"} · {formatTime(comment.updated_at)}
+                        </div>
+                        <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[var(--text-secondary)]">
+                          {comment.body ?? "No comment body recorded."}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div ref={timelineRef} className="space-y-4 border-t border-[var(--border-subtle)] pt-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Ticket and workflow timeline</div>
+                  <div className="space-y-4 border-l-2 border-[var(--border-subtle)] pl-5">
+                    {incident.timeline?.length ? (
+                      incident.timeline.map((entry, index) => (
+                        <div key={`${entry.time}-${entry.title}`} className="relative">
+                          <span className="absolute -left-[29px] top-1.5 h-3 w-3 rounded-full bg-sky-400 ring-4 ring-[var(--surface-raised)]" />
+                          <div className={cn(index > 1 && "opacity-80")}>
+                            <div className="text-sm font-semibold text-[var(--text-strong)]">{entry.title}</div>
+                            <div className="mt-1 text-xs text-[var(--text-muted)]">{formatTime(entry.time)}</div>
+                            <div className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{entry.detail}</div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <InlineEmptyState
+                        title="No timeline entries yet"
+                        description="Generate RCA, choose a remediation, and record verification to build the incident story."
+                      />
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </aside>
 
         <section className="space-y-6">
@@ -1587,141 +1678,6 @@ export function IncidentWorkflowDetail() {
           </div>
         </section>
 
-        <aside className="space-y-6 xl:sticky xl:top-24 xl:self-start">
-          <div ref={timelineRef}>
-            <Card>
-              <CardContent className="space-y-6 p-6">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Incident ticket</div>
-                    <div className="mt-2 text-lg font-semibold text-[var(--text-strong)]">
-                      {currentTicket?.external_key ?? currentTicket?.external_id ?? "Ticket not created"}
-                    </div>
-                  </div>
-                  <StatusBadge value={currentTicket?.sync_state ?? (currentTicket ? "synced" : "pending")} />
-                </div>
-
-                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                  <div className="text-sm font-medium text-[var(--text-strong)]">
-                    {currentTicket?.title ?? "This incident has not been synced to a collaboration ticket yet."}
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{flowGuide.ticketHint}</p>
-                </div>
-
-                <div className="space-y-4 border-l-2 border-[var(--border-subtle)] pl-5">
-                  {incident.timeline?.length ? (
-                    incident.timeline.map((entry, index) => (
-                      <div key={`${entry.time}-${entry.title}`} className="relative">
-                        <span className="absolute -left-[29px] top-1.5 h-3 w-3 rounded-full bg-sky-400 ring-4 ring-[var(--surface-raised)]" />
-                        <div className={cn(index > 1 && "opacity-80")}>
-                          <div className="text-sm font-semibold text-[var(--text-strong)]">{entry.title}</div>
-                          <div className="mt-1 text-xs text-[var(--text-muted)]">{formatTime(entry.time)}</div>
-                          <div className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{entry.detail}</div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <InlineEmptyState
-                      title="No timeline entries yet"
-                      description="Generate RCA, choose a remediation, and record verification to build the incident story."
-                    />
-                  )}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {currentTicketHref ? (
-                    <Button asChild variant="secondary">
-                      <a href={currentTicketHref} target="_blank" rel="noreferrer">
-                        Open ticket
-                      </a>
-                    </Button>
-                  ) : null}
-                  {incidentWorkspaceHref ? (
-                    <Button asChild variant="outline">
-                      <a href={incidentWorkspaceHref} target="_blank" rel="noreferrer">
-                        Open incident page
-                      </a>
-                    </Button>
-                  ) : null}
-                  <Button variant="outline" onClick={() => void refreshWorkflow()}>
-                    Refresh timeline
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div ref={ticketRef}>
-            <Card className={cn(!ticketUnlocked && !hasTicket && "opacity-70")}>
-              <CardContent className="space-y-4 p-6">
-                <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Planned ticket note</div>
-                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
-                  {plannedTicketNote}
-                </div>
-
-                <form
-                  className="space-y-3"
-                  onSubmit={ticketForm.handleSubmit(async (values) => {
-                    if (!ticketUnlocked) {
-                      return;
-                    }
-                    try {
-                      await ticketMutation.mutateAsync(values);
-                    } catch {
-                      // Notice handling is already centralized in the mutation callbacks.
-                    }
-                  })}
-                >
-                  <Label htmlFor="ticket_note">Ticket note</Label>
-                  <Textarea
-                    id="ticket_note"
-                    disabled={!ticketUnlocked || ticketMutation.isPending}
-                    placeholder={
-                      currentTicket
-                        ? "Add a collaboration update before syncing the Plane ticket."
-                        : "Add the initial context to include with the RCA and incident link."
-                    }
-                    {...ticketForm.register("note")}
-                  />
-                  <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-                    <input type="checkbox" disabled={!ticketUnlocked || ticketMutation.isPending} {...ticketForm.register("force")} />
-                    Force creation even if policy would normally skip it
-                  </label>
-                  <Button type="submit" className="w-full" disabled={!ticketUnlocked || ticketMutation.isPending}>
-                    {ticketMutation.isPending
-                      ? "Syncing..."
-                      : currentTicket
-                        ? "Sync Plane ticket with latest RCA"
-                        : "Create Plane ticket with RCA"}
-                  </Button>
-                </form>
-
-                {currentTicket ? (
-                  <div className="rounded-2xl border border-sky-400/20 bg-sky-500/8 p-4 text-sm leading-6 text-[var(--text-secondary)]">
-                    {ticketAutoSyncHint}
-                  </div>
-                ) : null}
-
-                {currentTicket?.comments?.length ? (
-                  <div className="space-y-3">
-                    <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Recent ticket updates</div>
-                    {currentTicket.comments.slice(0, 3).map((comment) => (
-                      <div key={comment.external_comment_id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-3">
-                        <div className="text-sm font-medium text-[var(--text-strong)]">
-                          {comment.author ?? "IMS Platform"} · {formatTime(comment.updated_at)}
-                        </div>
-                        <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[var(--text-secondary)]">
-                          {comment.body ?? "No comment body recorded."}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          </div>
-
-        </aside>
       </div>
     </div>
   );
@@ -2558,8 +2514,15 @@ function ModelExplanationCard({ explanation }: { explanation: ModelExplanation |
   }
 
   const providerLabel = explanation.provider?.key === "trustyai" ? "TrustyAI" : "Fallback";
-  const explanationConfidence = titleize(explanation.explanation_confidence ?? "medium");
+  const explanationStrength = titleize(explanation.explanation_confidence ?? "medium");
   const patternInsight = explanation.pattern_insight || explanation.message || "Model explanation is being prepared.";
+  const predictedClass = titleize(explanation.prediction?.anomaly_type ?? "unknown");
+  const predictionConfidence = formatConfidencePercent(explanation.prediction?.confidence);
+  const topFeatures = explanation.top_features.slice(0, 5);
+  const primaryDriver = topFeatures[0];
+  const supportingSignals = topFeatures.slice(1, 3);
+  const maxImpact = Math.max(...topFeatures.map((item) => Math.abs(Number(item.raw_impact ?? item.impact ?? 0))), 0.0001);
+  const usesTrustyAi = explanation.provider?.key === "trustyai";
 
   return (
     <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
@@ -2572,17 +2535,44 @@ function ModelExplanationCard({ explanation }: { explanation: ModelExplanation |
               {providerLabel}
             </div>
           </div>
+          <h3 className="mt-3 text-xl font-medium leading-8 text-[var(--text-strong)]">
+            Why this incident was classified as {predictedClass}
+          </h3>
           <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{patternInsight}</p>
           {explanation.message && explanation.status !== "available" ? (
             <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">{explanation.message}</p>
           ) : null}
+          <div className="mt-4 grid gap-3 xl:grid-cols-2">
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
+              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                <Info className="h-3.5 w-3.5 text-[var(--accent)]" aria-hidden="true" />
+                <span>How to read this</span>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
+                These values show how each signal influenced the model&apos;s decision. Positive values pushed toward{" "}
+                {predictedClass}. Negative values pulled away from it.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
+              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" aria-hidden="true" />
+                <span>How TrustyAI explains this</span>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
+                {usesTrustyAi
+                  ? `TrustyAI generated per-feature attributions relative to the model baseline. Read them like SHAP-style contributions: each signal either added evidence for ${predictedClass} or worked against it. This explains model reasoning, not the actual root cause.`
+                  : `This incident is showing the fallback explanation path instead of a live TrustyAI attribution. The same interpretation rule still applies: positive values support ${predictedClass} and negative values work against it.`}
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="grid min-w-[240px] grid-cols-2 gap-3">
+        <div className="grid min-w-[280px] grid-cols-2 gap-3 xl:grid-cols-3">
           <SummaryItem label="Provider" value={explanation.provider?.label ?? "Unavailable"} />
-          <SummaryItem label="Explanation confidence" value={<StatusBadge value={explanationConfidence} />} />
+          <SummaryItem label="Prediction confidence" value={predictionConfidence} />
+          <SummaryItem label="Explanation strength" value={<StatusBadge value={explanationStrength} />} />
           <SummaryItem
             label="Predicted class"
-            value={titleize(explanation.prediction?.anomaly_type ?? "unknown")}
+            value={predictedClass}
           />
           <SummaryItem
             label="Model"
@@ -2595,15 +2585,41 @@ function ModelExplanationCard({ explanation }: { explanation: ModelExplanation |
           />
         </div>
       </div>
+      <div className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
+        <div className="text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">Model reasoning summary</div>
+        <div className="mt-3 grid gap-3 xl:grid-cols-3">
+          <div>
+            <div className="text-sm font-medium text-[var(--text-strong)]">Primary driver</div>
+            <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+              {primaryDriver ? primaryDriver.label : "Not available"}
+            </p>
+          </div>
+          <div>
+            <div className="text-sm font-medium text-[var(--text-strong)]">Supporting signals</div>
+            <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+              {supportingSignals.length ? supportingSignals.map((item) => item.label).join(" · ") : "No supporting signals were captured."}
+            </p>
+          </div>
+          <div>
+            <div className="text-sm font-medium text-[var(--text-strong)]">Conclusion</div>
+            <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+              The model saw a signal pattern that matches the {predictedClass} class more than the competing classes.
+            </p>
+          </div>
+        </div>
+      </div>
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        {explanation.top_features.slice(0, 5).map((item, index) => (
+        {topFeatures.map((item, index) => (
           <ExplainabilitySignalBar
             key={`${item.feature}-${index}`}
+            feature={item.feature}
             label={item.label}
             value={item.display_value ?? "n/a"}
             impact={item.impact}
             rawImpact={item.raw_impact ?? item.impact}
             tone={item.tone}
+            predictedClass={predictedClass}
+            maxImpact={maxImpact}
           />
         ))}
       </div>
@@ -2612,17 +2628,23 @@ function ModelExplanationCard({ explanation }: { explanation: ModelExplanation |
 }
 
 function ExplainabilitySignalBar({
+  feature,
   label,
   value,
   impact,
   rawImpact,
   tone,
+  predictedClass,
+  maxImpact,
 }: {
+  feature: string;
   label: string;
   value: string;
   impact: number;
   rawImpact: number;
   tone: string;
+  predictedClass: string;
+  maxImpact: number;
 }) {
   const percent = `${Math.max(8, Math.min(100, Math.round(impact * 100)))}%`;
   const barClass =
@@ -2635,23 +2657,123 @@ function ExplainabilitySignalBar({
           : tone === "violet"
             ? "from-violet-300/80 to-violet-500/30"
             : "from-sky-300/80 to-sky-500/30";
+  const interpretation = explainabilityInterpretation({
+    feature,
+    label,
+    rawImpact,
+    predictedClass,
+    maxImpact,
+  });
   return (
     <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-medium text-[var(--text-strong)]">{label}</div>
-          <div className="mt-1 text-xs text-[var(--text-muted)]">Observed value: {value}</div>
+          <div className="mt-1 text-xs text-[var(--text-muted)]">{interpretation.influenceLabel}</div>
         </div>
         <div className="text-sm font-semibold text-[var(--text-strong)]">
           {rawImpact >= 0 ? "+" : ""}
           {rawImpact.toFixed(2)}
         </div>
       </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em]",
+            rawImpact >= 0
+              ? "border-emerald-400/35 bg-emerald-500/10 text-emerald-200"
+              : "border-amber-400/35 bg-amber-500/10 text-amber-200",
+          )}
+        >
+          {interpretation.directionLabel}
+        </span>
+      </div>
+      <div className="mt-3 text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">Observed value</div>
+      <div className="mt-1 text-sm text-[var(--text-strong)]">{value}</div>
+      <div className="mt-3 text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">Meaning</div>
+      <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{interpretation.meaningText}</p>
+      <div className="mt-3 text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">Model baseline comparison</div>
+      <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{interpretation.baselineText}</p>
+      <div className="mt-3 text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">Impact</div>
+      <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">{interpretation.impactText}</p>
       <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[var(--surface-subtle)]">
         <div className={cn("h-full rounded-full bg-gradient-to-r", barClass)} style={{ width: percent }} />
       </div>
     </div>
   );
+}
+
+const EXPLAINABILITY_FEATURE_GUIDE: Record<string, string> = {
+  register_rate: "Measures how quickly registration requests are arriving in the scored traffic window.",
+  invite_rate: "Measures how quickly call setup requests are arriving in the scored traffic window.",
+  bye_rate: "Measures how quickly call teardown requests are arriving in the scored traffic window.",
+  error_4xx_ratio: "Measures the share of SIP responses in the 4XX family, which often reflects rejected or failed requests.",
+  error_5xx_ratio: "Measures the share of SIP responses in the 5XX family, which usually reflects server-side failures.",
+  latency_p95: "Measures tail latency at the 95th percentile, highlighting slower signalling behavior rather than the average.",
+  retransmission_count: "Counts SIP retransmissions seen in the scored window.",
+  inter_arrival_mean: "Measures the average time gap between signalling events in the scored window.",
+  payload_variance: "Measures how much payload size or content varies across the scored window.",
+  call_limit: "Represents the traffic or concurrency limit associated with the scored scenario.",
+  rate: "Represents the observed signalling rate used by the model for this prediction.",
+};
+
+function formatConfidencePercent(value: number | null | undefined) {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) {
+    return "0%";
+  }
+  return `${(numeric * 100).toFixed(numeric >= 0.995 ? 0 : 1)}%`;
+}
+
+function explainabilityInterpretation({
+  feature,
+  label,
+  rawImpact,
+  predictedClass,
+  maxImpact,
+}: {
+  feature: string;
+  label: string;
+  rawImpact: number;
+  predictedClass: string;
+  maxImpact: number;
+}) {
+  const impactRatio = Math.abs(rawImpact) / Math.max(maxImpact, 0.0001);
+  const strength =
+    impactRatio >= 0.75 ? "Strong" : impactRatio >= 0.4 ? "Moderate" : "Supporting";
+  const directionWord = rawImpact >= 0 ? "positive" : "negative";
+  const influenceLabel = `${strength} ${directionWord} influence (${rawImpact >= 0 ? "+" : ""}${rawImpact.toFixed(2)})`;
+  const directionLabel = rawImpact >= 0 ? `Toward ${predictedClass}` : `Away from ${predictedClass}`;
+  const meaningText =
+    EXPLAINABILITY_FEATURE_GUIDE[feature] ??
+    `${label} is one of the signals the predictive model evaluates for this class decision.`;
+  const baselineText =
+    rawImpact >= 0
+      ? `Relative to the model baseline, this signal added evidence for ${predictedClass}.`
+      : `Relative to the model baseline, this signal reduced evidence for ${predictedClass}.`;
+  let impactText = "";
+  if (rawImpact >= 0) {
+    impactText =
+      impactRatio >= 0.75
+        ? `This was one of the strongest signals pushing the model toward ${predictedClass}.`
+        : impactRatio >= 0.4
+          ? `This signal materially pushed the model toward ${predictedClass}, but it was not the dominant driver.`
+          : `This signal slightly supported the ${predictedClass} prediction compared with the stronger drivers above.`;
+  } else {
+    impactText =
+      impactRatio >= 0.75
+        ? `This was a strong counter-signal that pulled the model away from ${predictedClass}.`
+        : impactRatio >= 0.4
+          ? `This signal worked against ${predictedClass}, but it did not outweigh the stronger positive drivers.`
+          : `This signal only slightly worked against the ${predictedClass} prediction.`;
+  }
+  return {
+    influenceLabel,
+    directionLabel,
+    meaningText,
+    baselineText,
+    impactText,
+  };
 }
 
 function InlineEmptyState({ title, description }: { title: string; description: string }) {
