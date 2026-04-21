@@ -2508,6 +2508,21 @@ function SummaryItem({
   );
 }
 
+function ExplanationMetaItem({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">{label}</div>
+      <div className="mt-1 text-base font-medium leading-7 text-[var(--text-strong)] break-words">{value}</div>
+    </div>
+  );
+}
+
 function ModelExplanationCard({ explanation }: { explanation: ModelExplanation | null | undefined }) {
   if (!explanation || !Array.isArray(explanation.top_features) || !explanation.top_features.length) {
     return null;
@@ -2518,6 +2533,11 @@ function ModelExplanationCard({ explanation }: { explanation: ModelExplanation |
   const patternInsight = explanation.pattern_insight || explanation.message || "Model explanation is being prepared.";
   const predictedClass = titleize(explanation.prediction?.anomaly_type ?? "unknown");
   const predictionConfidence = formatConfidencePercent(explanation.prediction?.confidence);
+  const modelLabel =
+    explanation.model?.version ||
+    explanation.model?.profile_label ||
+    explanation.model?.name ||
+    "Predictive model";
   const topFeatures = explanation.top_features.slice(0, 5);
   const primaryDriver = topFeatures[0];
   const supportingSignals = topFeatures.slice(1, 3);
@@ -2566,23 +2586,16 @@ function ModelExplanationCard({ explanation }: { explanation: ModelExplanation |
             </div>
           </div>
         </div>
-        <div className="grid min-w-[280px] grid-cols-2 gap-3 xl:grid-cols-3">
-          <SummaryItem label="Provider" value={explanation.provider?.label ?? "Unavailable"} />
-          <SummaryItem label="Prediction confidence" value={predictionConfidence} />
-          <SummaryItem label="Explanation strength" value={<StatusBadge value={explanationStrength} />} />
-          <SummaryItem
-            label="Predicted class"
-            value={predictedClass}
-          />
-          <SummaryItem
-            label="Model"
-            value={
-              explanation.model?.version ||
-              explanation.model?.profile_label ||
-              explanation.model?.name ||
-              "Predictive model"
-            }
-          />
+        <div className="min-w-0 lg:max-w-[420px] lg:min-w-[320px]">
+          <div className="grid gap-x-6 gap-y-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4 sm:grid-cols-2">
+            <ExplanationMetaItem label="Provider" value={explanation.provider?.label ?? "Unavailable"} />
+            <ExplanationMetaItem label="Prediction confidence" value={predictionConfidence} />
+            <ExplanationMetaItem label="Explanation strength" value={<StatusBadge value={explanationStrength} />} />
+            <ExplanationMetaItem label="Predicted class" value={predictedClass} />
+            <div className="sm:col-span-2">
+              <ExplanationMetaItem label="Model" value={modelLabel} />
+            </div>
+          </div>
         </div>
       </div>
       <div className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4">
