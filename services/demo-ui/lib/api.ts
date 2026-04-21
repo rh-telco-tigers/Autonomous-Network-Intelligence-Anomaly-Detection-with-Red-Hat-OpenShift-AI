@@ -97,7 +97,7 @@ export function useConsoleStateQuery(refetchInterval = 15_000) {
   });
 }
 
-export function useSafetyControlsStatusQuery(refetchInterval = 30_000) {
+export function useSafetyControlsStatusQuery(refetchInterval = 60_000) {
   const { token } = useApiToken();
   return useQuery({
     queryKey: ["safety-controls-status", defaultProject, token],
@@ -108,7 +108,7 @@ export function useSafetyControlsStatusQuery(refetchInterval = 30_000) {
     refetchIntervalInBackground: false,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
-    staleTime: Math.max(20_000, Math.floor(refetchInterval * 0.75)),
+    staleTime: Math.max(45_000, Math.floor(refetchInterval * 0.75)),
     retry: 2,
     retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 8_000),
   });
