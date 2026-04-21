@@ -106,9 +106,9 @@ export function useSafetyControlsStatusQuery(refetchInterval = 30_000) {
     placeholderData: (previousData) => previousData,
     refetchInterval,
     refetchIntervalInBackground: false,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-    staleTime: 5_000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    staleTime: Math.max(20_000, Math.floor(refetchInterval * 0.75)),
     retry: 2,
     retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 8_000),
   });

@@ -235,6 +235,24 @@ def init_db() -> None:
             );
             """
         )
+        connection.executescript(
+            """
+            CREATE INDEX IF NOT EXISTS idx_incidents_project_created_at
+              ON incidents(project, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_approvals_incident_created_at
+              ON approvals(incident_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_audit_events_incident_created_at
+              ON audit_events(incident_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_incident_rca_incident_created_at
+              ON incident_rca(incident_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_incident_remediation_incident_revision_rank
+              ON incident_remediation(incident_id, based_on_revision DESC, suggestion_rank ASC, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_incident_actions_incident_finished_at
+              ON incident_actions(incident_id, finished_at DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_incident_verification_incident_created_at
+              ON incident_verification(incident_id, created_at DESC);
+            """
+        )
         _ensure_columns(
             connection,
             "incidents",
@@ -653,6 +671,25 @@ def list_incident_remediations(incident_id: str) -> List[Dict[str, Any]]:
             (incident_id,),
         ).fetchall()
     return [_deserialize_remediation(row) for row in rows]
+
+
+def list_incident_remediations_for_incidents(incident_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+    normalized_ids = [str(item).strip() for item in incident_ids if str(item).strip()]
+    if not normalized_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in normalized_ids)
+    query = f"""
+        SELECT * FROM incident_remediation
+        WHERE incident_id IN ({placeholders})
+        ORDER BY incident_id ASC, based_on_revision DESC, suggestion_rank ASC, id DESC
+    """
+    with closing(_connect()) as connection:
+        rows = connection.execute(query, tuple(normalized_ids)).fetchall()
+    grouped: Dict[str, List[Dict[str, Any]]] = {incident_id: [] for incident_id in normalized_ids}
+    for row in rows:
+        incident_id = str(row["incident_id"] or "")
+        grouped.setdefault(incident_id, []).append(_deserialize_remediation(row))
+    return grouped
 
 
 def get_incident_remediation(incident_id: str, remediation_id: int) -> Dict[str, Any] | None:

@@ -87,6 +87,7 @@ from shared.db import (
     list_incident_actions,
     list_incident_rca,
     list_incident_remediations,
+    list_incident_remediations_for_incidents,
     list_incident_tickets,
     list_incident_verifications,
     list_incidents,
@@ -180,6 +181,10 @@ _AUTOMATION_BOOTSTRAP_STARTED = False
 DEBUG_TRACE_EVENT_TYPE = "debug_trace_packet"
 DEFAULT_INCIDENT_AUTO_RCA_SAMPLE_RATE = 1.0
 AI_PLAYBOOK_GENERATION_RETRY_DELAY_SECONDS = 90.0
+SAFETY_CONTROLS_CACHE_SECONDS = float(os.getenv("SAFETY_CONTROLS_CACHE_SECONDS", "15"))
+_SAFETY_CONTROLS_CACHE_LOCK = threading.Lock()
+_SAFETY_CONTROLS_CACHE: Dict[str, Dict[str, object]] = {}
+_SAFETY_CONTROLS_CACHE_EXPIRES_AT: Dict[str, float] = {}
 
 
 class IncidentCreate(BaseModel):
@@ -785,13 +790,24 @@ def _build_governance_trace(
     }
 
 
-def _safety_controls_status(project: str) -> Dict[str, object]:
+def _clear_safety_controls_cache(project: str | None = None) -> None:
+    with _SAFETY_CONTROLS_CACHE_LOCK:
+        if project is None:
+            _SAFETY_CONTROLS_CACHE.clear()
+            _SAFETY_CONTROLS_CACHE_EXPIRES_AT.clear()
+            return
+        _SAFETY_CONTROLS_CACHE.pop(project, None)
+        _SAFETY_CONTROLS_CACHE_EXPIRES_AT.pop(project, None)
+
+
+def _build_safety_controls_status(project: str) -> Dict[str, object]:
     endpoint = str(os.getenv("LLM_ENDPOINT", "")).strip()
     model_name = str(os.getenv("LLM_MODEL", "llama-32-3b-instruct")).strip()
     provider = _safety_controls_provider(endpoint)
     incidents = list_incidents(project=project)
     incident_map = {str(incident.get("id") or ""): incident for incident in incidents if str(incident.get("id") or "")}
     incident_ids = set(incident_map.keys())
+    remediations_by_incident = list_incident_remediations_for_incidents(list(incident_ids))
     approvals = [approval for approval in list_approvals(limit=500) if str(approval.get("incident_id") or "") in incident_ids]
     approvals_by_incident: Dict[str, List[Dict[str, object]]] = {}
     for approval in approvals:
@@ -905,7 +921,7 @@ def _safety_controls_status(project: str) -> Dict[str, object]:
                 }
             )
 
-        for remediation in list_incident_remediations(incident_id):
+        for remediation in remediations_by_incident.get(incident_id, []):
             metadata = remediation.get("metadata") if isinstance(remediation.get("metadata"), dict) else {}
             if not metadata:
                 continue
@@ -1218,6 +1234,25 @@ def _safety_controls_status(project: str) -> Dict[str, object]:
             "recent_requests": playbook_items[:10],
         },
     }
+
+
+def _safety_controls_status(project: str) -> Dict[str, object]:
+    now = time.time()
+    if SAFETY_CONTROLS_CACHE_SECONDS > 0:
+        with _SAFETY_CONTROLS_CACHE_LOCK:
+            cached = _SAFETY_CONTROLS_CACHE.get(project)
+            expires_at = _SAFETY_CONTROLS_CACHE_EXPIRES_AT.get(project, 0.0)
+            if cached is not None and now < expires_at:
+                return cached
+    started_at = time.perf_counter()
+    payload = _build_safety_controls_status(project)
+    elapsed_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    logger.info("safety_controls_status project=%s duration_ms=%s", project, elapsed_ms)
+    if SAFETY_CONTROLS_CACHE_SECONDS > 0:
+        with _SAFETY_CONTROLS_CACHE_LOCK:
+            _SAFETY_CONTROLS_CACHE[project] = payload
+            _SAFETY_CONTROLS_CACHE_EXPIRES_AT[project] = now + SAFETY_CONTROLS_CACHE_SECONDS
+    return payload
 
 
 def _run_safety_probe(prompt: str) -> Dict[str, object]:
