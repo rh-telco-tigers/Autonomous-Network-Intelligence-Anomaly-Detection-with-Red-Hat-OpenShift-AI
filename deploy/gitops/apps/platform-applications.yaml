@@ -352,6 +352,13 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "55"
 spec:
+  ignoreDifferences:
+    - group: tower.ansible.com
+      kind: JobTemplate
+      name: ani-remediation
+      namespace: aap
+      jsonPointers:
+        - /spec/extra_vars
   destination:
     namespace: aap
     server: https://kubernetes.default.svc
@@ -366,6 +373,7 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
       - SkipDryRunOnMissingResource=true
 ---
 apiVersion: argoproj.io/v1alpha1
