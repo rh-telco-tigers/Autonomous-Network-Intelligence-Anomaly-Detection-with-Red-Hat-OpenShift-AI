@@ -800,6 +800,43 @@ def _clear_safety_controls_cache(project: str | None = None) -> None:
         _SAFETY_CONTROLS_CACHE_EXPIRES_AT.pop(project, None)
 
 
+def _parse_iso_timestamp(value: object) -> datetime:
+    text = str(value or "").strip()
+    if not text:
+        return datetime.fromtimestamp(0, tz=timezone.utc)
+    normalized = f"{text[:-1]}+00:00" if text.endswith("Z") else text
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return datetime.fromtimestamp(0, tz=timezone.utc)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _explanation_window_stats(items: List[Dict[str, object]]) -> Dict[str, Dict[str, float]]:
+    stats: Dict[str, Dict[str, float]] = {}
+    for explanation in items:
+        top_features = explanation.get("top_features") if isinstance(explanation.get("top_features"), list) else []
+        for feature in top_features:
+            if not isinstance(feature, dict):
+                continue
+            feature_key = str(feature.get("feature") or "").strip()
+            if not feature_key:
+                continue
+            impact = abs(
+                _coerce_float(
+                    feature.get("raw_impact")
+                    if feature.get("raw_impact") is not None
+                    else feature.get("impact")
+                )
+            )
+            entry = stats.setdefault(feature_key, {"count": 0.0, "impact_total": 0.0})
+            entry["count"] += 1.0
+            entry["impact_total"] += impact
+    return stats
+
+
 def _build_safety_controls_status(project: str) -> Dict[str, object]:
     endpoint = str(os.getenv("LLM_ENDPOINT", "")).strip()
     model_name = str(os.getenv("LLM_MODEL", "llama-32-3b-instruct")).strip()
@@ -873,6 +910,11 @@ def _build_safety_controls_status(project: str) -> Dict[str, object]:
                 feature_key = str(feature.get("feature") or "").strip()
                 if not feature_key:
                     continue
+                raw_impact = _coerce_float(
+                    feature.get("raw_impact")
+                    if feature.get("raw_impact") is not None
+                    else feature.get("impact")
+                )
                 entry = explainability_rollups.setdefault(
                     feature_key,
                     {
@@ -881,12 +923,23 @@ def _build_safety_controls_status(project: str) -> Dict[str, object]:
                         "tone": str(feature.get("tone") or "sky").strip() or "sky",
                         "count": 0,
                         "total_impact": 0.0,
+                        "total_signed_impact": 0.0,
+                        "min_impact": None,
+                        "max_impact": 0.0,
+                        "anomaly_counts": {},
                     },
                 )
+                magnitude = abs(raw_impact)
                 entry["count"] = int(entry.get("count") or 0) + 1
-                entry["total_impact"] = float(entry.get("total_impact") or 0.0) + abs(
-                    _coerce_float(feature.get("impact") if feature.get("impact") is not None else feature.get("raw_impact"))
-                )
+                entry["total_impact"] = float(entry.get("total_impact") or 0.0) + magnitude
+                entry["total_signed_impact"] = float(entry.get("total_signed_impact") or 0.0) + raw_impact
+                current_min = entry.get("min_impact")
+                entry["min_impact"] = magnitude if current_min is None else min(_coerce_float(current_min), magnitude)
+                entry["max_impact"] = max(_coerce_float(entry.get("max_impact")), magnitude)
+                anomaly_counts = entry.setdefault("anomaly_counts", {})
+                if isinstance(anomaly_counts, dict):
+                    anomaly_key = canonical_anomaly_type(str(incident.get("anomaly_type") or NORMAL_ANOMALY_TYPE))
+                    anomaly_counts[anomaly_key] = int(anomaly_counts.get(anomaly_key) or 0) + 1
 
         rca_payload = incident.get("rca_payload")
         if not isinstance(rca_payload, dict) or not rca_payload:
@@ -991,7 +1044,7 @@ def _build_safety_controls_status(project: str) -> Dict[str, object]:
     for items in playbook_items_by_incident.values():
         items.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
 
-    recent_explanations.sort(key=lambda item: str(item.get("generated_at") or ""), reverse=True)
+    recent_explanations.sort(key=lambda item: _parse_iso_timestamp(item.get("generated_at")), reverse=True)
     explainability_features = [
         {
             "feature": item["feature"],
@@ -1005,6 +1058,182 @@ def _build_safety_controls_status(project: str) -> Dict[str, object]:
     explainability_features.sort(
         key=lambda item: (-int(item["count"]), -float(item["avg_impact"]), str(item["label"]))
     )
+
+    window_size = 0
+    if recent_explanations:
+        if len(recent_explanations) >= 6:
+            window_size = min(max(len(recent_explanations) // 2, 3), 12)
+        else:
+            window_size = min(len(recent_explanations), 3)
+    recent_window = recent_explanations[:window_size]
+    previous_window = recent_explanations[window_size : window_size * 2]
+    recent_window_stats = _explanation_window_stats(recent_window)
+    previous_window_stats = _explanation_window_stats(previous_window)
+    explanation_patterns: List[Dict[str, object]] = []
+
+    for item in explainability_rollups.values():
+        feature_key = str(item.get("feature") or "").strip()
+        count = int(item.get("count") or 0)
+        avg_impact = round(float(item.get("total_impact") or 0.0) / max(count, 1), 4)
+        avg_signed_impact = round(float(item.get("total_signed_impact") or 0.0) / max(count, 1), 4)
+        coverage_rate = _ratio(count, len(recent_explanations))
+        consistency = "high" if coverage_rate >= 0.65 else "medium" if coverage_rate >= 0.35 else "low"
+        recent_stats = recent_window_stats.get(feature_key, {})
+        previous_stats = previous_window_stats.get(feature_key, {})
+        recent_count = int(recent_stats.get("count") or 0)
+        previous_count = int(previous_stats.get("count") or 0)
+        recent_avg_impact = round(
+            float(recent_stats.get("impact_total") or 0.0) / max(recent_count, 1),
+            4,
+        )
+        previous_avg_impact = round(
+            float(previous_stats.get("impact_total") or 0.0) / max(previous_count, 1),
+            4,
+        )
+        trend_delta = round(recent_avg_impact - previous_avg_impact, 4) if previous_count else 0.0
+        trend_threshold = max(0.35, avg_impact * 0.12)
+        if previous_count == 0:
+            trend = "stable"
+        elif trend_delta > trend_threshold:
+            trend = "increasing"
+        elif trend_delta < -trend_threshold:
+            trend = "decreasing"
+        else:
+            trend = "stable"
+
+        anomaly_counts = item.get("anomaly_counts") if isinstance(item.get("anomaly_counts"), dict) else {}
+        top_anomaly_types = [
+            _titleize(name)
+            for name, _count in sorted(
+                anomaly_counts.items(),
+                key=lambda pair: (-int(pair[1]), str(pair[0])),
+            )[:2]
+        ]
+        explanation_patterns.append(
+            {
+                "feature": feature_key,
+                "label": str(item.get("label") or feature_key).strip(),
+                "tone": str(item.get("tone") or "sky").strip() or "sky",
+                "incident_count": count,
+                "coverage_rate": coverage_rate,
+                "avg_impact": avg_impact,
+                "avg_signed_impact": avg_signed_impact,
+                "impact_range": {
+                    "min": round(_coerce_float(item.get("min_impact")), 4),
+                    "max": round(_coerce_float(item.get("max_impact")), 4),
+                },
+                "direction": "toward_prediction" if avg_signed_impact >= 0 else "away_from_prediction",
+                "consistency": consistency,
+                "recent_avg_impact": recent_avg_impact,
+                "previous_avg_impact": previous_avg_impact,
+                "trend": trend,
+                "trend_delta": trend_delta,
+                "top_anomaly_types": top_anomaly_types,
+            }
+        )
+
+    explanation_patterns.sort(
+        key=lambda item: (-int(item["incident_count"]), -float(item["avg_impact"]), str(item["label"]))
+    )
+
+    total_pattern_mentions = sum(int(item["incident_count"]) for item in explanation_patterns)
+    top_driver_labels = [str(item.get("label") or "") for item in explanation_patterns[:3] if str(item.get("label") or "")]
+    top_driver_share = (
+        sum(int(item["incident_count"]) for item in explanation_patterns[:3]) / max(total_pattern_mentions, 1)
+        if explanation_patterns
+        else 0.0
+    )
+    signal_diversity = "low" if top_driver_share >= 0.65 else "moderate" if top_driver_share >= 0.45 else "high"
+
+    def _window_top_feature_set(window_stats: Dict[str, Dict[str, float]]) -> set[str]:
+        ranked = sorted(
+            window_stats.items(),
+            key=lambda pair: (-float(pair[1].get("count") or 0.0), -float(pair[1].get("impact_total") or 0.0), str(pair[0])),
+        )
+        return {feature for feature, _ in ranked[:3]}
+
+    recent_top_features = _window_top_feature_set(recent_window_stats)
+    previous_top_features = _window_top_feature_set(previous_window_stats)
+    if not previous_window:
+        overlap = 1.0 if recent_explanations else 0.0
+    elif recent_top_features or previous_top_features:
+        overlap = len(recent_top_features & previous_top_features) / max(len(recent_top_features | previous_top_features), 1)
+    else:
+        overlap = 1.0
+
+    changing_signals = [
+        item
+        for item in explanation_patterns
+        if str(item.get("trend") or "stable") != "stable"
+    ]
+    changing_signals.sort(key=lambda item: -abs(_coerce_float(item.get("trend_delta"))))
+    signal_changes = [
+        {
+            "feature": str(item.get("feature") or ""),
+            "label": str(item.get("label") or ""),
+            "tone": str(item.get("tone") or "sky"),
+            "trend": str(item.get("trend") or "stable"),
+            "trend_delta": round(_coerce_float(item.get("trend_delta")), 4),
+            "detail": (
+                f"{item.get('label') or item.get('feature')} is showing {item.get('trend') or 'stable'} influence in the recent explanation window."
+            ),
+        }
+        for item in changing_signals[:3]
+    ]
+
+    if overlap >= 0.66:
+        consistency_label = "high"
+    elif overlap >= 0.33:
+        consistency_label = "medium"
+    else:
+        consistency_label = "low"
+
+    if overlap >= 0.66 and not signal_changes:
+        drift_status = "none"
+    elif overlap >= 0.33 and len(signal_changes) <= 2:
+        drift_status = "watch"
+    else:
+        drift_status = "shifting"
+
+    behavior_summary = {
+        "top_drivers": top_driver_labels,
+        "consistency": consistency_label,
+        "consistency_detail": (
+            "Model reasoning is repeating the same dominant signals across recent incidents."
+            if consistency_label == "high"
+            else "The dominant signals are partially stable, but some newer explanations are emphasizing different features."
+            if consistency_label == "medium"
+            else "Recent explanations are relying on a noticeably different signal set than the earlier window."
+        ),
+        "signal_diversity": signal_diversity,
+        "signal_diversity_detail": (
+            "The model is concentrating on a small set of dominant signals."
+            if signal_diversity == "low"
+            else "The model is balancing a few dominant signals with supporting context."
+            if signal_diversity == "moderate"
+            else "The model is drawing on a broad mix of signals rather than a narrow cluster."
+        ),
+        "drift_status": drift_status,
+        "drift_detail": (
+            "No material drift is visible in the dominant explanation patterns."
+            if drift_status == "none"
+            else "Some signal emphasis is changing, so this path should be watched for drift."
+            if drift_status == "watch"
+            else "Signal emphasis is shifting enough to justify a closer drift review."
+        ),
+        "observation": (
+            f"Recent explanations are most strongly shaped by {', '.join(top_driver_labels[:3])}."
+            if top_driver_labels
+            else "Recent incidents have not produced enough explanation data to summarize model behavior yet."
+        ),
+        "window_label": (
+            f"Compared across the latest {len(recent_window)} explanations and the prior {len(previous_window)} explanations."
+            if previous_window
+            else f"Built from the latest {len(recent_window)} explanations."
+            if recent_window
+            else "No explanation window is available yet."
+        ),
+    }
 
     explainability_provider: Dict[str, str]
     if explanation_counts["trustyai"]:
@@ -1196,6 +1425,10 @@ def _build_safety_controls_status(project: str) -> Dict[str, object]:
                 "approval_count": len(approvals),
                 "action_execution_count": action_execution_count,
             },
+            "behavior_summary": behavior_summary,
+            "explanation_patterns": explanation_patterns[:6],
+            "signal_changes": signal_changes,
+            "explanation_samples": recent_explanations[:6],
             "timeline": timeline_events[:10],
         },
         "governance": {

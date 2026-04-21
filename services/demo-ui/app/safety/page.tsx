@@ -85,84 +85,185 @@ function SectionHeader({
   );
 }
 
-function SignalBar({
-  label,
-  meta,
-  value,
-  maxValue,
-  tone,
-}: {
+const MONITORING_FEATURE_GUIDE: Record<string, string> = {
+  register_rate: "Registration demand is rising in the scored traffic window.",
+  invite_rate: "Call setup demand is rising in the scored traffic window.",
+  bye_rate: "Call teardown traffic is becoming more prominent in recent incidents.",
+  error_4xx_ratio: "Request rejections are becoming a more visible part of recent model reasoning.",
+  error_5xx_ratio: "Server-side failure responses are influencing the model more often.",
+  latency_p95: "Tail latency is shaping more of the model's incident decisions.",
+  retransmission_count: "Repeated SIP retries are appearing in the model's explanations.",
+  inter_arrival_mean: "Timing gaps between signalling events are contributing to the prediction pattern.",
+  payload_variance: "Payload variability is showing up as a structural signal in the model reasoning.",
+  call_limit: "Concurrency or traffic ceilings are influencing recent predictions.",
+  rate: "Overall signalling rate is staying prominent in recent model decisions.",
+};
+
+function monitoringPatternInterpretation(pattern: {
+  feature: string;
   label: string;
-  meta: string;
-  value: number;
-  maxValue: number;
-  tone: string;
+  direction: string;
+  consistency: string;
+  trend: string;
+  top_anomaly_types: string[];
 }) {
-  const width = maxValue > 0 ? Math.max((value / maxValue) * 100, 8) : 8;
+  const directionLabel =
+    pattern.direction === "away_from_prediction" ? "Usually pulls away from outcomes" : "Usually pushes toward outcomes";
+  const trendLabel =
+    pattern.trend === "increasing"
+      ? "Increasing influence"
+      : pattern.trend === "decreasing"
+        ? "Decreasing influence"
+        : "Stable influence";
+  const behaviorText = pattern.top_anomaly_types.length
+    ? `Frequently appears in explanations for ${pattern.top_anomaly_types.join(" and ")} scenarios.`
+    : "Appears repeatedly across recent TrustyAI explanations.";
+  const baselineText =
+    pattern.direction === "away_from_prediction"
+      ? "Compared with the model baseline, this signal usually acts as a counter-weight against the predicted class."
+      : "Compared with the model baseline, this signal usually adds evidence for the predicted class.";
+  const interpretationText =
+    pattern.consistency === "high" && pattern.trend === "stable"
+      ? "The model is relying on this signal consistently across recent incidents."
+      : pattern.consistency === "high" && pattern.trend === "increasing"
+        ? "The model was already relying on this signal, and its influence is strengthening in the recent window."
+        : pattern.trend === "decreasing"
+          ? "This signal still matters, but it is becoming less central than the dominant drivers above."
+          : "This signal is part of the recent pattern mix, but it is not yet a stable dominant driver.";
+  const guideText =
+    MONITORING_FEATURE_GUIDE[pattern.feature] ??
+    `${pattern.label} is one of the recurring signals the model is using across recent incidents.`;
+  return { directionLabel, trendLabel, behaviorText, baselineText, interpretationText, guideText };
+}
+
+function MonitoringPatternCard({
+  pattern,
+}: {
+  pattern: {
+    feature: string;
+    label: string;
+    tone: string;
+    incident_count: number;
+    coverage_rate: number;
+    avg_impact: number;
+    avg_signed_impact: number;
+    impact_range: { min: number; max: number };
+    direction: string;
+    consistency: string;
+    recent_avg_impact: number;
+    previous_avg_impact: number;
+    trend: string;
+    trend_delta: number;
+    top_anomaly_types: string[];
+  };
+}) {
   const toneClass =
-    tone === "rose"
-      ? "bg-rose-400"
-      : tone === "amber"
-        ? "bg-amber-400"
-        : tone === "emerald"
-          ? "bg-emerald-400"
-          : "bg-sky-400";
+    pattern.tone === "rose"
+      ? "from-rose-300/80 to-rose-500/30"
+      : pattern.tone === "amber"
+        ? "from-amber-300/80 to-amber-500/30"
+        : pattern.tone === "emerald"
+          ? "from-emerald-300/80 to-emerald-500/30"
+          : pattern.tone === "violet"
+            ? "from-violet-300/80 to-violet-500/30"
+            : "from-sky-300/80 to-sky-500/30";
+  const interpretation = monitoringPatternInterpretation(pattern);
+  const stabilityWidth =
+    pattern.consistency === "high" ? "92%" : pattern.consistency === "medium" ? "68%" : "42%";
+
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3 text-sm">
+    <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-5">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate font-medium text-[var(--text-strong)]">{label}</div>
-          <div className="text-xs text-[var(--text-subtle)]">{meta}</div>
+          <div className="text-base font-semibold text-[var(--text-strong)]">{pattern.label}</div>
+          <div className="mt-1 text-sm text-[var(--text-secondary)]">{interpretation.guideText}</div>
         </div>
-        <div className="shrink-0 font-medium text-[var(--text-strong)]">Impact {formatRelativeNumber(value)}</div>
+        <div className="text-right text-sm font-semibold text-[var(--text-strong)]">
+          {formatRelativeNumber(pattern.avg_impact)}
+        </div>
       </div>
-      <div className="h-2 rounded-full bg-[var(--surface-raised)]">
-        <div className={`h-2 rounded-full ${toneClass}`} style={{ width: `${width}%` }} />
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <StatusBadge value={interpretation.directionLabel} />
+        <StatusBadge value={interpretation.trendLabel} />
+        <StatusBadge value={`${titleize(pattern.consistency)} consistency`} />
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-3">
+          <div className="text-xs uppercase tracking-[0.22em] text-[var(--text-subtle)]">Trend window</div>
+          <div className="mt-2 text-sm text-[var(--text-secondary)]">
+            Average impact {formatRelativeNumber(pattern.recent_avg_impact)} now
+          </div>
+          <div className="mt-1 text-xs text-[var(--text-subtle)]">
+            Prior window {formatRelativeNumber(pattern.previous_avg_impact)} · Range {formatRelativeNumber(
+              pattern.impact_range.min,
+            )} → {formatRelativeNumber(pattern.impact_range.max)}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-3">
+          <div className="text-xs uppercase tracking-[0.22em] text-[var(--text-subtle)]">Influence stability</div>
+          <div className="mt-2 text-sm text-[var(--text-secondary)]">
+            Appeared in {formatPercent(pattern.coverage_rate, 0)} of recent explanations
+          </div>
+          <div className="mt-3 h-2 rounded-full bg-[var(--surface-subtle)]">
+            <div className={`h-2 rounded-full bg-gradient-to-r ${toneClass}`} style={{ width: stabilityWidth }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3 text-sm leading-6 text-[var(--text-secondary)]">
+        <div>
+          <span className="font-medium text-[var(--text-strong)]">Behavior</span>
+          <div>{interpretation.behaviorText}</div>
+        </div>
+        <div>
+          <span className="font-medium text-[var(--text-strong)]">Baseline comparison</span>
+          <div>{interpretation.baselineText}</div>
+        </div>
+        <div>
+          <span className="font-medium text-[var(--text-strong)]">Interpretation</span>
+          <div>{interpretation.interpretationText}</div>
+        </div>
       </div>
     </div>
   );
 }
 
-function TimelineEventCard({
-  title,
-  detail,
-  severity,
-  timestamp,
-  source,
-  incidentId,
+function ExplanationSampleCard({
+  sample,
 }: {
-  title: string;
-  detail: string;
-  severity: string;
-  timestamp: string;
-  source: string;
-  incidentId?: string;
+  sample: {
+    incident_id: string;
+    anomaly_type: string;
+    pattern_insight: string;
+    explanation_confidence: string;
+    generated_at: string;
+    top_features: Array<{ label: string; feature: string }>;
+  };
 }) {
-  const toneClass =
-    severity === "danger"
-      ? "bg-rose-400"
-      : severity === "warning"
-        ? "bg-amber-400"
-        : severity === "success"
-          ? "bg-emerald-400"
-          : "bg-sky-400";
+  const topSignals = sample.top_features
+    .map((item) => item.label || titleize(item.feature))
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(" + ");
   return (
-    <div className="flex gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-      <div className={`mt-1 h-3 w-3 rounded-full ${toneClass}`} />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="font-medium text-[var(--text-strong)]">{title}</div>
-          <div className="text-xs text-[var(--text-subtle)]">{formatTime(timestamp)}</div>
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          <StatusBadge value={titleize(sample.anomaly_type)} />
+          <StatusBadge value={`Explanation strength ${titleize(sample.explanation_confidence || "unknown")}`} />
         </div>
-        <div className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{detail}</div>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--text-subtle)]">
-          <StatusBadge value={titleize(source)} />
-          {incidentId ? (
-            <Link href={`/incidents/${incidentId}`} className="text-[var(--accent)] hover:underline">
-              {incidentId}
-            </Link>
-          ) : null}
-        </div>
+        <div className="text-xs text-[var(--text-subtle)]">{formatTime(sample.generated_at)}</div>
+      </div>
+      <div className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
+        {sample.pattern_insight || "Model explanation generated for this incident."}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[var(--text-subtle)]">
+        {topSignals ? <span>Driven by: {topSignals}</span> : null}
+        <Link href={`/incidents/${sample.incident_id}`} className="text-[var(--accent)] hover:underline">
+          Open incident
+        </Link>
       </div>
     </div>
   );
@@ -254,7 +355,7 @@ export default function SafetyControlsPage() {
   const rcaAllowRate = formatPercent(monitoring.summary.rca_allow_rate);
   const trustCoverageRate = formatPercent(monitoring.summary.trust_metadata_coverage_rate);
   const fallbackRate = formatPercent(monitoring.summary.explanation_fallback_rate);
-  const topFeatureMax = explainability.top_features.reduce((current, item) => Math.max(current, item.avg_impact), 0);
+  const behaviorSummary = monitoring.behavior_summary;
   const explainabilityMode =
     explainability.provider.key === "trustyai"
       ? "TrustyAI"
@@ -562,79 +663,114 @@ export default function SafetyControlsPage() {
         <SectionHeader
           eyebrow="Section 2"
           title="AI Monitoring"
-          description="Show that the trust posture is observable over time, not just at the single-prompt level."
+          description="Understand how the model is behaving across all incidents. See which signals consistently drive predictions, whether the reasoning is stable, and whether TrustyAI explanations are shifting over time."
           aside={
             <>
               <StatusBadge value={`Coverage ${trustCoverageRate}`} />
               <StatusBadge value={`Fallback ${fallbackRate}`} />
+              <StatusBadge value={`Consistency ${titleize(behaviorSummary.consistency)}`} />
             </>
           }
         />
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            label="Explainability tracked"
-            value={formatInteger(explainability.summary.tracked_incidents)}
-            detail={`${formatInteger(explainability.summary.trustyai_count)} TrustyAI explanations · ${formatInteger(explainability.summary.fallback_count)} fallback explanations.`}
-            tone={explainability.provider.key === "trustyai" ? "success" : "warning"}
-          />
-          <MetricCard
-            label="Fallback rate"
-            value={fallbackRate}
-            detail="Incidents where the persisted explanation had to fall back instead of using TrustyAI."
-            tone={monitoring.summary.explanation_fallback_rate > 0 ? "warning" : "success"}
-          />
-          <MetricCard
-            label="Prompt injection detections"
-            value={formatInteger(monitoring.summary.prompt_injection_detections)}
-            detail="TrustyAI-backed detections across RCA and playbook request guardrails."
-            tone={monitoring.summary.prompt_injection_detections > 0 ? "warning" : "success"}
-          />
-          <MetricCard
-            label="Feedback signal"
-            value={formatInteger(monitoring.summary.approval_count)}
-            detail={`${formatInteger(monitoring.summary.action_execution_count)} action executions captured in the trust timeline.`}
-          />
+        <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+          <Card>
+            <CardHeader>
+              <CardTitle>Model behavior summary</CardTitle>
+              <CardDescription>{behaviorSummary.window_label}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                <div className="text-sm leading-6 text-[var(--text-secondary)]">{behaviorSummary.observation}</div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <div className="text-xs uppercase tracking-[0.22em] text-[var(--text-subtle)]">Top drivers</div>
+                  <div className="mt-2 text-sm font-medium text-[var(--text-strong)]">
+                    {behaviorSummary.top_drivers.length ? behaviorSummary.top_drivers.join(" · ") : "No explanation drivers yet"}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <div className="text-xs uppercase tracking-[0.22em] text-[var(--text-subtle)]">Behavior consistency</div>
+                  <div className="mt-2 text-sm font-medium text-[var(--text-strong)]">{titleize(behaviorSummary.consistency)}</div>
+                  <div className="mt-1 text-xs leading-5 text-[var(--text-subtle)]">{behaviorSummary.consistency_detail}</div>
+                </div>
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                  <div className="text-xs uppercase tracking-[0.22em] text-[var(--text-subtle)]">Signal diversity</div>
+                  <div className="mt-2 text-sm font-medium text-[var(--text-strong)]">{titleize(behaviorSummary.signal_diversity)}</div>
+                  <div className="mt-1 text-xs leading-5 text-[var(--text-subtle)]">{behaviorSummary.signal_diversity_detail}</div>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.22em] text-[var(--text-subtle)]">Drift detected</div>
+                    <div className="mt-2 text-base font-medium text-[var(--text-strong)]">{titleize(behaviorSummary.drift_status)}</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <StatusBadge value={`Coverage ${trustCoverageRate}`} />
+                    <StatusBadge value={`Fallback ${fallbackRate}`} />
+                  </div>
+                </div>
+                <div className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{behaviorSummary.drift_detail}</div>
+                <div className="mt-4 flex flex-wrap gap-3 text-xs text-[var(--text-subtle)]">
+                  <span>{formatInteger(monitoring.summary.prompt_injection_detections)} prompt injection detections</span>
+                  <span>{formatInteger(monitoring.summary.approval_count)} approvals recorded</span>
+                  <span>{formatInteger(monitoring.summary.action_execution_count)} action executions captured</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <MetricCard
+              label="Explainability tracked"
+              value={formatInteger(explainability.summary.tracked_incidents)}
+              detail={`${formatInteger(explainability.summary.trustyai_count)} TrustyAI explanations · ${formatInteger(explainability.summary.fallback_count)} fallback explanations.`}
+              tone={explainability.provider.key === "trustyai" ? "success" : "warning"}
+            />
+            <MetricCard
+              label="Coverage quality"
+              value={trustCoverageRate}
+              detail={`${formatInteger(monitoring.summary.trust_metadata_coverage)} incidents currently retain trust metadata and explanation traces.`}
+              tone={monitoring.summary.trust_metadata_coverage_rate >= 0.75 ? "success" : "warning"}
+            />
+            <MetricCard
+              label="Fallback rate"
+              value={fallbackRate}
+              detail="Measures how often the platform had to show fallback logic instead of persisted TrustyAI reasoning."
+              tone={monitoring.summary.explanation_fallback_rate > 0 ? "warning" : "success"}
+            />
+            <MetricCard
+              label="Feedback signal"
+              value={formatInteger(monitoring.summary.approval_count + monitoring.summary.action_execution_count)}
+              detail={`${formatInteger(monitoring.summary.approval_count)} approvals and ${formatInteger(
+                monitoring.summary.action_execution_count,
+              )} action executions are feeding traceable operator feedback back into the system.`}
+            />
+          </div>
         </div>
 
         <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
           <Card>
             <CardHeader>
-              <CardTitle>Top contributing signals</CardTitle>
+              <CardTitle>Explanation patterns</CardTitle>
               <CardDescription>
-                These rollups are built from stored incident explanation envelopes, so they reflect real recent model
-                explanation output rather than a static demo legend.
+                Aggregated explainability cards show how the same signals behave across many incidents, not just one prediction.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-medium text-[var(--text-strong)]">{explainability.provider.label}</div>
-                    <div className="mt-1 text-sm text-[var(--text-secondary)]">
-                      Family: {explainability.provider.family} · Mode: {explainabilityMode}
-                    </div>
-                  </div>
-                  <StatusBadge value={explainability.provider.key === "trustyai" ? "TrustyAI" : explainabilityMode} />
-                </div>
-                <div className="mt-4 text-sm leading-6 text-[var(--text-secondary)]">
-                  {explainability.provider.key === "trustyai"
-                    ? "Recent incidents are carrying persisted TrustyAI explanation payloads."
-                    : "This cluster is currently showing persisted fallback explanation envelopes where TrustyAI explainability was unavailable or not configured. The page reflects that state directly rather than hiding it."}
-                </div>
+              <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4 text-sm leading-6 text-[var(--text-secondary)]">
+                Impact shows how strongly a signal influences model predictions on average. These cards add the missing context:
+                how often the signal appears, whether that influence is stable, and whether the model is shifting toward or away from it over time.
               </div>
 
-              {explainability.top_features.length ? (
-                explainability.top_features.map((item) => (
-                  <SignalBar
-                    key={item.feature}
-                    label={item.label}
-                    meta={`${formatInteger(item.count)} incidents · avg impact ${item.avg_impact.toFixed(2)}`}
-                    value={item.avg_impact}
-                    maxValue={topFeatureMax}
-                    tone={item.tone}
-                  />
-                ))
+              {monitoring.explanation_patterns.length ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {monitoring.explanation_patterns.map((pattern) => (
+                    <MonitoringPatternCard key={pattern.feature} pattern={pattern} />
+                  ))}
+                </div>
               ) : (
                 <div className="text-sm text-[var(--text-subtle)]">
                   No persisted explanation envelopes are available yet for this project.
@@ -646,27 +782,32 @@ export default function SafetyControlsPage() {
           <div className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Recent trust signals</CardTitle>
+                <CardTitle>Signal behavior changes</CardTitle>
                 <CardDescription>
-                  Derived from persisted guardrail outcomes, explanations, approvals, and execution events.
+                  Track whether the model is changing which signals it relies on most.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {monitoring.timeline.length ? (
-                  monitoring.timeline.map((event, index) => (
-                    <TimelineEventCard
-                      key={`${event.source}-${event.incident_id ?? "global"}-${event.timestamp}-${index}`}
-                      title={event.title}
-                      detail={event.detail}
-                      severity={event.severity}
-                      timestamp={event.timestamp}
-                      source={event.source}
-                      incidentId={event.incident_id}
-                    />
+                {monitoring.signal_changes.length ? (
+                  monitoring.signal_changes.map((change) => (
+                    <div
+                      key={change.feature}
+                      className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="font-medium text-[var(--text-strong)]">{change.label}</div>
+                        <StatusBadge value={titleize(change.trend)} />
+                      </div>
+                      <div className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{change.detail}</div>
+                      <div className="mt-2 text-xs text-[var(--text-subtle)]">
+                        Delta {change.trend_delta >= 0 ? "+" : ""}
+                        {formatRelativeNumber(change.trend_delta)}
+                      </div>
+                    </div>
                   ))
                 ) : (
                   <div className="text-sm text-[var(--text-subtle)]">
-                    No recent trust events are available yet.
+                    The latest explanation window is stable. No significant signal shift is visible right now.
                   </div>
                 )}
               </CardContent>
@@ -674,23 +815,21 @@ export default function SafetyControlsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>What this section proves</CardTitle>
-                <CardDescription>Monitoring answers a different question than guardrail safety.</CardDescription>
+                <CardTitle>Explanation samples</CardTitle>
+                <CardDescription>
+                  Recent explanation snapshots reinforce the higher-level pattern cards with real incident examples.
+                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3 text-sm leading-6 text-[var(--text-secondary)]">
-                <div>
-                  <span className="font-medium text-[var(--text-strong)]">Safety</span> says whether a single AI output
-                  is allowed right now.
-                </div>
-                <div>
-                  <span className="font-medium text-[var(--text-strong)]">Monitoring</span> says whether the overall
-                  trust posture remains healthy over time.
-                </div>
-                <div>
-                  <span className="font-medium text-[var(--text-strong)]">TrustyAI value</span> is stronger when both
-                  appear together, because operators can see the live decision and the recent evidence that the guardrail
-                  path is actually being exercised.
-                </div>
+              <CardContent className="space-y-3">
+                {monitoring.explanation_samples.length ? (
+                  monitoring.explanation_samples.map((sample) => (
+                    <ExplanationSampleCard key={`${sample.incident_id}-${sample.generated_at}`} sample={sample} />
+                  ))
+                ) : (
+                  <div className="text-sm text-[var(--text-subtle)]">
+                    No recent explanation samples are available yet.
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

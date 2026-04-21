@@ -516,6 +516,37 @@ class SafetyControlsTests(unittest.TestCase):
                 "anomaly_type": "registration_storm",
                 "created_at": "2026-04-17T21:00:00+00:00",
                 "updated_at": "2026-04-17T21:02:00+00:00",
+                "model_explanation": {
+                    "provider": {
+                        "key": "trustyai",
+                        "label": "TrustyAI Explainability",
+                        "family": "Explainability",
+                    },
+                    "status": "available",
+                    "pattern_insight": "Register Rate and Invite Rate are dominating registration pressure incidents.",
+                    "explanation_confidence": "high",
+                    "generated_at": "2026-04-17T21:01:30+00:00",
+                    "top_features": [
+                        {
+                            "feature": "register_rate",
+                            "label": "Register Rate",
+                            "impact": 0.62,
+                            "raw_impact": 0.62,
+                            "direction": "increase",
+                            "display_value": "18.0",
+                            "tone": "rose",
+                        },
+                        {
+                            "feature": "invite_rate",
+                            "label": "Invite Rate",
+                            "impact": 0.28,
+                            "raw_impact": 0.28,
+                            "direction": "increase",
+                            "display_value": "6.0",
+                            "tone": "sky",
+                        },
+                    ],
+                },
                 "rca_payload": {
                     "root_cause": "Retry amplification",
                     "recommendation": "Review ingress controls.",
@@ -532,6 +563,37 @@ class SafetyControlsTests(unittest.TestCase):
                 "anomaly_type": "network_degradation",
                 "created_at": "2026-04-17T21:03:00+00:00",
                 "updated_at": "2026-04-17T21:04:00+00:00",
+                "model_explanation": {
+                    "provider": {
+                        "key": "trustyai",
+                        "label": "TrustyAI Explainability",
+                        "family": "Explainability",
+                    },
+                    "status": "available",
+                    "pattern_insight": "Latency P95 and Invite Rate are dominating network degradation incidents.",
+                    "explanation_confidence": "medium",
+                    "generated_at": "2026-04-17T21:03:30+00:00",
+                    "top_features": [
+                        {
+                            "feature": "latency_p95",
+                            "label": "Latency P95",
+                            "impact": 0.54,
+                            "raw_impact": 0.54,
+                            "direction": "increase",
+                            "display_value": "1.9",
+                            "tone": "amber",
+                        },
+                        {
+                            "feature": "invite_rate",
+                            "label": "Invite Rate",
+                            "impact": 0.31,
+                            "raw_impact": 0.31,
+                            "direction": "increase",
+                            "display_value": "4.0",
+                            "tone": "sky",
+                        },
+                    ],
+                },
                 "rca_payload": {
                     "root_cause": "Packet loss",
                     "recommendation": "Review low-risk routing changes.",
@@ -624,8 +686,11 @@ class SafetyControlsTests(unittest.TestCase):
             mock.patch.object(control_plane_app, "list_incidents", return_value=incidents),
             mock.patch.object(
                 control_plane_app,
-                "list_incident_remediations",
-                side_effect=lambda incident_id: remediations_by_incident.get(incident_id, []),
+                "list_incident_remediations_for_incidents",
+                side_effect=lambda incident_ids: {
+                    incident_id: remediations_by_incident.get(incident_id, [])
+                    for incident_id in incident_ids
+                },
             ),
             mock.patch.object(
                 control_plane_app,
@@ -690,6 +755,12 @@ class SafetyControlsTests(unittest.TestCase):
         self.assertEqual(response["playbook_generation"]["recent_requests"][0]["remediation_id"], 12)
         self.assertTrue(response["playbook_generation"]["recent_requests"][0]["override_applied"])
         self.assertTrue(response["playbook_generation"]["recent_requests"][0]["trustyai_used"])
+        self.assertEqual(response["explainability"]["summary"]["trustyai_count"], 2)
+        self.assertEqual(response["monitoring"]["behavior_summary"]["consistency"], "high")
+        self.assertTrue(response["monitoring"]["behavior_summary"]["top_drivers"])
+        self.assertEqual(response["monitoring"]["explanation_patterns"][0]["label"], "Invite Rate")
+        self.assertEqual(response["monitoring"]["explanation_patterns"][0]["consistency"], "high")
+        self.assertEqual(response["monitoring"]["explanation_samples"][0]["incident_id"], "inc-review")
         self.assertEqual(response["monitoring"]["summary"]["approval_count"], 1)
         self.assertEqual(response["monitoring"]["summary"]["action_execution_count"], 1)
         self.assertEqual(response["governance"]["summary"]["approval_count"], 1)

@@ -256,6 +256,59 @@ export type SafetyControlsStatus = {
       approval_count: number;
       action_execution_count: number;
     };
+    behavior_summary: {
+      top_drivers: string[];
+      consistency: string;
+      consistency_detail: string;
+      signal_diversity: string;
+      signal_diversity_detail: string;
+      drift_status: string;
+      drift_detail: string;
+      observation: string;
+      window_label: string;
+    };
+    explanation_patterns: Array<{
+      feature: string;
+      label: string;
+      tone: string;
+      incident_count: number;
+      coverage_rate: number;
+      avg_impact: number;
+      avg_signed_impact: number;
+      impact_range: {
+        min: number;
+        max: number;
+      };
+      direction: string;
+      consistency: string;
+      recent_avg_impact: number;
+      previous_avg_impact: number;
+      trend: string;
+      trend_delta: number;
+      top_anomaly_types: string[];
+    }>;
+    signal_changes: Array<{
+      feature: string;
+      label: string;
+      tone: string;
+      trend: string;
+      trend_delta: number;
+      detail: string;
+    }>;
+    explanation_samples: Array<{
+      incident_id: string;
+      anomaly_type: string;
+      provider: {
+        key: string;
+        label: string;
+        family: string;
+      };
+      status: string;
+      pattern_insight: string;
+      explanation_confidence: string;
+      generated_at: string;
+      top_features: ExplainabilityFeature[];
+    }>;
     timeline: Array<{
       title: string;
       detail: string;
