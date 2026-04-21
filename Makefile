@@ -33,6 +33,19 @@ BACKFILL_MODELCAR_GIT_REVISION ?= main
 BACKFILL_MODELCAR_PUBLISH_TO_QUAY ?= auto
 BACKFILL_MODELCAR_QUAY_IMAGE_TAG ?=
 BACKFILL_MODELCAR_QUAY_PROMOTE_LATEST ?= true
+KAGGLE_DATASET_HANDLE ?=
+KAGGLE_DATASET_OWNER ?=
+KAGGLE_DATASET_SLUG ?=
+KAGGLE_DATASET_TITLE ?= IMS SIP Backfill Dataset
+KAGGLE_DATASET_SUBTITLE ?= Anonymized SIP backfill windows and incident labels for IMS anomaly demos
+KAGGLE_DATASET_LICENSE ?= CC-BY-4.0
+KAGGLE_DATASET_PUBLIC ?= false
+KAGGLE_VERSION_NOTES ?= Refresh $(BACKFILL_BUNDLE_VERSION)
+KAGGLE_API_TOKEN ?=
+KAGGLE_UPLOAD_DIR ?=
+KAGGLE_KEEP_UPLOAD_DIR ?= false
+KAGGLE_PUBLISH_ENV_DIR ?= .tmp/kaggle-publish-venv
+KAGGLE_WORKSPACE_ROOT ?= .tmp/kaggle-backfill-workspace
 INCIDENT_RELEASE_VERSION ?=
 INCIDENT_RELEASE_MODE ?= draft-replacement
 INCIDENT_RELEASE_PUBLIC_RECORD_TARGET ?= 10000
@@ -53,7 +66,7 @@ GPU_REPLICAS ?= 1
 GPU_SOURCE_MACHINESET ?=
 GPU_OUTPUT ?=
 
-.PHONY: help kustomize-gitops apply-demo-ai-extras check-demo-incident-generators check-fresh-cluster-gitops check-fresh-cluster-ai check-fresh-cluster-runtime check-fresh-cluster validate-python repo-tree render-gpu-node-pool add-gpu-node-pool trigger-build-pipeline live-step-1-generate-demo-incident live-step-2-build-incident-release live-step-3-publish-feature-bundle live-step-4-train-and-deploy-classifier live-step-5-smoke-check-serving live-step-6-validate-ai-playbook-generation backfill-step-1-generate-training-dataset backfill-step-2-build-feature-bundle backfill-step-3-train-and-register-classifier backfill-step-4-activate-serving-endpoint backfill-step-5-smoke-check-serving backfill-modelcar-step-1-publish-image backfill-modelcar-step-2-smoke-check-serving step-1-generate-demo-incident step-2-backfill-training-dataset step-3-build-incident-release step-4-publish-feature-bundle step-5-train-and-deploy-classifier legacy-train-and-deploy-classifier smoke-check-featurestore-serving validate-ai-playbook-generation stop-incident-release list-incident-release-datasets generate-demo-incident trigger-anomaly-platform-pipeline trigger-feature-bundle-pipeline trigger-featurestore-pipeline trigger-incident-release-pipeline trigger-incident-release backfill-step-4-smoke-check-serving
+.PHONY: help kustomize-gitops apply-demo-ai-extras check-demo-incident-generators check-fresh-cluster-gitops check-fresh-cluster-ai check-fresh-cluster-runtime check-fresh-cluster validate-python repo-tree render-gpu-node-pool add-gpu-node-pool trigger-build-pipeline live-step-1-generate-demo-incident live-step-2-build-incident-release live-step-3-publish-feature-bundle live-step-4-train-and-deploy-classifier live-step-5-smoke-check-serving live-step-6-validate-ai-playbook-generation backfill-step-1-generate-training-dataset backfill-step-2-build-feature-bundle backfill-kaggle-step-1-publish-dataset backfill-step-3-train-and-register-classifier backfill-step-4-activate-serving-endpoint backfill-step-5-smoke-check-serving backfill-modelcar-step-1-publish-image backfill-modelcar-step-2-smoke-check-serving step-1-generate-demo-incident step-2-backfill-training-dataset step-3-build-incident-release step-4-publish-feature-bundle step-5-train-and-deploy-classifier legacy-train-and-deploy-classifier smoke-check-featurestore-serving validate-ai-playbook-generation stop-incident-release list-incident-release-datasets generate-demo-incident trigger-anomaly-platform-pipeline trigger-feature-bundle-pipeline trigger-featurestore-pipeline trigger-incident-release-pipeline trigger-incident-release backfill-step-4-smoke-check-serving
 
 help: ## Print available make targets
 	@printf "Available commands:\n"
@@ -315,6 +328,111 @@ backfill-step-2-build-feature-bundle: ## Backfill Step 2: Build a Kaggle-ready b
 	BACKFILL_BUNDLE_VERSION="$(BACKFILL_BUNDLE_VERSION)" \
 	DEMO_PROJECT="$(DEMO_PROJECT)" \
 	python3 -c 'from pathlib import Path; import functools, os; manifest = Path("$(DEMO_TRIGGER_DIR)/backfill-feature-bundle-run-job.yaml").read_text(); replacements = {"__BACKFILL_DATASET_VERSION__": os.environ["BACKFILL_DATASET_VERSION"], "__BACKFILL_BUNDLE_VERSION__": os.environ["BACKFILL_BUNDLE_VERSION"], "__DEMO_PROJECT__": os.environ["DEMO_PROJECT"]}; print(functools.reduce(lambda text, item: text.replace(item[0], item[1]), replacements.items(), manifest), end="")' | oc create -f -
+
+backfill-kaggle-step-1-publish-dataset: ## Backfill Kaggle Step 1: Stage the published backfill bundle and upload it to Kaggle using a runtime token
+	@set -e; \
+	if [ -z "$(KAGGLE_API_TOKEN)" ]; then \
+	  printf "KAGGLE_API_TOKEN is required. Export it in your shell or pass it inline to make.\n"; \
+	  exit 1; \
+	fi; \
+	dataset_handle="$(KAGGLE_DATASET_HANDLE)"; \
+	if [ -z "$$dataset_handle" ]; then \
+	  if [ -z "$(KAGGLE_DATASET_OWNER)" ]; then \
+	    printf "Set KAGGLE_DATASET_HANDLE=<owner/slug> or KAGGLE_DATASET_OWNER=<owner>.\n"; \
+	    exit 1; \
+	  fi; \
+	  dataset_slug="$(KAGGLE_DATASET_SLUG)"; \
+	  if [ -z "$$dataset_slug" ]; then \
+	    dataset_slug="ims-sipp-backfill-$(BACKFILL_BUNDLE_VERSION)"; \
+	  fi; \
+	  dataset_handle="$(KAGGLE_DATASET_OWNER)/$$dataset_slug"; \
+	fi; \
+	case "$(KAGGLE_DATASET_PUBLIC)" in \
+	  true|false) ;; \
+	  *) \
+	    printf "KAGGLE_DATASET_PUBLIC must be true or false.\n"; \
+	    exit 1; \
+	    ;; \
+	esac; \
+	case "$(KAGGLE_KEEP_UPLOAD_DIR)" in \
+	  true|false) ;; \
+	  *) \
+	    printf "KAGGLE_KEEP_UPLOAD_DIR must be true or false.\n"; \
+	    exit 1; \
+	    ;; \
+	esac; \
+	python3 -m venv "$(KAGGLE_PUBLISH_ENV_DIR)"; \
+	. "$(KAGGLE_PUBLISH_ENV_DIR)/bin/activate"; \
+	python -m pip install --quiet --upgrade pip boto3 kaggle; \
+	upload_dir="$(KAGGLE_UPLOAD_DIR)"; \
+	if [ -z "$$upload_dir" ]; then \
+	  dataset_slug="$${dataset_handle#*/}"; \
+	  upload_dir=".tmp/kaggle-backfill-upload/$$dataset_slug"; \
+	fi; \
+	staging_manifest=""; \
+	port_forward_pid=""; \
+	temp_home=""; \
+	cleanup() { \
+	  if [ -n "$$port_forward_pid" ]; then \
+	    kill "$$port_forward_pid" >/dev/null 2>&1 || true; \
+	    wait "$$port_forward_pid" >/dev/null 2>&1 || true; \
+	  fi; \
+	  if [ -n "$$temp_home" ]; then \
+	    rm -rf "$$temp_home"; \
+	  fi; \
+	  if [ "$(KAGGLE_KEEP_UPLOAD_DIR)" != "true" ] && [ -z "$(KAGGLE_UPLOAD_DIR)" ]; then \
+	    rm -rf "$$upload_dir"; \
+	  fi; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	dataset_store_access_key="$$(oc get secret model-storage-credentials -n "$(DATA_NAMESPACE)" -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' | base64 -d)"; \
+	dataset_store_secret_key="$$(oc get secret model-storage-credentials -n "$(DATA_NAMESPACE)" -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' | base64 -d)"; \
+	dataset_store_bucket="$$(oc get secret model-storage-credentials -n "$(DATA_NAMESPACE)" -o jsonpath='{.data.AWS_S3_BUCKET}' | base64 -d)"; \
+	dataset_store_prefix="$${DATASET_STORE_PREFIX:-pipelines/ani-datascience/datasets}"; \
+	local_port="$$(python3 - <<'PY'\nimport socket\nsock = socket.socket()\nsock.bind(('127.0.0.1', 0))\nprint(sock.getsockname()[1])\nsock.close()\nPY\n)"; \
+	oc port-forward -n "$(DATA_NAMESPACE)" svc/model-storage-minio "$${local_port}:9000" >/tmp/ani-kaggle-minio-port-forward.log 2>&1 & \
+	port_forward_pid="$$!"; \
+	for attempt in $$(seq 1 30); do \
+	  if python3 - <<PY >/dev/null 2>&1\nimport socket\nsock = socket.socket()\ntry:\n    sock.settimeout(0.5)\n    sock.connect(('127.0.0.1', int('$${local_port}')))\nfinally:\n    sock.close()\nPY\n; then \
+	    break; \
+	  fi; \
+	  if [ "$$attempt" -eq 30 ]; then \
+	    printf "MinIO port-forward did not become ready. Check /tmp/ani-kaggle-minio-port-forward.log\n"; \
+	    exit 1; \
+	  fi; \
+	  sleep 1; \
+	done; \
+	printf "Staging Kaggle upload directory for %s from bundle %s\n" "$$dataset_handle" "$(BACKFILL_BUNDLE_VERSION)"; \
+	DATASET_STORE_ENDPOINT="http://127.0.0.1:$${local_port}" \
+	DATASET_STORE_ACCESS_KEY="$$dataset_store_access_key" \
+	DATASET_STORE_SECRET_KEY="$$dataset_store_secret_key" \
+	DATASET_STORE_BUCKET="$$dataset_store_bucket" \
+	DATASET_STORE_PREFIX="$$dataset_store_prefix" \
+	python ai/training/stage_backfill_kaggle_dataset.py \
+	  --bundle-version "$(BACKFILL_BUNDLE_VERSION)" \
+	  --dataset-handle "$$dataset_handle" \
+	  --title "$(KAGGLE_DATASET_TITLE)" \
+	  --subtitle "$(KAGGLE_DATASET_SUBTITLE)" \
+	  --license-name "$(KAGGLE_DATASET_LICENSE)" \
+	  --workspace-root "$(KAGGLE_WORKSPACE_ROOT)" \
+	  --upload-dir "$$upload_dir"; \
+	temp_home="$$(mktemp -d .tmp/kaggle-home.XXXXXX)"; \
+	mkdir -p "$$temp_home/.kaggle"; \
+	printf '%s' "$(KAGGLE_API_TOKEN)" > "$$temp_home/.kaggle/access_token"; \
+	chmod 600 "$$temp_home/.kaggle/access_token"; \
+	if HOME="$$temp_home" KAGGLE_CONFIG_DIR="$$temp_home/.kaggle" kaggle datasets status "$$dataset_handle" >/dev/null 2>&1; then \
+	  printf "Kaggle dataset %s already exists. Creating a new version.\n" "$$dataset_handle"; \
+	  HOME="$$temp_home" KAGGLE_CONFIG_DIR="$$temp_home/.kaggle" kaggle datasets version -p "$$upload_dir" -m "$(KAGGLE_VERSION_NOTES)" -q -t -r skip; \
+	else \
+	  printf "Kaggle dataset %s does not exist yet. Creating it now.\n" "$$dataset_handle"; \
+	  if [ "$(KAGGLE_DATASET_PUBLIC)" = "true" ]; then \
+	    HOME="$$temp_home" KAGGLE_CONFIG_DIR="$$temp_home/.kaggle" kaggle datasets create -p "$$upload_dir" --public -q -t -r skip; \
+	  else \
+	    HOME="$$temp_home" KAGGLE_CONFIG_DIR="$$temp_home/.kaggle" kaggle datasets create -p "$$upload_dir" -q -t -r skip; \
+	  fi; \
+	fi; \
+	printf "Kaggle publish complete for %s\n" "$$dataset_handle"; \
+	printf "Upload directory: %s\n" "$$upload_dir"
 
 backfill-step-3-train-and-register-classifier: ## Backfill Step 3: Train the best AutoGluon backfill model, register it, and refresh the always-on backfill predictor artifact path
 	@printf "Creating backfill featurestore training trigger job in %s (bundle=%s, serving_model=%s)\n" "$(DATASCIENCE_NAMESPACE)" "$(BACKFILL_BUNDLE_VERSION)" "$(BACKFILL_SERVING_MODEL_NAME)"; \

@@ -28,55 +28,64 @@ make backfill-step-1-generate-training-dataset
 make backfill-step-2-build-feature-bundle
 ```
 
-4. Train and register the backfill AutoGluon model:
+4. Optional: publish the backfill bundle to Kaggle:
+
+```sh
+export KAGGLE_API_TOKEN=...
+make backfill-kaggle-step-1-publish-dataset KAGGLE_DATASET_HANDLE=<owner/slug>
+```
+
+This target stages the exported bundle into a Kaggle-ready upload directory with `README.md`, `FILES.md`, and `dataset-metadata.json`. The Kaggle token is written only to a temporary runtime file under `.tmp/` and is not stored in git.
+
+5. Train and register the backfill AutoGluon model:
 
 ```sh
 make backfill-step-3-train-and-register-classifier
 ```
 
-5. Create or refresh the backfill serving endpoint:
+6. Create or refresh the backfill serving endpoint:
 
 ```sh
 make backfill-step-4-activate-serving-endpoint
 ```
 
-6. Smoke-check the backfill serving endpoint:
+7. Smoke-check the backfill serving endpoint:
 
 ```sh
 make backfill-step-5-smoke-check-serving
 ```
 
-7. Optional: publish the trained backfill model as an OCI modelcar image for Quay-backed reuse across clusters:
+8. Optional: publish the trained backfill model as an OCI modelcar image for Quay-backed reuse across clusters:
 
 ```sh
 make backfill-modelcar-step-1-publish-image
 ```
 
-8. Optional: smoke-check the modelcar predictor path:
+9. Optional: smoke-check the modelcar predictor path:
 
 ```sh
 make backfill-modelcar-step-2-smoke-check-serving
 ```
 
-9. Discover active backfill dataset versions later if you need them for training analysis:
+10. Discover active backfill dataset versions later if you need them for training analysis:
 
 ```sh
 make list-incident-release-datasets
 ```
 
-10. Compile the incident-release bundle from the incident-linked live dataset:
+11. Compile the incident-release bundle from the incident-linked live dataset:
 
 ```sh
 make live-step-2-build-incident-release
 ```
 
-11. Publish the feature-store-ready live bundle:
+12. Publish the feature-store-ready live bundle:
 
 ```sh
 make live-step-3-publish-feature-bundle
 ```
 
-12. Train, register, and deploy the classifier the app uses for live scoring:
+13. Train, register, and deploy the classifier the app uses for live scoring:
 
 ```sh
 make live-step-4-train-and-deploy-classifier

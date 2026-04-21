@@ -207,6 +207,33 @@ oc get jobs -n ani-datascience | rg 'ani-backfill-feature-bundle'
 oc get wf -n ani-datascience | rg 'ani-backfill-feature-bundle-publish'
 ```
 
+### Optional: Publish The Backfill Bundle To Kaggle
+
+This stages a public Kaggle upload directory from the published backfill bundle, writes `README.md`, `FILES.md`, and `dataset-metadata.json`, then creates or versions the Kaggle dataset.
+
+The target does not store your Kaggle token in git. It writes the token only to a temporary `access_token` file under `.tmp/` for the duration of the upload and removes it on exit.
+
+```sh
+export KAGGLE_API_TOKEN=...
+make backfill-kaggle-step-1-publish-dataset KAGGLE_DATASET_HANDLE=<owner/slug>
+```
+
+Optional flags:
+
+```sh
+make backfill-kaggle-step-1-publish-dataset \
+  KAGGLE_DATASET_HANDLE=<owner/slug> \
+  KAGGLE_DATASET_PUBLIC=true \
+  KAGGLE_VERSION_NOTES="Initial backfill release" \
+  KAGGLE_KEEP_UPLOAD_DIR=true
+```
+
+Notes:
+
+- the target port-forwards the in-cluster MinIO service locally so it can stage the published bundle without exposing the S3 API route publicly
+- the upload preserves Parquet files by using Kaggle CLI `--keep-tabular`
+- if the dataset already exists, the target automatically creates a new Kaggle dataset version instead of failing
+
 ### 3. Train And Register The Backfill Model
 
 ```sh
