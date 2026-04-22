@@ -37,7 +37,7 @@ KAGGLE_DATASET_HANDLE ?=
 KAGGLE_DATASET_OWNER ?=
 KAGGLE_DATASET_SLUG ?=
 KAGGLE_DATASET_TITLE ?= IMS SIP Backfill Dataset
-KAGGLE_DATASET_SUBTITLE ?= Anonymized SIP backfill windows and incident labels for IMS anomaly demos
+KAGGLE_DATASET_SUBTITLE ?= Window-level SIP anomaly features for IMS detection benchmarks
 KAGGLE_DATASET_LICENSE ?= CC-BY-4.0
 KAGGLE_DATASET_PUBLIC ?= false
 KAGGLE_VERSION_NOTES ?= Refresh $(BACKFILL_BUNDLE_VERSION)
@@ -46,6 +46,8 @@ KAGGLE_UPLOAD_DIR ?=
 KAGGLE_KEEP_UPLOAD_DIR ?= false
 KAGGLE_PUBLISH_ENV_DIR ?= .tmp/kaggle-publish-venv
 KAGGLE_WORKSPACE_ROOT ?= .tmp/kaggle-backfill-workspace
+KAGGLE_PUBLISH_PYTHON ?=
+KAGGLE_CLI_INSTALL_SPEC ?= git+https://github.com/Kaggle/kaggle-cli.git
 INCIDENT_RELEASE_VERSION ?=
 INCIDENT_RELEASE_MODE ?= draft-replacement
 INCIDENT_RELEASE_PUBLIC_RECORD_TARGET ?= 10000
@@ -335,18 +337,6 @@ backfill-kaggle-step-1-publish-dataset: ## Backfill Kaggle Step 1: Stage the pub
 	  printf "KAGGLE_API_TOKEN is required. Export it in your shell or pass it inline to make.\n"; \
 	  exit 1; \
 	fi; \
-	dataset_handle="$(KAGGLE_DATASET_HANDLE)"; \
-	if [ -z "$$dataset_handle" ]; then \
-	  if [ -z "$(KAGGLE_DATASET_OWNER)" ]; then \
-	    printf "Set KAGGLE_DATASET_HANDLE=<owner/slug> or KAGGLE_DATASET_OWNER=<owner>.\n"; \
-	    exit 1; \
-	  fi; \
-	  dataset_slug="$(KAGGLE_DATASET_SLUG)"; \
-	  if [ -z "$$dataset_slug" ]; then \
-	    dataset_slug="ims-sipp-backfill-$(BACKFILL_BUNDLE_VERSION)"; \
-	  fi; \
-	  dataset_handle="$(KAGGLE_DATASET_OWNER)/$$dataset_slug"; \
-	fi; \
 	case "$(KAGGLE_DATASET_PUBLIC)" in \
 	  true|false) ;; \
 	  *) \
@@ -361,9 +351,41 @@ backfill-kaggle-step-1-publish-dataset: ## Backfill Kaggle Step 1: Stage the pub
 	    exit 1; \
 	    ;; \
 	esac; \
-	python3 -m venv "$(KAGGLE_PUBLISH_ENV_DIR)"; \
+	python_cmd="$(KAGGLE_PUBLISH_PYTHON)"; \
+	if [ -z "$$python_cmd" ]; then \
+	  for candidate in "$$HOME/.pyenv/versions/3.11.5/bin/python3.11" python3.11 python3; do \
+	    if [ -x "$$candidate" ] || command -v "$$candidate" >/dev/null 2>&1; then \
+	      resolved="$$(command -v "$$candidate" 2>/dev/null || printf '%s' "$$candidate")"; \
+	      if "$$resolved" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then \
+	        python_cmd="$$resolved"; \
+	        break; \
+	      fi; \
+	    fi; \
+	  done; \
+	fi; \
+	if [ -z "$$python_cmd" ]; then \
+	  printf "Kaggle publishing requires Python 3.11+. Set KAGGLE_PUBLISH_PYTHON to a 3.11+ interpreter.\n"; \
+	  exit 1; \
+	fi; \
+	"$$python_cmd" -m venv "$(KAGGLE_PUBLISH_ENV_DIR)"; \
 	. "$(KAGGLE_PUBLISH_ENV_DIR)/bin/activate"; \
-	python -m pip install --quiet --upgrade pip boto3 kaggle; \
+	python -m pip install --quiet --upgrade pip boto3 "$(KAGGLE_CLI_INSTALL_SPEC)"; \
+	resolved_kaggle_owner="$(KAGGLE_DATASET_OWNER)"; \
+	if [ -z "$$resolved_kaggle_owner" ] && [ -z "$(KAGGLE_DATASET_HANDLE)" ]; then \
+	  resolved_kaggle_owner="$$(KAGGLE_API_TOKEN="$(KAGGLE_API_TOKEN)" python -c 'from kaggle import api; print(api.get_config_value("username") or "")')"; \
+	fi; \
+	dataset_handle="$(KAGGLE_DATASET_HANDLE)"; \
+	if [ -z "$$dataset_handle" ]; then \
+	  if [ -z "$$resolved_kaggle_owner" ]; then \
+	    printf "Could not determine Kaggle owner from the token. Set KAGGLE_DATASET_HANDLE=<owner/slug> or KAGGLE_DATASET_OWNER=<owner>.\n"; \
+	    exit 1; \
+	  fi; \
+	  dataset_slug="$(KAGGLE_DATASET_SLUG)"; \
+	  if [ -z "$$dataset_slug" ]; then \
+	    dataset_slug="ims-sipp-backfill-$(BACKFILL_BUNDLE_VERSION)"; \
+	  fi; \
+	  dataset_handle="$$resolved_kaggle_owner/$$dataset_slug"; \
+	fi; \
 	upload_dir="$(KAGGLE_UPLOAD_DIR)"; \
 	if [ -z "$$upload_dir" ]; then \
 	  dataset_slug="$${dataset_handle#*/}"; \
@@ -371,14 +393,10 @@ backfill-kaggle-step-1-publish-dataset: ## Backfill Kaggle Step 1: Stage the pub
 	fi; \
 	staging_manifest=""; \
 	port_forward_pid=""; \
-	temp_home=""; \
 	cleanup() { \
 	  if [ -n "$$port_forward_pid" ]; then \
 	    kill "$$port_forward_pid" >/dev/null 2>&1 || true; \
 	    wait "$$port_forward_pid" >/dev/null 2>&1 || true; \
-	  fi; \
-	  if [ -n "$$temp_home" ]; then \
-	    rm -rf "$$temp_home"; \
 	  fi; \
 	  if [ "$(KAGGLE_KEEP_UPLOAD_DIR)" != "true" ] && [ -z "$(KAGGLE_UPLOAD_DIR)" ]; then \
 	    rm -rf "$$upload_dir"; \
@@ -389,11 +407,11 @@ backfill-kaggle-step-1-publish-dataset: ## Backfill Kaggle Step 1: Stage the pub
 	dataset_store_secret_key="$$(oc get secret model-storage-credentials -n "$(DATA_NAMESPACE)" -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' | base64 -d)"; \
 	dataset_store_bucket="$$(oc get secret model-storage-credentials -n "$(DATA_NAMESPACE)" -o jsonpath='{.data.AWS_S3_BUCKET}' | base64 -d)"; \
 	dataset_store_prefix="$${DATASET_STORE_PREFIX:-pipelines/ani-datascience/datasets}"; \
-	local_port="$$(python3 - <<'PY'\nimport socket\nsock = socket.socket()\nsock.bind(('127.0.0.1', 0))\nprint(sock.getsockname()[1])\nsock.close()\nPY\n)"; \
+	local_port="$$(python -c 'import socket; sock = socket.socket(); sock.bind(("127.0.0.1", 0)); print(sock.getsockname()[1]); sock.close()')"; \
 	oc port-forward -n "$(DATA_NAMESPACE)" svc/model-storage-minio "$${local_port}:9000" >/tmp/ani-kaggle-minio-port-forward.log 2>&1 & \
 	port_forward_pid="$$!"; \
 	for attempt in $$(seq 1 30); do \
-	  if python3 - <<PY >/dev/null 2>&1\nimport socket\nsock = socket.socket()\ntry:\n    sock.settimeout(0.5)\n    sock.connect(('127.0.0.1', int('$${local_port}')))\nfinally:\n    sock.close()\nPY\n; then \
+	  if python -c 'import socket, sys; sock = socket.socket(); sock.settimeout(0.5); sock.connect(("127.0.0.1", int(sys.argv[1]))); sock.close()' "$$local_port" >/dev/null 2>&1; then \
 	    break; \
 	  fi; \
 	  if [ "$$attempt" -eq 30 ]; then \
@@ -416,19 +434,15 @@ backfill-kaggle-step-1-publish-dataset: ## Backfill Kaggle Step 1: Stage the pub
 	  --license-name "$(KAGGLE_DATASET_LICENSE)" \
 	  --workspace-root "$(KAGGLE_WORKSPACE_ROOT)" \
 	  --upload-dir "$$upload_dir"; \
-	temp_home="$$(mktemp -d .tmp/kaggle-home.XXXXXX)"; \
-	mkdir -p "$$temp_home/.kaggle"; \
-	printf '%s' "$(KAGGLE_API_TOKEN)" > "$$temp_home/.kaggle/access_token"; \
-	chmod 600 "$$temp_home/.kaggle/access_token"; \
-	if HOME="$$temp_home" KAGGLE_CONFIG_DIR="$$temp_home/.kaggle" kaggle datasets status "$$dataset_handle" >/dev/null 2>&1; then \
+	if KAGGLE_API_TOKEN="$(KAGGLE_API_TOKEN)" kaggle datasets status "$$dataset_handle" >/dev/null 2>&1; then \
 	  printf "Kaggle dataset %s already exists. Creating a new version.\n" "$$dataset_handle"; \
-	  HOME="$$temp_home" KAGGLE_CONFIG_DIR="$$temp_home/.kaggle" kaggle datasets version -p "$$upload_dir" -m "$(KAGGLE_VERSION_NOTES)" -q -t -r skip; \
+	  KAGGLE_API_TOKEN="$(KAGGLE_API_TOKEN)" kaggle datasets version -p "$$upload_dir" -m "$(KAGGLE_VERSION_NOTES)" -q -t -r skip; \
 	else \
 	  printf "Kaggle dataset %s does not exist yet. Creating it now.\n" "$$dataset_handle"; \
 	  if [ "$(KAGGLE_DATASET_PUBLIC)" = "true" ]; then \
-	    HOME="$$temp_home" KAGGLE_CONFIG_DIR="$$temp_home/.kaggle" kaggle datasets create -p "$$upload_dir" --public -q -t -r skip; \
+	    KAGGLE_API_TOKEN="$(KAGGLE_API_TOKEN)" kaggle datasets create -p "$$upload_dir" --public -q -t -r skip; \
 	  else \
-	    HOME="$$temp_home" KAGGLE_CONFIG_DIR="$$temp_home/.kaggle" kaggle datasets create -p "$$upload_dir" -q -t -r skip; \
+	    KAGGLE_API_TOKEN="$(KAGGLE_API_TOKEN)" kaggle datasets create -p "$$upload_dir" -q -t -r skip; \
 	  fi; \
 	fi; \
 	printf "Kaggle publish complete for %s\n" "$$dataset_handle"; \

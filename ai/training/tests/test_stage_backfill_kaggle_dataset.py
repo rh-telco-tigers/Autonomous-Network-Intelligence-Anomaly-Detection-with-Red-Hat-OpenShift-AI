@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ai.training.stage_backfill_kaggle_dataset import stage_backfill_kaggle_dataset
+from ai.training.stage_backfill_kaggle_dataset import DEFAULT_KEYWORDS, stage_backfill_kaggle_dataset
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -92,7 +92,11 @@ def test_stage_backfill_kaggle_dataset_from_local_manifest(tmp_path: Path) -> No
 
     assert result["dataset_handle"] == "demo-owner/ims-sipp-backfill"
     assert Path(result["upload_dir"]).exists()
-    assert (upload_root / "README.md").read_text().startswith("# IMS SIP Backfill Dataset")
+    readme = (upload_root / "README.md").read_text()
+    assert readme.startswith("# IMS SIP Backfill Dataset")
+    assert "## Release signals" in readme
+    assert "## Quick start" in readme
+    assert "quality_report.json" in readme
     assert (upload_root / "SOURCE_DATASET_CARD.md").exists()
     assert (upload_root / "kaggle_manifest.json").exists()
 
@@ -101,3 +105,13 @@ def test_stage_backfill_kaggle_dataset_from_local_manifest(tmp_path: Path) -> No
     assert metadata["licenses"] == [{"name": "CC-BY-4.0"}]
     assert metadata["keywords"] == ["sip", "anomaly-detection"]
     assert "dataset_card" not in json.loads((upload_root / "kaggle_manifest.json").read_text())
+
+
+def test_default_keywords_use_supported_kaggle_tags() -> None:
+    assert DEFAULT_KEYWORDS == [
+        "tabular",
+        "classification",
+        "binary classification",
+        "multiclass classification",
+        "internet",
+    ]

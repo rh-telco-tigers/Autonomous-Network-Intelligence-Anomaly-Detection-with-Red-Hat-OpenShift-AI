@@ -18,11 +18,11 @@ DEFAULT_WORKSPACE_ROOT = ".tmp/kaggle-backfill-workspace"
 DEFAULT_UPLOAD_ROOT = ".tmp/kaggle-backfill-upload"
 DEFAULT_LICENSE = "CC-BY-4.0"
 DEFAULT_KEYWORDS = [
-    "anomaly-detection",
-    "telecommunications",
-    "networking",
-    "sip",
-    "openshift-ai",
+    "tabular",
+    "classification",
+    "binary classification",
+    "multiclass classification",
+    "internet",
 ]
 
 FILE_DESCRIPTIONS = {
@@ -45,6 +45,57 @@ FILE_DESCRIPTIONS = {
     "FILES.md": "Inventory of files included in the Kaggle upload.",
     "dataset-metadata.json": "Kaggle dataset metadata used for upload.",
 }
+
+
+def _format_count(value: Any) -> str:
+    return f"{int(value or 0):,}"
+
+
+def _format_percent(numerator: float, denominator: float) -> str:
+    if not denominator:
+        return "0.0%"
+    return f"{(numerator / denominator) * 100:.1f}%"
+
+
+def _quality_report_insights(quality_report: dict[str, Any]) -> dict[str, Any]:
+    row_count = int(quality_report.get("row_count") or 0)
+    incident_count = int(quality_report.get("incident_count") or 0)
+    rca_count = int(quality_report.get("rca_count") or 0)
+    label_distribution = quality_report.get("label_distribution") or {}
+    normal_count = int(label_distribution.get("0") or 0)
+    anomaly_count = int(label_distribution.get("1") or 0)
+    anomaly_distribution = quality_report.get("anomaly_type_distribution") or {}
+    anomaly_types = [name for name in anomaly_distribution if name != "normal_operation"]
+    return {
+        "row_count": row_count,
+        "incident_count": incident_count,
+        "rca_count": rca_count,
+        "normal_count": normal_count,
+        "anomaly_count": anomaly_count,
+        "normal_ratio": _format_percent(normal_count, row_count),
+        "anomaly_ratio": _format_percent(anomaly_count, row_count),
+        "scenario_count": len(anomaly_distribution),
+        "anomaly_type_count": len(anomaly_types),
+        "feature_count": len(quality_report.get("numeric_feature_columns") or []),
+        "control_plane_status": str((quality_report.get("source_status") or {}).get("control_plane") or "unknown"),
+        "generated_at": str(quality_report.get("generated_at") or ""),
+    }
+
+
+def _distribution_markdown(distribution: dict[str, Any]) -> str:
+    if not distribution:
+        return "- none"
+    total = float(sum(int(value or 0) for value in distribution.values()))
+    lines = []
+    for name, count in sorted(distribution.items(), key=lambda item: (-int(item[1] or 0), str(item[0]))):
+        lines.append(f"- `{name}`: {_format_count(count)} rows ({_format_percent(int(count or 0), total)})")
+    return "\n".join(lines)
+
+
+def _table_rows(rows: list[tuple[str, str]]) -> str:
+    header = "| Signal | Value |\n| --- | --- |\n"
+    body = "\n".join(f"| {label} | {value} |" for label, value in rows)
+    return header + body
 
 
 def _parse_args() -> argparse.Namespace:
@@ -235,50 +286,93 @@ def _readme_text(
     dataset_title: str,
     dataset_handle: str,
     manifest: dict[str, Any],
+    quality_report: dict[str, Any],
     uploaded_files: list[str],
-    source_dataset_card: str,
 ) -> str:
-    quality_summary = manifest.get("quality_summary", {})
     row_counts = manifest.get("row_counts", {})
     source_dataset_versions = manifest.get("source_dataset_versions", [])
+    quality = _quality_report_insights(quality_report)
     file_inventory = "\n".join(
         f"- `{file_name}`: {FILE_DESCRIPTIONS.get(file_name, 'Included dataset artifact.')}"
         for file_name in uploaded_files
+        if file_name
     )
+    release_signals = _table_rows(
+        [
+            ("Dataset handle", f"`{dataset_handle}`"),
+            ("Bundle version", f"`{manifest.get('bundle_version', '')}`"),
+            ("Source dataset versions", ", ".join(f"`{value}`" for value in source_dataset_versions) or "`unknown`"),
+            ("Generated at", f"`{quality['generated_at'] or manifest.get('generated_at', '')}`"),
+            ("Feature schema", f"`{manifest.get('feature_schema_version', '')}`"),
+            ("Label taxonomy", f"`{manifest.get('label_taxonomy_version', '')}`"),
+            ("Git commit", f"`{manifest.get('git_commit', '')}`"),
+            ("Window-level examples", _format_count(quality["row_count"])),
+            ("Normal vs anomaly mix", f"{_format_count(quality['normal_count'])} normal ({quality['normal_ratio']}), {_format_count(quality['anomaly_count'])} anomaly ({quality['anomaly_ratio']})"),
+            ("Scenario classes", f"{quality['scenario_count']} total, {quality['anomaly_type_count']} anomalous"),
+            ("Serving-aligned numeric features", _format_count(quality["feature_count"])),
+            ("Control-plane reachability during bundle build", f"`{quality['control_plane_status']}`"),
+        ]
+    )
+    row_count_table = _table_rows(
+        [
+            ("window_features.parquet", _format_count(row_counts.get("window_features", 0))),
+            ("window_context.parquet", _format_count(row_counts.get("window_context", 0))),
+            ("window_labels.parquet", _format_count(row_counts.get("window_labels", 0))),
+            ("incidents.parquet", _format_count(row_counts.get("incidents", 0))),
+            ("rca_summary.parquet", _format_count(row_counts.get("rca_summary", 0))),
+            ("entity_rows.parquet", _format_count(row_counts.get("entity_rows", 0))),
+        ]
+    )
+    anomaly_distribution = _distribution_markdown(quality_report.get("anomaly_type_distribution") or {})
+    feature_list = "\n".join(
+        f"- `{feature}`" for feature in (quality_report.get("numeric_feature_columns") or [])
+    ) or "- none"
+    limitations = [
+        "- `incidents.parquet` and `rca_summary.parquet` may legitimately contain zero rows in bundles produced from traffic-only backfill windows. Use this release primarily for window-level anomaly classification unless those tables are populated.",
+        "- This package intentionally strips cluster-internal object-store URIs and service URLs from the public manifest.",
+        "- The release is a deterministic snapshot, not a live continuously updating feed.",
+    ]
     return (
         f"# {dataset_title}\n\n"
-        f"This Kaggle package contains the published IMS SIP backfill feature bundle exported from the OpenShift AI demo environment.\n\n"
-        f"## Dataset handle\n\n"
-        f"- `{dataset_handle}`\n\n"
-        f"## Provenance\n\n"
-        f"- bundle_version: `{manifest.get('bundle_version', '')}`\n"
-        f"- feature_schema_version: `{manifest.get('feature_schema_version', '')}`\n"
-        f"- label_taxonomy_version: `{manifest.get('label_taxonomy_version', '')}`\n"
-        f"- git_commit: `{manifest.get('git_commit', '')}`\n"
-        f"- source_dataset_versions: `{', '.join(source_dataset_versions)}`\n\n"
-        f"## Included files\n\n"
+        "This release packages the IMS SIP backfill feature bundle as a reproducible Kaggle dataset for tabular anomaly-detection work. "
+        "It is designed for offline model training, feature-store benchmarking, and demo reproducibility rather than raw packet replay.\n\n"
+        "## Why this release is strong\n\n"
+        "- public-safe packaging with explicit manifests, a quality report, and a preserved source dataset card\n"
+        "- both Parquet and CSV exports so the data is useful for production training and quick inspection\n"
+        "- serving-aligned numeric feature columns that match the current anomaly scoring contract\n"
+        "- deterministic schema and provenance fields for reproducible offline experiments\n\n"
+        "## Release signals\n\n"
+        f"{release_signals}\n\n"
+        "## Recommended use cases\n\n"
+        "- binary anomaly detection using `window_features.parquet` joined with `window_labels.parquet`\n"
+        "- multiclass scenario classification across the published anomaly types\n"
+        "- benchmark comparisons between tabular model families on a fixed, documented snapshot\n"
+        "- feature-store offline training flows using `offline_source.parquet` and `entity_rows.parquet`\n\n"
+        "## Row counts\n\n"
+        f"{row_count_table}\n\n"
+        "## Scenario distribution\n\n"
+        f"{anomaly_distribution}\n\n"
+        "## Numeric feature columns\n\n"
+        f"{feature_list}\n\n"
+        "## Quick start\n\n"
+        "```python\n"
+        "import pandas as pd\n\n"
+        "features = pd.read_parquet('window_features.parquet')\n"
+        "labels = pd.read_parquet('window_labels.parquet')[['window_id', 'label', 'anomaly_type']]\n"
+        "training_frame = features.merge(labels, on='window_id', how='left')\n"
+        "print(training_frame.head())\n"
+        "```\n\n"
+        "## Included artifacts\n\n"
         f"{file_inventory}\n\n"
-        f"## Row counts\n\n"
-        f"- window_features: `{row_counts.get('window_features', 0)}`\n"
-        f"- window_context: `{row_counts.get('window_context', 0)}`\n"
-        f"- window_labels: `{row_counts.get('window_labels', 0)}`\n"
-        f"- incidents: `{row_counts.get('incidents', 0)}`\n"
-        f"- rca_summary: `{row_counts.get('rca_summary', 0)}`\n"
-        f"- entity_rows: `{row_counts.get('entity_rows', 0)}`\n\n"
-        f"## Quality summary\n\n"
-        f"- overall_status: `{quality_summary.get('overall_status', 'unknown')}`\n"
-        f"- control_plane_status: `{quality_summary.get('control_plane_status', 'unknown')}`\n"
-        f"- incident_linkage_ratio: `{quality_summary.get('incident_linkage_ratio', 0)}`\n"
-        f"- rca_attachment_ratio: `{quality_summary.get('rca_attachment_ratio', 0)}`\n\n"
-        f"## Intended use\n\n"
-        f"- offline anomaly detection experiments\n"
-        f"- feature-store training benchmarks\n"
-        f"- reproducible demo and workshop datasets\n\n"
-        f"## Notes\n\n"
-        f"- This upload intentionally excludes cluster-internal URLs and object-store paths from the public manifest.\n"
-        f"- Use the parquet artifacts for training pipelines and the CSV artifacts for quick inspection.\n\n"
-        f"## Original dataset card\n\n"
-        f"{source_dataset_card.strip()}\n"
+        "## Quality and provenance files\n\n"
+        "- `quality_report.json`: authoritative release statistics and source-status details\n"
+        "- `kaggle_manifest.json`: public-facing manifest with provenance and included-file inventory\n"
+        "- `SOURCE_DATASET_CARD.md`: original internal bundle card preserved alongside this release\n"
+        "- `FILES.md`: concise file-by-file inventory for the upload directory\n\n"
+        "## Limitations and interpretation notes\n\n"
+        f"{chr(10).join(limitations)}\n\n"
+        "## License\n\n"
+        "- `CC-BY-4.0`\n"
     )
 
 
@@ -352,7 +446,7 @@ def stage_backfill_kaggle_dataset(
         _download_file(source, staging_dir / file_name)
         downloaded_files.append(file_name)
 
-    source_dataset_card = (staging_dir / "SOURCE_DATASET_CARD.md").read_text()
+    quality_report = json.loads((staging_dir / "quality_report.json").read_text())
     public_manifest = _public_manifest(manifest, dataset_handle, sorted(downloaded_files))
     (staging_dir / "kaggle_manifest.json").write_text(json.dumps(public_manifest, indent=2))
     downloaded_files.append("kaggle_manifest.json")
@@ -361,8 +455,8 @@ def stage_backfill_kaggle_dataset(
         dataset_title=title,
         dataset_handle=dataset_handle,
         manifest=manifest,
+        quality_report=quality_report,
         uploaded_files=sorted(downloaded_files),
-        source_dataset_card=source_dataset_card,
     )
     (staging_dir / "README.md").write_text(readme_text)
     downloaded_files.append("README.md")
@@ -401,7 +495,7 @@ def main() -> None:
     title = _normalize_title(args.title or _title_from_slug(dataset_slug))
     subtitle = _normalize_subtitle(
         args.subtitle
-        or "Anonymized SIP backfill windows and incident labels for IMS anomaly demos"
+        or "Window-level SIP anomaly features for IMS detection benchmarks"
     )
     result = stage_backfill_kaggle_dataset(
         bundle_version=args.bundle_version,
