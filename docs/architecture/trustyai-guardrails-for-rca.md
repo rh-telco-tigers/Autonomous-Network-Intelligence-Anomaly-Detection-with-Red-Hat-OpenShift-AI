@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines how ANI should introduce TrustyAI Guardrails into the Phase 7 RCA path so that LLM output is validated before it is stored, shown to operators, or used to unlock remediation.
+This document defines how ANI injects TrustyAI Guardrails into the Phase 7 RCA path so that LLM output is validated before it is stored, shown to operators, or used to unlock remediation.
 
 Use this file when you need:
 
@@ -15,17 +15,48 @@ This design extends the current [RCA and remediation](./rca-remediation.md) and 
 
 ## Status
 
-This is a proposed next-step architecture document. The current platform already grounds RCA with incident context, retrieved evidence, and a structured JSON response. The missing piece is a dedicated safety and policy layer between the LLM output and the persisted RCA record.
+This is active in the current platform. The current platform already grounds RCA with incident context, retrieved evidence, and a structured JSON response, and it now inserts a TrustyAI-backed safety and policy boundary before RCA is trusted downstream.
 
 Current runtime reality:
 
-- `services/control-plane/app.py` builds the RCA request and persists the returned payload
-- `services/shared/rag.py` prompts the model to return `root_cause`, `explanation`, `confidence`, `evidence`, and `recommendation`
-- `services/shared/rag.py` also assembles retrieved evidence into the model prompt, so retrieval content is part of the trust boundary
-- remediation generation and AI playbook generation already apply their own downstream controls
-- there is no dedicated TrustyAI guardrail decision in front of RCA storage or remediation unlock
+- GitOps deploys `GuardrailsOrchestrator`, its config maps, and the prompt-injection detector in `k8s/base/trustyai/`
+- `k8s/overlays/gitops/runtime/llm-provider-config.yaml` points `LLM_ENDPOINT` at the Guardrails gateway `/rca` route and sets `TRUSTYAI_ORCHESTRATOR_ENDPOINT` for direct playbook-request validation
+- `services/rca-service/app.py` treats a guardrailed endpoint as the authoritative RCA generation boundary and persists a `guardrails` envelope with the RCA payload
+- `services/control-plane/app.py` separately calls `evaluate_ai_playbook_generation_guardrails(...)` before preview, publish, or override flows for AI playbook generation
+- remediation unlock and AI playbook publish are now explicitly gated by the stored guardrail decision instead of assuming that parseable model output is trustworthy
 
-The design goal here is to move that safety gate earlier, closer to RCA generation.
+The remainder of this document captures the contract and policy model that the live implementation follows.
+
+## Current Live Injection Path
+
+The current platform injects TrustyAI guardrails in front of both RCA generation and AI playbook request validation.
+
+- `k8s/base/trustyai/guardrails-orchestrator.yaml` defines the `GuardrailsOrchestrator` custom resource
+- `k8s/base/trustyai/orchestrator-config.yaml` sends chat generation to `ani-generative-proxy` and detector calls to the prompt-injection detector service
+- `k8s/base/trustyai/gateway-config.yaml` binds the `rca` route to `prompt-injection-input` and `pii-output`
+- `k8s/base/trustyai/prompt-injection-detector.yaml` deploys the prompt-injection detector as a raw-deployment `InferenceService`
+- `k8s/overlays/gitops/runtime/llm-provider-config.yaml` rewires `rca-service` to call the guardrails gateway and enables TrustyAI-backed playbook validation in `control-plane`
+- `services/shared/guardrails.py` resolves the orchestrator endpoint, timeout, and TLS behavior, then normalizes TrustyAI detector results into ANI guardrail decisions
+- `services/rca-service/app.py` persists `allow`, `require_review`, `block`, or `error` decisions inside the RCA `guardrails` envelope
+- `services/control-plane/app.py` persists the same decision model for AI playbook requests before Kafka publish or override paths continue
+
+```yaml
+# k8s/overlays/gitops/runtime/llm-provider-config.yaml
+LLM_ENDPOINT: http://guardrails-orchestrator-service.ani-datascience.svc.cluster.local:8090/rca
+TRUSTYAI_ORCHESTRATOR_ENDPOINT: https://guardrails-orchestrator-service.ani-datascience.svc.cluster.local:8032
+TRUSTYAI_ORCHESTRATOR_VERIFY_TLS: "false"
+ANI_PLAYBOOK_GUARDRAILS_TRUSTYAI_ENABLED: "true"
+ANI_GUARDRAILS_POLICY_VERSION: v1
+```
+
+```yaml
+# k8s/base/trustyai/gateway-config.yaml
+routes:
+  - name: rca
+    detectors:
+      - prompt-injection-input
+      - pii-output
+```
 
 ## Product Notes
 

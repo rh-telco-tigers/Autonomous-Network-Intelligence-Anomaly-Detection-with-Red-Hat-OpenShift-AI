@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines how ANI should introduce TrustyAI explainability into the Phase 7 incident scoring path so operators can see why the anomaly model predicted a given incident class before RCA and remediation decisions are made.
+This document defines how ANI injects TrustyAI explainability into the Phase 7 incident scoring path so operators can see why the anomaly model predicted a given incident class before RCA and remediation decisions are made.
 
 Use this file when you need:
 
@@ -15,17 +15,53 @@ This design extends the current [Phase 07 overview](./phase-07-overview-real-tim
 
 ## Status
 
-This is a proposed next-step architecture document.
+This is active in the current platform.
 
 Current runtime reality:
 
 - `anomaly-service` scores live feature windows through the deployed multiclass serving endpoint
-- the control-plane stores `anomaly_type`, `predicted_confidence`, `class_probabilities`, `feature_window_id`, and `feature_snapshot`
-- the incident UI already has a lightweight `explainability` shape in `services/demo-ui/lib/types.ts`
-- the platform does not currently call TrustyAI to produce feature attribution for live incident predictions
-- operators can see the prediction and RCA, but not a first-class explanation of why the model chose that class
+- the predictive `InferenceService` includes a TrustyAI explainer container
+- the MLServer runtime exposes `ai.featurestore.trustyai_v1_adapter:app` on `8081` so the explainer can call a TrustyAI-compatible v1 endpoint
+- classifier profiles publish the active predictor and explainability endpoints through `ani-platform-config`
+- `anomaly-service` calls `build_model_explanation(...)` and the control-plane stores the `model_explanation` envelope with the incident
+- the incident UI and `AI Safety & Trust` page already render TrustyAI explanation data when it is present
+- `services/shared/explainability.py` falls back to a heuristic explanation when the TrustyAI endpoint is unavailable so incident creation still succeeds
 
-The design goal here is to add an explicit model-explanation step between prediction and operator action.
+The remainder of this document captures the architecture and contract that the live implementation follows.
+
+## Current Live Injection Path
+
+The current platform injects TrustyAI explainability at the serving boundary rather than trying to reconstruct explanations later in the UI.
+
+- `k8s/base/serving/featurestore-serving.yaml` attaches `quay.io/trustyai/trustyai-kserve-explainer:latest` to the predictive `InferenceService`
+- `k8s/base/serving/autogluon-mlserver-runtime.yaml` starts `ai.featurestore.trustyai_v1_adapter:app` on `8081` so the TrustyAI explainer can use a v1-style prediction interface against the same model container
+- `k8s/base/platform/platform-runtime-config.yaml` publishes `PREDICTIVE_EXPLAINABILITY_ENDPOINT`, profile-specific explainer endpoints, and `PREDICTIVE_ACTIVE_PROFILE`
+- `services/shared/classifier_profiles.py` and `services/shared/model_store.py` resolve the active classifier profile and expose the selected explainability endpoint to application code
+- `services/anomaly-service/app.py` calls `current_predictive_profile()` and `build_model_explanation(...)` immediately after scoring
+- `services/shared/explainability.py` posts to the TrustyAI explainer endpoint, normalizes the attribution payload, and falls back to the local heuristic envelope if TrustyAI is unavailable
+- the normalized `model_explanation` envelope is persisted with the incident and reused by `services/control-plane/app.py`, `services/demo-ui/components/incident-workflow-detail.tsx`, and `services/demo-ui/app/safety/page.tsx`
+
+```yaml
+# k8s/base/serving/featurestore-serving.yaml
+explainer:
+  containers:
+    - name: kserve-container
+      image: quay.io/trustyai/trustyai-kserve-explainer:latest
+      args:
+        - --model_name
+        - ani-predictive-fs
+        - --predictor_host
+        - ani-predictive-fs-predictor.$(POD_NAMESPACE).svc.cluster.local:8081
+```
+
+```yaml
+# k8s/base/platform/platform-runtime-config.yaml
+PREDICTIVE_ACTIVE_PROFILE: live
+PREDICTIVE_ENDPOINT_LIVE: http://ani-predictive-fs-predictor.ani-demo-lab.svc.cluster.local:8080
+PREDICTIVE_EXPLAINABILITY_ENDPOINT_LIVE: http://ani-predictive-fs-explainer.ani-demo-lab.svc.cluster.local:8080
+PREDICTIVE_ENDPOINT_MODELCAR: http://ani-predictive-backfill-modelcar-predictor.ani-demo-lab.svc.cluster.local:8080
+PREDICTIVE_EXPLAINABILITY_ENDPOINT_MODELCAR: http://ani-predictive-backfill-modelcar-explainer.ani-demo-lab.svc.cluster.local:8080
+```
 
 ## Product Notes
 
