@@ -508,10 +508,10 @@ spec:
           resources:
             requests:
               cpu: 250m
-              memory: 1Gi
+              memory: 2Gi
             limits:
               cpu: 1
-              memory: 2Gi
+              memory: 4Gi
 ---
 apiVersion: v1
 kind: Service
@@ -598,10 +598,10 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 512Mi
             limits:
               cpu: 250m
-              memory: 512Mi
+              memory: 1Gi
 ---
 apiVersion: v1
 kind: Service
@@ -707,10 +707,10 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi
+              memory: 256Mi
             limits:
               cpu: 250m
-              memory: 256Mi
+              memory: 512Mi
 ---
 apiVersion: v1
 kind: Service
@@ -816,10 +816,10 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi
+              memory: 256Mi
             limits:
               cpu: 500m
-              memory: 256Mi
+              memory: 512Mi
 ---
 apiVersion: v1
 kind: Service
@@ -922,10 +922,10 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 512Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              memory: 1Gi
         - name: oauth-proxy
           image: registry.redhat.io/openshift4/ose-oauth-proxy-rhel9:v4.20.0
           imagePullPolicy: IfNotPresent
@@ -950,10 +950,10 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 64Mi
+              memory: 128Mi
             limits:
               cpu: 250m
-              memory: 128Mi
+              memory: 256Mi
 ---
 apiVersion: v1
 kind: Service
