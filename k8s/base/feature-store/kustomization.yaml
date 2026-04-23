@@ -11,3 +11,5 @@ configMapGenerator:
 resources:
   - featurestore-config.yaml
   - featurestore-instance.yaml
+  - featurestore-snowflake-demo.yaml
+  - snowflake-materialize-cronjob.yaml
