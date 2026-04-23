@@ -1,0 +1,139 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ani-snowflake-materialize
+  namespace: ani-datascience
+spec:
+  schedule: "0 */2 * * *"      # every 2 hours
+  concurrencyPolicy: Forbid     # skip if previous run still going
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app: ani-snowflake-materialize
+        spec:
+          serviceAccountName: model-storage-sa
+          restartPolicy: Never
+          containers:
+            - name: feast-materialize
+              image: quay.io/autonomousnetworkintelligence/ani-ai-featurestore-trainer:latest
+              command:
+                - /bin/bash
+                - -lc
+              args:
+                - |
+                  set -e
+
+                  echo "=== Setting up feature repo ==="
+                  REPO_DIR=/tmp/snowflake-feast-repo
+                  mkdir -p ${REPO_DIR}
+
+                  cp /workspace/ai/featurestore/feature_repo/entities.py ${REPO_DIR}/
+                  cp /workspace/ai/featurestore/feature_repo/feature_views.py ${REPO_DIR}/
+                  cp /workspace/ai/featurestore/feature_repo/feature_services.py ${REPO_DIR}/
+
+                  cat > ${REPO_DIR}/feature_store.yaml <<EOF
+                  project: ani_anomaly_featurestore
+                  provider: local
+                  registry:
+                    path: ${REPO_DIR}/registry.db
+                    registry_type: file
+                  online_store:
+                    type: snowflake.online
+                    account: ${SNOWFLAKE_ACCOUNT}
+                    user: ${SNOWFLAKE_USER}
+                    password: ${SNOWFLAKE_PASSWORD}
+                    role: ${SNOWFLAKE_ROLE}
+                    warehouse: ${SNOWFLAKE_WAREHOUSE}
+                    database: ${SNOWFLAKE_DATABASE}
+                    schema: ${SNOWFLAKE_SCHEMA}
+                  auth:
+                    type: no_auth
+                  entity_key_serialization_version: 3
+                  EOF
+
+                  echo "=== Installing Snowflake Feast dependency ==="
+                  pip install --quiet --target /tmp/feast-snowflake-site "feast[snowflake]" s3fs
+                  export PYTHONPATH="/tmp/feast-snowflake-site:${PYTHONPATH}"
+                  export PATH="/tmp/feast-snowflake-site/bin:${PATH}"
+
+                  echo "=== Running feast apply ==="
+                  feast -c ${REPO_DIR} apply
+
+                  echo "=== Running feast materialize-incremental ==="
+                  feast -c ${REPO_DIR} materialize-incremental $(date -u +"%Y-%m-%dT%H:%M:%S") --views ani_window_numeric_v1
+
+                  echo "=== Done — Snowflake tables updated ==="
+              env:
+                - name: IMS_FEATURESTORE_OFFLINE_SOURCE_PATH
+                  valueFrom:
+                    configMapKeyRef:
+                      name: ani-featurestore-config
+                      key: FEATURESTORE_OFFLINE_SOURCE_PATH
+                - name: IMS_FEATURESTORE_LABEL_SOURCE_PATH
+                  valueFrom:
+                    configMapKeyRef:
+                      name: ani-featurestore-config
+                      key: FEATURESTORE_LABEL_SOURCE_PATH
+                - name: FEAST_S3_ENDPOINT_URL
+                  valueFrom:
+                    configMapKeyRef:
+                      name: ani-platform-config
+                      key: FEAST_S3_ENDPOINT_URL
+                - name: AWS_S3_ENDPOINT
+                  valueFrom:
+                    configMapKeyRef:
+                      name: ani-platform-config
+                      key: FEAST_S3_ENDPOINT_URL
+                - name: AWS_REGION
+                  value: us-east-1
+                - name: SNOWFLAKE_ACCOUNT
+                  valueFrom:
+                    secretKeyRef:
+                      name: snowflake-feast-credentials
+                      key: SNOWFLAKE_ACCOUNT
+                - name: SNOWFLAKE_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: snowflake-feast-credentials
+                      key: SNOWFLAKE_USER
+                - name: SNOWFLAKE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: snowflake-feast-credentials
+                      key: SNOWFLAKE_PASSWORD
+                - name: SNOWFLAKE_ROLE
+                  valueFrom:
+                    secretKeyRef:
+                      name: snowflake-feast-credentials
+                      key: SNOWFLAKE_ROLE
+                - name: SNOWFLAKE_WAREHOUSE
+                  valueFrom:
+                    secretKeyRef:
+                      name: snowflake-feast-credentials
+                      key: SNOWFLAKE_WAREHOUSE
+                - name: SNOWFLAKE_DATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: snowflake-feast-credentials
+                      key: SNOWFLAKE_DATABASE
+                - name: SNOWFLAKE_SCHEMA
+                  valueFrom:
+                    secretKeyRef:
+                      name: snowflake-feast-credentials
+                      key: SNOWFLAKE_SCHEMA
+              envFrom:
+                - secretRef:
+                    name: model-storage-credentials
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 512Mi
+                limits:
+                  cpu: 500m
+                  memory: 1Gi
