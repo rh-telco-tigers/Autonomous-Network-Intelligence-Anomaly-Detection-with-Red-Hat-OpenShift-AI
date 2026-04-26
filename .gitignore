@@ -14,3 +14,4 @@ node_modules/
 .tmp/
 ai/data/
 k8s/manual/machine-api/generated/
+.$**
