@@ -1,0 +1,483 @@
+# PVC — persistent storage for the workbench pod
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: snowflake-demo-workbench
+  namespace: ani-datascience
+  annotations:
+    argocd.argoproj.io/sync-wave: "50"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+# ConfigMap — stores the notebook JSON so ArgoCD can deploy it
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: snowflake-demo-notebook-content
+  namespace: ani-datascience
+  annotations:
+    argocd.argoproj.io/sync-wave: "50"
+binaryData: {}
+data:
+  demo_snowflake_inference.ipynb: |
+    {
+     "cells": [
+      {
+       "cell_type": "markdown",
+       "id": "a1b2c3d4",
+       "metadata": {},
+       "source": [
+        "# Snowflake Online Store \u2192 Triton Inference Demo\n",
+        "\n",
+        "This notebook demonstrates the end-to-end flow of using **Snowflake as a Feast online store** to serve features for model inference.\n",
+        "\n",
+        "It connects to the **existing `ani-featurestore-snowflake`** FeatureStore CR running in the cluster \u2014 no direct Snowflake credentials needed.\n",
+        "\n",
+        "## Architecture\n",
+        "```\n",
+        "Notebook\n",
+        "   \u2193  (Feast remote online store)\n",
+        "ani-featurestore-snowflake online server   \u2190 existing FeatureStore CR\n",
+        "   \u2193\n",
+        "Snowflake: ANI_FEAST_DEMO.FEAST_ONLINE\n",
+        "   \u2193  (features retrieved)\n",
+        "Triton inference endpoint\n",
+        "   \u2193\n",
+        "Anomaly score\n",
+        "```"
+       ]
+      },
+      {
+       "cell_type": "markdown",
+       "id": "b2c3d4e5",
+       "metadata": {},
+       "source": [
+        "## Step 1 \u2014 Install Dependencies"
+       ]
+      },
+      {
+       "cell_type": "code",
+       "execution_count": null,
+       "id": "c3d4e5f6",
+       "metadata": {},
+       "outputs": [],
+       "source": [
+        "!pip install --quiet 'feast' pandas requests"
+       ]
+      },
+      {
+       "cell_type": "markdown",
+       "id": "d4e5f6a7",
+       "metadata": {},
+       "source": [
+        "## Step 2 \u2014 Configuration\n",
+        "\n",
+        "These point to the **existing `ani-featurestore-snowflake`** services created by the Feast operator.  \n",
+        "No Snowflake credentials are needed here \u2014 the online server handles that internally."
+       ]
+      },
+      {
+       "cell_type": "code",
+       "execution_count": null,
+       "id": "e5f6a7b8",
+       "metadata": {},
+       "outputs": [],
+       "source": "import os\n\n# Feast operator creates these services for ani-featurestore-snowflake\nFEAST_ONLINE_HOST    = os.environ.get(\n    \"FEAST_SNOWFLAKE_ONLINE_HOST\",\n    \"https://feast-ani-featurestore-snowflake-online.ani-datascience.svc.cluster.local:443\",\n)\nFEAST_REGISTRY_HOST  = os.environ.get(\n    \"FEAST_SNOWFLAKE_REGISTRY_HOST\",\n    \"feast-ani-featurestore-snowflake-registry.ani-datascience.svc.cluster.local:443\",\n)\nCA_CERT = \"/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt\"\n\nTRITON_ENDPOINT = os.environ.get(\n    \"TRITON_ENDPOINT\",\n    \"http://ani-predictive-fs-predictor.ani-demo-lab.svc.cluster.local:8080\",\n)\nMODEL_NAME = os.environ.get(\"MODEL_NAME\", \"ani-predictive-fs\")\n\n# Change this to try different scenarios\nSCENARIO       = \"registration_storm\"   # options: normal | registration_storm | malformed_invite\nDEMO_WINDOW_ID = f\"demo-{SCENARIO}-001\"\n\nNUMERIC_FEATURES = [\n    \"register_rate\", \"invite_rate\", \"bye_rate\",\n    \"error_4xx_ratio\", \"error_5xx_ratio\", \"latency_p95\",\n    \"retransmission_count\", \"inter_arrival_mean\", \"payload_variance\",\n]\n\nprint(f\"Feast online store  : {FEAST_ONLINE_HOST}\")\nprint(f\"Feast registry      : {FEAST_REGISTRY_HOST}\")\nprint(f\"Triton endpoint     : {TRITON_ENDPOINT}\")\nprint(f\"Scenario            : {SCENARIO}\")\nprint(f\"Demo window_id      : {DEMO_WINDOW_ID}\")"
+      },
+      {
+       "cell_type": "markdown",
+       "id": "f6a7b8c9",
+       "metadata": {},
+       "source": [
+        "## Step 3 \u2014 Feature Scenarios\n",
+        "\n",
+        "The 9 SIP network features the model was trained on."
+       ]
+      },
+      {
+       "cell_type": "code",
+       "execution_count": null,
+       "id": "a7b8c9d0",
+       "metadata": {},
+       "outputs": [],
+       "source": [
+        "SCENARIOS = {\n",
+        "    \"normal\": {\n",
+        "        \"register_rate\":        0.13,   # calm \u2014 ~1 REGISTER per 8 seconds\n",
+        "        \"invite_rate\":          0.03,\n",
+        "        \"bye_rate\":             0.03,\n",
+        "        \"error_4xx_ratio\":      0.0,\n",
+        "        \"error_5xx_ratio\":      0.0,\n",
+        "        \"latency_p95\":          35.0,\n",
+        "        \"retransmission_count\": 0.0,\n",
+        "        \"inter_arrival_mean\":   7.5,\n",
+        "        \"payload_variance\":     40.0,\n",
+        "    },\n",
+        "    \"registration_storm\": {\n",
+        "        \"register_rate\":        6.0,    # 46x normal \u2014 flood of REGISTER messages\n",
+        "        \"invite_rate\":          0.2,\n",
+        "        \"bye_rate\":             0.1,\n",
+        "        \"error_4xx_ratio\":      0.05,\n",
+        "        \"error_5xx_ratio\":      0.02,\n",
+        "        \"latency_p95\":          180.0,  # slow \u2014 system under stress\n",
+        "        \"retransmission_count\": 12.0,   # many retries\n",
+        "        \"inter_arrival_mean\":   0.8,\n",
+        "        \"payload_variance\":     60.0,\n",
+        "    },\n",
+        "    \"malformed_invite\": {\n",
+        "        \"register_rate\":        0.2,\n",
+        "        \"invite_rate\":          1.6,\n",
+        "        \"bye_rate\":             0.1,\n",
+        "        \"error_4xx_ratio\":      0.62,   # 62% of messages are errors\n",
+        "        \"error_5xx_ratio\":      0.0,\n",
+        "        \"latency_p95\":          440.0,\n",
+        "        \"retransmission_count\": 8.0,\n",
+        "        \"inter_arrival_mean\":   0.9,\n",
+        "        \"payload_variance\":     120.0,\n",
+        "    },\n",
+        "}\n",
+        "\n",
+        "features = SCENARIOS[SCENARIO]\n",
+        "print(f\"Feature values for scenario '{SCENARIO}':\")\n",
+        "for k, v in features.items():\n",
+        "    print(f\"  {k:<25} {v}\")"
+       ]
+      },
+      {
+       "cell_type": "markdown",
+       "id": "b8c9d0e1",
+       "metadata": {},
+       "source": [
+        "## Step 4 \u2014 Connect Feast to `ani-featurestore-snowflake`\n",
+        "\n",
+        "The `remote` online store type tells Feast to talk to the existing **`ani-featurestore-snowflake` online store server**  \n",
+        "rather than connecting to Snowflake directly. The server handles all Snowflake communication internally."
+       ]
+      },
+      {
+       "cell_type": "code",
+       "execution_count": null,
+       "id": "c9d0e1f2",
+       "metadata": {},
+       "outputs": [],
+       "source": "import tempfile, textwrap\nfrom datetime import timedelta\nfrom feast import Entity, FeatureView, Field, FeatureStore, FileSource\nfrom feast.types import Float32\nfrom feast.value_type import ValueType\nfrom feast.data_format import ParquetFormat\n\ntmpdir = tempfile.mkdtemp()\n\nwith open(f\"{tmpdir}/feature_store.yaml\", \"w\") as f:\n    f.write(textwrap.dedent(f\"\"\"\n        project: ani_anomaly_featurestore\n        provider: local\n        online_store:\n          type: remote\n          path: {FEAST_ONLINE_HOST}\n          cert: {CA_CERT}\n        registry:\n          registry_type: remote\n          path: {FEAST_REGISTRY_HOST}\n          cert: {CA_CERT}\n        entity_key_serialization_version: 3\n    \"\"\"))\n\nfeature_window = Entity(\n    name=\"feature_window\",\n    join_keys=[\"window_id\"],\n    value_type=ValueType.STRING,\n)\nani_window_numeric_v1 = FeatureView(\n    name=\"ani_window_numeric_v1\",\n    entities=[feature_window],\n    ttl=timedelta(days=3650),\n    schema=[Field(name=f, dtype=Float32) for f in NUMERIC_FEATURES],\n    source=FileSource(\n        path=\"/tmp/dummy.parquet\",\n        file_format=ParquetFormat(),\n        timestamp_field=\"event_timestamp\",\n    ),\n)\n\nstore = FeatureStore(repo_path=tmpdir)\nstore.apply([feature_window, ani_window_numeric_v1])\n\nprint(\"\u2705 Feast connected and feature view applied to ani-featurestore-snowflake\")\nprint(f\"   Online store : {FEAST_ONLINE_HOST}\")\nprint(f\"   Registry     : {FEAST_REGISTRY_HOST}\")"
+      },
+      {
+       "cell_type": "markdown",
+       "id": "d0e1f2a3",
+       "metadata": {},
+       "source": [
+        "## Step 5 \u2014 Push Features INTO Snowflake via the Online Server\n",
+        "\n",
+        "The push goes to `ani-featurestore-snowflake` \u2192 it writes to Snowflake.  \n",
+        "In production this step is replaced by `feast materialize` from MinIO parquet files."
+       ]
+      },
+      {
+       "cell_type": "code",
+       "execution_count": null,
+       "id": "e1f2a3b4",
+       "metadata": {},
+       "outputs": [],
+       "source": "import pandas as pd\nfrom datetime import datetime, timezone\n\nnow = datetime.now(timezone.utc)\ndf  = pd.DataFrame([{\n    \"window_id\":         DEMO_WINDOW_ID,\n    \"event_timestamp\":   now,\n    \"created_timestamp\": now,\n    **features,\n}])\n\nprint(f\"Writing to ani-featurestore-snowflake online server...\")\nprint(f\"  window_id = '{DEMO_WINDOW_ID}'\")\nfor k, v in features.items():\n    print(f\"  {k:<25} {v}\")\n\nstore.write_to_online_store(\"ani_window_numeric_v1\", df)\n\nprint(f\"\\n\u2705 Written to ani-featurestore-snowflake \u2192 Snowflake\")"
+      },
+      {
+       "cell_type": "markdown",
+       "id": "f2a3b4c5",
+       "metadata": {},
+       "source": [
+        "## Step 6 \u2014 Read Features FROM Snowflake via the Online Server\n",
+        "\n",
+        "This is the same call the anomaly-service would make at inference time."
+       ]
+      },
+      {
+       "cell_type": "code",
+       "execution_count": null,
+       "id": "a3b4c5d6",
+       "metadata": {},
+       "outputs": [],
+       "source": "import requests as req\n\nprint(f\"Querying ani-featurestore-snowflake for window_id='{DEMO_WINDOW_ID}'...\\n\")\n\npayload = {\n    \"features\": [f\"ani_window_numeric_v1:{f}\" for f in NUMERIC_FEATURES],\n    \"entities\": {\"window_id\": [DEMO_WINDOW_ID]},\n}\n\nresp = req.post(\n    f\"{FEAST_ONLINE_HOST}/get-online-features\",\n    json=payload,\n    verify=CA_CERT,\n    timeout=30,\n)\nresp.raise_for_status()\nresult = resp.json()\n\nfeature_names = result[\"metadata\"][\"feature_names\"]\nretrieved = {\n    name: float(row[\"values\"][0])\n    for name, row in zip(feature_names, result[\"results\"])\n    if name != \"window_id\"\n}\n\nprint(\"Features fetched FROM Snowflake (via ani-featurestore-snowflake online server):\")\nfor name, value in retrieved.items():\n    print(f\"  {name:<25} {value}\")\n\nprint(\"\\n\u2705 Features retrieved from Snowflake online store\")"
+      },
+      {
+       "cell_type": "markdown",
+       "id": "b4c5d6e7",
+       "metadata": {},
+       "source": [
+        "## Step 7 \u2014 Send Snowflake Features to Triton for Prediction"
+       ]
+      },
+      {
+       "cell_type": "code",
+       "execution_count": null,
+       "id": "c5d6e7f8",
+       "metadata": {},
+       "outputs": [],
+       "source": [
+        "import requests\n",
+        "\n",
+        "data = [[float(retrieved.get(f, 0.0)) for f in NUMERIC_FEATURES]]\n",
+        "\n",
+        "print(f\"Sending to Triton  : {TRITON_ENDPOINT}\")\n",
+        "print(f\"Model              : {MODEL_NAME}\")\n",
+        "print(f\"Input vector       : {data[0]}\\n\")\n",
+        "\n",
+        "response = requests.post(\n",
+        "    f\"{TRITON_ENDPOINT}/v2/models/{MODEL_NAME}/infer\",\n",
+        "    json={\n",
+        "        \"inputs\": [{\n",
+        "            \"name\":     \"predict\",\n",
+        "            \"shape\":    [1, len(NUMERIC_FEATURES)],\n",
+        "            \"datatype\": \"FP32\",\n",
+        "            \"data\":     data,\n",
+        "        }]\n",
+        "    },\n",
+        "    timeout=30,\n",
+        ")\n",
+        "response.raise_for_status()\n",
+        "outputs = {o[\"name\"]: o for o in response.json().get(\"outputs\", [])}\n",
+        "print(f\"\u2705 Triton responded with outputs: {list(outputs.keys())}\")"
+       ]
+      },
+      {
+       "cell_type": "markdown",
+       "id": "d6e7f8a9",
+       "metadata": {},
+       "source": [
+        "## Step 8 \u2014 Results"
+       ]
+      },
+      {
+       "cell_type": "code",
+       "execution_count": null,
+       "id": "e7f8a9b0",
+       "metadata": {},
+       "outputs": [],
+       "source": [
+        "score_out = outputs.get(\"anomaly_score\")\n",
+        "v = score_out[\"data\"] if score_out else [[0.0]]\n",
+        "while isinstance(v, list):\n",
+        "    v = v[0]\n",
+        "anomaly_score = float(v)\n",
+        "is_anomaly    = anomaly_score > 0.5\n",
+        "\n",
+        "print(\"=\" * 55)\n",
+        "print(\"  INFERENCE RESULT\")\n",
+        "print(\"=\" * 55)\n",
+        "print(f\"  Scenario           : {SCENARIO}\")\n",
+        "print(f\"  window_id          : {DEMO_WINDOW_ID}\")\n",
+        "print(f\"  Feature source     : ani-featurestore-snowflake\")\n",
+        "print(f\"  Online store       : Snowflake ANI_FEAST_DEMO.FEAST_ONLINE\")\n",
+        "print(f\"  anomaly_score      : {anomaly_score:.4f}\")\n",
+        "print(f\"  is_anomaly         : {is_anomaly}\")\n",
+        "print(\"=\" * 55)\n",
+        "print()\n",
+        "print(\"\ud83d\udea8 ANOMALY DETECTED\" if is_anomaly else \"\u2705 NORMAL TRAFFIC\")\n",
+        "print()\n",
+        "print(\"Data flow:\")\n",
+        "print(\"  Feast push \u2192 ani-featurestore-snowflake \u2192 Snowflake\")\n",
+        "print(\"  get_online_features \u2192 ani-featurestore-snowflake \u2192 Snowflake\")\n",
+        "print(\"  Triton \u2192 anomaly score\")"
+       ]
+      }
+     ],
+     "metadata": {
+      "kernelspec": {
+       "display_name": "Python 3",
+       "language": "python",
+       "name": "python3"
+      },
+      "language_info": {
+       "name": "python",
+       "version": "3.11.0"
+      }
+     },
+     "nbformat": 4,
+     "nbformat_minor": 5
+    }
+---
+# Notebook CR — RHOAI workbench that mounts the notebook from the ConfigMap
+apiVersion: kubeflow.org/v1
+kind: Notebook
+metadata:
+  name: snowflake-demo-workbench
+  namespace: ani-datascience
+  labels:
+    app: snowflake-demo-workbench
+    opendatahub.io/dashboard: "true"
+    opendatahub.io/odh-managed: "true"
+  annotations:
+    argocd.argoproj.io/sync-wave: "55"
+    notebooks.opendatahub.io/inject-auth: "true"
+    notebooks.opendatahub.io/last-image-selection: "pytorch:2025.2"
+    openshift.io/display-name: "Snowflake Online Store Demo"
+spec:
+  template:
+    spec:
+      enableServiceLinks: false
+      serviceAccountName: snowflake-demo-workbench
+      initContainers:
+        - name: copy-notebook
+          image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+          command:
+            - sh
+            - -c
+            - cp /notebook-src/demo_snowflake_inference.ipynb /opt/app-root/src/demo_snowflake_inference.ipynb
+          volumeMounts:
+            - name: notebook-content
+              mountPath: /notebook-src
+            - name: snowflake-demo-workbench
+              mountPath: /opt/app-root/src
+      containers:
+        - name: snowflake-demo-workbench
+          image: 'image-registry.openshift-image-registry.svc:5000/redhat-ods-applications/pytorch:2025.2'
+          imagePullPolicy: Always
+          workingDir: /opt/app-root/src
+          env:
+            - name: NOTEBOOK_ARGS
+              value: |-
+                --ServerApp.port=8888
+                                  --ServerApp.token=''
+                                  --ServerApp.password=''
+                                  --ServerApp.base_url=/notebook/ani-datascience/snowflake-demo-workbench
+                                  --ServerApp.quit_button=False
+            - name: JUPYTER_IMAGE
+              value: 'image-registry.openshift-image-registry.svc:5000/redhat-ods-applications/pytorch:2025.2'
+            - name: FEAST_SNOWFLAKE_ONLINE_HOST
+              value: "https://feast-ani-featurestore-snowflake-online.ani-datascience.svc.cluster.local:443"
+            - name: FEAST_SNOWFLAKE_REGISTRY_HOST
+              value: "feast-ani-featurestore-snowflake-registry.ani-datascience.svc.cluster.local:443"
+            - name: TRITON_ENDPOINT
+              value: "http://ani-predictive-fs-predictor.ani-datascience.svc.cluster.local:8080"
+            - name: MODEL_NAME
+              value: "ani-predictive-fs"
+            - name: KF_PIPELINES_SSL_SA_CERTS
+              value: /etc/pki/tls/custom-certs/ca-bundle.crt
+            - name: GIT_SSL_CAINFO
+              value: /etc/pki/tls/custom-certs/ca-bundle.crt
+            - name: PIP_CERT
+              value: /etc/pki/tls/custom-certs/ca-bundle.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/pki/tls/custom-certs/ca-bundle.crt
+            - name: SSL_CERT_FILE
+              value: /etc/pki/tls/custom-certs/ca-bundle.crt
+          ports:
+            - containerPort: 8888
+              name: notebook-port
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "2"
+              memory: 8Gi
+            limits:
+              cpu: "2"
+              memory: 8Gi
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /notebook/ani-datascience/snowflake-demo-workbench/api
+              port: notebook-port
+              scheme: HTTP
+            initialDelaySeconds: 120
+            periodSeconds: 50
+            successThreshold: 1
+            timeoutSeconds: 100
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /notebook/ani-datascience/snowflake-demo-workbench/api
+              port: notebook-port
+              scheme: HTTP
+            initialDelaySeconds: 120
+            periodSeconds: 50
+            successThreshold: 1
+            timeoutSeconds: 100
+          volumeMounts:
+            - name: snowflake-demo-workbench
+              mountPath: /opt/app-root/src
+            - mountPath: /dev/shm
+              name: shm
+            - mountPath: /etc/pki/tls/custom-certs/ca-bundle.crt
+              name: trusted-ca
+              readOnly: true
+              subPath: ca-bundle.crt
+        - name: kube-rbac-proxy
+          image: 'registry.redhat.io/rhoai/odh-kube-auth-proxy-rhel9@sha256:4027ce7319cb9c9fbed1e736b440c0fa6e8bfeb5a4433a4c753402642a1839af'
+          imagePullPolicy: Always
+          args:
+            - '--secure-listen-address=0.0.0.0:8443'
+            - '--upstream=http://127.0.0.1:8888/'
+            - '--logtostderr=true'
+            - '--v=10'
+            - '--proxy-endpoints-port=8444'
+            - '--config-file=/etc/kube-rbac-proxy/config-file.yaml'
+            - '--tls-cert-file=/etc/tls/private/tls.crt'
+            - '--tls-private-key-file=/etc/tls/private/tls.key'
+            - '--auth-header-fields-enabled=true'
+            - '--auth-header-user-field-name=X-Auth-Request-User'
+            - '--auth-header-groups-field-name=X-Auth-Request-Groups'
+          ports:
+            - containerPort: 8443
+              name: kube-rbac-proxy
+              protocol: TCP
+          resources:
+            limits:
+              cpu: 100m
+              memory: 64Mi
+            requests:
+              cpu: 100m
+              memory: 64Mi
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8444
+              scheme: HTTPS
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            successThreshold: 1
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8444
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            successThreshold: 1
+            timeoutSeconds: 1
+          volumeMounts:
+            - mountPath: /etc/kube-rbac-proxy
+              name: kube-rbac-proxy-config
+            - mountPath: /etc/tls/private
+              name: kube-rbac-proxy-tls-certificates
+      volumes:
+        - name: snowflake-demo-workbench
+          persistentVolumeClaim:
+            claimName: snowflake-demo-workbench
+        - name: notebook-content
+          configMap:
+            name: snowflake-demo-notebook-content
+        - emptyDir:
+            medium: Memory
+          name: shm
+        - configMap:
+            items:
+              - key: ca-bundle.crt
+                path: ca-bundle.crt
+            name: workbench-trusted-ca-bundle
+            optional: true
+          name: trusted-ca
+        - configMap:
+            defaultMode: 420
+            name: snowflake-demo-workbench-kube-rbac-proxy-config
+          name: kube-rbac-proxy-config
+        - name: kube-rbac-proxy-tls-certificates
+          secret:
+            defaultMode: 420
+            secretName: snowflake-demo-workbench-kube-rbac-proxy-tls

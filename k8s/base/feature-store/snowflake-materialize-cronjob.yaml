@@ -4,7 +4,7 @@ metadata:
   name: ani-snowflake-materialize
   namespace: ani-datascience
 spec:
-  schedule: "0 */2 * * *"      # every 2 hours
+  schedule: "0 */2 * * *"         # every hour
   concurrencyPolicy: Forbid     # skip if previous run still going
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -96,37 +96,37 @@ spec:
                   valueFrom:
                     secretKeyRef:
                       name: snowflake-feast-credentials
-                      key: SNOWFLAKE_ACCOUNT
+                      key: account
                 - name: SNOWFLAKE_USER
                   valueFrom:
                     secretKeyRef:
                       name: snowflake-feast-credentials
-                      key: SNOWFLAKE_USER
+                      key: user
                 - name: SNOWFLAKE_PASSWORD
                   valueFrom:
                     secretKeyRef:
                       name: snowflake-feast-credentials
-                      key: SNOWFLAKE_PASSWORD
+                      key: password
                 - name: SNOWFLAKE_ROLE
                   valueFrom:
                     secretKeyRef:
                       name: snowflake-feast-credentials
-                      key: SNOWFLAKE_ROLE
+                      key: role
                 - name: SNOWFLAKE_WAREHOUSE
                   valueFrom:
                     secretKeyRef:
                       name: snowflake-feast-credentials
-                      key: SNOWFLAKE_WAREHOUSE
+                      key: warehouse
                 - name: SNOWFLAKE_DATABASE
                   valueFrom:
                     secretKeyRef:
                       name: snowflake-feast-credentials
-                      key: SNOWFLAKE_DATABASE
+                      key: database
                 - name: SNOWFLAKE_SCHEMA
                   valueFrom:
                     secretKeyRef:
                       name: snowflake-feast-credentials
-                      key: SNOWFLAKE_SCHEMA
+                      key: schema
               envFrom:
                 - secretRef:
                     name: model-storage-credentials

@@ -69,14 +69,12 @@ spec:
               subPath: feature_services.py
     onlineStore:
       # Snowflake as online store — only ani_window_numeric_v1 is materialized here (scoring only)
-      snowflake:
-        account: HHGIGXU-OSC16681
-        database: ANI_FEAST_DEMO
-        schema: FEAST_ONLINE
-        warehouse: ANI_FEAST_WH
-        role: ACCOUNTADMIN
-        credentialsSecret:
-          name: snowflake-feast-credentials
+      persistence:
+        store:
+          type: snowflake.online
+          secretRef:
+            name: snowflake-feast-credentials
+          secretKeyName: snowflake.online
       server:
         env:
           - name: IMS_FEATURESTORE_OFFLINE_SOURCE_PATH

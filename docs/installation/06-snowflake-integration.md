@@ -39,6 +39,21 @@ ani-featurestore-snowflake online store server
 | `k8s/base/feature-store/featurestore-snowflake-demo.yaml` | FeatureStore CR — Feast operator instance with Snowflake online store |
 | `k8s/base/feature-store/snowflake-secret.yaml` | Kubernetes Secret with Snowflake credentials (do not commit) |
 | `k8s/base/feature-store/snowflake-materialize-cronjob.yaml` | CronJob that runs `feast materialize-incremental` every 2 hours |
+| `k8s/overlays/gitops/datascience/snowflake-demo-notebook.yaml` | PVC + ConfigMap + Notebook CR that deploys the demo workbench |
+| `ai/featurestore/demo_snowflake_inference.ipynb` | Source reference for the notebook — see note below |
+
+### About the demo notebook
+
+`ai/featurestore/demo_snowflake_inference.ipynb` is the **source of truth** for the notebook content, but it is not what runs in the cluster. The actual notebook is embedded inside the ConfigMap in `snowflake-demo-notebook.yaml` and copied into the JupyterLab workbench pod at startup by an init container.
+
+The notebook exists as a demo to show the end-to-end flow:
+
+1. Write a feature window into Snowflake via the Feast online store server
+2. Read it back to confirm features are served from Snowflake
+3. Send those features to the Triton inference endpoint
+4. Display the anomaly score
+
+It is intended to be run manually during a demo to make the Snowflake → Feast → Triton data path visible.
 
 ## Prerequisites
 
@@ -66,16 +81,25 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: snowflake-feast-credentials
-  namespace: ani-demo-lab
+  namespace: ani-datascience
 type: Opaque
 stringData:
-  SNOWFLAKE_ACCOUNT: <your-account-identifier>    # e.g. abc12345.us-east-1
-  SNOWFLAKE_USER: <your-username>
-  SNOWFLAKE_PASSWORD: <your-password>
-  SNOWFLAKE_ROLE: ACCOUNTADMIN
-  SNOWFLAKE_WAREHOUSE: ANI_FEAST_WH
-  SNOWFLAKE_DATABASE: ANI_FEAST_DEMO
-  SNOWFLAKE_SCHEMA: FEAST_ONLINE
+  snowflake.online: |
+    account: <your-account-identifier>
+    user: <your-username>
+    password: <your-password>
+    role: ACCOUNTADMIN
+    warehouse: ANI_FEAST_WH
+    database: ANI_FEAST_DEMO
+    schema: FEAST_ONLINE
+  account: <your-account-identifier>
+  user: <your-username>
+  password: <your-password>
+  role: ACCOUNTADMIN
+  warehouse: ANI_FEAST_WH
+  database: ANI_FEAST_DEMO
+  schema: FEAST_ONLINE
+
 ```
 
 > **Important:** Do not commit this file to git. Add it to `.gitignore`:
@@ -135,14 +159,11 @@ SELECT * FROM ANI_FEAST_DEMO.FEAST_ONLINE.ANI_WINDOW_NUMERIC_V1 LIMIT 10;
 The `featurestore-snowflake-demo.yaml` CR tells the OpenShift AI Feast operator to use Snowflake as the online store backend instead of the default SQLite:
 
 ```yaml
-services:
-  onlineStore:
-    snowflake:
-      account: <account-identifier>
-      database: ANI_FEAST_DEMO
-      schema: FEAST_ONLINE
-      warehouse: ANI_FEAST_WH
-      role: ACCOUNTADMIN
-      credentialsSecret:
-        name: snowflake-feast-credentials   # user + password from Secret
+onlineStore:
+      persistence:
+        store:
+          type: snowflake.online
+          secretRef:
+            name: snowflake-feast-credentials
+          secretKeyName: snowflake.online
 ```
