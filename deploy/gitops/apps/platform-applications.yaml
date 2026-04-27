@@ -211,6 +211,11 @@ spec:
         - /metadata/finalizers
         - /spec/predictor/automountServiceAccountToken
         - /spec/predictor/model/name
+    - group: kubeflow.org
+      kind: Notebook
+      jqPathExpressions:
+        - .spec.template.spec.containers[] | select(.name == "kube-rbac-proxy")
+        - .spec.template.spec.volumes[] | select(.name == "kube-rbac-proxy-tls-certificates" or .name == "kube-rbac-proxy-config")
   destination:
     namespace: ani-datascience
     server: https://kubernetes.default.svc

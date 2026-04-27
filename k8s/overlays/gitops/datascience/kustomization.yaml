@@ -10,6 +10,7 @@ resources:
   - image-streams.yaml
   - model-storage-credentials.yaml
   - tekton-image-access.yaml
+  - snowflake-demo-notebook.yaml
   - ../../../base/kfp
   - ../../../base/feature-store
   - ../../../base/serving
