@@ -1,6 +1,6 @@
 <mxfile host="Electron" agent="ChatGPT">
   <diagram name="ANI Model Training Evaluation Flow" id="ani-model-training-evaluation-flow">
-    <mxGraphModel dx="1880" dy="1248" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="950" background="#ffffff" math="0" shadow="0">
+    <mxGraphModel dx="1746" dy="1159" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="950" background="#ffffff" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -13,7 +13,7 @@
         <mxCell id="n1" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#cc0000;strokeColor=#cc0000;strokeWidth=1.2;fontSize=16;fontFamily=Arial;fontColor=#FFFFFF;fontStyle=1;align=center;verticalAlign=middle;" value="1" vertex="1">
           <mxGeometry height="34" width="34" x="33" y="119" as="geometry" />
         </mxCell>
-        <mxCell id="t1" parent="1" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=center;verticalAlign=middle;fontSize=17;fontFamily=Arial;fontColor=#111111;fontStyle=0;" value="&lt;font color=&quot;#cc0000&quot;&gt;&lt;b&gt;Online Path&lt;br&gt;Feature Store&lt;/b&gt;&lt;/font&gt;" vertex="1">
+        <mxCell id="t1" parent="1" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;align=center;verticalAlign=middle;fontSize=17;fontFamily=Arial;fontColor=#111111;fontStyle=0;" value="&lt;font color=&quot;#cc0000&quot;&gt;&lt;b&gt;Online/ Offline Path&lt;br&gt;Feature Store&lt;/b&gt;&lt;/font&gt;" vertex="1">
           <mxGeometry height="48" width="210" x="77" y="112" as="geometry" />
         </mxCell>
         <mxCell id="card1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F3A6A6;strokeWidth=1.25;fontSize=12;fontFamily=Arial;fontColor=#111111;fontStyle=0;align=center;verticalAlign=middle;arcSize=6;" value="" vertex="1">

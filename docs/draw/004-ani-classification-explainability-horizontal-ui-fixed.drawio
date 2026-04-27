@@ -1,10 +1,10 @@
 <mxfile host="Electron" agent="ChatGPT">
   <diagram name="ANI Classification Explainability Horizontal" id="ani-classification-explainability-horizontal">
-    <mxGraphModel dx="2037" dy="1352" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="950" math="0" shadow="0">
+    <mxGraphModel dx="1746" dy="1159" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="950" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="XANzhnABmjomLDG5Z3fz-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;" value="" vertex="1">
+        <mxCell id="XANzhnABmjomLDG5Z3fz-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=none;" value="" vertex="1">
           <mxGeometry height="916" width="1674" x="5" y="19" as="geometry" />
         </mxCell>
         <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=30;fontStyle=1;fontFamily=Arial;fontColor=#111111;whiteSpace=wrap;" value="&lt;font color=&quot;#cc0000&quot;&gt;ANI App Flow:&lt;/font&gt; Network Event Classification &amp;amp; Explainability &lt;font color=&quot;#cc0000&quot;&gt;(Trusty AI)&lt;/font&gt;" vertex="1">

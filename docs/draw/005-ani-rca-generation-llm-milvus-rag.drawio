@@ -16,7 +16,7 @@
         <mxCell id="prevTitle" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fontFamily=Arial;fontColor=#0B57D0;whiteSpace=wrap;" value="From Previous Steps" vertex="1">
           <mxGeometry height="26" width="240" x="40" y="115" as="geometry" />
         </mxCell>
-        <mxCell id="step2" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#cc0000;strokeColor=#cc0000;strokeWidth=1.2;fontSize=14;fontFamily=Arial;fontColor=#FFFFFF;fontStyle=1;align=center;verticalAlign=middle;" value="2" vertex="1">
+        <mxCell id="step2" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#cc0000;strokeColor=#cc0000;strokeWidth=1.2;fontSize=14;fontFamily=Arial;fontColor=#FFFFFF;fontStyle=1;align=center;verticalAlign=middle;" value="1" vertex="1">
           <mxGeometry height="28" width="28" x="36" y="150" as="geometry" />
         </mxCell>
         <mxCell id="prevClassTitle" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;fontFamily=Arial;fontColor=#111111;whiteSpace=wrap;" value="Classification Output" vertex="1">
@@ -25,7 +25,7 @@
         <mxCell id="prevClass" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E5E7EB;strokeWidth=1.2;fontSize=12;fontFamily=Arial;fontColor=#111111;fontStyle=0;align=left;verticalAlign=top;arcSize=6;spacing=10;" value="Predicted Class&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#cc0000&quot;&gt;&lt;b&gt;Registration Failure&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;br&gt;Confidence Score&lt;br&gt;&lt;font style=&quot;font-size:22px&quot;&gt;&lt;b&gt;0.92&lt;/b&gt;&lt;/font&gt;&amp;nbsp;&lt;br&gt;&lt;br&gt;Risk Level&lt;br&gt;&lt;font color=&quot;#F97316&quot;&gt;Medium&lt;/font&gt;" vertex="1">
           <mxGeometry height="175" width="230" x="35" y="185" as="geometry" />
         </mxCell>
-        <mxCell id="step3" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#cc0000;strokeColor=#cc0000;strokeWidth=1.2;fontSize=14;fontFamily=Arial;fontColor=#FFFFFF;fontStyle=1;align=center;verticalAlign=middle;" value="3" vertex="1">
+        <mxCell id="step3" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#cc0000;strokeColor=#cc0000;strokeWidth=1.2;fontSize=14;fontFamily=Arial;fontColor=#FFFFFF;fontStyle=1;align=center;verticalAlign=middle;" value="2" vertex="1">
           <mxGeometry height="28" width="28" x="36" y="372" as="geometry" />
         </mxCell>
         <mxCell id="prevFactorTitle" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;fontFamily=Arial;fontColor=#111111;whiteSpace=wrap;" value="Key Contributing Factors" vertex="1">
@@ -124,7 +124,7 @@
         <mxCell id="ragPanel" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6D6D6;strokeWidth=1.2;fontSize=12;fontFamily=Arial;fontColor=#111111;fontStyle=0;align=center;verticalAlign=middle;arcSize=6;" value="" vertex="1">
           <mxGeometry height="633" width="778" x="345" y="125" as="geometry" />
         </mxCell>
-        <mxCell id="step4" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#cc0000;strokeColor=#cc0000;strokeWidth=1.2;fontSize=14;fontFamily=Arial;fontColor=#FFFFFF;fontStyle=1;align=center;verticalAlign=middle;" value="4" vertex="1">
+        <mxCell id="step4" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#cc0000;strokeColor=#cc0000;strokeWidth=1.2;fontSize=14;fontFamily=Arial;fontColor=#FFFFFF;fontStyle=1;align=center;verticalAlign=middle;" value="3" vertex="1">
           <mxGeometry height="34" width="34" x="365" y="145" as="geometry" />
         </mxCell>
         <mxCell id="ragTitle" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=19;fontStyle=1;fontFamily=Arial;fontColor=#111111;whiteSpace=wrap;" value="RCA Generation (RAG)" vertex="1">
@@ -220,7 +220,7 @@
         <mxCell id="outputPanel" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6D6D6;strokeWidth=1.2;fontSize=12;fontFamily=Arial;fontColor=#111111;fontStyle=0;align=center;verticalAlign=middle;arcSize=6;" value="" vertex="1">
           <mxGeometry height="659" width="362" x="1155" y="125" as="geometry" />
         </mxCell>
-        <mxCell id="step5" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#cc0000;strokeColor=#cc0000;strokeWidth=1.2;fontSize=14;fontFamily=Arial;fontColor=#FFFFFF;fontStyle=1;align=center;verticalAlign=middle;" value="5" vertex="1">
+        <mxCell id="step5" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#cc0000;strokeColor=#cc0000;strokeWidth=1.2;fontSize=14;fontFamily=Arial;fontColor=#FFFFFF;fontStyle=1;align=center;verticalAlign=middle;" value="4" vertex="1">
           <mxGeometry height="34" width="34" x="1175" y="145" as="geometry" />
         </mxCell>
         <mxCell id="outputTitle" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=19;fontStyle=1;fontFamily=Arial;fontColor=#111111;whiteSpace=wrap;" value="Root Cause Analysis Output" vertex="1">
