@@ -1792,6 +1792,8 @@ CONSOLE_SCENARIOS = set(console_scenario_names())
 CONSOLE_CLUSTER_NAME = console_cluster_name()
 CONSOLE_AUTO_REFRESH_SECONDS = _positive_int_from_env("CONSOLE_AUTO_REFRESH_SECONDS", 5)
 CONSOLE_RECENT_INCIDENT_LIMIT = _positive_int_from_env("CONSOLE_RECENT_INCIDENT_LIMIT", 24)
+INCIDENT_LIST_MAX_LIMIT = _positive_int_from_env("INCIDENT_LIST_MAX_LIMIT", 500)
+INCIDENT_LIST_DEFAULT_LIMIT = min(_positive_int_from_env("INCIDENT_LIST_DEFAULT_LIMIT", 100), INCIDENT_LIST_MAX_LIMIT)
 UPSTREAM_TIMEOUT_SECONDS = float(os.getenv("CONSOLE_UPSTREAM_TIMEOUT_SECONDS", "20"))
 HEALTH_PROBE_TIMEOUT_SECONDS = float(os.getenv("CONSOLE_HEALTH_PROBE_TIMEOUT_SECONDS", "5"))
 SERVICE_SNAPSHOT_CACHE_SECONDS = float(os.getenv("CONSOLE_SERVICE_SNAPSHOT_CACHE_SECONDS", "10"))
@@ -5247,6 +5249,12 @@ def _matches_incident_filters(
     return normalized_query in haystack
 
 
+def _bounded_incident_list_limit(limit: int | None) -> int:
+    if limit is None:
+        return INCIDENT_LIST_DEFAULT_LIMIT
+    return min(max(int(limit), 1), INCIDENT_LIST_MAX_LIMIT)
+
+
 def _active_incident_summary(open_incidents: List[Dict[str, object]]) -> Dict[str, List[Dict[str, object]]]:
     categories: Dict[str, Dict[str, object]] = {}
     model_versions: Dict[str, Dict[str, object]] = {}
@@ -5425,17 +5433,19 @@ def get_incidents(
     status: str | None = None,
     severity: str | None = None,
     q: str | None = None,
+    limit: int = INCIDENT_LIST_DEFAULT_LIMIT,
     auth: AuthContext | None = Depends(require_api_key),
 ):
+    bounded_limit = _bounded_incident_list_limit(limit)
     if project:
         ensure_project_access(auth, project)
-        incidents = list_incidents(project=project)
+        incidents = list_incidents(project=project, limit=bounded_limit)
     elif auth is None or "*" in auth.projects:
-        incidents = list_incidents()
+        incidents = list_incidents(limit=bounded_limit)
     else:
         incidents = []
         for allowed_project in auth.projects:
-            incidents.extend(list_incidents(project=allowed_project))
+            incidents.extend(list_incidents(project=allowed_project, limit=bounded_limit))
         incidents.sort(key=lambda item: item["created_at"], reverse=True)
     audit_events = list_audit_events(limit=200) if include_details else []
     normalized_query = str(q or "").strip()
@@ -5459,6 +5469,8 @@ def get_incidents(
             enriched.append(_enrich_incident(incident, audit_events, incidents, include_ticket_context=True))
         else:
             enriched.append(summary)
+        if len(enriched) >= bounded_limit:
+            break
     return enriched
 
 

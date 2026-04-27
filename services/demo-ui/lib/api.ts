@@ -25,6 +25,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 12_000;
 export const LONG_RUNNING_REQUEST_TIMEOUT_MS = 45_000;
 const CONSOLE_STALE_TIME_MS = 30_000;
 const INCIDENT_LIST_STALE_TIME_MS = 20_000;
+const INCIDENT_LIST_LIMIT = 100;
 const INCIDENT_WORKFLOW_STALE_TIME_MS = 15_000;
 const DEBUG_TRACE_STALE_TIME_MS = 60_000;
 const RELATED_RECORDS_STALE_TIME_MS = 45_000;
@@ -119,7 +120,7 @@ export function useIncidentsQuery(filters: { status?: string; severity?: string;
   return useQuery({
     queryKey: ["incidents", defaultProject, filters, token],
     queryFn: () => {
-      const params = new URLSearchParams({ project: defaultProject });
+      const params = new URLSearchParams({ project: defaultProject, limit: String(INCIDENT_LIST_LIMIT) });
       if (filters.status) {
         params.set("status", filters.status);
       }

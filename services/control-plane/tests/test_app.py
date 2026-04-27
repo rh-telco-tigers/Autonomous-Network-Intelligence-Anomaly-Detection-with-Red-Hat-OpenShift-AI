@@ -52,6 +52,61 @@ class _TaskRecorder:
         self.tasks.append((func, args, kwargs))
 
 
+class IncidentListApiTests(unittest.TestCase):
+    def test_get_incidents_defaults_to_recent_limit(self) -> None:
+        default_limit = control_plane_app.INCIDENT_LIST_DEFAULT_LIMIT
+        incidents = [
+            {
+                "id": f"inc-api-{index}",
+                "project": "ani-demo",
+                "status": control_plane_app.NEW,
+                "anomaly_score": 0.91,
+                "anomaly_type": "registration_storm",
+                "predicted_confidence": 0.91,
+                "model_version": "predictive-v1",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+            }
+            for index in range(default_limit + 1)
+        ]
+
+        with (
+            mock.patch.object(control_plane_app, "ensure_project_access"),
+            mock.patch.object(control_plane_app, "list_incidents", return_value=incidents) as list_incidents,
+            mock.patch.object(control_plane_app, "list_incident_tickets", return_value=[]),
+        ):
+            response = control_plane_app.get_incidents(project="ani-demo", auth=SimpleNamespace(projects=["ani-demo"]))
+
+        list_incidents.assert_called_once_with(project="ani-demo", limit=default_limit)
+        self.assertEqual(len(response), default_limit)
+
+    def test_get_incidents_honors_requested_limit(self) -> None:
+        incidents = [
+            {
+                "id": f"inc-api-small-{index}",
+                "project": "ani-demo",
+                "status": control_plane_app.NEW,
+                "anomaly_score": 0.91,
+                "anomaly_type": "registration_storm",
+                "predicted_confidence": 0.91,
+                "model_version": "predictive-v1",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+            }
+            for index in range(3)
+        ]
+
+        with (
+            mock.patch.object(control_plane_app, "ensure_project_access"),
+            mock.patch.object(control_plane_app, "list_incidents", return_value=incidents) as list_incidents,
+            mock.patch.object(control_plane_app, "list_incident_tickets", return_value=[]),
+        ):
+            response = control_plane_app.get_incidents(project="ani-demo", limit=2, auth=SimpleNamespace(projects=["ani-demo"]))
+
+        list_incidents.assert_called_once_with(project="ani-demo", limit=2)
+        self.assertEqual(len(response), 2)
+
+
 class PlaneEscalationRemediationTests(unittest.TestCase):
     def test_execute_open_plane_escalation_creates_plane_ticket(self) -> None:
         incident_state = {

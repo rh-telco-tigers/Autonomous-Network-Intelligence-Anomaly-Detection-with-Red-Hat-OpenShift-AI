@@ -120,5 +120,28 @@ class IncidentExplainabilityPersistenceTests(unittest.TestCase):
                 self.assertEqual(incident["model_explanation"]["top_features"][0]["feature"], "register_rate")
 
 
+class IncidentListTests(unittest.TestCase):
+    def test_list_incidents_applies_recent_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "control-plane.db"
+            with mock.patch.dict(os.environ, {"CONTROL_PLANE_DB_PATH": str(db_path)}, clear=False):
+                db.init_db()
+                for index in range(3):
+                    db.create_incident(
+                        {
+                            "incident_id": f"inc-list-{index}",
+                            "project": "ani-demo",
+                            "anomaly_score": 0.70 + index / 100,
+                            "anomaly_type": "registration_storm",
+                            "model_version": "predictive-v1",
+                            "created_at": f"2026-01-01T00:00:0{index}+00:00",
+                        }
+                    )
+
+                incidents = db.list_incidents(project="ani-demo", limit=2)
+
+                self.assertEqual([incident["id"] for incident in incidents], ["inc-list-2", "inc-list-1"])
+
+
 if __name__ == "__main__":
     unittest.main()

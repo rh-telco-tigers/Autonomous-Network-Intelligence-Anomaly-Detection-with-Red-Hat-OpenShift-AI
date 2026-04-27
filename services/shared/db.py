@@ -457,15 +457,18 @@ def get_incident(incident_id: str) -> Dict[str, Any] | None:
     return _deserialize_incident(row) if row else None
 
 
-def list_incidents(project: str | None = None) -> List[Dict[str, Any]]:
+def list_incidents(project: str | None = None, limit: int | None = None) -> List[Dict[str, Any]]:
     with closing(_connect()) as connection:
+        params: list[object] = []
         if project:
-            rows = connection.execute(
-                "SELECT * FROM incidents WHERE project = ? ORDER BY created_at DESC",
-                (project,),
-            ).fetchall()
+            query = "SELECT * FROM incidents WHERE project = ? ORDER BY created_at DESC"
+            params.append(project)
         else:
-            rows = connection.execute("SELECT * FROM incidents ORDER BY created_at DESC").fetchall()
+            query = "SELECT * FROM incidents ORDER BY created_at DESC"
+        if limit is not None:
+            query = f"{query} LIMIT ?"
+            params.append(max(0, int(limit)))
+        rows = connection.execute(query, tuple(params)).fetchall()
     return [_deserialize_incident(row) for row in rows]
 
 
