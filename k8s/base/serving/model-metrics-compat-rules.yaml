@@ -13,29 +13,29 @@ spec:
           expr: |
             label_replace(model_infer_request_success_total{namespace="ani-datascience",service=~"ani-predictive-(fs|backfill|backfill-modelcar)-metrics"}, "name", "$1", "model", "(.*)")
             or label_replace(nv_inference_request_success{namespace="ani-datascience",service="ani-predictive-metrics"}, "name", "$1", "model", "(.*)")
-            or label_replace(0 * up{namespace="ani-datascience",service=~"ani-predictive(-fs|-backfill|-backfill-modelcar)?-metrics|prompt-injection-detector-metrics"}, "name", "$1", "service", "(.*)-metrics")
+            or label_replace(0 * up{namespace="ani-datascience",pod=~".*-predictor-.*",service=~"ani-predictive(-fs|-backfill|-backfill-modelcar)?-metrics|prompt-injection-detector-metrics"}, "name", "$1", "service", "(.*)-metrics")
         - record: ovms_requests_fail
           expr: |
             label_replace(model_infer_request_failure_total{namespace="ani-datascience",service=~"ani-predictive-(fs|backfill|backfill-modelcar)-metrics"}, "name", "$1", "model", "(.*)")
             or label_replace(nv_inference_request_failure{namespace="ani-datascience",service="ani-predictive-metrics"}, "name", "$1", "model", "(.*)")
-            or label_replace(0 * up{namespace="ani-datascience",service=~"ani-predictive(-fs|-backfill|-backfill-modelcar)?-metrics|prompt-injection-detector-metrics"}, "name", "$1", "service", "(.*)-metrics")
+            or label_replace(0 * up{namespace="ani-datascience",pod=~".*-predictor-.*",service=~"ani-predictive(-fs|-backfill|-backfill-modelcar)?-metrics|prompt-injection-detector-metrics"}, "name", "$1", "service", "(.*)-metrics")
         - record: ovms_inference_time_us_sum
           expr: |
             1000000 * label_replace(model_infer_request_duration_sum{namespace="ani-datascience",service=~"ani-predictive-(fs|backfill|backfill-modelcar)-metrics"}, "name", "$1", "model", "(.*)")
             or label_replace(nv_inference_compute_infer_duration_us{namespace="ani-datascience",service="ani-predictive-metrics"}, "name", "$1", "model", "(.*)")
-            or label_replace(0 * up{namespace="ani-datascience",service=~"ani-predictive(-fs|-backfill|-backfill-modelcar)?-metrics|prompt-injection-detector-metrics"}, "name", "$1", "service", "(.*)-metrics")
+            or label_replace(0 * up{namespace="ani-datascience",pod=~".*-predictor-.*",service=~"ani-predictive(-fs|-backfill|-backfill-modelcar)?-metrics|prompt-injection-detector-metrics"}, "name", "$1", "service", "(.*)-metrics")
         - record: ovms_inference_time_us_count
           expr: |
             label_replace(model_infer_request_duration_count{namespace="ani-datascience",service=~"ani-predictive-(fs|backfill|backfill-modelcar)-metrics"}, "name", "$1", "model", "(.*)")
             or label_replace(nv_inference_request_success{namespace="ani-datascience",service="ani-predictive-metrics"}, "name", "$1", "model", "(.*)")
-            or label_replace(0 * up{namespace="ani-datascience",service=~"ani-predictive(-fs|-backfill|-backfill-modelcar)?-metrics|prompt-injection-detector-metrics"}, "name", "$1", "service", "(.*)-metrics")
+            or label_replace(0 * up{namespace="ani-datascience",pod=~".*-predictor-.*",service=~"ani-predictive(-fs|-backfill|-backfill-modelcar)?-metrics|prompt-injection-detector-metrics"}, "name", "$1", "service", "(.*)-metrics")
         - record: ovms_request_time_us_sum
           expr: |
             1000000 * label_replace(model_infer_request_duration_sum{namespace="ani-datascience",service=~"ani-predictive-(fs|backfill|backfill-modelcar)-metrics"}, "name", "$1", "model", "(.*)")
             or label_replace(nv_inference_request_duration_us{namespace="ani-datascience",service="ani-predictive-metrics"}, "name", "$1", "model", "(.*)")
-            or label_replace(0 * up{namespace="ani-datascience",service=~"ani-predictive(-fs|-backfill|-backfill-modelcar)?-metrics|prompt-injection-detector-metrics"}, "name", "$1", "service", "(.*)-metrics")
+            or label_replace(0 * up{namespace="ani-datascience",pod=~".*-predictor-.*",service=~"ani-predictive(-fs|-backfill|-backfill-modelcar)?-metrics|prompt-injection-detector-metrics"}, "name", "$1", "service", "(.*)-metrics")
         - record: ovms_request_time_us_count
           expr: |
             label_replace(model_infer_request_duration_count{namespace="ani-datascience",service=~"ani-predictive-(fs|backfill|backfill-modelcar)-metrics"}, "name", "$1", "model", "(.*)")
             or label_replace(nv_inference_request_success{namespace="ani-datascience",service="ani-predictive-metrics"}, "name", "$1", "model", "(.*)")
-            or label_replace(0 * up{namespace="ani-datascience",service=~"ani-predictive(-fs|-backfill|-backfill-modelcar)?-metrics|prompt-injection-detector-metrics"}, "name", "$1", "service", "(.*)-metrics")
+            or label_replace(0 * up{namespace="ani-datascience",pod=~".*-predictor-.*",service=~"ani-predictive(-fs|-backfill|-backfill-modelcar)?-metrics|prompt-injection-detector-metrics"}, "name", "$1", "service", "(.*)-metrics")
