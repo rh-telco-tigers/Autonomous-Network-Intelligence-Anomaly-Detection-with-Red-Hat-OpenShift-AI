@@ -69,7 +69,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 1Gi
+      storage: 10Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -186,6 +186,10 @@ spec:
                   key: LLM_API_KEY
             - name: CONTROL_PLANE_DB_PATH
               value: /data/control-plane.db
+            - name: CONTROL_PLANE_AUDIT_EVENT_RETENTION_LIMIT
+              value: "20000"
+            - name: CONTROL_PLANE_AUDIT_RETENTION_DAYS
+              value: "7"
             - name: INCIDENT_AUTO_RCA_SAMPLE_RATE
               valueFrom:
                 configMapKeyRef:

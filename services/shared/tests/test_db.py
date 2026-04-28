@@ -143,5 +143,39 @@ class IncidentListTests(unittest.TestCase):
                 self.assertEqual([incident["id"] for incident in incidents], ["inc-list-2", "inc-list-1"])
 
 
+class AuditRetentionTests(unittest.TestCase):
+    def test_record_audit_prunes_old_events_when_limit_is_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "control-plane.db"
+            with (
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        "CONTROL_PLANE_DB_PATH": str(db_path),
+                        "CONTROL_PLANE_AUDIT_EVENT_RETENTION_LIMIT": "2",
+                        "CONTROL_PLANE_AUDIT_RETENTION_DAYS": "0",
+                    },
+                    clear=False,
+                ),
+                mock.patch.object(
+                    db,
+                    "_now",
+                    side_effect=[
+                        "2026-01-01T00:00:00+00:00",
+                        "2026-01-01T00:00:01+00:00",
+                        "2026-01-01T00:00:02+00:00",
+                    ],
+                ),
+            ):
+                db.init_db()
+                db.record_audit("first", "test", {})
+                db.record_audit("second", "test", {})
+                db.record_audit("third", "test", {})
+
+                events = db.list_audit_events(limit=10)
+
+                self.assertEqual([event["event_type"] for event in events], ["third", "second"])
+
+
 if __name__ == "__main__":
     unittest.main()

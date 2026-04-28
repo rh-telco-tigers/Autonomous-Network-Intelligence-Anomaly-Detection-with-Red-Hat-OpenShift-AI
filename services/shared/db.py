@@ -2,7 +2,7 @@ import json
 import os
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -25,6 +25,49 @@ def _connect() -> sqlite3.Connection:
 
 def _now() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
+
+
+def _non_negative_int_from_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return default
+    return max(0, value)
+
+
+def _audit_event_retention_limit() -> int:
+    return _non_negative_int_from_env("CONTROL_PLANE_AUDIT_EVENT_RETENTION_LIMIT", 20000)
+
+
+def _audit_event_retention_days() -> int:
+    return _non_negative_int_from_env("CONTROL_PLANE_AUDIT_RETENTION_DAYS", 7)
+
+
+def _prune_audit_events(connection: sqlite3.Connection) -> int:
+    deleted_before = connection.total_changes
+    retention_days = _audit_event_retention_days()
+    if retention_days:
+        cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=retention_days)).isoformat()
+        connection.execute("DELETE FROM audit_events WHERE created_at < ?", (cutoff,))
+
+    retention_limit = _audit_event_retention_limit()
+    if retention_limit:
+        connection.execute(
+            """
+            DELETE FROM audit_events
+            WHERE id NOT IN (
+              SELECT id
+              FROM audit_events
+              ORDER BY created_at DESC, id DESC
+              LIMIT ?
+            )
+            """,
+            (retention_limit,),
+        )
+    return connection.total_changes - deleted_before
 
 
 def _table_columns(connection: sqlite3.Connection, table_name: str) -> set[str]:
@@ -243,6 +286,8 @@ def init_db() -> None:
               ON approvals(incident_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_audit_events_incident_created_at
               ON audit_events(incident_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_audit_events_created_at
+              ON audit_events(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_incident_rca_incident_created_at
               ON incident_rca(incident_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_incident_remediation_incident_revision_rank
@@ -303,6 +348,7 @@ def init_db() -> None:
                 is_anomaly = COALESCE(is_anomaly, CASE WHEN anomaly_type = 'normal_operation' THEN 0 ELSE 1 END)
             """
         )
+        _prune_audit_events(connection)
         connection.commit()
 
 
@@ -1297,6 +1343,7 @@ def record_audit(event_type: str, actor: str, payload: Dict[str, Any], incident_
                 _now(),
             ),
         )
+        _prune_audit_events(connection)
         connection.commit()
 
 
