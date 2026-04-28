@@ -16,7 +16,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: '35'
     argocd.argoproj.io/ignore-healthcheck: 'true'
-    argocd.argoproj.io/sync-options: Force=true,Replace=true,SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-options: Replace=true,SkipDryRunOnMissingResource=true
 spec:
   displayName: ani-featurestore-train-and-register
   pipelineName: ani-featurestore-train-and-register
