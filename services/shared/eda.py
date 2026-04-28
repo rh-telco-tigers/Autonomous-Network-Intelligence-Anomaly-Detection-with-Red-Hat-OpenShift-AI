@@ -40,6 +40,11 @@ POLICY_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     },
 }
 
+_ACTIVATION_STARTING_STATUSES = {"pending", "starting"}
+_ACTIVATION_RUNNING_STATUSES = {"running"}
+_ACTIVATION_STOPPED_STATUSES = {"stopped", "disabled", "failed", "error", "errored", "completed"}
+_ACTIVATION_RESTART_STATUSES = {"failed", "error", "errored", "completed"}
+
 
 def enabled() -> bool:
     return os.getenv("EDA_AUTOMATION_ENABLED", "true").strip().lower() == "true"
@@ -163,19 +168,42 @@ def publish_event(event: Dict[str, Any]) -> List[Dict[str, Any]]:
     if not enabled():
         return []
 
+    policies = _policy_status()
+    if _policies_need_repair(policies):
+        bootstrap_resources()
+        policies = _wait_for_policies_ready()
+
+    return _publish_event_to_policies(event, policies, allow_recovery=True)
+
+
+def _publish_event_to_policies(
+    event: Dict[str, Any],
+    policies: List[Dict[str, Any]],
+    *,
+    allow_recovery: bool,
+) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
-    for policy in _policy_status():
+    for policy in policies:
         if not policy.get("enabled"):
             continue
         for url in policy.get("event_stream_urls", []):
             if not url:
                 continue
-            response = requests.post(
-                str(url),
-                json=event,
-                verify=_event_verify(),
-                timeout=float(os.getenv("EDA_EVENT_TIMEOUT_SECONDS", "10")),
-            )
+            try:
+                response = requests.post(
+                    str(url),
+                    json=event,
+                    verify=_event_verify(),
+                    timeout=float(os.getenv("EDA_EVENT_TIMEOUT_SECONDS", "10")),
+                )
+            except requests.RequestException as exc:
+                if not allow_recovery:
+                    raise EDAAutomationError(
+                        f"EDA event delivery failed for {policy.get('name')}: {exc}"
+                    ) from exc
+                bootstrap_resources()
+                recovered_policies = _wait_for_policies_ready()
+                return _publish_event_to_policies(event, recovered_policies, allow_recovery=False)
             if response.status_code >= 400:
                 raise EDAAutomationError(
                     f"EDA event delivery failed for {policy.get('name')}: {response.status_code} {response.text[:300]}"
@@ -566,9 +594,16 @@ def _ensure_activation(
             if ": 400 " not in str(exc) and ": 409 " not in str(exc):
                 raise
             return _replace_activation(activation_id, str(definition["name"]), desired)
+    activation_id = int(existing["id"])
     if desired["is_enabled"] and not bool(existing.get("is_enabled")):
-        _request("POST", f"/api/eda/v1/activations/{existing['id']}/enable/", expected_status=(200, 201, 202))
-    return _request("GET", f"/api/eda/v1/activations/{existing['id']}/")
+        _request("POST", f"/api/eda/v1/activations/{activation_id}/enable/", expected_status=(200, 201, 202))
+        return _request("GET", f"/api/eda/v1/activations/{activation_id}/")
+    if desired["is_enabled"] and _activation_needs_restart(existing):
+        try:
+            return _restart_activation(activation_id)
+        except EDAAutomationError:
+            return _replace_activation(activation_id, str(definition["name"]), desired)
+    return _request("GET", f"/api/eda/v1/activations/{activation_id}/")
 
 
 def _policy_status() -> List[Dict[str, Any]]:
@@ -593,6 +628,51 @@ def _policy_status() -> List[Dict[str, Any]]:
             }
         )
     return policies
+
+
+def _activation_status(activation: Dict[str, Any]) -> str:
+    return str(activation.get("status") or "").strip().lower()
+
+
+def _activation_needs_restart(activation: Dict[str, Any]) -> bool:
+    status = _activation_status(activation)
+    if status in _ACTIVATION_RESTART_STATUSES:
+        return True
+    return bool(activation.get("is_enabled")) and status in {"stopped", "disabled"}
+
+
+def _policy_ready_for_delivery(policy: Dict[str, Any]) -> bool:
+    return (
+        bool(policy.get("activation_exists"))
+        and bool(policy.get("enabled"))
+        and str(policy.get("status") or "").strip().lower() in _ACTIVATION_RUNNING_STATUSES
+        and bool(policy.get("event_stream_urls"))
+    )
+
+
+def _policies_need_repair(policies: List[Dict[str, Any]]) -> bool:
+    if not policies:
+        return True
+    for policy in policies:
+        status = str(policy.get("status") or "").strip().lower()
+        if not policy.get("activation_exists") or not policy.get("enabled"):
+            return True
+        if status in _ACTIVATION_RESTART_STATUSES or status in {"stopped", "disabled"}:
+            return True
+        if not policy.get("event_stream_urls") and status not in _ACTIVATION_STARTING_STATUSES:
+            return True
+    return False
+
+
+def _wait_for_policies_ready() -> List[Dict[str, Any]]:
+    deadline = time.time() + float(os.getenv("EDA_POLICY_READY_TIMEOUT_SECONDS", "90"))
+    policies = _policy_status()
+    while time.time() < deadline:
+        if policies and all(_policy_ready_for_delivery(policy) for policy in policies):
+            return policies
+        time.sleep(3)
+        policies = _policy_status()
+    raise EDAAutomationError("EDA activations did not become ready before the configured timeout.")
 
 
 def _controller_request(
@@ -674,12 +754,27 @@ def _wait_for_activation_stopped(activation_id: int) -> None:
     deadline = time.time() + float(os.getenv("EDA_ACTIVATION_STOP_TIMEOUT_SECONDS", "90"))
     while time.time() < deadline:
         activation = _request("GET", f"/api/eda/v1/activations/{activation_id}/")
-        if not bool(activation.get("is_enabled")) and str(activation.get("status") or "").lower() in {"stopped", "disabled"}:
+        if not bool(activation.get("is_enabled")) and _activation_status(activation) in _ACTIVATION_STOPPED_STATUSES:
             return
         time.sleep(3)
     raise EDAAutomationError(
         f"EDA activation {activation_id} did not stop after disable within the configured timeout."
     )
+
+
+def _restart_activation(activation_id: int) -> Dict[str, Any]:
+    _request(
+        "POST",
+        f"/api/eda/v1/activations/{activation_id}/disable/",
+        expected_status=(200, 201, 202, 204, 409),
+    )
+    _wait_for_activation_stopped(activation_id)
+    _request(
+        "POST",
+        f"/api/eda/v1/activations/{activation_id}/enable/",
+        expected_status=(200, 201, 202, 204, 409),
+    )
+    return _request("GET", f"/api/eda/v1/activations/{activation_id}/")
 
 
 def _replace_activation(activation_id: int, activation_name: str, desired: Dict[str, Any]) -> Dict[str, Any]:
