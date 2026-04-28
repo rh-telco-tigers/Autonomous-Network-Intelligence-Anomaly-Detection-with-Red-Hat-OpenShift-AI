@@ -5,7 +5,7 @@ metadata:
   name: snowflake-demo-workbench
   namespace: ani-datascience
   annotations:
-    argocd.argoproj.io/sync-wave: "50"
+    argocd.argoproj.io/sync-wave: "55"
 spec:
   accessModes:
     - ReadWriteOnce
