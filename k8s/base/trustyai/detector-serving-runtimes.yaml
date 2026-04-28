@@ -11,8 +11,10 @@ metadata:
     ani.redhat.com/trustyai-detector: "true"
 spec:
   annotations:
-    prometheus.io/port: "8080"
+    monitoring.opendatahub.io/scrape: "true"
+    opendatahub.io/kserve-runtime: ovms
     prometheus.io/path: /metrics
+    prometheus.io/port: "8000"
   multiModel: false
   supportedModelFormats:
     - autoSelect: true

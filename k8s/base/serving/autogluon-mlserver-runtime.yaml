@@ -17,7 +17,7 @@ metadata:
 spec:
   annotations:
     monitoring.opendatahub.io/scrape: "true"
-    opendatahub.io/kserve-runtime: mlserver
+    opendatahub.io/kserve-runtime: ovms
     prometheus.io/path: /metrics
     prometheus.io/port: "8082"
   supportedModelFormats:

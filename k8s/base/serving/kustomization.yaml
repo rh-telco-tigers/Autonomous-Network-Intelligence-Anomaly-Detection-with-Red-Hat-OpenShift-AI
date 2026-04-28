@@ -7,5 +7,6 @@ resources:
   - llm-serving.yaml
   - featurestore-serving.yaml
   - featurestore-serving-backfill-modelcar.yaml
+  - model-metrics-compat-rules.yaml
   - triton-template-rbac.yaml
   - triton-runtime-template.yaml
