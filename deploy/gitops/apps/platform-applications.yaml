@@ -213,9 +213,14 @@ spec:
         - /spec/predictor/model/name
     - group: kubeflow.org
       kind: Notebook
+      jsonPointers:
+        - /metadata/finalizers
       jqPathExpressions:
         - .spec.template.spec.containers[] | select(.name == "kube-rbac-proxy")
+        - .spec.template.spec.containers[] | select(.name == "snowflake-demo-workbench").env[] | select(.name == "PIPELINES_SSL_SA_CERTS")
+        - .spec.template.spec.containers[] | select(.name == "snowflake-demo-workbench").volumeMounts[] | select(.name == "runtime-images" or .name == "elyra-dsp-details")
         - .spec.template.spec.volumes[] | select(.name == "kube-rbac-proxy-tls-certificates" or .name == "kube-rbac-proxy-config")
+        - .spec.template.spec.volumes[] | select(.name == "runtime-images" or .name == "elyra-dsp-details")
   destination:
     namespace: ani-datascience
     server: https://kubernetes.default.svc
