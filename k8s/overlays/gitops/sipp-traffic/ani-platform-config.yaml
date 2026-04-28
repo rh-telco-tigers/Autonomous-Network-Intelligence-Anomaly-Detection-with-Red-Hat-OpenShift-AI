@@ -13,7 +13,9 @@ data:
   CONTROL_PLANE_PUBLIC_URL: http://control-plane.ani-runtime.svc.cluster.local:8080
   FEATURE_GATEWAY_URL: http://feature-gateway.ani-runtime.svc.cluster.local:8080
   ANOMALY_SERVICE_URL: http://anomaly-service.ani-runtime.svc.cluster.local:8080
+  ANOMALY_SERVICE_TIMEOUT_SECONDS: "45"
   RCA_SERVICE_URL: http://rca-service.ani-runtime.svc.cluster.local:8080
+  CONTROL_PLANE_TIMEOUT_SECONDS: "30"
   PREDICTIVE_SERVICE_URL: http://ani-predictive-fs-predictor.ani-datascience.svc.cluster.local:8080
   PREDICTIVE_ENDPOINT: http://ani-predictive-fs-predictor.ani-datascience.svc.cluster.local:8080
   PREDICTIVE_MODEL_NAME: ani-predictive-fs
