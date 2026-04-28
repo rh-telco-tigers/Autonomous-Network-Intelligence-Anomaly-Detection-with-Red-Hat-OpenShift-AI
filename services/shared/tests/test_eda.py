@@ -113,6 +113,36 @@ class EDAHelperTests(unittest.TestCase):
 
         self.assertEqual(calls, [("GET", "/api/eda/v1/activations/41/")])
 
+    def test_recover_failed_enabled_activations_restarts_unmanaged_activation(self) -> None:
+        calls: list[tuple[str, str]] = []
+        activations = {
+            "results": [
+                {"id": 1, "name": "Managed", "is_enabled": True, "status": "failed"},
+                {"id": 8, "name": "ANI Remediation", "is_enabled": True, "status": "failed"},
+                {"id": 9, "name": "Disabled", "is_enabled": False, "status": "failed"},
+            ]
+        }
+
+        def _fake_request(method: str, path: str, **kwargs: object):
+            calls.append((method, path))
+            if method == "GET" and path == "/api/eda/v1/activations/":
+                return activations
+            raise AssertionError(f"Unexpected request {method} {path} with {kwargs}")
+
+        with (
+            mock.patch.object(eda, "_request", side_effect=_fake_request),
+            mock.patch.object(
+                eda,
+                "_restart_activation",
+                return_value={"id": 8, "name": "ANI Remediation", "status": "pending"},
+            ) as restart_activation,
+        ):
+            recovered = eda._recover_failed_enabled_activations(exclude_activation_ids=[1])
+
+        self.assertEqual(recovered, [{"activation_id": 8, "name": "ANI Remediation", "status": "pending"}])
+        restart_activation.assert_called_once_with(8)
+        self.assertEqual(calls, [("GET", "/api/eda/v1/activations/")])
+
 
 if __name__ == "__main__":
     unittest.main()

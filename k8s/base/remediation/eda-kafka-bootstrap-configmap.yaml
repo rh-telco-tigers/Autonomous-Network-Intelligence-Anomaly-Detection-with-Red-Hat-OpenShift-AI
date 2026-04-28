@@ -34,6 +34,9 @@ data:
         },
     }
 
+    _ACTIVATION_STOPPED_STATUSES = {"stopped", "disabled", "failed", "error", "errored", "completed"}
+    _ACTIVATION_RESTART_STATUSES = {"failed", "error", "errored", "completed"}
+
 
     def enabled() -> bool:
         return os.getenv("EDA_KAFKA_ENABLED", "true").strip().lower() == "true"
@@ -147,12 +150,19 @@ data:
         if patch:
             activation_id = int(existing["id"])
             if bool(existing.get("is_enabled")):
-                _request("POST", f"/api/eda/v1/activations/{activation_id}/disable/", expected_status=(200, 201, 202))
+                _request("POST", f"/api/eda/v1/activations/{activation_id}/disable/", expected_status=(200, 201, 202, 204, 409))
                 _wait_for_activation_stopped(activation_id)
             return _replace_activation(activation_id, str(definition["name"]), desired)
+        activation_id = int(existing["id"])
         if desired["is_enabled"] and not bool(existing.get("is_enabled")):
-            _request("POST", f"/api/eda/v1/activations/{existing['id']}/enable/", expected_status=(200, 201, 202))
-        return _request("GET", f"/api/eda/v1/activations/{existing['id']}/")
+            _request("POST", f"/api/eda/v1/activations/{activation_id}/enable/", expected_status=(200, 201, 202, 204, 409))
+            return _request("GET", f"/api/eda/v1/activations/{activation_id}/")
+        if desired["is_enabled"] and _activation_needs_restart(existing):
+            try:
+                return _restart_activation(activation_id)
+            except EDAKafkaError:
+                return _replace_activation(activation_id, str(definition["name"]), desired)
+        return _request("GET", f"/api/eda/v1/activations/{activation_id}/")
 
 
     def _ensure_project(organization_id: int) -> int:
@@ -242,10 +252,36 @@ data:
         deadline = time.time() + float(os.getenv("EDA_ACTIVATION_STOP_TIMEOUT_SECONDS", "90"))
         while time.time() < deadline:
             activation = _request("GET", f"/api/eda/v1/activations/{activation_id}/")
-            if not bool(activation.get("is_enabled")) and str(activation.get("status") or "").lower() in {"stopped", "disabled"}:
+            if not bool(activation.get("is_enabled")) and _activation_status(activation) in _ACTIVATION_STOPPED_STATUSES:
                 return
             time.sleep(3)
         raise EDAKafkaError(f"EDA activation {activation_id} did not stop within the configured timeout.")
+
+
+    def _activation_status(activation: Dict[str, Any]) -> str:
+        return str(activation.get("status") or "").strip().lower()
+
+
+    def _activation_needs_restart(activation: Dict[str, Any]) -> bool:
+        status = _activation_status(activation)
+        if status in _ACTIVATION_RESTART_STATUSES:
+            return True
+        return bool(activation.get("is_enabled")) and status in {"stopped", "disabled"}
+
+
+    def _restart_activation(activation_id: int) -> Dict[str, Any]:
+        _request(
+            "POST",
+            f"/api/eda/v1/activations/{activation_id}/disable/",
+            expected_status=(200, 201, 202, 204, 409),
+        )
+        _wait_for_activation_stopped(activation_id)
+        _request(
+            "POST",
+            f"/api/eda/v1/activations/{activation_id}/enable/",
+            expected_status=(200, 201, 202, 204, 409),
+        )
+        return _request("GET", f"/api/eda/v1/activations/{activation_id}/")
 
 
     def _replace_activation(activation_id: int, activation_name: str, desired: Dict[str, Any]) -> Dict[str, Any]:

@@ -52,6 +52,7 @@ from shared.eda import (
     EDAAutomationError,
     bootstrap_resources as eda_bootstrap_resources,
     publish_event as eda_publish_event,
+    recover_failed_activations as eda_recover_failed_activations,
 )
 from shared.gitea import (
     GiteaAutomationError,
@@ -3401,6 +3402,11 @@ def _finalize_playbook_generation_instruction(
 
 def _publish_playbook_generation_instruction(correlation_id: str, instruction: str) -> Dict[str, object]:
     from kafka import KafkaProducer  # pyright: ignore[reportMissingImports]
+
+    try:
+        eda_recover_failed_activations(wait=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("EDA activation recovery before Kafka playbook publish failed: %s", exc)
 
     producer = KafkaProducer(
         bootstrap_servers=_ai_playbook_generation_bootstrap_servers(),

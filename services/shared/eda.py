@@ -68,6 +68,12 @@ def policy_catalog() -> List[Dict[str, Any]]:
     return items
 
 
+def recover_failed_activations(*, wait: bool = False) -> List[Dict[str, Any]]:
+    if not enabled():
+        return []
+    return _recover_failed_enabled_activations(wait=wait)
+
+
 def bootstrap_resources() -> Dict[str, Any]:
     if not enabled():
         return {"configured": False, "mode": "disabled", "policies": []}
@@ -80,6 +86,7 @@ def bootstrap_resources() -> Dict[str, Any]:
     rulebooks = _rulebooks_by_name(project_id)
 
     policies: List[Dict[str, Any]] = []
+    managed_activation_ids: List[int] = []
     for policy_key, definition in POLICY_DEFINITIONS.items():
         rulebook = rulebooks.get(_rulebook_name(policy_key))
         if not rulebook:
@@ -93,18 +100,21 @@ def bootstrap_resources() -> Dict[str, Any]:
             rulebook_id=int(rulebook["id"]),
             awx_token_id=awx_token_id,
         )
+        activation_id = int(activation.get("id") or 0)
+        if activation_id > 0:
+            managed_activation_ids.append(activation_id)
         policies.append(
             {
                 "policy_key": policy_key,
                 "name": str(activation.get("name") or definition["name"]),
-                "activation_id": int(activation.get("id") or 0),
+                "activation_id": activation_id,
                 "rulebook": _rulebook_name(policy_key),
                 "status": str(activation.get("status") or "unknown"),
-                "event_stream_urls": _activation_delivery_urls(policy_key, int(activation.get("id") or 0), activation),
+                "event_stream_urls": _activation_delivery_urls(policy_key, activation_id, activation),
             }
         )
 
-    return {
+    result: Dict[str, Any] = {
         "configured": True,
         "mode": "eda-api",
         "organization": _organization_name(),
@@ -115,6 +125,10 @@ def bootstrap_resources() -> Dict[str, Any]:
         "eda_url": _app_url() or _api_url(),
         "policies": policies,
     }
+    recovered_activations = _recover_failed_enabled_activations(exclude_activation_ids=managed_activation_ids)
+    if recovered_activations:
+        result["recovered_activations"] = recovered_activations
+    return result
 
 
 def status() -> Dict[str, Any]:
@@ -673,6 +687,56 @@ def _wait_for_policies_ready() -> List[Dict[str, Any]]:
         time.sleep(3)
         policies = _policy_status()
     raise EDAAutomationError("EDA activations did not become ready before the configured timeout.")
+
+
+def _recover_failed_enabled_activations(
+    *,
+    exclude_activation_ids: List[int] | None = None,
+    wait: bool = False,
+) -> List[Dict[str, Any]]:
+    excluded = set(exclude_activation_ids or [])
+    payload = _request("GET", "/api/eda/v1/activations/", params={"page_size": 200})
+    recovered: List[Dict[str, Any]] = []
+    for item in payload.get("results", []):
+        if not isinstance(item, dict):
+            continue
+        activation_id = int(item.get("id") or 0)
+        if activation_id <= 0 or activation_id in excluded:
+            continue
+        if not bool(item.get("is_enabled")) or not _activation_needs_restart(item):
+            continue
+        restarted = _restart_activation(activation_id)
+        recovered.append(
+            {
+                "activation_id": activation_id,
+                "name": str(restarted.get("name") or item.get("name") or ""),
+                "status": str(restarted.get("status") or "unknown"),
+            }
+        )
+    if wait and recovered:
+        _wait_for_activations_running([int(item["activation_id"]) for item in recovered])
+    return recovered
+
+
+def _wait_for_activations_running(activation_ids: List[int]) -> None:
+    remaining = {activation_id for activation_id in activation_ids if activation_id > 0}
+    deadline = time.time() + float(os.getenv("EDA_ACTIVATION_READY_TIMEOUT_SECONDS", "90"))
+    last_statuses: Dict[int, str] = {}
+    while remaining and time.time() < deadline:
+        for activation_id in list(remaining):
+            activation = _request("GET", f"/api/eda/v1/activations/{activation_id}/")
+            status = _activation_status(activation)
+            last_statuses[activation_id] = status or "unknown"
+            if status in _ACTIVATION_RUNNING_STATUSES:
+                remaining.remove(activation_id)
+        if remaining:
+            time.sleep(3)
+    if remaining:
+        status_summary = ", ".join(
+            f"{activation_id}={last_statuses.get(activation_id, 'unknown')}"
+            for activation_id in sorted(remaining)
+        )
+        raise EDAAutomationError(f"EDA activations did not become running before timeout: {status_summary}")
 
 
 def _controller_request(
