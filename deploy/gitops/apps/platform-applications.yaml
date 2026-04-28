@@ -304,6 +304,30 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: ani-gpu-monitoring-dashboard
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "42"
+spec:
+  destination:
+    namespace: openshift-config-managed
+    server: https://kubernetes.default.svc
+  project: ani-demo
+  source:
+    path: k8s/overlays/gitops/gpu-monitoring-dashboard
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: ani-sipp-traffic
   namespace: openshift-gitops
   annotations:
