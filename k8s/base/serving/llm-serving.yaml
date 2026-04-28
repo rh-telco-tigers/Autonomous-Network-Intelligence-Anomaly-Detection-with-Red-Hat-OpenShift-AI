@@ -31,6 +31,7 @@ metadata:
     opendatahub.io/dashboard: "true"
 spec:
   annotations:
+    opendatahub.io/kserve-runtime: vllm
     prometheus.io/path: /metrics
     prometheus.io/port: "8080"
   supportedModelFormats:
