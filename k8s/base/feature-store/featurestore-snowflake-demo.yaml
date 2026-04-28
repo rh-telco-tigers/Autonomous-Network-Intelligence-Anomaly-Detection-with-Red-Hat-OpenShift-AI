@@ -22,6 +22,15 @@ spec:
           name: ani-featurestore-repo
     registry:
       local:
+        persistence:
+          file:
+            path: registry.db
+            pvc:
+              mountPath: /feast-registry
+              create:
+                resources:
+                  requests:
+                    storage: 1Gi
         server:
           restAPI: true
           resources:
