@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -86,6 +87,27 @@ MILVUS_OUTPUT_FIELDS = [
 ]
 _MILVUS_REPAIR_LOCK = threading.Lock()
 _MILVUS_REPAIR_ATTEMPTS: Dict[str, float] = {}
+_LOGGER = logging.getLogger(__name__)
+
+
+def _env_int(name: str, default: int, *, minimum: int | None = None) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    if minimum is not None:
+        return max(value, minimum)
+    return value
+
+
+def _env_float(name: str, default: float, *, minimum: float | None = None) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    if minimum is not None:
+        return max(value, minimum)
+    return value
 
 
 def _rag_root_dir() -> Path:
@@ -111,7 +133,19 @@ def milvus_client():
         from pymilvus import MilvusClient
     except Exception:
         return None
-    return MilvusClient(uri=uri)
+    attempts = _env_int("MILVUS_CONNECT_ATTEMPTS", 1, minimum=1)
+    backoff_seconds = _env_float("MILVUS_CONNECT_BACKOFF_SECONDS", 0.5, minimum=0.0)
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return MilvusClient(uri=uri)
+        except Exception as exc:
+            last_error = exc
+            if attempt + 1 < attempts and backoff_seconds:
+                time.sleep(backoff_seconds)
+    if last_error is not None:
+        _LOGGER.debug("Milvus unavailable at %s: %s", uri, last_error)
+    return None
 
 
 def _stable_document_id(reference: str) -> int:
@@ -866,7 +900,8 @@ def _ensure_collection_loaded(client, collection_name: str) -> bool:
     except Exception:
         return False
 
-    deadline = time.monotonic() + MILVUS_LOAD_TIMEOUT_SECONDS
+    load_timeout = _env_float("MILVUS_LOAD_TIMEOUT_SECONDS", MILVUS_LOAD_TIMEOUT_SECONDS, minimum=1.0)
+    deadline = time.monotonic() + load_timeout
     while time.monotonic() < deadline:
         state = _collection_load_state(client, collection_name)
         if state == "loaded":

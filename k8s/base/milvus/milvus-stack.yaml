@@ -92,6 +92,25 @@ spec:
               mountPath: /etcd
           ports:
             - containerPort: 2379
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 2379
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 2379
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 2379
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m
@@ -161,6 +180,25 @@ spec:
                 secretKeyRef:
                   name: milvus-minio-credentials
                   key: secretkey
+          startupProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            periodSeconds: 2
+            failureThreshold: 90
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m
@@ -202,6 +240,43 @@ spec:
       labels:
         app: milvus
     spec:
+      initContainers:
+        - name: wait-for-etcd
+          image: docker.io/milvusdb/milvus:v2.4.13
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              until curl -fsS --max-time 2 http://milvus-etcd:2379/health | grep -q '"health":"true"'; do
+                echo "waiting for milvus-etcd"
+                sleep 2
+              done
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+        - name: wait-for-minio
+          image: docker.io/milvusdb/milvus:v2.4.13
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              until curl -fsS --max-time 2 http://milvus-minio:9000/minio/health/ready; do
+                echo "waiting for milvus-minio"
+                sleep 2
+              done
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -235,6 +310,25 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/milvus
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 9091
+            periodSeconds: 2
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9091
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9091
+            initialDelaySeconds: 45
+            periodSeconds: 20
+            failureThreshold: 3
           resources:
             requests:
               cpu: 250m
@@ -319,19 +413,21 @@ spec:
     insecureEdgeTerminationPolicy: Redirect
   wildcardPolicy: None
 ---
-apiVersion: batch/v1
-kind: Job
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: milvus-bootstrap
   namespace: ani-demo-lab
-  annotations:
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
 spec:
-  backoffLimit: 20
+  replicas: 1
+  selector:
+    matchLabels:
+      app: milvus-bootstrap
   template:
+    metadata:
+      labels:
+        app: milvus-bootstrap
     spec:
-      restartPolicy: OnFailure
       containers:
         - name: bootstrap
           image: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/rca-service:latest
@@ -340,16 +436,88 @@ spec:
             - -c
           args:
             - |
-              until python -c "from pymilvus import MilvusClient; MilvusClient(uri='http://milvus:19530').list_collections(); print('ready')"; do
-                sleep 5
+              set -u
+              while true; do
+                until python -c "from pymilvus import MilvusClient; MilvusClient(uri='http://milvus:19530').list_collections(); print('ready')"; do
+                  sleep 5
+                done
+                export MILVUS_URI=http://milvus:19530
+                export RAG_ROOT_DIR=ai/rag
+                export PYTHONPATH=/app:${PYTHONPATH:-}
+                export MILVUS_BOOTSTRAP_RECREATE_COLLECTIONS=false
+              python - <<'PY'
+              import json
+              import os
+              import sys
+              from pathlib import Path
+
+              try:
+                  from shared.rag import (
+                      DEFAULT_MILVUS_COLLECTIONS,
+                      LEGACY_MILVUS_COLLECTIONS,
+                      LOCAL_COLLECTION_DIRS,
+                      build_local_seed_records,
+                      ensure_milvus_collection,
+                      ensure_milvus_collection_ready,
+                      milvus_client,
+                  )
+              except ModuleNotFoundError:
+                  from services.shared.rag import (
+                      DEFAULT_MILVUS_COLLECTIONS,
+                      LEGACY_MILVUS_COLLECTIONS,
+                      LOCAL_COLLECTION_DIRS,
+                      build_local_seed_records,
+                      ensure_milvus_collection,
+                      ensure_milvus_collection_ready,
+                      milvus_client,
+                  )
+
+              client = milvus_client()
+              if client is None:
+                  raise SystemExit("Milvus client is unavailable")
+
+              rag_root = Path(os.getenv("RAG_ROOT_DIR", "ai/rag"))
+              summary = {}
+              for collection_name in LEGACY_MILVUS_COLLECTIONS:
+                  try:
+                      if client.has_collection(collection_name=collection_name):
+                          client.drop_collection(collection_name=collection_name)
+                  except Exception:
+                      pass
+
+              for collection_name in DEFAULT_MILVUS_COLLECTIONS:
+                  docs = []
+                  source_dir = rag_root / LOCAL_COLLECTION_DIRS[collection_name]
+                  for path in sorted(source_dir.rglob("*")):
+                      if path.is_file():
+                          docs.extend(build_local_seed_records(path, collection_name))
+                  if not ensure_milvus_collection(client, collection_name):
+                      raise SystemExit(f"Failed to ensure Milvus collection {collection_name}")
+                  if docs:
+                      client.upsert(collection_name=collection_name, data=docs)
+                  if not ensure_milvus_collection_ready(client, collection_name, load=True, force=True):
+                      raise SystemExit(f"Failed to load Milvus collection {collection_name}")
+                  summary[collection_name] = len(docs)
+
+              print(json.dumps({"collections": summary, "dropped_legacy": list(LEGACY_MILVUS_COLLECTIONS)}, indent=2))
+              PY
+                if [ "$?" -eq 0 ]; then
+                  echo "Milvus bootstrap completed"
+                else
+                  echo "Milvus bootstrap failed" >&2
+                fi
+                sleep "${MILVUS_BOOTSTRAP_INTERVAL_SECONDS:-300}"
               done
-              export MILVUS_URI=http://milvus:19530
-              export RAG_ROOT_DIR=ai/rag
-              export PYTHONPATH=/app:${PYTHONPATH}
-              python ai/rag/bootstrap_knowledge.py
+          env:
+            - name: MILVUS_CONNECT_ATTEMPTS
+              value: "20"
+            - name: MILVUS_CONNECT_BACKOFF_SECONDS
+              value: "2"
+            - name: MILVUS_LOAD_TIMEOUT_SECONDS
+              value: "60"
           resources:
             requests:
-              cpu: 250m
+              cpu: 50m
               memory: 512Mi
             limits:
               cpu: 500m

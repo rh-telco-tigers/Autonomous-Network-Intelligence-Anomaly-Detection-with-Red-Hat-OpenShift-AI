@@ -34,6 +34,12 @@ def main():
     if client is None:
         raise SystemExit("pymilvus and MILVUS_URI are required to bootstrap Milvus")
     rag_root = Path(os.getenv("RAG_ROOT_DIR", "ai/rag"))
+    recreate_collections = os.getenv("MILVUS_BOOTSTRAP_RECREATE_COLLECTIONS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     bootstrap_summary: dict[str, int] = {}
 
     for collection_name in LEGACY_MILVUS_COLLECTIONS:
@@ -52,12 +58,12 @@ def main():
                 continue
             docs.extend(build_local_seed_records(path, collection_name))
 
-        if client.has_collection(collection_name=collection_name):
+        if recreate_collections and client.has_collection(collection_name=collection_name):
             client.drop_collection(collection_name=collection_name)
         if not ensure_milvus_collection(client, collection_name):
             raise SystemExit(f"Failed to ensure Milvus collection {collection_name}")
         if docs:
-            client.insert(collection_name=collection_name, data=docs)
+            client.upsert(collection_name=collection_name, data=docs)
         if not ensure_milvus_collection_ready(client, collection_name, load=True, force=True):
             raise SystemExit(f"Failed to load Milvus collection {collection_name}")
         bootstrap_summary[collection_name] = len(docs)
@@ -67,6 +73,7 @@ def main():
             {
                 "collections": bootstrap_summary,
                 "dropped_legacy": list(LEGACY_MILVUS_COLLECTIONS),
+                "recreated_collections": recreate_collections,
             },
             indent=2,
         )

@@ -2,6 +2,7 @@ import importlib.util
 import json
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -412,6 +413,37 @@ class MilvusRecoveryTests(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["reference"], "knowledge/auth/validate-hss-vectors.json")
         self.assertIn(rag.RUNBOOK_COLLECTION, client.loaded)
+
+    def test_milvus_connection_failure_degrades_without_raising(self) -> None:
+        fake_pymilvus = types.ModuleType("pymilvus")
+
+        class FailingMilvusClient:
+            def __init__(self, *, uri: str) -> None:
+                del uri
+                raise RuntimeError("No connection established")
+
+        fake_pymilvus.MilvusClient = FailingMilvusClient
+        with (
+            patch.dict(sys.modules, {"pymilvus": fake_pymilvus}),
+            patch.dict(
+                rag.os.environ,
+                {
+                    "MILVUS_URI": "http://milvus:19530",
+                    "MILVUS_CONNECT_ATTEMPTS": "1",
+                },
+                clear=False,
+            ),
+        ):
+            self.assertIsNone(rag.milvus_client())
+            self.assertEqual(rag.milvus_retrieve("auth loops", collections=[rag.RUNBOOK_COLLECTION]), [])
+            self.assertFalse(
+                rag.publish_semantic_record(
+                    rag.RUNBOOK_COLLECTION,
+                    "reference",
+                    "title",
+                    "content",
+                )
+            )
 
 
 if __name__ == "__main__":
