@@ -190,6 +190,43 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: ani-plane
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "18"
+spec:
+  ignoreDifferences:
+    - group: route.openshift.io
+      kind: Route
+      jsonPointers:
+        - /metadata/annotations/openshift.io~1host.generated
+        - /spec/host
+  destination:
+    namespace: plane
+    server: https://kubernetes.default.svc
+  project: ani-demo
+  source:
+    path: k8s/overlays/gitops/plane
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 20
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: ani-datascience
   namespace: openshift-gitops
   annotations:
