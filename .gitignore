@@ -12,6 +12,8 @@ dist/
 build/
 node_modules/
 .tmp/
+tmp/
+kubeconfig
 ai/data/
 k8s/manual/machine-api/generated/
 .$**

@@ -35,13 +35,11 @@ spec:
       command:
         - /bin/sh
         - -lc
-        - mkdir -p /tmp/mlserver-metrics /tmp/mlserver-envs && uvicorn ai.featurestore.trustyai_v1_adapter:app --host 0.0.0.0 --port 8081 --http h11 --workers 4 --timeout-keep-alive 30 & exec mlserver start /mnt/models
+        - export PYTHONPATH="/workspace:/workspace/services${PYTHONPATH:+:${PYTHONPATH}}"; mkdir -p /tmp/mlserver-metrics /tmp/mlserver-envs; uvicorn ai.featurestore.trustyai_v1_adapter:app --host 0.0.0.0 --port 8081 --http h11 --workers 4 --timeout-keep-alive 30 & exec mlserver start /mnt/models
       args: []
       env:
         - name: HOME
           value: /tmp
-        - name: PYTHONPATH
-          value: /workspace:/workspace/services
         - name: MLSERVER_HTTP_PORT
           value: "8080"
         - name: MLSERVER_GRPC_PORT
