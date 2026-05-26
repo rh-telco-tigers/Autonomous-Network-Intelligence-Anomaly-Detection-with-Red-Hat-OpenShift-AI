@@ -479,15 +479,24 @@ def ani_featurestore_pipeline(
         "featurestore_aws_access_key_id": featurestore_aws_access_key_id,
         "featurestore_aws_secret_access_key": featurestore_aws_secret_access_key,
     }
-    resolved = resolve_bundle(bundle_version=bundle_version)
+    resolved = resolve_bundle(bundle_version=bundle_version, workspace_root=WORKSPACE_ROOT)
     _configure_featurestore_task(resolved, **featurestore_config)
     _configure_featurestore_support_task_resources(resolved)
 
-    validated = validate_bundle(bundle_manifest_path=resolved.outputs["output_manifest"])
-    synced = sync_feature_store_definitions(bundle_manifest_path=resolved.outputs["output_manifest"])
+    validated = validate_bundle(
+        bundle_manifest_path=resolved.outputs["output_manifest"],
+        workspace_root=WORKSPACE_ROOT,
+    )
+    synced = sync_feature_store_definitions(
+        bundle_manifest_path=resolved.outputs["output_manifest"],
+        feature_repo_path=FEATURE_REPO_PATH,
+        workspace_root=WORKSPACE_ROOT,
+    )
     training_data = retrieve_training_dataset(
         bundle_manifest_path=resolved.outputs["output_manifest"],
         feature_service_name=feature_service_name,
+        feature_repo_path=FEATURE_REPO_PATH,
+        workspace_root=WORKSPACE_ROOT,
     )
     for task in (validated, synced, training_data):
         _configure_featurestore_task(task, **featurestore_config)
@@ -499,6 +508,8 @@ def ani_featurestore_pipeline(
     automl = train_automl(
         training_manifest=training_data.outputs["output_manifest"],
         candidate_version=candidate_version,
+        workspace_root=WORKSPACE_ROOT,
+        artifact_dir=ARTIFACT_DIR,
         automl_engine=automl_engine,
     )
     evaluated = evaluate_candidate(
@@ -511,6 +522,7 @@ def ani_featurestore_pipeline(
     exported = export_serving_artifact(
         training_manifest=training_data.outputs["output_manifest"],
         selection_manifest=selected.outputs["output_manifest"],
+        artifact_dir=ARTIFACT_DIR,
         serving_model_name=serving_model_name,
         serving_runtime_name=serving_runtime_name,
         serving_model_format_name=serving_model_format_name,
@@ -524,11 +536,13 @@ def ani_featurestore_pipeline(
         feature_service_name=feature_service_name,
         model_name=model_name,
         model_version_name=model_version_name,
+        pipeline_name="ani-featurestore-train-and-register",
         model_registry_endpoint=model_registry_endpoint,
     )
     published = publish_deployment_manifest(
         export_manifest=exported.outputs["output_manifest"],
         model_registry_manifest=registered.outputs["output_manifest"],
+        service_account_name="model-storage-sa",
     )
     for task in (automl, evaluated, selected, exported, registered, published):
         _configure_featurestore_task(task, **featurestore_config)

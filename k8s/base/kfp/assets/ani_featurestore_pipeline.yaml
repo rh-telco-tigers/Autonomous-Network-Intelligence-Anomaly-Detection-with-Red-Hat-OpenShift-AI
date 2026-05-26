@@ -995,6 +995,9 @@ root:
         - select-candidate
         inputs:
           parameters:
+            artifact_dir:
+              runtimeValue:
+                constant: /tmp/ani-featurestore/models/artifacts
             selection_manifest:
               taskOutputParameter:
                 outputParameterKey: output_manifest
@@ -1037,6 +1040,9 @@ root:
               taskOutputParameter:
                 outputParameterKey: output_manifest
                 producerTask: register-model-version
+            service_account_name:
+              runtimeValue:
+                constant: model-storage-sa
         taskInfo:
           name: publish-deployment-manifest
       register-model-version:
@@ -1060,6 +1066,9 @@ root:
               componentInputParameter: model_registry_endpoint
             model_version_name:
               componentInputParameter: model_version_name
+            pipeline_name:
+              runtimeValue:
+                constant: ani-featurestore-train-and-register
         taskInfo:
           name: register-model-version
       resolve-bundle:
@@ -1071,6 +1080,9 @@ root:
           parameters:
             bundle_version:
               componentInputParameter: bundle_version
+            workspace_root:
+              runtimeValue:
+                constant: /tmp/ani-featurestore
         taskInfo:
           name: resolve-bundle
       retrieve-training-dataset:
@@ -1088,8 +1100,14 @@ root:
               taskOutputParameter:
                 outputParameterKey: output_manifest
                 producerTask: resolve-bundle
+            feature_repo_path:
+              runtimeValue:
+                constant: /workspace/ai/featurestore/feature_repo
             feature_service_name:
               componentInputParameter: feature_service_name
+            workspace_root:
+              runtimeValue:
+                constant: /tmp/ani-featurestore
         taskInfo:
           name: retrieve-training-dataset
       select-candidate:
@@ -1120,6 +1138,12 @@ root:
               taskOutputParameter:
                 outputParameterKey: output_manifest
                 producerTask: resolve-bundle
+            feature_repo_path:
+              runtimeValue:
+                constant: /workspace/ai/featurestore/feature_repo
+            workspace_root:
+              runtimeValue:
+                constant: /tmp/ani-featurestore
         taskInfo:
           name: sync-feature-store-definitions
       train-automl:
@@ -1131,6 +1155,9 @@ root:
         - retrieve-training-dataset
         inputs:
           parameters:
+            artifact_dir:
+              runtimeValue:
+                constant: /tmp/ani-featurestore/models/artifacts
             automl_engine:
               componentInputParameter: automl_engine
             candidate_version:
@@ -1139,6 +1166,9 @@ root:
               taskOutputParameter:
                 outputParameterKey: output_manifest
                 producerTask: retrieve-training-dataset
+            workspace_root:
+              runtimeValue:
+                constant: /tmp/ani-featurestore
         taskInfo:
           name: train-automl
       validate-bundle:
@@ -1154,6 +1184,9 @@ root:
               taskOutputParameter:
                 outputParameterKey: output_manifest
                 producerTask: resolve-bundle
+            workspace_root:
+              runtimeValue:
+                constant: /tmp/ani-featurestore
         taskInfo:
           name: validate-bundle
   inputDefinitions:
