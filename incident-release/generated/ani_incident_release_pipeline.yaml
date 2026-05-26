@@ -107,6 +107,9 @@ root:
               componentInputParameter: source_dataset_version
             source_snapshot_id:
               componentInputParameter: source_snapshot_id
+            workspace_root:
+              runtimeValue:
+                constant: /tmp/ani-incident-release
         taskInfo:
           name: run-release
   inputDefinitions:

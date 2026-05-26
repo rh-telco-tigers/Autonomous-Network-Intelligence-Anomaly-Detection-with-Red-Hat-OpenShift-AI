@@ -244,22 +244,31 @@ def ani_anomaly_pipeline(
     automl_version: str = "candidate-v1",
     automl_engine: str = "autogluon",
 ):
-    ingest_task = ingest_data(dataset_version=dataset_version)
+    ingest_task = ingest_data(
+        dataset_version=dataset_version,
+        workspace_root=WORKSPACE_ROOT,
+        size_per_class=120,
+    )
     feature_task = feature_engineering(
         dataset_version=dataset_version,
         dataset_manifest=ingest_task.outputs["output_manifest"],
+        workspace_root=WORKSPACE_ROOT,
     )
     label_task = label_generation(
         dataset_version=dataset_version,
         feature_manifest=feature_task.outputs["output_manifest"],
+        workspace_root=WORKSPACE_ROOT,
     )
     baseline_task = train_baseline(
         baseline_version=baseline_version,
         label_manifest=label_task.outputs["output_manifest"],
+        artifact_dir=ARTIFACT_DIR,
     )
     automl_task = train_autogluon(
         candidate_version=automl_version,
         label_manifest=label_task.outputs["output_manifest"],
+        workspace_root=WORKSPACE_ROOT,
+        artifact_dir=ARTIFACT_DIR,
         automl_engine=automl_engine,
     )
     evaluation_task = evaluate_models(
@@ -275,6 +284,8 @@ def ani_anomaly_pipeline(
     registry_task = register_model(
         label_manifest=label_task.outputs["output_manifest"],
         selection_manifest=selection_task.outputs["output_manifest"],
+        artifact_dir=ARTIFACT_DIR,
+        registry_path=REGISTRY_PATH,
     )
     deploy_model(
         registry_manifest=registry_task.outputs["output_manifest"],

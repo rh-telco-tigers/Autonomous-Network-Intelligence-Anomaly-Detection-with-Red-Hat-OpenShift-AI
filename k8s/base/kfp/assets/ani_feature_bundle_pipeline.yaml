@@ -170,6 +170,9 @@ root:
               componentInputParameter: require_control_plane_history
             source_dataset_versions_json:
               componentInputParameter: source_dataset_versions_json
+            workspace_root:
+              runtimeValue:
+                constant: /tmp/ani-featurestore
         taskInfo:
           name: build-bundle
       validate-bundle:
@@ -185,6 +188,9 @@ root:
               taskOutputParameter:
                 outputParameterKey: output_manifest
                 producerTask: build-bundle
+            workspace_root:
+              runtimeValue:
+                constant: /tmp/ani-featurestore
         taskInfo:
           name: validate-bundle
   inputDefinitions:

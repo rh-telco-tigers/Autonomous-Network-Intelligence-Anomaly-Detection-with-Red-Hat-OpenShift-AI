@@ -131,8 +131,12 @@ def ani_feature_bundle_pipeline(
         source_dataset_versions_json=source_dataset_versions_json,
         project=project,
         require_control_plane_history=require_control_plane_history,
+        workspace_root=WORKSPACE_ROOT,
     )
-    validated = validate_bundle(bundle_manifest_path=published.outputs["output_manifest"])
+    validated = validate_bundle(
+        bundle_manifest_path=published.outputs["output_manifest"],
+        workspace_root=WORKSPACE_ROOT,
+    )
     config = {
         "control_plane_url": control_plane_url,
         "control_plane_api_key": control_plane_api_key,

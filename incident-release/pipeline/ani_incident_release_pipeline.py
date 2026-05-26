@@ -182,6 +182,7 @@ def ani_incident_release_pipeline(
         public_record_target=public_record_target,
         release_mode=release_mode,
         previous_release_version=previous_release_version,
+        workspace_root=WORKSPACE_ROOT,
         source_snapshot_id=source_snapshot_id,
     )
     run_task.set_env_variable("CONTROL_PLANE_URL", "http://control-plane.ani-runtime.svc.cluster.local:8080")

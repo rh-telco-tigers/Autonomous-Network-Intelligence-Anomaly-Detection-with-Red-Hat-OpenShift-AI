@@ -389,6 +389,9 @@ spec:
                     producerTask: ingest-data
                 dataset_version:
                   componentInputParameter: dataset_version
+                workspace_root:
+                  runtimeValue:
+                    constant: /tmp/ani-pipeline
             taskInfo:
               name: feature-engineering
           ingest-data:
@@ -400,6 +403,12 @@ spec:
               parameters:
                 dataset_version:
                   componentInputParameter: dataset_version
+                size_per_class:
+                  runtimeValue:
+                    constant: 120.0
+                workspace_root:
+                  runtimeValue:
+                    constant: /tmp/ani-pipeline
             taskInfo:
               name: ingest-data
           label-generation:
@@ -417,6 +426,9 @@ spec:
                   taskOutputParameter:
                     outputParameterKey: output_manifest
                     producerTask: feature-engineering
+                workspace_root:
+                  runtimeValue:
+                    constant: /tmp/ani-pipeline
             taskInfo:
               name: label-generation
           register-model:
@@ -429,10 +441,16 @@ spec:
             - select-best
             inputs:
               parameters:
+                artifact_dir:
+                  runtimeValue:
+                    constant: /tmp/ani-pipeline/models/artifacts
                 label_manifest:
                   taskOutputParameter:
                     outputParameterKey: output_manifest
                     producerTask: label-generation
+                registry_path:
+                  runtimeValue:
+                    constant: /tmp/ani-pipeline/registry/model_registry.json
                 selection_manifest:
                   taskOutputParameter:
                     outputParameterKey: output_manifest
@@ -465,6 +483,9 @@ spec:
             - label-generation
             inputs:
               parameters:
+                artifact_dir:
+                  runtimeValue:
+                    constant: /tmp/ani-pipeline/models/artifacts
                 automl_engine:
                   componentInputParameter: automl_engine
                 candidate_version:
@@ -473,6 +494,9 @@ spec:
                   taskOutputParameter:
                     outputParameterKey: output_manifest
                     producerTask: label-generation
+                workspace_root:
+                  runtimeValue:
+                    constant: /tmp/ani-pipeline
             taskInfo:
               name: train-autogluon
           train-baseline:
@@ -484,6 +508,9 @@ spec:
             - label-generation
             inputs:
               parameters:
+                artifact_dir:
+                  runtimeValue:
+                    constant: /tmp/ani-pipeline/models/artifacts
                 baseline_version:
                   componentInputParameter: baseline_version
                 label_manifest:
