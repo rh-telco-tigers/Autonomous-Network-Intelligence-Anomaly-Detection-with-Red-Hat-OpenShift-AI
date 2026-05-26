@@ -20,7 +20,7 @@ data:
   PREDICTIVE_EXPLAINABILITY_ENDPOINT: http://ani-predictive-fs-explainer.ani-datascience.svc.cluster.local:8080
   PREDICTIVE_MODEL_NAME: ani-predictive-fs
   PREDICTIVE_MODEL_VERSION_LABEL: ani-predictive-fs
-  PREDICTIVE_ACTIVE_PROFILE: live
+  PREDICTIVE_ACTIVE_PROFILE: modelcar
   PREDICTIVE_ENDPOINT_LIVE: http://ani-predictive-fs-predictor.ani-datascience.svc.cluster.local:8080
   PREDICTIVE_EXPLAINABILITY_ENDPOINT_LIVE: http://ani-predictive-fs-explainer.ani-datascience.svc.cluster.local:8080
   PREDICTIVE_MODEL_NAME_LIVE: ani-predictive-fs

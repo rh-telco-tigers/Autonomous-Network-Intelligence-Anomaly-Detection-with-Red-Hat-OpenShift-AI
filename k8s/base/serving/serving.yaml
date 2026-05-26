@@ -72,6 +72,7 @@ metadata:
     openshift.io/display-name: ani-predictive
     serving.kserve.io/deploymentMode: RawDeployment
     serving.kserve.io/enable-prometheus-scraping: "true"
+    serving.kserve.io/stop: "true"
 spec:
   predictor:
     serviceAccountName: model-storage-sa

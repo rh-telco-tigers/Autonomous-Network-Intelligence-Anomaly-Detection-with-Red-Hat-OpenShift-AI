@@ -11,6 +11,7 @@ metadata:
     openshift.io/display-name: ani-predictive-fs
     serving.kserve.io/deploymentMode: RawDeployment
     serving.kserve.io/enable-prometheus-scraping: "true"
+    serving.kserve.io/stop: "true"
     ani.redhat.com/serving-alias: current
     ani-demo/runtime-fix-ts: trustyai-explainability-v1-d8d45e1
 spec:
