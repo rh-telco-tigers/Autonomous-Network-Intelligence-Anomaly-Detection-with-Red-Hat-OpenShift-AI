@@ -65,6 +65,7 @@ type RcaGenerationInfo = {
   retrievedDocumentCount: number;
   llmUsed: boolean;
   llmConfigured: boolean;
+  llmConfigurationKnown: boolean;
   provenanceLabel: string;
 };
 
@@ -830,7 +831,9 @@ export function IncidentWorkflowDetail() {
                 ? `RCA generated using ${generation.sourceLabel}${generation.model !== "Not recorded" ? ` with ${generation.model}` : ""}.`
                 : generation.llmConfigured
                   ? "RCA generated using the built-in fallback process for this run."
-                  : "RCA generated using the built-in fallback process because no AI endpoint is configured.",
+                  : generation.llmConfigurationKnown
+                    ? "RCA generated using the built-in fallback process because no AI endpoint is configured."
+                    : "RCA generated using the built-in fallback process; AI endpoint metadata was not recorded.",
             });
           } catch (mutationError) {
             setNotice({
@@ -3448,6 +3451,7 @@ function buildRcaGenerationInfo(source?: RcaRecord | RcaPayload | null): RcaGene
   const llmModel = asStringValue(payload.llm_model);
   const llmConfiguredFlag = asBooleanValue(payload.llm_configured);
   const llmConfigured = llmConfiguredFlag ?? (llmUsed || Boolean(llmModel));
+  const llmConfigurationKnown = llmConfiguredFlag !== undefined || llmUsed || Boolean(llmModel);
   const sourceLabel =
     asStringValue(payload.generation_source_label) ||
     (generationMode === "llm-rag"
@@ -3456,7 +3460,9 @@ function buildRcaGenerationInfo(source?: RcaRecord | RcaPayload | null): RcaGene
         ? "Built-in fallback"
         : "Source not available");
   const model = llmModel || "Not recorded";
-  const runtime = asStringValue(payload.llm_runtime) || (llmUsed ? "Not recorded" : llmConfigured ? "Configured" : "Not configured");
+  const runtime =
+    asStringValue(payload.llm_runtime) ||
+    (llmUsed ? "Not recorded" : llmConfigurationKnown ? (llmConfigured ? "Configured" : "Not configured") : "Unknown");
   const retrievedDocuments = Array.isArray(payload.retrieved_documents)
     ? payload.retrieved_documents.length
     : source && "retrieval_refs" in source && Array.isArray(source.retrieval_refs)
@@ -3475,8 +3481,10 @@ function buildRcaGenerationInfo(source?: RcaRecord | RcaPayload | null): RcaGene
   } else if (llmConfigured) {
     provenanceLabel = "Fallback summary";
     summary = "This RCA used the built-in fallback process for this run even though an AI service was configured.";
-  } else {
+  } else if (llmConfigurationKnown) {
     summary = "This RCA used the built-in fallback process because no AI service was configured.";
+  } else {
+    summary = "This RCA used the built-in fallback process; AI endpoint metadata was not recorded for this RCA.";
   }
 
   return {
@@ -3487,6 +3495,7 @@ function buildRcaGenerationInfo(source?: RcaRecord | RcaPayload | null): RcaGene
     retrievedDocumentCount: retrievedDocuments,
     llmUsed,
     llmConfigured,
+    llmConfigurationKnown,
     provenanceLabel,
   };
 }
