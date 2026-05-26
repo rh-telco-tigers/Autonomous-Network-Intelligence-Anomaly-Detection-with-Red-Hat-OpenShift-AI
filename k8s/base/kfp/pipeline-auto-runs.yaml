@@ -284,7 +284,7 @@ metadata:
     argocd.argoproj.io/ignore-healthcheck: "true"
 spec:
   schedule: "10-59/15 * * * *"
-  suspend: true
+  suspend: false
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
