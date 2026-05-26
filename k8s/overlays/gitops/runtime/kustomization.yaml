@@ -117,3 +117,6 @@ images:
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/demo-ui
     newName: quay.io/autonomousnetworkintelligence/demo-ui
     newTag: latest
+  - name: artifacts.plane.so/makeplane/plane-backend
+    newName: docker.io/makeplane/plane-backend
+    newTag: v1.2.3

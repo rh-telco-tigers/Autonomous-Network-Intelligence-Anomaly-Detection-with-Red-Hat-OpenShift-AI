@@ -5,3 +5,19 @@ resources:
   - runtime-plane-route-access.yaml
   - plane-web-url-bootstrap.yaml
   - ../../../base/plane
+images:
+  - name: artifacts.plane.so/makeplane/plane-admin
+    newName: docker.io/makeplane/plane-admin
+    newTag: v1.2.3
+  - name: artifacts.plane.so/makeplane/plane-backend
+    newName: docker.io/makeplane/plane-backend
+    newTag: v1.2.3
+  - name: artifacts.plane.so/makeplane/plane-frontend
+    newName: docker.io/makeplane/plane-frontend
+    newTag: v1.2.3
+  - name: artifacts.plane.so/makeplane/plane-live
+    newName: docker.io/makeplane/plane-live
+    newTag: v1.2.3
+  - name: artifacts.plane.so/makeplane/plane-space
+    newName: docker.io/makeplane/plane-space
+    newTag: v1.2.3
