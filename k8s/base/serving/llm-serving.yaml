@@ -22,7 +22,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "55"
     opendatahub.io/apiProtocol: REST
     opendatahub.io/recommended-accelerators: '["nvidia.com/gpu"]'
-    opendatahub.io/runtime-version: v0.9.1.0
+    opendatahub.io/runtime-version: v0.18.0
     opendatahub.io/serving-runtime-scope: global
     opendatahub.io/template-display-name: vLLM NVIDIA GPU ServingRuntime for KServe
     opendatahub.io/template-name: vllm-cuda-runtime-template
@@ -40,7 +40,7 @@ spec:
   multiModel: false
   containers:
     - name: kserve-container
-      image: registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.2.4
+      image: registry.redhat.io/rhaii/vllm-cuda-rhel9@sha256:ad06abf3bb5235ebb5b2df84cd1b9fd09e823f0ff2eebfc82bb4590275ccfe0b
       command:
         - python
         - -m
