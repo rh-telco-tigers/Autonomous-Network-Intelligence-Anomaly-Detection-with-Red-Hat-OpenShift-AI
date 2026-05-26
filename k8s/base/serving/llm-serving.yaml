@@ -73,6 +73,8 @@ metadata:
     opendatahub.io/genai-asset: "true"
 spec:
   predictor:
+    deploymentStrategy:
+      type: Recreate
     automountServiceAccountToken: false
     minReplicas: 1
     maxReplicas: 1
