@@ -178,6 +178,10 @@ metadata:
     argocd.argoproj.io/sync-wave: "20"
 spec:
   ignoreDifferences:
+    - group: '*'
+      kind: '*'
+      jsonPointers:
+        - /metadata/annotations/argocd.argoproj.io~1tracking-id
     - group: route.openshift.io
       kind: Route
       jsonPointers:
