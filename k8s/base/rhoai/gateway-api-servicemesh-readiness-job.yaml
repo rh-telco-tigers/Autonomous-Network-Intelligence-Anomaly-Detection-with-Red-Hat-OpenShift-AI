@@ -77,9 +77,23 @@ spec:
                 fi
               }
 
+              discover_current_csv() {
+                local current_csv
+                current_csv="$(oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" -o jsonpath='{.status.currentCSV}' 2>/dev/null || true)"
+                if [ -n "$current_csv" ]; then
+                  printf '%s' "$current_csv"
+                  return 0
+                fi
+
+                current_csv="$(oc get csv -n "$SUB_NAMESPACE" --no-headers 2>/dev/null \
+                  | awk '/^servicemeshoperator3\\./ && $5 == "Succeeded" {print $1}' \
+                  | sort -V | tail -n1)"
+                printf '%s' "$current_csv"
+              }
+
               cleanup_stale_csvs() {
                 local current_csv csv_rows csv_name csv_phase
-                current_csv="$(oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" -o jsonpath='{.status.currentCSV}' 2>/dev/null || true)"
+                current_csv="$(discover_current_csv)"
                 [ -z "$current_csv" ] && return 0
 
                 csv_rows="$(oc get csv -n "$SUB_NAMESPACE" --no-headers 2>/dev/null | awk '/^servicemeshoperator3\\./ {print $1" "$5}')"
@@ -107,7 +121,7 @@ spec:
                 normalize_subscription
                 approve_pending_installplans
                 cleanup_stale_csvs
-                CURRENT_CSV="$(oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" -o jsonpath='{.status.currentCSV}' 2>/dev/null || true)"
+                CURRENT_CSV="$(discover_current_csv)"
                 until_now_or_fail
                 [ -n "$CURRENT_CSV" ] || sleep "$SLEEP_SECONDS"
               done
