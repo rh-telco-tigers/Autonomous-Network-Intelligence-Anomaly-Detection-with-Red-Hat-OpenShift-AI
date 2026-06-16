@@ -31,6 +31,11 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "5"
 spec:
+  ignoreDifferences:
+    - group: '*'
+      kind: '*'
+      jsonPointers:
+        - /metadata/annotations/argocd.argoproj.io~1tracking-id
   destination:
     namespace: redhat-ods-operator
     server: https://kubernetes.default.svc
@@ -62,6 +67,10 @@ metadata:
     argocd.argoproj.io/sync-wave: "10"
 spec:
   ignoreDifferences:
+    - group: '*'
+      kind: '*'
+      jsonPointers:
+        - /metadata/annotations/argocd.argoproj.io~1tracking-id
     - group: route.openshift.io
       kind: Route
       jsonPointers:
@@ -117,6 +126,10 @@ metadata:
     argocd.argoproj.io/sync-wave: "15"
 spec:
   ignoreDifferences:
+    - group: '*'
+      kind: '*'
+      jsonPointers:
+        - /metadata/annotations/argocd.argoproj.io~1tracking-id
     - group: route.openshift.io
       kind: Route
       jsonPointers:
@@ -289,6 +302,11 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "35"
 spec:
+  ignoreDifferences:
+    - group: '*'
+      kind: '*'
+      jsonPointers:
+        - /metadata/annotations/argocd.argoproj.io~1tracking-id
   destination:
     namespace: ani-datascience
     server: https://kubernetes.default.svc
@@ -321,6 +339,10 @@ metadata:
     argocd.argoproj.io/sync-wave: "37"
 spec:
   ignoreDifferences:
+    - group: '*'
+      kind: '*'
+      jsonPointers:
+        - /metadata/annotations/argocd.argoproj.io~1tracking-id
     - group: route.openshift.io
       kind: Route
       jsonPointers:
@@ -358,11 +380,40 @@ metadata:
     argocd.argoproj.io/sync-wave: "38"
 spec:
   ignoreDifferences:
+    - group: '*'
+      kind: '*'
+      jsonPointers:
+        - /metadata/annotations/argocd.argoproj.io~1tracking-id
     - group: route.openshift.io
       kind: Route
       jsonPointers:
         - /metadata/annotations/openshift.io~1host.generated
         - /spec/host
+    - group: ""
+      kind: ServiceAccount
+      jsonPointers:
+        - /imagePullSecrets
+        - /secrets
+        - /metadata/annotations/openshift.io~1internal-registry-pull-secret-ref
+    - group: ""
+      kind: ConfigMap
+      name: kagenti-operator-trusted-ca
+      namespace: kagenti-system
+      jsonPointers:
+        - /data
+    - group: ""
+      kind: Secret
+      name: mlflow-oauth-proxy-cookie
+      namespace: redhat-ods-applications
+      jsonPointers:
+        - /data
+    - group: ""
+      kind: Service
+      name: mlflow-oauth-proxy
+      namespace: redhat-ods-applications
+      jsonPointers:
+        - /metadata/annotations/service.alpha.openshift.io~1serving-cert-signed-by
+        - /metadata/annotations/service.beta.openshift.io~1serving-cert-signed-by
   destination:
     namespace: kagenti-system
     server: https://kubernetes.default.svc
