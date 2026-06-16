@@ -78,16 +78,26 @@ spec:
               }
 
               discover_current_csv() {
-                local current_csv
+                local current_csv csv_rows csv_name csv_phase
                 current_csv="$(oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" -o jsonpath='{.status.currentCSV}' 2>/dev/null || true)"
                 if [ -n "$current_csv" ]; then
                   printf '%s' "$current_csv"
                   return 0
                 fi
 
-                current_csv="$(oc get csv -n "$SUB_NAMESPACE" --no-headers 2>/dev/null \
-                  | awk '/^servicemeshoperator3\\./ && $5 == "Succeeded" {print $1}' \
-                  | sort -V | tail -n1)"
+                csv_rows="$(oc get csv -n "$SUB_NAMESPACE" \
+                  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.phase}{"\n"}{end}' 2>/dev/null || true)"
+                [ -z "$csv_rows" ] && return 0
+
+                current_csv="$(
+                  while IFS=$'\t' read -r csv_name csv_phase; do
+                    case "$csv_name" in
+                      servicemeshoperator3.*)
+                        [ "$csv_phase" = "Succeeded" ] && printf '%s\n' "$csv_name"
+                        ;;
+                    esac
+                  done <<< "$csv_rows" | sort -V | tail -n1
+                )"
                 printf '%s' "$current_csv"
               }
 
@@ -96,11 +106,16 @@ spec:
                 current_csv="$(discover_current_csv)"
                 [ -z "$current_csv" ] && return 0
 
-                csv_rows="$(oc get csv -n "$SUB_NAMESPACE" --no-headers 2>/dev/null | awk '/^servicemeshoperator3\\./ {print $1" "$5}')"
+                csv_rows="$(oc get csv -n "$SUB_NAMESPACE" \
+                  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.phase}{"\n"}{end}' 2>/dev/null || true)"
                 [ -z "$csv_rows" ] && return 0
 
-                while IFS=' ' read -r csv_name csv_phase; do
+                while IFS=$'\t' read -r csv_name csv_phase; do
                   [ -z "$csv_name" ] && continue
+                  case "$csv_name" in
+                    servicemeshoperator3.*) ;;
+                    *) continue ;;
+                  esac
                   if [ "$csv_name" != "$current_csv" ] && [ "$csv_phase" = "Pending" ]; then
                     log "Deleting stale pending CSV $csv_name (currentCSV=$current_csv)"
                     oc delete csv "$csv_name" -n "$SUB_NAMESPACE" --ignore-not-found >/dev/null || true
