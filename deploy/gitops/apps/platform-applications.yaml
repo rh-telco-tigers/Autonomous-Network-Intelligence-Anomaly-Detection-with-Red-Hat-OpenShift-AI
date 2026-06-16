@@ -250,6 +250,10 @@ metadata:
     argocd.argoproj.io/sync-wave: "30"
 spec:
   ignoreDifferences:
+    - group: '*'
+      kind: '*'
+      jsonPointers:
+        - /metadata/annotations/argocd.argoproj.io~1tracking-id
     - group: route.openshift.io
       kind: Route
       jsonPointers:
@@ -311,6 +315,12 @@ spec:
       kind: '*'
       jsonPointers:
         - /metadata/annotations/argocd.argoproj.io~1tracking-id
+    - group: serving.kserve.io
+      kind: InferenceService
+      jsonPointers:
+        - /metadata/finalizers
+        - /spec/predictor/automountServiceAccountToken
+        - /spec/predictor/model/name
   destination:
     namespace: ani-datascience
     server: https://kubernetes.default.svc
