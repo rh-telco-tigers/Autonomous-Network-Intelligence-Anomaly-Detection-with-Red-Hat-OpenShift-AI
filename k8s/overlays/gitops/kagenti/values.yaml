@@ -27,6 +27,10 @@ components:
     routePath: /mlflow
 
 kagenti-operator-chart:
+  controllerManager:
+    container:
+      image:
+        tag: 0.3.0-alpha.5
   mlflow:
     enable: true
     experimentName: kagenti-traces
