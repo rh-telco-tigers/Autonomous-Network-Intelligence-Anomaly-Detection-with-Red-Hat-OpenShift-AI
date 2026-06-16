@@ -8,6 +8,7 @@ This directory contains the OpenShift deployment assets for the full demo platfo
 base/
   namespaces/   namespace RBAC and baseline defaults
   builds/       upstream BuildConfig assets for OpenIMSs and SIPp
+  kagenti/      vendored upstream Kagenti charts kept with base assets
   ims/          IMS lab workloads
   traffic/      SIPp scenario runners
   platform/     feature, anomaly, RCA, and UI services
@@ -23,6 +24,10 @@ overlays/
 ```
 
 Operator subscriptions are managed separately through `deploy/argocd` and `deploy/gitops/operators`, while the root Argo CD app-of-apps is rendered from `deploy/gitops/apps`.
+
+Vendored third-party packaged assets that are not yet rendered into the main
+GitOps output can still live under `base/` when they are part of the platform
+source tree, such as `base/kagenti/`.
 
 ## Render
 

@@ -20,7 +20,7 @@ metadata:
   namespace: redhat-ods-operator
   annotations:
     argocd.argoproj.io/sync-wave: "11"
-    ani.redhat.com/rhoai-bootstrap-revision: "1"
+    ani.redhat.com/rhoai-bootstrap-revision: "2"
 spec:
   components:
     kserve:
@@ -55,7 +55,7 @@ spec:
       managementState: Managed
       workbenchNamespace: rhods-notebooks
     mlflowoperator:
-      managementState: Removed
+      managementState: Managed
     dashboard:
       managementState: Managed
     trainer:

@@ -11,6 +11,7 @@ oc get applications.argoproj.io -n openshift-gitops
 oc get deploy -n ani-runtime
 oc get deploy -n ani-sipp
 oc get dsc -n redhat-ods-operator
+oc get mlflow mlflow
 oc get dspa,featurestore,servingruntime,inferenceservice -n ani-datascience
 oc get pipelines.pipelines.kubeflow.org,pipelineversions.pipelines.kubeflow.org -n ani-datascience
 oc get cronjob -n ani-datascience | rg 'kfp-auto-run'
@@ -130,6 +131,7 @@ Expected result after the approved action runs: the deployment reports `2` desir
 - OpenIMS WebUI login works
 - Plane login works
 - `default-dsc` is `Ready=True`
+- the shared `mlflow` instance exists
 - `dspa` is `Ready`
 - `ani-featurestore` is `Ready`
 - the KFP `Pipeline` and `PipelineVersion` resources exist in `ani-datascience`

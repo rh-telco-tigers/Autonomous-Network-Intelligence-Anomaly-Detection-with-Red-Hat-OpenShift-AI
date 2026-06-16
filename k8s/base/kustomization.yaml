@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - namespaces
   - builds
+  - kagenti
   - ims
   - traffic
   - kafka

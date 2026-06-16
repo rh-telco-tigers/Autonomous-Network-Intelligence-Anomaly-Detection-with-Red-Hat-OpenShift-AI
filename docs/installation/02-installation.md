@@ -124,6 +124,7 @@ oc get jobs,wf -n ani-datascience
 oc get deploy -n ani-runtime
 oc get deploy -n ani-sipp
 oc get dsc -n redhat-ods-operator
+oc get mlflow mlflow
 oc get dspa,featurestore,servingruntime,inferenceservice -n ani-datascience
 oc get jobs,wf -n ani-datascience
 oc get pipelines.pipelines.kubeflow.org,pipelineversions.pipelines.kubeflow.org -n ani-datascience
@@ -136,6 +137,7 @@ Continue when:
 - `ani-runtime` deployments are available
 - `ani-sipp` deployments are no longer waiting on missing images
 - `default-dsc` is `Ready=True`
+- the shared `mlflow` instance exists
 - `dspa` is `Ready`
 - `ani-featurestore` is `Ready`
 - the initial manual or scheduled KFP Jobs exist in `ani-datascience`

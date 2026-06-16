@@ -3,4 +3,5 @@ kind: Kustomization
 resources:
   - cluster-monitoring-config.yaml
   - rhoai-crs.yaml
+  - mlflow-instance.yaml
   - model-registry-instance.yaml
