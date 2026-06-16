@@ -1,0 +1,121 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rhoai-gateway-servicemesh-readiness
+  namespace: redhat-ods-operator
+  annotations:
+    argocd.argoproj.io/sync-wave: "12"
+    argocd.argoproj.io/sync-options: Force=true,Replace=true
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: rhoai-gateway-servicemesh-bootstrap
+      containers:
+        - name: wait-for-gateway-servicemesh
+          image: quay.io/openshift/origin-cli:4.21
+          command:
+            - /bin/bash
+            - -ec
+          args:
+            - |
+              set -euo pipefail
+
+              SUB_NAMESPACE="openshift-operators"
+              SUB_NAME="servicemeshoperator3"
+              GATEWAYCLASS_NAME="data-science-gateway-class"
+              GATEWAY_NAMESPACE="openshift-ingress"
+              GATEWAY_NAME="data-science-gateway"
+              TIMEOUT_SECONDS=900
+              SLEEP_SECONDS=5
+              DEADLINE="$(( $(date +%s) + TIMEOUT_SECONDS ))"
+
+              log() {
+                echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
+              }
+
+              until_now_or_fail() {
+                if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+                  log "Timed out waiting for Service Mesh / Gateway API readiness"
+                  exit 1
+                fi
+              }
+
+              approve_pending_installplans() {
+                local plans
+                plans=$(oc get installplan -n "$SUB_NAMESPACE" \
+                  -o jsonpath='{range .items[?(@.spec.approved==false)]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
+                if [ -z "$plans" ]; then
+                  return 0
+                fi
+                while IFS= read -r plan; do
+                  [ -z "$plan" ] && continue
+                  log "Approving pending InstallPlan $plan"
+                  oc patch installplan "$plan" -n "$SUB_NAMESPACE" --type=merge -p '{"spec":{"approved":true}}' >/dev/null || true
+                done <<< "$plans"
+              }
+
+              cleanup_stale_csvs() {
+                local current_csv csv_rows csv_name csv_phase
+                current_csv="$(oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" -o jsonpath='{.status.currentCSV}' 2>/dev/null || true)"
+                [ -z "$current_csv" ] && return 0
+
+                csv_rows="$(oc get csv -n "$SUB_NAMESPACE" --no-headers 2>/dev/null | awk '/^servicemeshoperator3\\./ {print $1" "$5}')"
+                [ -z "$csv_rows" ] && return 0
+
+                while IFS=' ' read -r csv_name csv_phase; do
+                  [ -z "$csv_name" ] && continue
+                  if [ "$csv_name" != "$current_csv" ] && [ "$csv_phase" = "Pending" ]; then
+                    log "Deleting stale pending CSV $csv_name (currentCSV=$current_csv)"
+                    oc delete csv "$csv_name" -n "$SUB_NAMESPACE" --ignore-not-found >/dev/null || true
+                  fi
+                done <<< "$csv_rows"
+              }
+
+              log "Waiting for $SUB_NAMESPACE/$SUB_NAME to appear"
+              until oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" >/dev/null 2>&1; do
+                approve_pending_installplans
+                until_now_or_fail
+                sleep "$SLEEP_SECONDS"
+              done
+
+              log "Subscription detected; waiting for currentCSV"
+              CURRENT_CSV=""
+              until [ -n "$CURRENT_CSV" ]; do
+                approve_pending_installplans
+                cleanup_stale_csvs
+                CURRENT_CSV="$(oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" -o jsonpath='{.status.currentCSV}' 2>/dev/null || true)"
+                until_now_or_fail
+                [ -n "$CURRENT_CSV" ] || sleep "$SLEEP_SECONDS"
+              done
+              log "Current CSV is $CURRENT_CSV"
+
+              log "Waiting for CSV $CURRENT_CSV to reach Succeeded"
+              CSV_PHASE=""
+              until [ "$CSV_PHASE" = "Succeeded" ]; do
+                approve_pending_installplans
+                cleanup_stale_csvs
+                CSV_PHASE="$(oc get csv "$CURRENT_CSV" -n "$SUB_NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+                log "Current CSV phase: ${CSV_PHASE:-<unset>}"
+                until_now_or_fail
+                [ "$CSV_PHASE" = "Succeeded" ] || sleep "$SLEEP_SECONDS"
+              done
+
+              log "Waiting for GatewayClass $GATEWAYCLASS_NAME Accepted=True"
+              GATEWAYCLASS_ACCEPTED=""
+              until [ "$GATEWAYCLASS_ACCEPTED" = "True" ]; do
+                GATEWAYCLASS_ACCEPTED="$(oc get gatewayclass "$GATEWAYCLASS_NAME" -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}' 2>/dev/null || true)"
+                until_now_or_fail
+                [ "$GATEWAYCLASS_ACCEPTED" = "True" ] || sleep "$SLEEP_SECONDS"
+              done
+              log "GatewayClass accepted"
+
+              log "Waiting for Gateway $GATEWAY_NAMESPACE/$GATEWAY_NAME Programmed=True"
+              GATEWAY_PROGRAMMED=""
+              until [ "$GATEWAY_PROGRAMMED" = "True" ]; do
+                GATEWAY_PROGRAMMED="$(oc get gateway "$GATEWAY_NAME" -n "$GATEWAY_NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status}' 2>/dev/null || true)"
+                until_now_or_fail
+                [ "$GATEWAY_PROGRAMMED" = "True" ] || sleep "$SLEEP_SECONDS"
+              done
+              log "Gateway programmed successfully"

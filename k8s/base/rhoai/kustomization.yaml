@@ -3,5 +3,7 @@ kind: Kustomization
 resources:
   - cluster-monitoring-config.yaml
   - rhoai-crs.yaml
+  - gateway-api-servicemesh-rbac.yaml
+  - gateway-api-servicemesh-readiness-job.yaml
   - mlflow-instance.yaml
   - model-registry-instance.yaml

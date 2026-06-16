@@ -128,6 +128,41 @@ oc get pipelines.pipelines.kubeflow.org,pipelineversions.pipelines.kubeflow.org 
 oc get cronjob -n ani-datascience | rg 'kfp-auto-run'
 ```
 
+## RHOAI Dashboard Or MLflow Route Returns `503`
+
+On OpenShift 4.20+, the `RHOAI` dashboard and `MLflow` browser routes use the
+cluster Gateway API path. That path depends on the ingress-owned
+`servicemeshoperator3` subscription and the `openshift-gateway` Istio control
+plane becoming healthy in `openshift-ingress`.
+
+The current branch includes the Job `rhoai-gateway-servicemesh-readiness` in
+`ani-rhoai-platform` to reduce the common first-run failure mode where:
+
+- the ingress-created `servicemeshoperator3` `InstallPlan` stays pending
+- an older pending `servicemeshoperator3` CSV blocks the current one
+- `data-science-gateway-class` stays `Accepted=Unknown`
+- `data-science-gateway` stays `Programmed=Unknown`
+- `https://rh-ai.apps...` or `/mlflow` returns `503`
+
+Check:
+
+```sh
+oc get job -n redhat-ods-operator rhoai-gateway-servicemesh-readiness
+oc logs -n redhat-ods-operator job/rhoai-gateway-servicemesh-readiness
+oc get subscription servicemeshoperator3 -n openshift-operators
+oc get csv -n openshift-operators | rg 'servicemeshoperator3'
+oc get gatewayclass data-science-gateway-class -o yaml
+oc get gateway data-science-gateway -n openshift-ingress -o yaml
+```
+
+Expected result on a healthy cluster:
+
+- the readiness job completes successfully
+- the current `servicemeshoperator3` CSV is `Succeeded`
+- `data-science-gateway-class` reports `Accepted=True`
+- `data-science-gateway` reports `Programmed=True`
+- the canonical `RHOAI` URL returns an OpenShift OAuth redirect instead of `503`
+
 ## Older Revisions Wait On `ani-kfp-bootstrap` And Later Resources Never Appear
 
 On older revisions, the first KFP bootstrap hook waits for the trainer image stream tag before it publishes the pipeline definition. While that hook is still running, Argo CD does not advance to the later serving waves, so the `InferenceService` and some metrics resources can remain missing even though `dspa` itself is already `Ready`.
