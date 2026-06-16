@@ -4,7 +4,7 @@ dependencies:
 - condition: components.agentOperator.enabled
   name: kagenti-operator-chart
   repository: oci://ghcr.io/kagenti/kagenti-operator
-  version: 0.3.0-alpha.2
+  version: 0.3.0-alpha.5
 description: A Helm chart for deploying the kagenti platform
 name: kagenti
 type: application

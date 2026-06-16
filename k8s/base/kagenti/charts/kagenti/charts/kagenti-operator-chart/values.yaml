@@ -82,8 +82,36 @@ networkPolicy:
 # Enforce NetworkPolicies based on AgentCard verification status.
 # Works with both verifiedFetch (mTLS) and signatureVerification (init-signer).
 enforceNetworkPolicies: false
+# [KEYCLOAK]: Keycloak integration settings
+keycloak:
+  # Namespace where the keycloak-initial-admin secret is located
+  adminSecretNamespace: keycloak
+  # Target realm for agent client registration
+  realm: kagenti
+  # External Keycloak URL (used for ISSUER / EXPECTED_AUDIENCE in authbridge-config).
+  # Auto-discovered from OpenShift Route or Kubernetes Ingress named "keycloak" in
+  # the adminSecretNamespace. Set here only to override auto-discovery.
+  publicUrl: ""
+# [AUTHBRIDGE CONFIG]: Reconcile authbridge-config ConfigMap in agent namespaces
+authbridgeConfig:
+  enabled: true
+  clientAuthType: "client-secret"
+  # How long AuthBridge waits for Keycloak credentials (increase for slow Keycloak startup)
+  # credentialWaitTimeout: "120s"
 # [MLFLOW]: MLflow experiment tracking integration
 mlflow:
+  enable: false
+  # Kubernetes namespace used as the x-mlflow-workspace header value (RHOAI only).
+  # Required for RHOAI MLflow; leave empty for vanilla MLflow deployments.
+  workspace: ""
+  # MLflow experiment name. Created automatically if it doesn't exist.
+  experimentName: "kagenti-traces"
+# [OTEL BOOTSTRAP]: OTel collector bootstrap at operator startup.
+# When enabled, the operator assembles the OTel collector ConfigMap from
+# detected components (Phoenix, MLflow) and projects the OpenShift ingress
+# CA into the operator namespace (OCP only). Replaces the Helm-based
+# otel-ingress-ca-job and kagenti.otel.collectorConfig helper.
+otelBootstrap:
   enable: false
 # [VERIFIED FETCH]: mTLS-authenticated fetch of agent cards via SPIFFE identity (Phase 1)
 # When enabled, the operator uses go-spiffe mTLS to fetch agent cards and records
@@ -93,8 +121,6 @@ verifiedFetch:
   spiffeEndpointSocket: "unix:///spiffe-workload-api/spire-agent.sock"
   # Agents must expose a Service port named "agent-tls" (default 8443).
   # The operator discovers the TLS endpoint by port name, not number.
-  # SPIRE trust domain for identity binding (required when enabled)
-  spireTrustDomain: ""
 # [SIGNATURE VERIFICATION]: A2A agent card signature verification via SPIRE x5c
 signatureVerification:
   # Enable signature verification for agent cards
@@ -103,12 +129,9 @@ signatureVerification:
   auditMode: false
   # Enforce network policies based on signature verification
   enforceNetworkPolicies: false
-  # SPIRE trust domain. Required when SPIRE is enabled in the cluster even if
-  # signatureVerification.enabled is false: the ClientRegistrationReconciler
-  # uses this to build SPIFFE-shaped Keycloak client IDs
-  # (spiffe://<trust-domain>/ns/<ns>/sa/<sa>) whenever authbridge-config has
-  # SPIRE_ENABLED=true. The chart renders --spire-trust-domain independently of
-  # signatureVerification.enabled for this reason.
+  # SPIRE trust domain. Auto-discovered from ZTWIM CR or spire-bundle ConfigMap.
+  # Set here only to override auto-discovery. Used by ClientRegistrationReconciler
+  # to build SPIFFE-shaped Keycloak client IDs (spiffe://<trust-domain>/ns/<ns>/sa/<sa>).
   spireTrustDomain: ""
   # Key within the SPIRE trust bundle ConfigMap. Matches the SPIRE hardened Helm chart default
   # and the binary flag default. Override to "bundle.crt" only for older ZTWIM deployments.
@@ -119,6 +142,18 @@ signatureVerification:
     refreshInterval: "5m"
   # How far before SVID expiry to trigger proactive workload restart
   svidExpiryGracePeriod: "30m"
+# Supply-chain: sigstore-a2a SignedAgentCard bundle verification (Rekor / Fulcio)
+sigstore:
+  cardVerification:
+    enabled: false
+    auditMode: false
+    certificateIdentity: ""
+    certificateOIDCIssuer: ""
+    staging: false
+    trustedRoot:
+      configMapName: ""
+      configMapNamespace: ""
+      configMapKey: "trusted-root.json"
 # Feature gates — highest-priority layer in the injection precedence chain.
 # Set globalEnabled to false to disable ALL sidecar injection (kill switch).
 # Set individual gates to false to disable specific sidecars cluster-wide.
@@ -138,6 +173,10 @@ featureGates:
   # Default false — cached mode is faster and sufficient when namespace ConfigMaps
   # rarely change. Cache is cleared on webhook pod restart.
   perWorkloadConfigResolution: false
+  # skillDiscovery controls whether the AgentRuntime controller reads the
+  # kagenti.io/skills annotation from target workloads and populates
+  # status.linkedSkills. Default false.
+  skillDiscovery: false
 # Platform defaults for AuthBridge sidecar injection.
 # These are the lowest-priority layer — overridden by feature gates,
 # namespace labels/ConfigMaps, and workload labels/AgentRuntime CRs.
@@ -148,7 +187,8 @@ featureGates:
 #   * authbridgeLite (lite mode):              authbridge-lite (jwt-validation + token-exchange only,
 #                                              parsers dropped) + spiffe-helper. Same listener layout
 #                                              as authbridge; for size-constrained deployments.
-# proxy-init applies to envoy-sidecar mode only.
+# proxy-init applies to envoy-sidecar mode (transparent redirect) and to
+# proxy-sidecar / lite mode (always-on enforce-redirect egress capture).
 defaults:
   images:
     envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:latest
@@ -162,6 +202,13 @@ defaults:
     uid: 1337
     adminPort: 9901
     inboundProxyPort: 15124
+    # Forward proxy's transparent listener port — the REDIRECT target for the
+    # always-on enforce-redirect egress guard (proxy-sidecar / lite). MUST match
+    # the authbridge listener.transparent_proxy_addr (default :8082).
+    transparentPort: 8082
+    # Cluster DNS is kept direct by proxy-init itself (it reads the pod's
+    # /etc/resolv.conf nameservers), so there is no in-cluster CIDR knob to set —
+    # works on Kind / OpenShift / EKS / NodeLocal-DNSCache with no per-cluster config.
   # Resource defaults (conservative for dev)
   # Note: requests must be <= limits
   resources:
