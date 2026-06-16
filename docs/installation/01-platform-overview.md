@@ -13,6 +13,7 @@ Fresh clusters should be brought up by following [Installation](./02-installatio
 - IMS core services and SIPp traffic generators
 - control-plane, demo UI, anomaly scoring, and RCA services
 - OpenShift AI, Feature Store, model registry, and model serving
+- Kagenti agent platform integrated with OpenShift AI and MLflow
 - optional Plane and AAP/EDA integrations
 
 ## Namespace Map
@@ -31,6 +32,10 @@ Fresh clusters should be brought up by following [Installation](./02-installatio
 | `ani-datascience` | DSPA, Feature Store, KFP jobs, predictive serving, and vLLM |
 | `ani-tekton` | Image build pipeline and Git webhook trigger |
 | `ani-observability` | Service monitors, dashboards, and other observability assets |
+| `kagenti-system` | Kagenti UI, backend, operator, OTEL collector, and MCP inspector |
+| `kagenti-keycloak` | Kagenti Keycloak realm and database |
+| `mcp-system` | Kagenti MCP Gateway control-plane resources |
+| `gateway-system` | Kagenti MCP Gateway data-plane gateway |
 | `aap` | Optional AAP Controller, EDA, Hub, and MCP components |
 | `plane` | Optional Plane web, API, live, space, and storage services |
 
@@ -48,6 +53,8 @@ The main applications you will see after bootstrap are:
 - `ani-plane`
 - `ani-datascience`
 - `ani-tekton`
+- `ani-kagenti-deps`
+- `ani-kagenti`
 - `ani-observability`
 - `ani-sipp-traffic`
 - `ani-remediation`

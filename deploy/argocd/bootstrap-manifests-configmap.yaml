@@ -29,6 +29,7 @@ data:
       name: openshift-gitops
       namespace: openshift-gitops
     spec:
+      kustomizeBuildOptions: --enable-helm
       applicationSet:
         resources:
           limits:

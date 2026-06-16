@@ -1,0 +1,47 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: otel-collector-mlflow
+  namespace: redhat-ods-applications
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+subjects:
+  - kind: ServiceAccount
+    name: otel-collector
+    namespace: kagenti-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mlflow-operator-mlflow-integration
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: otel-collector-mlflow
+  namespace: team1
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+subjects:
+  - kind: ServiceAccount
+    name: otel-collector
+    namespace: kagenti-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mlflow-operator-mlflow-integration
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: otel-collector-mlflow
+  namespace: team2
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+subjects:
+  - kind: ServiceAccount
+    name: otel-collector
+    namespace: kagenti-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mlflow-operator-mlflow-integration

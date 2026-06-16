@@ -1,0 +1,104 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mlflow-oauth-proxy
+  namespace: redhat-ods-applications
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+    serviceaccounts.openshift.io/oauth-redirectreference.primary: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"mlflow"}}'
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mlflow-oauth-proxy-cookie
+  namespace: redhat-ods-applications
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+type: Opaque
+data:
+  cookie-secret: px6G6CGKX+x93b8P2rRKw9+2I+Tkm+7CKLkC5bj+4d8=
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-oauth-proxy
+  namespace: redhat-ods-applications
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow-oauth-proxy
+  template:
+    metadata:
+      labels:
+        app: mlflow-oauth-proxy
+    spec:
+      serviceAccountName: mlflow-oauth-proxy
+      containers:
+        - name: oauth-proxy
+          image: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:2789935eb78cb8983314ea417a41e41b73e1f57adc8a7c6585d28dcc0868fad7
+          args:
+            - --https-address=:8443
+            - --provider=openshift
+            - --openshift-service-account=mlflow-oauth-proxy
+            - --upstream=https://mlflow.redhat-ods-applications.svc.cluster.local:8443
+            - --upstream-ca=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+            - --tls-cert=/etc/tls/private/tls.crt
+            - --tls-key=/etc/tls/private/tls.key
+            - --cookie-secret-file=/etc/oauth/cookie-secret
+            - --pass-access-token=true
+            - --pass-user-bearer-token=true
+          ports:
+            - containerPort: 8443
+              name: https
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/tls/private
+              readOnly: true
+            - name: cookie-secret
+              mountPath: /etc/oauth
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: mlflow-oauth-proxy-tls
+        - name: cookie-secret
+          secret:
+            secretName: mlflow-oauth-proxy-cookie
+            items:
+              - key: cookie-secret
+                path: cookie-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-oauth-proxy
+  namespace: redhat-ods-applications
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+    service.beta.openshift.io/serving-cert-secret-name: mlflow-oauth-proxy-tls
+spec:
+  selector:
+    app: mlflow-oauth-proxy
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: mlflow
+  namespace: redhat-ods-applications
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  to:
+    kind: Service
+    name: mlflow-oauth-proxy
+  port:
+    targetPort: https
+  tls:
+    termination: reencrypt

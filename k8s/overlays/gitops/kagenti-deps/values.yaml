@@ -1,0 +1,40 @@
+openshift: true
+
+domain: localtest.me
+ocpVersion: "4.20.24"
+
+components:
+  kiali:
+    enabled: false
+  tekton:
+    enabled: false
+  shipwright:
+    enabled: false
+  mlflow:
+    enabled: false
+  rhoai:
+    enabled: true
+
+keycloak:
+  namespace: kagenti-keycloak
+  publicUrl: https://keycloak-kagenti-keycloak.apps.ocp.ckrx7.sandbox1361.opentlc.com
+  url: http://keycloak-service.kagenti-keycloak:8080
+
+otel:
+  mlflow:
+    enabled: true
+    workspace: team1
+    experimentId: "1"
+  collector:
+    mlflowConfig:
+      exporters:
+        otlphttp/mlflow:
+          traces_endpoint: https://mlflow.redhat-ods-applications.svc.cluster.local:8443/v1/traces
+
+spire:
+  trustDomain: apps.ocp.ckrx7.sandbox1361.opentlc.com
+
+rhoai:
+  namespace: redhat-ods-operator
+  channel: stable-3.4
+  installPlanApproval: Automatic

@@ -1,0 +1,52 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+helmGlobals:
+  chartHome: ../../../base/kagenti/charts
+helmCharts:
+  - name: kagenti
+    releaseName: kagenti
+    namespace: kagenti-system
+    valuesFile: values.yaml
+resources:
+  - kagenti-operator-trusted-ca.yaml
+  - mlflow-oauth-proxy.yaml
+  - otel-collector-mlflow-rolebindings.yaml
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: kagenti-controller-manager
+      namespace: kagenti-system
+    patch: |-
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: trusted-ca
+          configMap:
+            name: kagenti-operator-trusted-ca
+            optional: true
+            items:
+              - key: ca-bundle.crt
+                path: tls-ca-bundle.pem
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: trusted-ca
+          mountPath: /etc/pki/ca-trust/extracted/pem
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --mlflow-experiment-name=kagenti-traces
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --keycloak-admin-secret-namespace=keycloak
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --keycloak-realm=kagenti
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --client-auth-type=client-secret
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --mlflow-ca-file=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem

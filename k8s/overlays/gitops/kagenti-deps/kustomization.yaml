@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+helmGlobals:
+  chartHome: ../../../base/kagenti/charts
+helmCharts:
+  - name: kagenti-deps
+    releaseName: kagenti-deps
+    namespace: kagenti-system
+    valuesFile: values.yaml

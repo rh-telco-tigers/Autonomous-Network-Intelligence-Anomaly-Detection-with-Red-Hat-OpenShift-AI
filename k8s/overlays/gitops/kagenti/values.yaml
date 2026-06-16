@@ -1,0 +1,37 @@
+openshift: true
+
+agentNamespaces:
+  - team1
+  - team2
+
+agentOAuthSecret:
+  spiffePrefix: spiffe://apps.ocp.ckrx7.sandbox1361.opentlc.com/sa
+  useServiceAccountCA: false
+
+uiOAuthSecret:
+  useServiceAccountCA: false
+
+mlflowOAuthSecret:
+  useServiceAccountCA: false
+
+keycloak:
+  namespace: kagenti-keycloak
+  url: http://keycloak-service.kagenti-keycloak:8080
+  publicUrl: https://keycloak-kagenti-keycloak.apps.ocp.ckrx7.sandbox1361.opentlc.com
+  realm: kagenti
+
+components:
+  mlflow:
+    enabled: true
+    routeNamespace: redhat-ods-applications
+    routePath: /mlflow
+
+kagenti-operator-chart:
+  mlflow:
+    enable: true
+    experimentName: kagenti-traces
+  featureGates:
+    injectTools: true
+
+mcpGateway:
+  openshiftDomain: apps.ocp.ckrx7.sandbox1361.opentlc.com
