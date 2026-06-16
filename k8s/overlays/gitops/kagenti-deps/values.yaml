@@ -13,7 +13,7 @@ components:
   mlflow:
     enabled: false
   rhoai:
-    enabled: true
+    enabled: false
 
 keycloak:
   namespace: kagenti-keycloak
@@ -38,3 +38,5 @@ rhoai:
   namespace: redhat-ods-operator
   channel: stable-3.4
   installPlanApproval: Automatic
+
+rhoaiManagesServiceMesh: true
