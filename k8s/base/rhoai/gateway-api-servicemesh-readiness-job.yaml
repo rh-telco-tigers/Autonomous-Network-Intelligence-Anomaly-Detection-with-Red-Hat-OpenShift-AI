@@ -56,6 +56,27 @@ spec:
                 done <<< "$plans"
               }
 
+              normalize_subscription() {
+                if ! oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" >/dev/null 2>&1; then
+                  return 0
+                fi
+
+                local approval starting_csv
+                approval="$(oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" -o jsonpath='{.spec.installPlanApproval}' 2>/dev/null || true)"
+                starting_csv="$(oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" -o jsonpath='{.spec.startingCSV}' 2>/dev/null || true)"
+
+                if [ "$approval" != "Automatic" ]; then
+                  log "Patching $SUB_NAME installPlanApproval to Automatic"
+                  oc patch subscription "$SUB_NAME" -n "$SUB_NAMESPACE" --type=merge -p '{"spec":{"installPlanApproval":"Automatic"}}' >/dev/null || true
+                fi
+
+                if [ -n "$starting_csv" ]; then
+                  log "Removing stale startingCSV=$starting_csv from $SUB_NAME"
+                  oc patch subscription "$SUB_NAME" -n "$SUB_NAMESPACE" --type=json \
+                    -p='[{"op":"remove","path":"/spec/startingCSV"}]' >/dev/null || true
+                fi
+              }
+
               cleanup_stale_csvs() {
                 local current_csv csv_rows csv_name csv_phase
                 current_csv="$(oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" -o jsonpath='{.status.currentCSV}' 2>/dev/null || true)"
@@ -83,6 +104,7 @@ spec:
               log "Subscription detected; waiting for currentCSV"
               CURRENT_CSV=""
               until [ -n "$CURRENT_CSV" ]; do
+                normalize_subscription
                 approve_pending_installplans
                 cleanup_stale_csvs
                 CURRENT_CSV="$(oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" -o jsonpath='{.status.currentCSV}' 2>/dev/null || true)"
@@ -94,6 +116,7 @@ spec:
               log "Waiting for CSV $CURRENT_CSV to reach Succeeded"
               CSV_PHASE=""
               until [ "$CSV_PHASE" = "Succeeded" ]; do
+                normalize_subscription
                 approve_pending_installplans
                 cleanup_stale_csvs
                 CSV_PHASE="$(oc get csv "$CURRENT_CSV" -n "$SUB_NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
