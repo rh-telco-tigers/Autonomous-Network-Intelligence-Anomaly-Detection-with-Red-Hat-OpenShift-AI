@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ani-platform-bootstrap-build
+  name: ani-runtime-branch-image-bootstrap
   annotations:
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
@@ -30,7 +30,8 @@ spec:
               }
 
               namespace="${POD_NAMESPACE}"
-              run_name="ani-platform-bootstrap-build"
+              run_name="ani-runtime-branch-image-bootstrap"
+              desired_revision="chore/kagenti-openshift-setup"
 
               wait_for_resource() {
                 local resource="$1"
@@ -44,15 +45,15 @@ spec:
                 return 1
               }
 
-              wait_for_resource "pipeline/ani-platform-container-build"
+              wait_for_resource "pipeline/ani-runtime-branch-image-build"
               wait_for_resource "task/git-clone-lite"
               wait_for_resource "task/buildah-lite"
-              wait_for_resource "task/buildah-heavy"
 
               if oc_cmd get pipelinerun "${run_name}" -n "${namespace}" >/dev/null 2>&1; then
+                current_revision="$(oc_cmd get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.spec.params[?(@.name=="git-revision")].value}')"
                 status="$(oc_cmd get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].status}')"
-                if [ "${status}" = "True" ]; then
-                  echo "bootstrap build already succeeded"
+                if [ "${status}" = "True" ] && [ "${current_revision}" = "${desired_revision}" ]; then
+                  echo "runtime branch image bootstrap already succeeded for ${desired_revision}"
                   exit 0
                 fi
                 oc_cmd delete pipelinerun "${run_name}" -n "${namespace}" --ignore-not-found
@@ -71,21 +72,19 @@ spec:
                 name: ${run_name}
                 namespace: ${namespace}
                 labels:
-                  ani.redhat.com/bootstrap-build: "true"
+                  ani.redhat.com/runtime-image-bootstrap: "true"
               spec:
                 pipelineRef:
-                  name: ani-platform-container-build
+                  name: ani-runtime-branch-image-build
                 params:
                   - name: git-url
                     value: http://gitea-http.gitea.svc.cluster.local:3000/gitadmin/IMS-Anomaly-Detection-with-Red-Hat-OpenShift-AI.git
                   - name: git-revision
-                    value: main
-                  - name: publish-to-quay
-                    value: "false"
+                    value: ${desired_revision}
                 taskRunTemplate:
                   serviceAccountName: pipeline
                 timeouts:
-                  pipeline: 4h0m0s
+                  pipeline: 2h0m0s
                 workspaces:
                   - name: source
                     volumeClaimTemplate:
@@ -101,18 +100,18 @@ spec:
                 status="$(oc_cmd get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].status}' 2>/dev/null || true)"
                 reason="$(oc_cmd get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].reason}' 2>/dev/null || true)"
                 if [ "${status}" = "True" ]; then
-                  echo "bootstrap build completed successfully"
+                  echo "runtime branch image bootstrap completed successfully"
                   exit 0
                 fi
                 if [ "${status}" = "False" ]; then
-                  echo "bootstrap build failed with reason: ${reason}"
+                  echo "runtime branch image bootstrap failed with reason: ${reason}"
                   oc_cmd get pipelinerun "${run_name}" -n "${namespace}" -o yaml
                   exit 1
                 fi
                 sleep 15
               done
 
-              echo "timed out waiting for bootstrap build to finish"
+              echo "timed out waiting for runtime branch image bootstrap to finish"
               oc_cmd get pipelinerun "${run_name}" -n "${namespace}" -o yaml || true
               exit 1
           env:

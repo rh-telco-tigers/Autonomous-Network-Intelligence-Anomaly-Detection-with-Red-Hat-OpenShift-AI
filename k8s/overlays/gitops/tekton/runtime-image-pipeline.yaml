@@ -1,0 +1,62 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: ani-runtime-branch-image-build
+spec:
+  params:
+    - name: git-url
+      type: string
+    - name: git-revision
+      type: string
+  workspaces:
+    - name: source
+  tasks:
+    - name: clone
+      retries: 1
+      timeout: 15m0s
+      taskRef:
+        name: git-clone-lite
+      params:
+        - name: URL
+          value: $(params.git-url)
+        - name: REVISION
+          value: $(params.git-revision)
+        - name: DELETE_EXISTING
+          value: "true"
+      workspaces:
+        - name: output
+          workspace: source
+    - name: build-rca-service
+      retries: 1
+      timeout: 45m0s
+      runAfter:
+        - clone
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ani-runtime/rca-service:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: services/rca-service/Containerfile
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-control-plane
+      retries: 1
+      timeout: 45m0s
+      runAfter:
+        - build-rca-service
+      taskRef:
+        name: buildah-lite
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ani-runtime/control-plane:latest
+        - name: CONTEXT
+          value: .
+        - name: DOCKERFILE
+          value: services/control-plane/Containerfile
+      workspaces:
+        - name: source
+          workspace: source

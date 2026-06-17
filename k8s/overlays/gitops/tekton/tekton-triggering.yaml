@@ -52,22 +52,20 @@ spec:
     - apiVersion: tekton.dev/v1
       kind: PipelineRun
       metadata:
-        generateName: ani-platform-build-
+        generateName: ani-runtime-images-build-
         namespace: ani-tekton
       spec:
         pipelineRef:
-          name: ani-platform-container-build
+          name: ani-runtime-branch-image-build
         params:
           - name: git-url
             value: $(tt.params.git-url)
           - name: git-revision
             value: $(tt.params.git-revision)
-          - name: publish-to-quay
-            value: "false"
         taskRunTemplate:
           serviceAccountName: pipeline
         timeouts:
-          pipeline: 4h0m0s
+          pipeline: 2h0m0s
         workspaces:
           - name: source
             volumeClaimTemplate:

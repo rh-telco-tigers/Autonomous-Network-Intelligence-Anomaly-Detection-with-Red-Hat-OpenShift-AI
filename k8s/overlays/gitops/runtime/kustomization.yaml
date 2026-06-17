@@ -13,6 +13,18 @@ patches:
       version: v1
       kind: ConfigMap
       name: ani-platform-config
+  - path: control-plane-image-trigger-patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: control-plane
+  - path: rca-service-image-trigger-patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: rca-service
   - path: llm-provider-config.yaml
     target:
       version: v1
@@ -100,10 +112,10 @@ images:
     newName: quay.io/autonomousnetworkintelligence/anomaly-service
     newTag: latest
   - name: rca-service
-    newName: quay.io/autonomousnetworkintelligence/rca-service
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/rca-service
     newTag: latest
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/control-plane
-    newName: quay.io/autonomousnetworkintelligence/control-plane
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/control-plane
     newTag: latest
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/feature-gateway
     newName: quay.io/autonomousnetworkintelligence/feature-gateway
@@ -112,7 +124,7 @@ images:
     newName: quay.io/autonomousnetworkintelligence/anomaly-service
     newTag: latest
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/rca-service
-    newName: quay.io/autonomousnetworkintelligence/rca-service
+    newName: image-registry.openshift-image-registry.svc:5000/ani-runtime/rca-service
     newTag: latest
   - name: image-registry.openshift-image-registry.svc:5000/ani-demo-lab/demo-ui
     newName: quay.io/autonomousnetworkintelligence/demo-ui

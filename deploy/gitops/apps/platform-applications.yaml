@@ -187,6 +187,18 @@ spec:
       jsonPointers:
         - /metadata/annotations/openshift.io~1host.generated
         - /spec/host
+    - group: apps
+      kind: Deployment
+      name: control-plane
+      namespace: ani-runtime
+      jqPathExpressions:
+        - .spec.template.spec.containers[] | select(.name=="control-plane").image
+    - group: apps
+      kind: Deployment
+      name: rca-service
+      namespace: ani-runtime
+      jqPathExpressions:
+        - .spec.template.spec.containers[] | select(.name=="rca-service").image
   destination:
     namespace: ani-runtime
     server: https://kubernetes.default.svc

@@ -7,4 +7,6 @@ resources:
   - tasks.yaml
   - tekton-triggering.yaml
   - tekton-pipeline.yaml
+  - runtime-image-pipeline.yaml
   - backfill-modelcar-pipeline.yaml
+  - bootstrap-build-job.yaml

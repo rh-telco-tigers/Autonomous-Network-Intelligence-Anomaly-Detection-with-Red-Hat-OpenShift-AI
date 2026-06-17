@@ -53,7 +53,7 @@ oc apply -k deploy/argocd
 
 ## Pods Are In `ImagePullBackOff`
 
-The default GitOps path on the current branch uses the published Quay images. Do **not** start with `make trigger-build-pipeline` on a fresh cluster unless you are explicitly validating the older internal-image bootstrap flow.
+The default GitOps path on the current branch still uses the published Quay images for most workloads. `control-plane` and `rca-service` now bootstrap from `ani-tekton` into the OpenShift internal registry so branch-tracked runtime fixes can roll out through GitOps. Do **not** start with `make trigger-build-pipeline` on a fresh cluster unless you are explicitly validating the older full-stack internal-image bootstrap flow.
 
 ```sh
 oc get pods -A | rg 'ImagePullBackOff|ErrImagePull'
@@ -94,7 +94,7 @@ oc get cronjob -n ani-datascience | rg 'kfp-auto-run'
 oc get pipelines.pipelines.kubeflow.org,pipelineversions.pipelines.kubeflow.org -n ani-datascience
 ```
 
-Only rerun `make trigger-build-pipeline` if you are intentionally validating the older internal-image bootstrap flow. It is not part of the default fresh-cluster install path on the current branch.
+Only rerun `make trigger-build-pipeline` if you are intentionally validating the older full-stack internal-image bootstrap flow. It is not part of the default fresh-cluster install path on the current branch, even though `ani-tekton` now bootstrap-builds `control-plane` and `rca-service` automatically for GitOps-tracked branch fixes.
 
 ## OpenShift AI Or Datascience Resources Are Not Ready
 
