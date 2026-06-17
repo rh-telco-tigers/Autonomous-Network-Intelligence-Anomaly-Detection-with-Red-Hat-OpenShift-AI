@@ -17,9 +17,8 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install, post-upgrade
-    "helm.sh/hook-weight": "0"
-    "helm.sh/hook-delete-policy": before-hook-creation
+    argocd.argoproj.io/sync-wave: "46"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   trustDomain: {{ .Values.spire.trustDomain }}
   clusterName: agent-platform
@@ -32,9 +31,8 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install, post-upgrade
-    "helm.sh/hook-weight": "1"
-    "helm.sh/hook-delete-policy": before-hook-creation
+    argocd.argoproj.io/sync-wave: "47"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   # agentSocketPath should be the directory containing the socket, not the full socket path
   # The SPIRE agent creates the socket at /tmp/spire-agent/public/spire-agent.sock inside the pod
@@ -49,9 +47,8 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install, post-upgrade
-    "helm.sh/hook-weight": "1"
-    "helm.sh/hook-delete-policy": before-hook-creation
+    argocd.argoproj.io/sync-wave: "47"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   # trustDomain and clusterName are inherited from the ZeroTrustWorkloadIdentityManager CR
   caSubject:
@@ -78,9 +75,8 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install, post-upgrade
-    "helm.sh/hook-weight": "1"
-    "helm.sh/hook-delete-policy": before-hook-creation
+    argocd.argoproj.io/sync-wave: "47"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   # trustDomain and clusterName are inherited from the ZeroTrustWorkloadIdentityManager CR
   nodeAttestor:
@@ -97,9 +93,8 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install, post-upgrade
-    "helm.sh/hook-weight": "1"
-    "helm.sh/hook-delete-policy": before-hook-creation
+    argocd.argoproj.io/sync-wave: "48"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   # trustDomain is inherited from the ZeroTrustWorkloadIdentityManager CR
   # OCP 4.19 ZTWIM CRD replaced agentSocketName with csiDriverName
