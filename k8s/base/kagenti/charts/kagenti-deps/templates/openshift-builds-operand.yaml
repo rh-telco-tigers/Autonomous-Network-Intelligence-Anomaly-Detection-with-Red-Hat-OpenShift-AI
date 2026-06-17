@@ -22,9 +22,8 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install, post-upgrade
-    "helm.sh/hook-weight": "10"
-    "helm.sh/hook-delete-policy": before-hook-creation
+    argocd.argoproj.io/sync-wave: "48"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   sharedResource:
     state: Enabled

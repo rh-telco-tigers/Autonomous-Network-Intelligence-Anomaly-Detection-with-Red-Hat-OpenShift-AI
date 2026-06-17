@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kagenti-backend
+  namespace: kagenti-system
+spec:
+  template:
+    metadata:
+      annotations:
+        ani.redhat.com/shipwright-openshift-build-fix: "1"
+    spec:
+      initContainers:
+        - name: patch-shipwright-build-defaults
+          image: ghcr.io/kagenti/kagenti/backend:v0.7.0-alpha.3
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              cp /app/app/routers/agents.py /work/agents.py
+              cp /app/app/routers/tools.py /work/tools.py
+              python - <<'PY'
+              from pathlib import Path
+
+              replacements = {
+                  Path("/work/agents.py"): (
+                      "    registry_url = request.registryUrl or DEFAULT_INTERNAL_REGISTRY",
+                      "    registry_url = request.registryUrl or DEFAULT_INTERNAL_REGISTRY\n    if \"/\" not in registry_url:\n        registry_url = f\"{registry_url}/{request.namespace}\"",
+                  ),
+                  Path("/work/tools.py"): (
+                      "    registry_url = request.registryUrl or DEFAULT_INTERNAL_REGISTRY",
+                      "    registry_url = request.registryUrl or DEFAULT_INTERNAL_REGISTRY\n    if \"/\" not in registry_url:\n        registry_url = f\"{registry_url}/{request.namespace}\"",
+                  ),
+              }
+
+              for path, (old, new) in replacements.items():
+                  text = path.read_text()
+                  if old not in text:
+                      raise SystemExit(f"Expected Shipwright registry line not found in {path}")
+                  path.write_text(text.replace(old, new, 1))
+              PY
+          volumeMounts:
+            - name: backend-shipwright-builds-override
+              mountPath: /work
+      containers:
+        - name: backend
+          volumeMounts:
+            - name: backend-shipwright-builds-override
+              mountPath: /app/app/routers/agents.py
+              subPath: agents.py
+            - name: backend-shipwright-builds-override
+              mountPath: /app/app/routers/tools.py
+              subPath: tools.py
+      volumes:
+        - name: backend-shipwright-builds-override
+          emptyDir: {}

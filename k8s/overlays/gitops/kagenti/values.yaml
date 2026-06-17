@@ -20,6 +20,11 @@ keycloak:
   publicUrl: https://keycloak-kagenti-keycloak.apps.ocp.ckrx7.sandbox1361.opentlc.com
   realm: kagenti
 
+ui:
+  backend:
+    defaultRegistryUrl: image-registry.openshift-image-registry.svc:5000
+    shipwrightDefaultStrategy: buildah
+
 components:
   mlflow:
     enabled: true

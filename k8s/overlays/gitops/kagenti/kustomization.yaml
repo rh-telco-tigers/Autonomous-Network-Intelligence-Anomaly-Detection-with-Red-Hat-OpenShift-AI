@@ -14,3 +14,4 @@ resources:
   - otel-collector-mlflow-rolebindings.yaml
 patches:
   - path: kagenti-backend-dashboard-config-patch.yaml
+  - path: kagenti-backend-shipwright-openshift-patch.yaml
