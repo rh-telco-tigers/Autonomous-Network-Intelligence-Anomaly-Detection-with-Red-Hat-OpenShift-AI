@@ -9,6 +9,7 @@ helmCharts:
     valuesFile: values.yaml
 resources:
   - kagenti-operator-trusted-ca.yaml
+  - kiali-dashboard-sync.yaml
   - mlflow-oauth-proxy.yaml
   - otel-collector-mlflow-rolebindings.yaml
 patches:
