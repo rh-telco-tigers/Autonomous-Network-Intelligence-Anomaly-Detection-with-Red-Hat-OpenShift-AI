@@ -103,9 +103,6 @@ spec:
               {{- if .Values.components.istio.enabled }}
               CRDS_TO_WAIT_FOR="$CRDS_TO_WAIT_FOR istios.sailoperator.io"
               {{- end }}
-              {{- if .Values.components.kiali.enabled }}
-              CRDS_TO_WAIT_FOR="$CRDS_TO_WAIT_FOR kialis.kiali.io"
-              {{- end }}
               {{- if and .Values.components.spire.enabled (not .Values.useSpireHelmChart) }}
               # ZTWIM operator CRDs (Zero Trust Workload Identity Manager)
               # Only wait for these when using ZTWIM operator (not Helm-based SPIRE)

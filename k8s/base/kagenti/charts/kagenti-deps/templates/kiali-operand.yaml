@@ -6,9 +6,7 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install, post-upgrade
-    "helm.sh/hook-weight": "-1"
-    "helm.sh/hook-delete-policy": before-hook-creation
+    argocd.argoproj.io/sync-wave: "45"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -26,9 +24,7 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install, post-upgrade
-    "helm.sh/hook-weight": "1"
-    "helm.sh/hook-delete-policy": before-hook-creation
+    argocd.argoproj.io/sync-wave: "46"
 spec:
   external_services:
     prometheus:
@@ -47,9 +43,7 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install, post-upgrade
-    "helm.sh/hook-weight": "-1"
-    "helm.sh/hook-delete-policy": before-hook-creation
+    argocd.argoproj.io/sync-wave: "44"
 data:
   config.yaml: |
     enableUserWorkload: true
