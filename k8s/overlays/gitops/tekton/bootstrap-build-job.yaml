@@ -45,9 +45,9 @@ spec:
                 return 1
               }
 
-              wait_for_resource "pipeline/ani-runtime-branch-image-build"
-              wait_for_resource "task/git-clone-lite"
-              wait_for_resource "task/buildah-lite"
+              wait_for_resource "pipeline.tekton.dev/ani-runtime-branch-image-build"
+              wait_for_resource "task.tekton.dev/git-clone-lite"
+              wait_for_resource "task.tekton.dev/buildah-lite"
 
               if oc_cmd get pipelinerun "${run_name}" -n "${namespace}" >/dev/null 2>&1; then
                 current_revision="$(oc_cmd get pipelinerun "${run_name}" -n "${namespace}" -o jsonpath='{.spec.params[?(@.name=="git-revision")].value}')"
