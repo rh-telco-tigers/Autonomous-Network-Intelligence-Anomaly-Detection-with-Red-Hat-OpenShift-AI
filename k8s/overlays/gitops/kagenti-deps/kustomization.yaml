@@ -4,6 +4,56 @@ helmGlobals:
   chartHome: ../../../base/kagenti/charts
 resources:
   - rhoai-shared-trust.yaml
+patches:
+  - target:
+      version: v1
+      kind: Namespace
+      name: redhat-ods-operator
+    patch: |-
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: redhat-ods-operator
+      $patch: delete
+  - target:
+      group: operators.coreos.com
+      version: v1
+      kind: OperatorGroup
+      name: redhat-ods-operator-operatorgroup
+      namespace: redhat-ods-operator
+    patch: |-
+      apiVersion: operators.coreos.com/v1
+      kind: OperatorGroup
+      metadata:
+        name: redhat-ods-operator-operatorgroup
+        namespace: redhat-ods-operator
+      $patch: delete
+  - target:
+      group: operators.coreos.com
+      version: v1alpha1
+      kind: Subscription
+      name: rhods-operator
+      namespace: redhat-ods-operator
+    patch: |-
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: rhods-operator
+        namespace: redhat-ods-operator
+      $patch: delete
+  - target:
+      group: operators.coreos.com
+      version: v1alpha1
+      kind: Subscription
+      name: openshift-pipelines-operator-rh
+      namespace: openshift-operators
+    patch: |-
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: openshift-pipelines-operator-rh
+        namespace: openshift-operators
+      $patch: delete
 helmCharts:
   - name: kagenti-deps
     releaseName: kagenti-deps
