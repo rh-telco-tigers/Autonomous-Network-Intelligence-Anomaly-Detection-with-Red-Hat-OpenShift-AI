@@ -5,7 +5,7 @@ ocpVersion: "4.20.24"
 
 components:
   kiali:
-    enabled: false
+    enabled: true
   tekton:
     enabled: false
   shipwright:
