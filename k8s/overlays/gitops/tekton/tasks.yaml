@@ -25,6 +25,9 @@ spec:
     - name: clone
       image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel9@sha256:800678e319e2c32d73acde7862ec9e7803a8c9210597ef4e99ea324945e89447
       workingDir: $(workspaces.output.path)
+      env:
+        - name: HOME
+          value: /tmp
       computeResources:
         requests:
           cpu: 50m
