@@ -4,7 +4,6 @@ resources:
   - namespaces/namespaces.yaml
   - rbac/argocd-image-registry.yaml
   - configs/image-registry.yaml
-  - configs/ingress-gateway-api-servicemesh-version-job.yaml
   - configs/node-feature-discovery.yaml
   - configs/gpu-cluster-policy.yaml
   - operatorgroups/grafana-operator.yaml

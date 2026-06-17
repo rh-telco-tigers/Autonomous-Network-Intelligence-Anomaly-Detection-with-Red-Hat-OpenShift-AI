@@ -24,6 +24,9 @@ spec:
 
               SUB_NAMESPACE="openshift-operators"
               SUB_NAME="servicemeshoperator3"
+              TARGET_CSV="servicemeshoperator3.v3.3.4"
+              INGRESS_OPERATOR_NAMESPACE="openshift-ingress-operator"
+              INGRESS_OPERATOR_NAME="ingress-operator"
               GATEWAYCLASS_NAME="data-science-gateway-class"
               GATEWAY_NAMESPACE="openshift-ingress"
               GATEWAY_NAME="data-science-gateway"
@@ -56,24 +59,29 @@ spec:
                 done <<< "$plans"
               }
 
+              normalize_ingress_operator() {
+                local current_env
+                current_env="$(oc get deployment "$INGRESS_OPERATOR_NAME" -n "$INGRESS_OPERATOR_NAMESPACE" \
+                  -o jsonpath='{range .spec.template.spec.containers[?(@.name=="ingress-operator")].env[?(@.name=="GATEWAY_API_OPERATOR_VERSION")]}{.value}{end}' 2>/dev/null || true)"
+
+                if [ "$current_env" != "$TARGET_CSV" ]; then
+                  log "Setting $INGRESS_OPERATOR_NAMESPACE/$INGRESS_OPERATOR_NAME GATEWAY_API_OPERATOR_VERSION=$TARGET_CSV (was ${current_env:-<unset>})"
+                  oc set env deployment/"$INGRESS_OPERATOR_NAME" -n "$INGRESS_OPERATOR_NAMESPACE" GATEWAY_API_OPERATOR_VERSION="$TARGET_CSV" >/dev/null || true
+                fi
+              }
+
               normalize_subscription() {
                 if ! oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" >/dev/null 2>&1; then
                   return 0
                 fi
 
-                local approval starting_csv
-                approval="$(oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" -o jsonpath='{.spec.installPlanApproval}' 2>/dev/null || true)"
+                local starting_csv
                 starting_csv="$(oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" -o jsonpath='{.spec.startingCSV}' 2>/dev/null || true)"
 
-                if [ "$approval" != "Automatic" ]; then
-                  log "Patching $SUB_NAME installPlanApproval to Automatic"
-                  oc patch subscription "$SUB_NAME" -n "$SUB_NAMESPACE" --type=merge -p '{"spec":{"installPlanApproval":"Automatic"}}' >/dev/null || true
-                fi
-
-                if [ -n "$starting_csv" ]; then
-                  log "Removing stale startingCSV=$starting_csv from $SUB_NAME"
-                  oc patch subscription "$SUB_NAME" -n "$SUB_NAMESPACE" --type=json \
-                    -p='[{"op":"remove","path":"/spec/startingCSV"}]' >/dev/null || true
+                if [ "$starting_csv" != "$TARGET_CSV" ]; then
+                  log "Aligning $SUB_NAME startingCSV to $TARGET_CSV (was ${starting_csv:-<unset>})"
+                  oc patch subscription "$SUB_NAME" -n "$SUB_NAMESPACE" --type=merge \
+                    -p "{\"spec\":{\"startingCSV\":\"$TARGET_CSV\"}}" >/dev/null || true
                 fi
               }
 
@@ -123,8 +131,10 @@ spec:
                 done <<< "$csv_rows"
               }
 
+              normalize_ingress_operator
               log "Waiting for $SUB_NAMESPACE/$SUB_NAME to appear"
               until oc get subscription "$SUB_NAME" -n "$SUB_NAMESPACE" >/dev/null 2>&1; do
+                normalize_ingress_operator
                 approve_pending_installplans
                 until_now_or_fail
                 sleep "$SLEEP_SECONDS"
@@ -133,6 +143,7 @@ spec:
               log "Subscription detected; waiting for currentCSV"
               CURRENT_CSV=""
               until [ -n "$CURRENT_CSV" ]; do
+                normalize_ingress_operator
                 normalize_subscription
                 approve_pending_installplans
                 cleanup_stale_csvs
@@ -145,6 +156,7 @@ spec:
               log "Waiting for CSV $CURRENT_CSV to reach Succeeded"
               CSV_PHASE=""
               until [ "$CSV_PHASE" = "Succeeded" ]; do
+                normalize_ingress_operator
                 normalize_subscription
                 approve_pending_installplans
                 cleanup_stale_csvs

@@ -24,6 +24,13 @@ rules:
       - watch
       - patch
       - delete
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+    verbs:
+      - get
+      - patch
+      - update
   - apiGroups: ["gateway.networking.k8s.io"]
     resources:
       - gatewayclasses
