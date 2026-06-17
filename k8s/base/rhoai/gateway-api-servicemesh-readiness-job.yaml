@@ -84,7 +84,8 @@ spec:
                   oc patch subscription "$SUB_NAME" -n "$SUB_NAMESPACE" --type=merge \
                     -p "{\"spec\":{\"startingCSV\":\"$TARGET_CSV\"}}" >/dev/null || true
                 elif printf '%s' "$resolution_failed_msg" | grep -q 'exists and is not referenced by a subscription'; then
-                  log "Deleting broken $SUB_NAME subscription so ingress-operator can recreate it against $TARGET_CSV"
+                  log "Deleting broken $SUB_NAME subscription and CSV $TARGET_CSV so ingress-operator can reinstall Service Mesh cleanly"
+                  oc delete csv "$TARGET_CSV" -n "$SUB_NAMESPACE" --ignore-not-found >/dev/null || true
                   oc delete subscription "$SUB_NAME" -n "$SUB_NAMESPACE" --ignore-not-found >/dev/null || true
                 fi
               }
