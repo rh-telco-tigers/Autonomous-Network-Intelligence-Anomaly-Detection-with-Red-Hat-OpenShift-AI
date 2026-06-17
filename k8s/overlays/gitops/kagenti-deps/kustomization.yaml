@@ -4,6 +4,7 @@ helmGlobals:
   chartHome: ../../../base/kagenti/charts
 resources:
   - rhoai-shared-trust.yaml
+  - kiali-dashboard-sync.yaml
 patches:
   - target:
       version: v1
