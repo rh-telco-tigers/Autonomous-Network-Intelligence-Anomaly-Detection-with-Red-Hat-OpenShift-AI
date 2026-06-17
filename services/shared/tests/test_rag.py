@@ -338,6 +338,67 @@ class GuardrailsTraceTests(unittest.TestCase):
         self.assertEqual(kwargs["headers"]["Host"], "guardrails-orchestrator-gateway.example.test")
         self.assertEqual(trace["parsed"], {"root_cause": "ok"})
 
+    def test_generate_with_llm_trace_retries_retryable_guardrails_5xx(self) -> None:
+        class _TransientResponse:
+            status_code = 500
+            text = '{"detail":"temporary upstream failure"}'
+
+            def raise_for_status(self) -> None:
+                raise rag.requests.HTTPError("500 Server Error", response=self)
+
+            def json(self) -> object:
+                return {"detail": "temporary upstream failure"}
+
+        class _SuccessResponse:
+            status_code = 200
+            text = '{"choices":[{"message":{"content":"{\\"root_cause\\":\\"ok\\",\\"explanation\\":\\"Historical evidence and current metrics support this RCA.\\",\\"confidence\\":0.84,\\"evidence\\":[{\\"type\\":\\"doc\\",\\"reference\\":\\"knowledge/example.json\\",\\"weight\\":0.4},{\\"type\\":\\"metric\\",\\"reference\\":\\"latency_p95\\",\\"weight\\":0.4}],\\"recommendation\\":\\"Review low-risk mitigation first.\\"}"}}]}'
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> object:
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "root_cause": "ok",
+                                        "explanation": "Historical evidence and current metrics support this RCA.",
+                                        "confidence": 0.84,
+                                        "evidence": [
+                                            {"type": "doc", "reference": "knowledge/example.json", "weight": 0.4},
+                                            {"type": "metric", "reference": "latency_p95", "weight": 0.4},
+                                        ],
+                                        "recommendation": "Review low-risk mitigation first.",
+                                    }
+                                )
+                            }
+                        }
+                    ]
+                }
+
+        with (
+            patch.dict(
+                rag.os.environ,
+                {
+                    "LLM_ENDPOINT": "http://guardrails-orchestrator-service.ani-datascience.svc.cluster.local:8090/rca",
+                    "LLM_MODEL": "llama-32-3b-instruct",
+                    "LLM_REQUEST_RETRY_ATTEMPTS": "2",
+                    "LLM_REQUEST_RETRY_BACKOFF_SECONDS": "1",
+                },
+                clear=False,
+            ),
+            patch.object(rag.requests, "post", side_effect=[_TransientResponse(), _SuccessResponse()]) as post,
+            patch.object(rag.time, "sleep") as sleep,
+        ):
+            trace = rag.generate_with_llm_trace("prompt")
+
+        self.assertIsNotNone(trace)
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(sleep.call_count, 1)
+        self.assertEqual(trace["parsed"]["root_cause"], "ok")
+
 
 class MilvusRecoveryTests(unittest.TestCase):
     def setUp(self) -> None:

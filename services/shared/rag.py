@@ -33,6 +33,8 @@ RUNBOOK_SCHEMA_VERSION = "2026-04-06"
 MILVUS_REPAIR_COOLDOWN_SECONDS = 30.0
 MILVUS_LOAD_TIMEOUT_SECONDS = 20.0
 MILVUS_LOAD_POLL_SECONDS = 0.5
+LLM_REQUEST_RETRY_ATTEMPTS = 3
+LLM_REQUEST_RETRY_BACKOFF_SECONDS = 2.0
 TOKEN_PATTERN = re.compile(r"[a-z0-9_]{2,}")
 STOP_WORDS = {
     "a",
@@ -1284,6 +1286,28 @@ def _llm_chat_completions_url(endpoint: str) -> str:
     return f"{base}/v1/chat/completions"
 
 
+def _llm_request_retry_attempts() -> int:
+    raw = os.getenv("LLM_REQUEST_RETRY_ATTEMPTS", str(LLM_REQUEST_RETRY_ATTEMPTS)).strip()
+    try:
+        return max(int(raw), 1)
+    except ValueError:
+        return LLM_REQUEST_RETRY_ATTEMPTS
+
+
+def _llm_request_retry_backoff_seconds() -> float:
+    raw = os.getenv("LLM_REQUEST_RETRY_BACKOFF_SECONDS", str(LLM_REQUEST_RETRY_BACKOFF_SECONDS)).strip()
+    try:
+        return max(float(raw), 0.0)
+    except ValueError:
+        return LLM_REQUEST_RETRY_BACKOFF_SECONDS
+
+
+def _retryable_llm_status_code(status_code: int | None) -> bool:
+    if status_code is None:
+        return True
+    return status_code == 408 or status_code == 429 or status_code >= 500
+
+
 def _coerce_llm_message_content(content: object) -> str:
     if isinstance(content, str):
         return content.strip()
@@ -1337,84 +1361,17 @@ def generate_with_llm_trace(prompt: str) -> Dict[str, object] | None:
     }
     if host_header:
         metadata["host_header"] = host_header
+    retry_attempts = _llm_request_retry_attempts()
+    retry_backoff_seconds = _llm_request_retry_backoff_seconds()
     started_at = trace_now()
-    try:
-        headers = {"Content-Type": "application/json"}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-        if host_header:
-            headers["Host"] = host_header
-        response = requests.post(
-            request_endpoint,
-            headers=headers,
-            json=request_payload,
-            timeout=request_timeout_seconds,
-        )
-        finished_at = trace_now()
-        response.raise_for_status()
-        raw_response_text = response.text or ""
-        try:
-            response_payload = response.json()
-        except (TypeError, ValueError, json.JSONDecodeError) as exc:
-            response_payload = {
-                "status_code": response.status_code,
-                "raw_text": raw_response_text,
-                "error": str(exc),
-            }
-            return {
-                "parsed": None,
-                "request_payload": request_payload,
-                "response_payload": response_payload,
-                "raw_content": raw_response_text,
-                "started_at": started_at,
-                "finished_at": finished_at,
-                "trace_packets": interaction_trace_packets(
-                    category="llm",
-                    service="rca-service",
-                    target="llm-runtime",
-                    method="POST",
-                    endpoint=request_endpoint,
-                    request_payload=request_payload,
-                    response_payload=response_payload,
-                    request_timestamp=started_at,
-                    response_timestamp=finished_at,
-                    metadata=metadata,
-                ),
-            }
 
-        try:
-            content = response_payload["choices"][0]["message"]["content"]
-            raw_content = _coerce_llm_message_content(content)
-            parsed = _parse_llm_json_content(content)
-        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            error_payload = {
-                "status_code": response.status_code,
-                "body": response_payload,
-                "raw_text": raw_response_text,
-                "error": str(exc),
-            }
-            return {
-                "parsed": None,
-                "request_payload": request_payload,
-                "response_payload": error_payload,
-                "raw_content": raw_response_text,
-                "started_at": started_at,
-                "finished_at": finished_at,
-                "trace_packets": interaction_trace_packets(
-                    category="llm",
-                    service="rca-service",
-                    target="llm-runtime",
-                    method="POST",
-                    endpoint=request_endpoint,
-                    request_payload=request_payload,
-                    response_payload=error_payload,
-                    request_timestamp=started_at,
-                    response_timestamp=finished_at,
-                    metadata=metadata,
-                ),
-            }
+    def _error_result(
+        response_payload: Dict[str, object],
+        raw_content: str,
+        finished_at: str,
+    ) -> Dict[str, object]:
         return {
-            "parsed": parsed,
+            "parsed": None,
             "request_payload": request_payload,
             "response_payload": response_payload,
             "raw_content": raw_content,
@@ -1427,40 +1384,117 @@ def generate_with_llm_trace(prompt: str) -> Dict[str, object] | None:
                 method="POST",
                 endpoint=request_endpoint,
                 request_payload=request_payload,
-                response_payload={
+                response_payload=response_payload,
+                request_timestamp=started_at,
+                response_timestamp=finished_at,
+                metadata={**metadata, "attempts": retry_attempts},
+            ),
+        }
+
+    def _sleep_before_retry(attempt: int) -> None:
+        if retry_backoff_seconds <= 0:
+            return
+        time.sleep(retry_backoff_seconds * attempt)
+
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    if host_header:
+        headers["Host"] = host_header
+
+    for attempt in range(1, retry_attempts + 1):
+        try:
+            response = requests.post(
+                request_endpoint,
+                headers=headers,
+                json=request_payload,
+                timeout=request_timeout_seconds,
+            )
+            finished_at = trace_now()
+            if _retryable_llm_status_code(response.status_code) and attempt < retry_attempts:
+                _sleep_before_retry(attempt)
+                continue
+            response.raise_for_status()
+            raw_response_text = response.text or ""
+            try:
+                response_payload = response.json()
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                error_payload = {
+                    "status_code": response.status_code,
+                    "raw_text": raw_response_text,
+                    "error": str(exc),
+                }
+                if attempt < retry_attempts:
+                    _sleep_before_retry(attempt)
+                    continue
+                return _error_result(error_payload, raw_response_text, finished_at)
+
+            try:
+                content = response_payload["choices"][0]["message"]["content"]
+                raw_content = _coerce_llm_message_content(content)
+                parsed = _parse_llm_json_content(content)
+            except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                error_payload = {
                     "status_code": response.status_code,
                     "body": response_payload,
-                    "raw_content": raw_content,
-                    "parsed_json": parsed,
-                    "reasoning": ((response_payload.get("choices") or [{}])[0].get("message") or {}).get("reasoning"),
-                },
-                request_timestamp=started_at,
-                response_timestamp=finished_at,
-                metadata=metadata,
-            ),
-        }
-    except Exception as exc:
-        finished_at = trace_now()
-        return {
-            "parsed": None,
-            "request_payload": request_payload,
-            "response_payload": {"error": str(exc)},
-            "raw_content": "",
-            "started_at": started_at,
-            "finished_at": finished_at,
-            "trace_packets": interaction_trace_packets(
-                category="llm",
-                service="rca-service",
-                target="llm-runtime",
-                method="POST",
-                endpoint=request_endpoint,
-                request_payload=request_payload,
-                response_payload={"error": str(exc)},
-                request_timestamp=started_at,
-                response_timestamp=finished_at,
-                metadata=metadata,
-            ),
-        }
+                    "raw_text": raw_response_text,
+                    "error": str(exc),
+                }
+                if attempt < retry_attempts:
+                    _sleep_before_retry(attempt)
+                    continue
+                return _error_result(error_payload, raw_response_text, finished_at)
+
+            return {
+                "parsed": parsed,
+                "request_payload": request_payload,
+                "response_payload": response_payload,
+                "raw_content": raw_content,
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "trace_packets": interaction_trace_packets(
+                    category="llm",
+                    service="rca-service",
+                    target="llm-runtime",
+                    method="POST",
+                    endpoint=request_endpoint,
+                    request_payload=request_payload,
+                    response_payload={
+                        "status_code": response.status_code,
+                        "body": response_payload,
+                        "raw_content": raw_content,
+                        "parsed_json": parsed,
+                        "reasoning": ((response_payload.get("choices") or [{}])[0].get("message") or {}).get("reasoning"),
+                    },
+                    request_timestamp=started_at,
+                    response_timestamp=finished_at,
+                    metadata={**metadata, "attempt_used": attempt, "attempts": retry_attempts},
+                ),
+            }
+        except requests.RequestException as exc:
+            finished_at = trace_now()
+            response = getattr(exc, "response", None)
+            status_code = getattr(response, "status_code", None)
+            raw_response_text = ""
+            error_payload: Dict[str, object] = {"error": str(exc)}
+            if response is not None:
+                raw_response_text = response.text or ""
+                error_payload["status_code"] = status_code
+                try:
+                    error_payload["body"] = response.json()
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    if raw_response_text:
+                        error_payload["raw_text"] = raw_response_text
+            if attempt < retry_attempts and _retryable_llm_status_code(status_code):
+                _sleep_before_retry(attempt)
+                continue
+            return _error_result(error_payload, raw_response_text, finished_at)
+        except Exception as exc:
+            finished_at = trace_now()
+            return _error_result({"error": str(exc)}, "", finished_at)
+
+    finished_at = trace_now()
+    return _error_result({"error": "LLM request retry loop exhausted without a terminal response."}, "", finished_at)
 
 
 def generate_with_llm(prompt: str) -> Dict[str, object] | None:

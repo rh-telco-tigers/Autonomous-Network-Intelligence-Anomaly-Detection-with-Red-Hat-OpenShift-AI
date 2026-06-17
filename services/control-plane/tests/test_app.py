@@ -2404,6 +2404,55 @@ class GuardrailsWorkflowTests(unittest.TestCase):
         audit_types = [call.args[0] for call in record_audit.call_args_list]
         self.assertIn("remediation_unlock_blocked", audit_types)
 
+    def test_generate_incident_remediations_retries_guardrails_unavailable_rca(self) -> None:
+        blocked_incident = {
+            "id": "inc-guardrails-retry",
+            "project": "ani-demo",
+            "status": control_plane_app.RCA_GENERATED,
+            "workflow_revision": 4,
+            "rca_payload": {
+                "root_cause": "Guardrails unavailable",
+                "guardrails": {"status": "error", "reason": "guardrails_unavailable"},
+                "rca_state": "BLOCKED_SYSTEM",
+            },
+        }
+        refreshed_incident = {
+            **blocked_incident,
+            "status": control_plane_app.AWAITING_APPROVAL,
+            "rca_payload": {
+                "root_cause": "Retry amplification is saturating ingress.",
+                "recommendation": "Review ingress guardrails.",
+                "confidence": 0.84,
+                "guardrails": {"status": "allow", "reason": "validated"},
+                "rca_state": "VALIDATED_ALLOW",
+            },
+        }
+        auth = SimpleNamespace(subject="demo-operator")
+        workflow_payload = {"incident": refreshed_incident, "available_transitions": []}
+        remediations = [{"id": 17, "title": "Inspect registration policy and reject causes"}]
+
+        with (
+            mock.patch.object(control_plane_app, "ensure_role"),
+            mock.patch.object(control_plane_app, "ensure_project_access"),
+            mock.patch.object(
+                control_plane_app,
+                "get_incident",
+                side_effect=[blocked_incident, refreshed_incident, refreshed_incident],
+            ),
+            mock.patch.object(control_plane_app, "_request_incident_rca", return_value={"rca_state": "VALIDATED_ALLOW"}) as request_rca,
+            mock.patch.object(control_plane_app, "_generate_and_store_remediations", return_value=remediations) as generate_remediations,
+            mock.patch.object(control_plane_app, "record_audit") as record_audit,
+            mock.patch.object(control_plane_app, "_workflow_payload", return_value=workflow_payload),
+        ):
+            response = control_plane_app.generate_incident_remediations("inc-guardrails-retry", auth=auth)
+
+        request_rca.assert_called_once_with(blocked_incident)
+        generate_remediations.assert_called_once_with("inc-guardrails-retry", actor="demo-operator")
+        audit_types = [call.args[0] for call in record_audit.call_args_list]
+        self.assertIn("rca_regeneration_requested", audit_types)
+        self.assertEqual(response["remediations"], remediations)
+        self.assertEqual(response["workflow"], workflow_payload)
+
     def test_post_rca_skips_reasoning_publication_for_review_required_rca(self) -> None:
         payload = control_plane_app.RCAAttach(
             root_cause="Retry amplification is saturating ingress.",

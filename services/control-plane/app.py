@@ -4506,6 +4506,11 @@ def _rca_guardrails_summary(rca_payload: Dict[str, object] | None) -> Dict[str, 
     }
 
 
+def _rca_retryable_guardrails_failure(rca_payload: Dict[str, object] | None) -> bool:
+    summary = _rca_guardrails_summary(rca_payload)
+    return summary["state"] == "BLOCKED_SYSTEM" and summary["reason"] == "guardrails_unavailable"
+
+
 def _request_incident_rca(incident: Dict[str, object]) -> Dict[str, object]:
     incident_id = str(incident.get("id") or incident.get("incident_id") or "")
     request_payload = _incident_rca_request_payload(incident)
@@ -5649,7 +5654,35 @@ def generate_incident_remediations(incident_id: str, auth: AuthContext | None = 
     rca_payload = incident.get("rca_payload") or {}
     if not isinstance(rca_payload, dict) or not rca_payload:
         raise HTTPException(status_code=400, detail="RCA must exist before generating remediations")
-    remediations = _generate_and_store_remediations(incident_id, actor=auth.subject if auth else "operator")
+    actor = auth.subject if auth else "operator"
+    if _rca_retryable_guardrails_failure(rca_payload):
+        try:
+            _request_incident_rca(incident)
+            record_audit(
+                "rca_regeneration_requested",
+                actor,
+                {
+                    "detail": "Retried RCA generation because the previous guarded RCA attempt failed with guardrails_unavailable.",
+                },
+                incident_id=incident_id,
+            )
+        except HTTPException as exc:
+            logger.warning("RCA regeneration retry failed for incident %s: %s", incident_id, exc.detail)
+            record_audit(
+                "rca_regeneration_retry_failed",
+                actor,
+                {"detail": exc.detail},
+                incident_id=incident_id,
+            )
+        except Exception as exc:
+            logger.exception("Unexpected RCA regeneration retry failure for incident %s", incident_id)
+            record_audit(
+                "rca_regeneration_retry_failed",
+                actor,
+                {"detail": str(exc)},
+                incident_id=incident_id,
+            )
+    remediations = _generate_and_store_remediations(incident_id, actor=actor)
     updated = get_incident(incident_id) or incident
     return {
         "remediations": remediations,
