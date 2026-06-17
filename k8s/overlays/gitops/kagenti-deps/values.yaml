@@ -5,15 +5,15 @@ ocpVersion: "4.20.24"
 
 components:
   kiali:
-    enabled: false
+    enabled: true
   tekton:
-    enabled: false
+    enabled: true
   shipwright:
-    enabled: false
+    enabled: true
   mlflow:
-    enabled: false
+    enabled: true
   rhoai:
-    enabled: false
+    enabled: true
 
 keycloak:
   namespace: kagenti-keycloak
