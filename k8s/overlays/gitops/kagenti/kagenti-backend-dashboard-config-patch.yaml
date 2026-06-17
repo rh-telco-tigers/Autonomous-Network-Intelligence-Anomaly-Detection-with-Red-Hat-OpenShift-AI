@@ -23,7 +23,7 @@ spec:
               path = Path("/work/config.py")
               text = path.read_text()
               old = '        network=settings.network_dashboard_url or f"http://kiali.{domain}:8080",'
-              new = '        network=settings.network_dashboard_url or None,'
+              new = '        network=settings.network_dashboard_url if settings.network_dashboard_url is not None else f"http://kiali.{domain}:8080",'
 
               if old not in text:
                   raise SystemExit("Expected Kiali fallback line not found in backend config router")
