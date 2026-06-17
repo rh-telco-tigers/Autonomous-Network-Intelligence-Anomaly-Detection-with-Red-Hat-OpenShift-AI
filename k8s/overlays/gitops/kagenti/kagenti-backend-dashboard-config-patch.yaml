@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kagenti-backend
+  namespace: kagenti-system
+spec:
+  template:
+    metadata:
+      annotations:
+        ani.redhat.com/network-dashboard-fallback-fix: "1"
+    spec:
+      initContainers:
+        - name: patch-dashboard-config-router
+          image: ghcr.io/kagenti/kagenti/backend:v0.7.0-alpha.3
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              cp /app/app/routers/config.py /work/config.py
+              python - <<'PY'
+              from pathlib import Path
+
+              path = Path("/work/config.py")
+              text = path.read_text()
+              old = '        network=settings.network_dashboard_url or f"http://kiali.{domain}:8080",'
+              new = '        network=settings.network_dashboard_url or None,'
+
+              if old not in text:
+                  raise SystemExit("Expected Kiali fallback line not found in backend config router")
+
+              path.write_text(text.replace(old, new))
+              PY
+          volumeMounts:
+            - name: backend-config-router-override
+              mountPath: /work
+      containers:
+        - name: backend
+          volumeMounts:
+            - name: backend-config-router-override
+              mountPath: /app/app/routers/config.py
+              subPath: config.py
+      volumes:
+        - name: backend-config-router-override
+          emptyDir: {}

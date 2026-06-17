@@ -11,3 +11,5 @@ resources:
   - kagenti-operator-trusted-ca.yaml
   - mlflow-oauth-proxy.yaml
   - otel-collector-mlflow-rolebindings.yaml
+patches:
+  - path: kagenti-backend-dashboard-config-patch.yaml
